@@ -85,6 +85,13 @@ def mean_pool(hidden: np.ndarray, attention_mask: np.ndarray) -> np.ndarray:
     return masked.sum(axis=1) / denom
 
 
+def last_token_pool(hidden: np.ndarray, attention_mask: np.ndarray) -> np.ndarray:
+    lengths = attention_mask.sum(axis=1).astype(np.int64)
+    last_idx = np.maximum(lengths - 1, 0)
+    batch_idx = np.arange(hidden.shape[0])
+    return hidden[batch_idx, last_idx]
+
+
 def l2_normalize(x: np.ndarray, axis: int = 1, eps: float = 1e-12) -> np.ndarray:
     norm = np.linalg.norm(x, axis=axis, keepdims=True)
     return x / np.maximum(norm, eps)
@@ -109,16 +116,16 @@ def sanity_checks(sim: np.ndarray) -> dict:
 def accuracy_at_k(
     sim: np.ndarray,
     folder_ids: Sequence[str],
-    is_winnable: Sequence[bool],
+    query_mask: Sequence[bool],
     k: int,
 ) -> float:
     folder_ids = np.array(folder_ids)
-    is_winnable = np.array(is_winnable, dtype=bool)
+    query_mask = np.array(query_mask, dtype=bool)
     n = sim.shape[0]
     correct = 0
-    total = int(is_winnable.sum())
+    total = int(query_mask.sum())
     for i in range(n):
-        if not is_winnable[i]:
+        if not query_mask[i]:
             continue
         scores = sim[i].copy()
         scores[i] = -np.inf
@@ -126,6 +133,17 @@ def accuracy_at_k(
         if np.any(folder_ids[topk_idx] == folder_ids[i]):
             correct += 1
     return correct / total if total > 0 else 0.0
+
+
+def accuracy_at_k_all(sim: np.ndarray, folder_ids: Sequence[str], k: int) -> float:
+    query_mask = np.ones(sim.shape[0], dtype=bool)
+    return accuracy_at_k(sim, folder_ids, query_mask, k)
+
+
+def accuracy_at_k_winnable(
+    sim: np.ndarray, folder_ids: Sequence[str], is_winnable: Sequence[bool], k: int
+) -> float:
+    return accuracy_at_k(sim, folder_ids, is_winnable, k)
 
 
 def upper_triangle(sim: np.ndarray) -> np.ndarray:
