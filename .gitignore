@@ -1,9 +1,30 @@
 SIF/
 .vscode/
 canon/
-runs/
 sa_drive_key.json
 **/__pycache__/
 .ipynb_checkpoints/
 .DS_Store
 *.log
+
+# Large binary embeddings
+runs/**/*.npy
+runs/**/*.pkl
+
+# Old phase intermediate runs (superseded by redo)
+runs/ff1_lata_postact/
+runs/phase3_hidden12_mean/
+runs/phase5_hidden12_mean/
+runs/phase6_bases/
+runs/phase6_generalization/
+runs/phase7_bases/
+runs/phase7_results/
+runs/phase8_bases/
+
+# Duplicate TSVs (canonical copies live in dataset/)
+runs/redo_results/train.tsv
+runs/redo_results/test.tsv
+
+# SLURM logs
+slurm-*.out
+slurm-*.err

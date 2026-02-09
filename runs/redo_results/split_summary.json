@@ -1,0 +1,15 @@
+{
+  "total_files": 1278,
+  "n_train": 578,
+  "n_test": 700,
+  "n_test_query": 560,
+  "n_folders": 538,
+  "n_singleton_folders": 279,
+  "n_pair_folders": 74,
+  "n_large_folders": 185,
+  "singletons_train": 139,
+  "singletons_test": 140,
+  "doubleton_folders_train": 37,
+  "doubleton_folders_test": 37,
+  "train_test_overlap": 0
+}

@@ -1,0 +1,18 @@
+{
+  "train": {
+    "split": "train",
+    "n_files": 578,
+    "n_pairs": 166753,
+    "n_positive": 259,
+    "n_negative": 166494,
+    "output_path": "/u/irowerojas/localLatin/runs/redo_results/train.tsv"
+  },
+  "test": {
+    "split": "test",
+    "n_files": 700,
+    "n_pairs": 244650,
+    "n_positive": 464,
+    "n_negative": 244186,
+    "output_path": "/u/irowerojas/localLatin/runs/redo_results/test.tsv"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "total_files": 1278,
+  "n_train": 943,
+  "n_test": 335,
+  "n_test_query": 335,
+  "n_folders": 538,
+  "n_singleton_folders": 279,
+  "n_pair_folders": 74,
+  "n_large_folders": 185,
+  "train_test_overlap": 0,
+  "all_test_queries_have_partner": true
+}

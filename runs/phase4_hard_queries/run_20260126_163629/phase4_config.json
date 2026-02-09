@@ -1,0 +1,42 @@
+{
+  "phase3_run_dir": "/u/irowerojas/localLatin/runs/phase3_hidden12_mean/run_20260126_153356",
+  "layer": 12,
+  "k_list": [
+    1,
+    3,
+    5
+  ],
+  "query_mask_col": "is_winnable",
+  "compare_runs": [
+    {
+      "label": "variance_drop_lowest_percent25",
+      "run_dir": "/u/irowerojas/localLatin/runs/phase3_hidden12_mean/run_20260126_153356/derived/var_hidden_mean_drop25"
+    },
+    {
+      "label": "variance_drop_lowest_percent50",
+      "run_dir": "/u/irowerojas/localLatin/runs/phase3_hidden12_mean/run_20260126_153356/derived/var_hidden_mean_drop50"
+    }
+  ],
+  "sanity_checks": {
+    "baseline": {
+      "symmetric": true,
+      "diag_mean": 1.0,
+      "off_diag_mean": 0.5762767195701599
+    },
+    "variance_drop_lowest_percent25": {
+      "symmetric": true,
+      "diag_mean": 1.0,
+      "off_diag_mean": 0.552206814289093
+    },
+    "variance_drop_lowest_percent50": {
+      "symmetric": true,
+      "diag_mean": 1.0,
+      "off_diag_mean": 0.5456840991973877
+    }
+  },
+  "outputs": {
+    "hard_queries_csv": "hard_queries.csv",
+    "recovery_regression_csv": "recovery_regression_summary.csv",
+    "margin_summary_csv": "margin_summary.csv"
+  }
+}
