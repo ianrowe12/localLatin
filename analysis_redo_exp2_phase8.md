@@ -18,12 +18,12 @@ This experiment evaluates how well different embedding models and post-processin
 
 All splits (train/test/validation) are concatenated, shuffled, and re-split 50/50:
 
-| Language | Train Pairs | Test Pairs |
-|---|---|---|
-| English | 3,102 | 3,102 |
-| French | 255 | 255 |
-| Sinhala | 617 | 617 |
-| Tamil | 587 | 587 |
+| Language | Train Pairs | Test Pairs | Total |
+|---|---|---|---|
+| English | 3,564 | 3,564 | 7,128 |
+| French | 505 | 505 | 1,010 |
+| Sinhala | 2,548 | 2,548 | 5,096 |
+| Tamil | 1,300 | 1,300 | 2,600 |
 
 ### Models
 
@@ -141,12 +141,12 @@ Sinhala and Tamil are dramatically harder for all models:
 
 | Language | Average Best Spearman (across models) | Resource Level |
 |---|---|---|
-| English | 0.780 | High |
+| English | 0.795 | High |
 | French | 0.886 | High |
 | Sinhala | 0.525 | Low |
-| Tamil | 0.432 | Low |
+| Tamil | 0.430 | Low |
 
-The gap between high-resource and low-resource languages is 0.25-0.45 Spearman points. This gap is consistent across all models and methods, suggesting a fundamental limitation of pre-training data rather than architectural issues.
+The gap between high-resource and low-resource languages is 0.27-0.46 Spearman points. This gap is consistent across all models and methods, suggesting a fundamental limitation of pre-training data rather than architectural issues.
 
 French outperforms English because MUSTS French pairs likely have stronger similarity signal (cleaner pairs).
 

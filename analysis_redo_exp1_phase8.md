@@ -130,7 +130,7 @@ The number of principal components removed (D) depends on the layer's anisotropy
 |---|---|---|---|
 | **LaTa hidden** | 2 (layers 3-11) | 5-10 (layers 0-1, 12) | Dip layers need minimal PC removal |
 | **PhilTa hidden** | 3-5 (layers 4-11) | 1-7 (layers 0-3, 12) | Similar pattern, slightly higher D |
-| **LaBSE hidden** | 3-7 (all layers) | 1 (layer 12) | No dip, D decreases for best layers |
+| **LaBSE hidden** | 3-10 (layers 0-11) | 1 (layer 12) | No dip, D decreases for best layers |
 
 Key insight: layers in the anisotropy dip have low effective dimensionality, so fewer PCs need removal. Boundary layers (0, 12) have richer structure requiring more aggressive PC removal.
 
