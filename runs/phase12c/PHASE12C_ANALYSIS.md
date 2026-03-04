@@ -59,6 +59,22 @@ Tokens are classified into three categories by their decoded surface form:
 
 **What it shows**: For each token category, `Δ_retrieval = |IG_abtt_pos| − |IG_baseline_pos|`. Positive Δ means ABTT *increased* that token's contribution to partner similarity. Negative Δ means ABTT *removed* a contribution that only existed via PC1 noise.
 
+<details>
+<summary><strong>How to read this graph</strong></summary>
+
+There are **5 panels** (one per model) and **3 colored bars per layer** (one per token category: blue = content, orange = short_subword, gray = empty).
+
+- **Y-axis** = Δ_retrieval (ABTT minus baseline). Think of it as: "Did ABTT help or hurt this token type's contribution to finding the true partner?"
+- **Bar above zero** → ABTT *increased* that token category's retrieval contribution (good — the token is contributing more to finding the partner)
+- **Bar below zero** → ABTT *decreased* that token category's retrieval contribution (good if it was noise — ABTT removed a false contribution)
+- **Bar near zero** → ABTT didn't change that token category much
+
+**What to look for**: In T5 models (LaTa, PhilTa), you should see the **gray bars (empty tokens) plunging far below zero** at dip layers — this means ABTT removed a large amount of "fake" retrieval signal that was coming from whitespace/padding tokens via PC1 noise. Meanwhile, the **blue bars (content tokens) stay near zero or slightly positive** — ABTT didn't hurt the real semantic signal, it may have even helped it slightly.
+
+For decoder models (Qwen, KaLM), all bars are small and near zero because the anisotropy dip is milder — there's less noise to remove.
+
+</details>
+
 **Key observations**:
 
 - **T5 models show the clearest signal**: Empty tokens have large negative Δ at every dip layer, while content tokens are near zero or positive. ABTT specifically strips out the empty-token noise without harming the content signal.
@@ -85,7 +101,32 @@ Tokens are classified into three categories by their decoded surface form:
 
 ![Figure 2: Partner Selectivity Scatter](figures/fig_analysis2_selectivity.png)
 
-**What it shows**: Each dot is one query at one layer. Selectivity = `|IG_pos| / (|IG_pos| + |IG_neg|)` — the fraction of total token attribution directed at the true partner versus a random document. A selectivity of 0.5 means tokens can't distinguish true partner from random; higher is better.
+**What it shows**: Each dot is one query at one layer. Selectivity = `|IG_to_partner| / (|IG_to_partner| + |IG_to_random|)` — the fraction of total token attribution directed at the true partner versus a random document. A selectivity of 0.5 means tokens can't distinguish true partner from random; higher is better. Selectivity is a simple ratio that answers: "When a token pushes the query's embedding closer to something, is it pushing toward the TRUE partner or a RANDOM document?"
+
+
+
+<details>
+<summary><strong>How to read each panel</strong></summary>
+
+- **X-axis** = selectivity using **baseline** (raw embeddings, no ABTT)
+- **Y-axis** = selectivity using **ABTT** (after removing PC1 noise)
+- **Dashed diagonal** = the "no change" line (ABTT selectivity = baseline selectivity)
+
+So:
+- **Dot above the diagonal** → ABTT **improved** that query's selectivity (tokens became more partner-specific)
+- **Dot below the diagonal** → ABTT **hurt** that query's selectivity
+
+**What the data shows**: Almost every dot is above the diagonal. That's the headline.
+
+Look at the specifics:
+- **Baseline (x-axis)**: Most dots cluster around **0.45–0.55** — this is essentially random. The tokens in the raw embedding can't tell the difference between the true partner and a random document. Why? Because the PC1 noise direction dominates everything, making all documents look the same.
+- **ABTT (y-axis)**: The dots jump up to **0.55–0.80** — tokens are now genuinely selective for the true partner.
+
+**The colors** represent different layers:
+- Blue/green dots (dip layers like L4, L6) tend to start further **left** (worse baseline, closer to 0.50) and jump further **up** — these are the layers where PC1 dominance is worst, so ABTT helps the most.
+- Red dots (best layers like L12, L28) start further **right** (baseline is already decent) and move up less — ABTT still helps but the improvement is smaller.
+
+</details>
 
 Points above the diagonal = ABTT improved selectivity for that query.
 
@@ -128,6 +169,25 @@ Points above the diagonal = ABTT improved selectivity for that query.
 
 Side-by-side IG heatmaps for individual query documents at their model's worst dip layer. Red = token pushes the query toward its true partner. Blue = token pushes away.
 
+<details>
+<summary><strong>How to read these heatmaps</strong></summary>
+
+Each row is one **query document** (a Latin manuscript fragment). The tokens of that document are laid out left-to-right along the x-axis. The two columns are:
+
+- **Left column (Baseline)**: How much each token pushes the embedding toward the true partner *without* ABTT
+- **Right column (ABTT)**: How much each token pushes the embedding toward the true partner *after* ABTT
+
+**Color scale**:
+- **Dark red** = strong positive attribution (this token is strongly pushing the query *toward* the true partner — it's helping retrieval)
+- **Light pink / white** = near-zero attribution (this token isn't doing much)
+- **Blue** = negative attribution (this token is pushing the query *away* from the true partner — it's hurting retrieval)
+
+**What to look for**: Compare left vs right for the same query. In the **baseline** (left), you typically see a washed-out, sparse pattern — maybe one or two random spikes but mostly faint pink. In the **ABTT** (right), a rich pattern of reds should appear on **Latin content words** (ecclesiastical terms, nouns, verbs) — these are the tokens that actually connect this document to its canonical partner.
+
+The key insight: after ABTT, you can literally *read* which Latin words the model thinks are important for matching, and they make semantic sense (e.g., *episcopus*, *ordinatione*, *presbyteris* — words about church hierarchy appearing in canon law texts).
+
+</details>
+
 #### LaTa L4 (Max Anisotropy Dip)
 
 ![LaTa L4 Token Heatmaps](figures/fig_analysis3_heatmap_LaTa.png)
@@ -155,6 +215,28 @@ Side-by-side IG heatmaps for individual query documents at their model's worst d
 ![Figure 4: Token Category Importance Share](figures/fig_analysis4_importance_share.png)
 
 **What it shows**: Stacked bars showing what fraction of total `|IG|` comes from each token category. Left bar = baseline, right bar = ABTT. If ABTT is "unmasking" content tokens, the blue (content) share should grow after ABTT.
+
+<details>
+<summary><strong>How to read this graph</strong></summary>
+
+Each layer gets **two stacked bars** side by side:
+- **Left bar (B)** = Baseline — how retrieval importance is distributed across token categories *without* ABTT
+- **Right bar (A)** = ABTT — how retrieval importance is distributed *after* ABTT
+
+Each bar is split into three colors stacked to 100%:
+- **Blue (bottom)** = content tokens' share of total retrieval importance
+- **Orange (middle)** = short subword tokens' share
+- **Gray (top)** = empty tokens' share
+
+**What to look for**: If ABTT is truly "unmasking" content tokens, then moving from the left bar to the right bar you should see:
+- The **blue section grows** (content becomes more important)
+- The **gray section shrinks** (empty token noise is removed)
+
+The most dramatic example is **LaTa L4**: the left bar is almost entirely gray (~82% empty tokens dominating retrieval), but the right bar flips to mostly blue (~73% content tokens). This is the visual proof that in the baseline, whitespace/padding tokens were hogging the retrieval signal via PC1 noise, and ABTT hands that importance back to the actual Latin words.
+
+For **LaBSE**, the bars look nearly identical because LaBSE's tokenizer produces no empty tokens — there's no gray section to remove.
+
+</details>
 
 **Key observations**:
 
@@ -227,6 +309,8 @@ Together, these three levels explain the full mechanistic story:
 2. **Partner selection bias**: Each query was paired with one randomly selected same-folder partner. Results could vary with different partner assignments, though the sample size (320 queries × 140 folders) provides reasonable coverage.
 
 3. **IG approximation**: Integrated Gradients with 50 integration steps is an approximation. The convergence check (IG sum ≈ f(x) − f(baseline)) should be verified in future work.
+
+> **Methodological note on IG aggregation**: Our use of `sum(|IG|)` across embedding dimensions to obtain per-token scores follows Captum's standard NLP tutorial (`attr.sum(dim=-1)`). The original Sundararajan et al. (2017) *completeness axiom* guarantees that IG attributions sum to `f(x) − f(baseline)`, making summation the mathematically principled aggregation. Taking absolute values for importance ranking (ignoring sign) is analogous to saliency map magnitude and is widely used in the interpretability literature.
 
 4. **Category granularity**: The three-way classification (content/short_subword/empty) is coarse. Future work could examine specific Latin morphological categories (verbs, nouns, prepositions, ecclesiastical terminology) to provide even finer-grained linguistic analysis.
 

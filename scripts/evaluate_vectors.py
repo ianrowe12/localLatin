@@ -134,9 +134,14 @@ def find_optimal_D(
     train_folder_ids: np.ndarray,
     D_values: List[int],
 ) -> Tuple[int, float]:
-    """Sweep D values on train set, return best D by AUCROC."""
+    """Sweep D values on train set, return best D by Assignment Accuracy."""
     best_D = D_values[0]
     best_score = -1.0
+
+    # Determine which train files have at least one same-folder partner in train
+    unique, counts = np.unique(train_folder_ids, return_counts=True)
+    multi_folders = set(unique[counts > 1])
+    has_partner = np.array([fid in multi_folders for fid in train_folder_ids])
 
     for D in D_values:
         cleaner = EmbeddingCleaner(num_components=D, center=True)
@@ -144,11 +149,18 @@ def find_optimal_D(
         cleaned = cleaner.transform(train_emb)
         cleaned_norm = l2_normalize(cleaned)
         sim = similarity_matrix(cleaned_norm)
+
+        # Learn threshold τ via best F1
         sims = upper_triangle(sim)
         labels = upper_triangle_labels(train_folder_ids)
-        score = safe_auc_roc(sims, labels)
-        if not np.isnan(score) and score > best_score:
-            best_score = score
+        thresh_df = sweep_thresholds(sims, labels, np.linspace(0, 1, 200))
+        best_f1_idx = thresh_df["f1"].idxmax()
+        tau = float(thresh_df.loc[best_f1_idx, "threshold"])
+
+        # Compute assignment accuracy on train
+        _, _, overall_acc = compute_assignment_acc(sim, has_partner, tau)
+        if overall_acc > best_score:
+            best_score = overall_acc
             best_D = D
 
     return best_D, best_score
@@ -315,7 +327,7 @@ def main() -> None:
     for m in seq2seq_models:
         model_configs.append((m, "seq2seq", ["hidden", "ff1"]))
     for m in encoder_models:
-        model_configs.append((m, "encoder", ["hidden"]))
+        model_configs.append((m, "encoder", ["hidden", "ffn_int"]))
 
     for model_name, model_type, reprs in model_configs:
         slug = model_slug(model_name)

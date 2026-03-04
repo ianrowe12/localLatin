@@ -1,0 +1,199 @@
+=== Phase 12b: Embedding Analysis ===
+Start: Mon Mar  2 18:03:13 CST 2026
+
+============================================================
+  Model: LaTa
+============================================================
+  L 1  RPR=0.4484  CGS=+0.3486  IG_iso=0.24  PC1%=28.7  ΔAUC=+0.1012
+  L 2  RPR=0.8730  CGS=+0.5131  IG_iso=0.17  PC1%=55.0  ΔAUC=+0.3921
+  L 3  RPR=0.9829  CGS=+0.5205  IG_iso=0.29  PC1%=83.0  ΔAUC=+0.4780
+  L 4  RPR=0.9889  CGS=+0.5368  IG_iso=0.30  PC1%=80.0  ΔAUC=+0.4986
+  L 5  RPR=0.9896  CGS=+0.5456  IG_iso=0.18  PC1%=80.7  ΔAUC=+0.4947
+  L 6  RPR=0.9902  CGS=+0.5410  IG_iso=0.24  PC1%=82.4  ΔAUC=+0.4909
+  L 7  RPR=0.9905  CGS=+0.5362  IG_iso=0.28  PC1%=84.3  ΔAUC=+0.4932
+  L 8  RPR=0.9900  CGS=+0.5316  IG_iso=0.36  PC1%=80.9  ΔAUC=+0.4932
+  L 9  RPR=0.9891  CGS=+0.5261  IG_iso=0.22  PC1%=81.3  ΔAUC=+0.4935
+  L10  RPR=0.9880  CGS=+0.5190  IG_iso=0.19  PC1%=82.1  ΔAUC=+0.4891
+  L11  RPR=0.9862  CGS=+0.5174  IG_iso=0.30  PC1%=82.3  ΔAUC=+0.4895
+  L12  RPR=0.3461  CGS=+0.2892  IG_iso=0.09  PC1%=7.6  ΔAUC=+0.0276
+
+============================================================
+  Model: PhilTa
+============================================================
+  L 1  RPR=0.7011  CGS=+0.5164  IG_iso=0.18  PC1%=80.3  ΔAUC=+0.1867
+  L 2  RPR=0.8349  CGS=+0.5296  IG_iso=0.18  PC1%=94.5  ΔAUC=+0.2129
+  L 3  RPR=0.9530  CGS=+0.5274  IG_iso=0.15  PC1%=92.6  ΔAUC=+0.3967
+  L 4  RPR=0.9865  CGS=+0.5392  IG_iso=0.25  PC1%=97.7  ΔAUC=+0.4909
+  L 5  RPR=0.9892  CGS=+0.5478  IG_iso=0.32  PC1%=98.0  ΔAUC=+0.4986
+  L 6  RPR=0.9902  CGS=+0.5502  IG_iso=0.34  PC1%=98.1  ΔAUC=+0.5062
+  L 7  RPR=0.9888  CGS=+0.5529  IG_iso=0.32  PC1%=98.0  ΔAUC=+0.5042
+  L 8  RPR=0.9870  CGS=+0.5456  IG_iso=0.27  PC1%=98.0  ΔAUC=+0.5019
+  L 9  RPR=0.9874  CGS=+0.5355  IG_iso=0.35  PC1%=97.9  ΔAUC=+0.5016
+  L10  RPR=0.9865  CGS=+0.5246  IG_iso=0.34  PC1%=97.8  ΔAUC=+0.4995
+  L11  RPR=0.9843  CGS=+0.5088  IG_iso=0.36  PC1%=97.8  ΔAUC=+0.4960
+  L12  RPR=0.3238  CGS=+0.2934  IG_iso=0.10  PC1%=8.5  ΔAUC=+0.0629
+
+============================================================
+  Model: LaBSE
+============================================================
+  L 1  RPR=0.5743  CGS=+0.4416  IG_iso=0.05  PC1%=24.7  ΔAUC=+0.1274
+  L 2  RPR=0.6201  CGS=+0.4891  IG_iso=0.07  PC1%=32.2  ΔAUC=+0.1170
+  L 3  RPR=0.5582  CGS=+0.4713  IG_iso=0.08  PC1%=30.9  ΔAUC=+0.0906
+  L 4  RPR=0.5755  CGS=+0.4413  IG_iso=0.07  PC1%=32.4  ΔAUC=+0.0809
+  L 5  RPR=0.5287  CGS=+0.4234  IG_iso=0.08  PC1%=28.7  ΔAUC=+0.0769
+  L 6  RPR=0.4922  CGS=+0.4404  IG_iso=0.07  PC1%=24.0  ΔAUC=+0.0646
+  L 7  RPR=0.5959  CGS=+0.4212  IG_iso=0.13  PC1%=40.3  ΔAUC=+0.0676
+  L 8  RPR=0.6500  CGS=+0.4285  IG_iso=0.09  PC1%=49.7  ΔAUC=+0.0715
+  L 9  RPR=0.5639  CGS=+0.4648  IG_iso=0.14  PC1%=34.5  ΔAUC=+0.0531
+  L10  RPR=0.5467  CGS=+0.4815  IG_iso=0.13  PC1%=32.1  ΔAUC=+0.0389
+  L11  RPR=0.4509  CGS=+0.5399  IG_iso=0.07  PC1%=17.8  ΔAUC=+0.0279
+  L12  RPR=0.4110  CGS=+0.3996  IG_iso=0.10  PC1%=14.8  ΔAUC=+0.0368
+
+============================================================
+  Model: Qwen3-0.6B
+============================================================
+  L 1  RPR=0.3422  CGS=+0.5128  IG_iso=0.04  PC1%=8.6  ΔAUC=+0.0574
+  L 2  RPR=0.4050  CGS=+0.5138  IG_iso=0.04  PC1%=12.6  ΔAUC=+0.0741
+  L 3  RPR=0.9588  CGS=+0.5349  IG_iso=1.05  PC1%=99.9  ΔAUC=+0.1709
+  L 4  RPR=0.9521  CGS=+0.5186  IG_iso=1.65  PC1%=99.8  ΔAUC=+0.1816
+  L 5  RPR=0.9495  CGS=+0.5178  IG_iso=0.73  PC1%=99.8  ΔAUC=+0.1811
+  L 6  RPR=0.9364  CGS=+0.5161  IG_iso=1.07  PC1%=99.6  ΔAUC=+0.1750
+  L 7  RPR=0.9331  CGS=+0.5111  IG_iso=2.22  PC1%=99.6  ΔAUC=+0.1680
+  L 8  RPR=0.9267  CGS=+0.5048  IG_iso=1.49  PC1%=99.4  ΔAUC=+0.1685
+  L 9  RPR=0.9238  CGS=+0.4945  IG_iso=1.28  PC1%=99.4  ΔAUC=+0.1636
+  L10  RPR=0.9159  CGS=+0.4814  IG_iso=1.18  PC1%=99.2  ΔAUC=+0.1576
+  L11  RPR=0.9013  CGS=+0.4842  IG_iso=1.18  PC1%=98.7  ΔAUC=+0.1338
+  L12  RPR=0.8849  CGS=+0.5016  IG_iso=0.78  PC1%=98.3  ΔAUC=+0.1170
+  L13  RPR=0.8834  CGS=+0.4933  IG_iso=0.78  PC1%=98.2  ΔAUC=+0.1193
+  L14  RPR=0.8790  CGS=+0.4875  IG_iso=0.68  PC1%=98.0  ΔAUC=+0.1152
+  L15  RPR=0.8767  CGS=+0.4807  IG_iso=0.69  PC1%=97.9  ΔAUC=+0.1149
+  L16  RPR=0.8651  CGS=+0.4708  IG_iso=0.81  PC1%=97.3  ΔAUC=+0.1147
+  L17  RPR=0.8263  CGS=+0.4784  IG_iso=0.75  PC1%=95.5  ΔAUC=+0.1058
+  L18  RPR=0.7894  CGS=+0.4876  IG_iso=0.65  PC1%=93.0  ΔAUC=+0.0848
+  L19  RPR=0.7568  CGS=+0.4872  IG_iso=0.47  PC1%=89.9  ΔAUC=+0.0748
+  L20  RPR=0.7081  CGS=+0.5043  IG_iso=0.30  PC1%=83.9  ΔAUC=+0.0586
+  L21  RPR=0.6498  CGS=+0.5176  IG_iso=0.29  PC1%=74.6  ΔAUC=+0.0516
+  L22  RPR=0.5996  CGS=+0.5301  IG_iso=0.25  PC1%=65.2  ΔAUC=+0.0428
+  L23  RPR=0.5778  CGS=+0.5354  IG_iso=0.15  PC1%=60.5  ΔAUC=+0.0358
+  L24  RPR=0.5516  CGS=+0.5352  IG_iso=0.19  PC1%=54.2  ΔAUC=+0.0373
+  L25  RPR=0.5297  CGS=+0.5321  IG_iso=0.13  PC1%=48.1  ΔAUC=+0.0329
+  L26  RPR=0.5030  CGS=+0.5315  IG_iso=0.16  PC1%=41.8  ΔAUC=+0.0293
+  L27  RPR=0.4916  CGS=+0.5329  IG_iso=0.14  PC1%=37.9  ΔAUC=+0.0262
+  L28  RPR=0.3583  CGS=+0.4490  IG_iso=0.07  PC1%=11.0  ΔAUC=+0.0228
+
+============================================================
+  Model: KaLM-mini
+============================================================
+  L 1  RPR=0.3378  CGS=+0.4837  IG_iso=0.05  PC1%=7.3  ΔAUC=+0.0398
+  L 2  RPR=0.3378  CGS=+0.5059  IG_iso=0.08  PC1%=7.7  ΔAUC=+0.0438
+  L 3  RPR=0.3501  CGS=+0.4827  IG_iso=0.16  PC1%=32.3  ΔAUC=+0.0791
+  L 4  RPR=0.3990  CGS=+0.4776  IG_iso=0.12  PC1%=24.1  ΔAUC=+0.0878
+  L 5  RPR=0.4635  CGS=+0.4616  IG_iso=0.15  PC1%=42.9  ΔAUC=+0.1009
+  L 6  RPR=0.4421  CGS=+0.4469  IG_iso=0.16  PC1%=40.0  ΔAUC=+0.0940
+  L 7  RPR=0.4229  CGS=+0.4462  IG_iso=0.13  PC1%=35.2  ΔAUC=+0.0868
+  L 8  RPR=0.4186  CGS=+0.4460  IG_iso=0.13  PC1%=31.3  ΔAUC=+0.0843
+  L 9  RPR=0.4359  CGS=+0.4334  IG_iso=0.08  PC1%=29.6  ΔAUC=+0.0859
+  L10  RPR=0.4613  CGS=+0.4162  IG_iso=0.16  PC1%=30.0  ΔAUC=+0.0864
+  L11  RPR=0.4701  CGS=+0.4040  IG_iso=0.13  PC1%=27.2  ΔAUC=+0.0905
+  L12  RPR=0.4628  CGS=+0.3961  IG_iso=0.11  PC1%=25.0  ΔAUC=+0.0834
+  L13  RPR=0.4726  CGS=+0.3906  IG_iso=0.13  PC1%=24.6  ΔAUC=+0.0876
+  L14  RPR=0.4685  CGS=+0.3949  IG_iso=0.10  PC1%=23.9  ΔAUC=+0.0838
+  L15  RPR=0.4596  CGS=+0.3890  IG_iso=0.12  PC1%=21.4  ΔAUC=+0.0734
+  L16  RPR=0.4620  CGS=+0.3900  IG_iso=0.11  PC1%=21.2  ΔAUC=+0.0596
+  L17  RPR=0.4385  CGS=+0.4129  IG_iso=0.12  PC1%=20.1  ΔAUC=+0.0571
+  L18  RPR=0.4238  CGS=+0.4480  IG_iso=0.07  PC1%=15.5  ΔAUC=+0.0425
+  L19  RPR=0.4064  CGS=+0.4562  IG_iso=0.07  PC1%=14.0  ΔAUC=+0.0310
+  L20  RPR=0.4192  CGS=+0.4638  IG_iso=0.09  PC1%=14.3  ΔAUC=+0.0262
+  L21  RPR=0.4309  CGS=+0.4794  IG_iso=0.08  PC1%=15.3  ΔAUC=+0.0273
+  L22  RPR=0.3686  CGS=+0.4830  IG_iso=0.05  PC1%=11.9  ΔAUC=+0.0168
+  L23  RPR=0.3224  CGS=+0.4787  IG_iso=0.06  PC1%=10.1  ΔAUC=+0.0126
+  L24  RPR=0.2903  CGS=+0.2762  IG_iso=0.10  PC1%=7.9  ΔAUC=+0.0405
+
+Saved metrics to runs/phase12b/metrics_per_layer.csv
+  Spearman(rpr, ΔAUCROC) = +0.8341  (p=6.15e-24)
+  Spearman(cgs, ΔAUCROC) = +0.4781  (p=2.47e-06)
+  Spearman(pc1_var_explained, ΔAUCROC) = +0.7308  (p=6.39e-16)
+  Saved RPR vs ΔAUCROC scatter
+  Saved CGS vs ΔAUCROC scatter
+  Saved isotropy gain plot
+  Saved RPR + ΔAUCROC layerwise panel
+
+  CGS > 0: 88/88  (ΔAUCROC > 0: 88/88)
+
+Phase 12b embedding analysis complete.
+
+Embedding analysis done: Mon Mar  2 18:03:44 CST 2026
+
+=== Phase 12b: Token Attribution Delta ===
+
+==================================================
+  LaTa
+==================================================
+  L1: processed 1278 files
+  L2: processed 1278 files
+  L3: processed 1278 files
+  L4: processed 1278 files
+  L5: processed 1278 files
+  L6: processed 1278 files
+  L7: processed 1278 files
+  L8: processed 1278 files
+  L9: processed 1278 files
+  L10: processed 1278 files
+  L11: processed 1278 files
+  L12: processed 1278 files
+
+==================================================
+  PhilTa
+==================================================
+  L1: processed 1278 files
+  L2: processed 1278 files
+  L3: processed 1278 files
+  L4: processed 1278 files
+  L5: processed 1278 files
+  L6: processed 1278 files
+  L7: processed 1278 files
+  L8: processed 1278 files
+  L9: processed 1278 files
+  L10: processed 1278 files
+  L11: processed 1278 files
+  L12: processed 1278 files
+
+==================================================
+  LaBSE
+==================================================
+  L1: processed 60 files
+  L6: processed 60 files
+  L9: processed 60 files
+  L11: processed 60 files
+
+==================================================
+  Qwen3-0.6B
+==================================================
+  L1: processed 60 files
+  L4: processed 60 files
+  L14: processed 60 files
+  L28: processed 60 files
+
+==================================================
+  KaLM-mini
+==================================================
+  L1: processed 60 files
+  L5: processed 60 files
+  L13: processed 60 files
+  L23: processed 60 files
+
+Saved token delta data to runs/phase12b/token_delta_by_type.csv
+  Saved heatmap for LaTa
+  Saved heatmap for PhilTa
+  Saved heatmap for LaBSE
+  Saved heatmap for Qwen3-0.6B
+  Saved heatmap for KaLM-mini
+  Saved attribution delta vs ΔAUCROC panel
+  Saved content vs short_subword delta panel
+
+Phase 12b token delta analysis complete.
+
+Token delta analysis done: Mon Mar  2 18:04:20 CST 2026
+
+=== All Phase 12b analyses complete ===
+End: Mon Mar  2 18:04:20 CST 2026

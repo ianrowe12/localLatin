@@ -1,0 +1,7 @@
+claim_id,claim,status,evidence,wording_guideline
+C1,ABTT is a robust performance fix across models/layers (from Phase 11).,Supported,Phase 11 showed universal ABTT lift; Phase 12 run-complete coverage supports mechanism follow-up.,"Use strong wording for retrieval performance, not for universal token mechanism."
+C2,PC1 vs ABTT importance is consistently anti-correlated across all architectures.,Not supported,"LaTa avg=-0.126, PhilTa avg=-0.381 but Qwen avg=0.519, KaLM avg=0.053.",State mechanism as architecture- and layer-conditional.
+C3,T5 dip-layer behavior shows strongest anti-correlation pattern.,Supported,PhilTa min layer 3 = -0.567; LaTa min layer 3 = -0.281.,Use as central mechanistic evidence for T5 layers.
+C4,IG and FA are sufficiently aligned for the PC1 target.,Supported,"Mean IG-FA(pc1_dot): LaTa=0.606, PhilTa=0.490, LaBSE=0.483.",Treat PC1-target interpretations as higher confidence.
+C5,IG and FA strongly validate ABTT-norm attributions.,Partially supported,"Mean IG-FA(abtt_norm) is low/moderate: LaTa=0.210, PhilTa=0.055, Qwen=0.052.",Use cautious language for ABTT-norm token mechanism.
+C6,One universal token-importance story explains all models.,Not supported,Sign flips across layers in Qwen/KaLM and mixed LaBSE trends.,"Frame paper contribution as mechanism taxonomy, not single mechanism."

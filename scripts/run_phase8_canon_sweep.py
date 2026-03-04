@@ -55,6 +55,10 @@ def parse_args() -> argparse.Namespace:
         "--half_precision", action="store_true",
         help="Use fp16 for encoder models.",
     )
+    parser.add_argument(
+        "--trust_remote_code", action="store_true",
+        help="Pass --trust_remote_code to extraction CLIs.",
+    )
     return parser.parse_args()
 
 
@@ -146,6 +150,7 @@ def run_encoder_extract(
     sif_a: float,
     split_csv: str,
     half_precision: bool,
+    trust_remote_code: bool = False,
 ) -> None:
     cmd = [
         "python", "src/extract_encoder_cli.py",
@@ -165,6 +170,8 @@ def run_encoder_extract(
         cmd += ["--split_csv", split_csv]
     if half_precision:
         cmd += ["--half_precision"]
+    if trust_remote_code:
+        cmd += ["--trust_remote_code"]
     subprocess.run(cmd, check=True)
 
 
@@ -361,6 +368,7 @@ def main() -> None:
                         sif_a=args.sif_a,
                         split_csv=str(split_csv),
                         half_precision=args.half_precision,
+                        trust_remote_code=args.trust_remote_code,
                     )
 
                 for layer in encoder_layers:

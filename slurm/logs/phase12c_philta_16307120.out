@@ -1,0 +1,158 @@
+=== Phase 12c: PhilTa Retrieval Attribution ===
+Loaded 320 query-partner triples
+Loading model: bowphs/PhilTa (t5)
+Pre-tokenizing queries...
+  max_seq_len = 379
+Loading partner texts...
+
+=== Layer 1 ===
+  Pre-computing partner embeddings...
+  Partner embeddings computed: 320 positive + 320 negative
+  [10/320] 0.29 q/s, ~18 min left
+  [20/320] 0.32 q/s, ~16 min left
+  [30/320] 0.33 q/s, ~15 min left
+  [40/320] 0.34 q/s, ~14 min left
+  [50/320] 0.34 q/s, ~13 min left
+  [60/320] 0.35 q/s, ~13 min left
+  [70/320] 0.35 q/s, ~12 min left
+  [80/320] 0.35 q/s, ~11 min left
+  [90/320] 0.35 q/s, ~11 min left
+  [100/320] 0.35 q/s, ~10 min left
+  [110/320] 0.35 q/s, ~10 min left
+  [120/320] 0.35 q/s, ~9 min left
+  [130/320] 0.35 q/s, ~9 min left
+  [140/320] 0.35 q/s, ~8 min left
+  [150/320] 0.35 q/s, ~8 min left
+  [160/320] 0.36 q/s, ~8 min left
+  [170/320] 0.36 q/s, ~7 min left
+  [180/320] 0.36 q/s, ~7 min left
+  [190/320] 0.36 q/s, ~6 min left
+  [200/320] 0.36 q/s, ~6 min left
+  [210/320] 0.36 q/s, ~5 min left
+  [220/320] 0.36 q/s, ~5 min left
+  [230/320] 0.36 q/s, ~4 min left
+  [240/320] 0.36 q/s, ~4 min left
+  [250/320] 0.36 q/s, ~3 min left
+  [260/320] 0.36 q/s, ~3 min left
+  [270/320] 0.36 q/s, ~2 min left
+  [280/320] 0.36 q/s, ~2 min left
+  [290/320] 0.36 q/s, ~1 min left
+  [300/320] 0.36 q/s, ~1 min left
+  [310/320] 0.36 q/s, ~0 min left
+  [320/320] 0.36 q/s, ~0 min left
+  Layer 1 done in 14.9 min → /u/irowerojas/localLatin/runs/phase12c/attributions/bowphs_PhilTa/layer1_retrieval_attr.npz
+
+=== Layer 6 ===
+  Pre-computing partner embeddings...
+  Partner embeddings computed: 320 positive + 320 negative
+  [10/320] 0.22 q/s, ~23 min left
+  [20/320] 0.24 q/s, ~21 min left
+  [30/320] 0.25 q/s, ~20 min left
+  [40/320] 0.25 q/s, ~19 min left
+  [50/320] 0.25 q/s, ~18 min left
+  [60/320] 0.25 q/s, ~17 min left
+  [70/320] 0.26 q/s, ~16 min left
+  [80/320] 0.26 q/s, ~16 min left
+  [90/320] 0.26 q/s, ~15 min left
+  [100/320] 0.26 q/s, ~14 min left
+  [110/320] 0.26 q/s, ~14 min left
+  [120/320] 0.26 q/s, ~13 min left
+  [130/320] 0.26 q/s, ~12 min left
+  [140/320] 0.26 q/s, ~12 min left
+  [150/320] 0.26 q/s, ~11 min left
+  [160/320] 0.26 q/s, ~10 min left
+  [170/320] 0.26 q/s, ~10 min left
+  [180/320] 0.26 q/s, ~9 min left
+  [190/320] 0.26 q/s, ~8 min left
+  [200/320] 0.26 q/s, ~8 min left
+  [210/320] 0.26 q/s, ~7 min left
+  [220/320] 0.26 q/s, ~6 min left
+  [230/320] 0.26 q/s, ~6 min left
+  [240/320] 0.26 q/s, ~5 min left
+  [250/320] 0.26 q/s, ~4 min left
+  [260/320] 0.26 q/s, ~4 min left
+  [270/320] 0.26 q/s, ~3 min left
+  [280/320] 0.26 q/s, ~3 min left
+  [290/320] 0.26 q/s, ~2 min left
+  [300/320] 0.26 q/s, ~1 min left
+  [310/320] 0.26 q/s, ~1 min left
+  [320/320] 0.26 q/s, ~0 min left
+  Layer 6 done in 20.5 min → /u/irowerojas/localLatin/runs/phase12c/attributions/bowphs_PhilTa/layer6_retrieval_attr.npz
+
+=== Layer 9 ===
+  Pre-computing partner embeddings...
+  Partner embeddings computed: 320 positive + 320 negative
+  [10/320] 0.20 q/s, ~26 min left
+  [20/320] 0.21 q/s, ~24 min left
+  [30/320] 0.22 q/s, ~22 min left
+  [40/320] 0.22 q/s, ~21 min left
+  [50/320] 0.22 q/s, ~20 min left
+  [60/320] 0.22 q/s, ~20 min left
+  [70/320] 0.22 q/s, ~19 min left
+  [80/320] 0.22 q/s, ~18 min left
+  [90/320] 0.22 q/s, ~17 min left
+  [100/320] 0.22 q/s, ~16 min left
+  [110/320] 0.22 q/s, ~16 min left
+  [120/320] 0.22 q/s, ~15 min left
+  [130/320] 0.22 q/s, ~14 min left
+  [140/320] 0.22 q/s, ~13 min left
+  [150/320] 0.23 q/s, ~13 min left
+  [160/320] 0.23 q/s, ~12 min left
+  [170/320] 0.23 q/s, ~11 min left
+  [180/320] 0.23 q/s, ~10 min left
+  [190/320] 0.23 q/s, ~10 min left
+  [200/320] 0.23 q/s, ~9 min left
+  [210/320] 0.23 q/s, ~8 min left
+  [220/320] 0.23 q/s, ~7 min left
+  [230/320] 0.23 q/s, ~7 min left
+  [240/320] 0.23 q/s, ~6 min left
+  [250/320] 0.23 q/s, ~5 min left
+  [260/320] 0.23 q/s, ~4 min left
+  [270/320] 0.23 q/s, ~4 min left
+  [280/320] 0.23 q/s, ~3 min left
+  [290/320] 0.23 q/s, ~2 min left
+  [300/320] 0.23 q/s, ~1 min left
+  [310/320] 0.23 q/s, ~1 min left
+  [320/320] 0.23 q/s, ~0 min left
+  Layer 9 done in 23.5 min → /u/irowerojas/localLatin/runs/phase12c/attributions/bowphs_PhilTa/layer9_retrieval_attr.npz
+
+=== Layer 12 ===
+  Pre-computing partner embeddings...
+  Partner embeddings computed: 320 positive + 320 negative
+  [10/320] 0.18 q/s, ~29 min left
+  [20/320] 0.19 q/s, ~27 min left
+  [30/320] 0.19 q/s, ~25 min left
+  [40/320] 0.19 q/s, ~24 min left
+  [50/320] 0.19 q/s, ~23 min left
+  [60/320] 0.20 q/s, ~22 min left
+  [70/320] 0.20 q/s, ~21 min left
+  [80/320] 0.20 q/s, ~20 min left
+  [90/320] 0.20 q/s, ~19 min left
+  [100/320] 0.20 q/s, ~19 min left
+  [110/320] 0.20 q/s, ~18 min left
+  [120/320] 0.20 q/s, ~17 min left
+  [130/320] 0.20 q/s, ~16 min left
+  [140/320] 0.20 q/s, ~15 min left
+  [150/320] 0.20 q/s, ~14 min left
+  [160/320] 0.20 q/s, ~13 min left
+  [170/320] 0.20 q/s, ~13 min left
+  [180/320] 0.20 q/s, ~12 min left
+  [190/320] 0.20 q/s, ~11 min left
+  [200/320] 0.20 q/s, ~10 min left
+  [210/320] 0.20 q/s, ~9 min left
+  [220/320] 0.20 q/s, ~8 min left
+  [230/320] 0.20 q/s, ~8 min left
+  [240/320] 0.20 q/s, ~7 min left
+  [250/320] 0.20 q/s, ~6 min left
+  [260/320] 0.20 q/s, ~5 min left
+  [270/320] 0.20 q/s, ~4 min left
+  [280/320] 0.20 q/s, ~3 min left
+  [290/320] 0.20 q/s, ~3 min left
+  [300/320] 0.20 q/s, ~2 min left
+  [310/320] 0.20 q/s, ~1 min left
+  [320/320] 0.20 q/s, ~0 min left
+  Layer 12 done in 26.8 min → /u/irowerojas/localLatin/runs/phase12c/attributions/bowphs_PhilTa/layer12_retrieval_attr.npz
+
+All layers complete.
+
+=== Done ===
