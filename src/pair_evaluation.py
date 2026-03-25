@@ -1,4 +1,4 @@
-"""Shared pair-based evaluation utilities for both canon and MUSTS experiments."""
+"""Shared pair-based evaluation utilities for canon experiments."""
 from __future__ import annotations
 
 from typing import Sequence

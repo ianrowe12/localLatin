@@ -1,6 +1,0 @@
-language,total,n_train,n_test,train_pct
-english,7128,3564,3564,50.0
-french,1010,505,505,50.0
-sinhala,5096,2548,2548,50.0
-tamil,2600,1300,1300,50.0
-serbian,1192,596,596,50.0

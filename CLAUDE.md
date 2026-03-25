@@ -6,13 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 NLP research project studying **Latin manuscript text retrieval** using internal representations of pre-trained language models. The core question: can embeddings from intermediate transformer layers retrieve related Latin manuscript fragments, and can post-processing (SIF weighting + ABTT/PC removal) fix the "anisotropy dip" that collapses retrieval in middle layers?
 
-The dataset is 1,278 `.txt` files in 538 directories under `canon/`, where each directory represents one original text. The project progresses through numbered phases (1-10), each addressing a specific experimental question.
-
-**Two separate research tracks** share this repo starting from Phase 9:
-- **Experiment 1**: Latin manuscript duplicate detection and directory assignment (the original project). Uses the `canon/` dataset. Primary metric: Assignment Accuracy.
-- **Experiment 2**: Multilingual semantic textual similarity (a completely separate project). Uses the HuggingFace MUSTS dataset across multiple languages (English, French, Serbian, Sinhala, Tamil, Spanish). Primary metric: Spearman correlation.
-
-These are independent projects that happen to share the same codebase and post-processing pipeline (SIF+ABTT). Do not conflate their results or datasets.
+The dataset is 1,278 `.txt` files in 538 directories under `canon/`, where each directory represents one original text. The project progresses through numbered phases (1-12), each addressing a specific experimental question. Primary metric: Assignment Accuracy.
 
 ## Environment & Running Code
 
@@ -37,7 +31,7 @@ conda run -n localLatin python ...
 
 - **`canon_retrieval.py`**: Dataset indexing, similarity matrices, acc@k, threshold sweeps. Imported by nearly everything.
 - **`sif_abtt.py`**: SIF weights, ABTT/PC removal (`EmbeddingCleaner` class), token probabilities. The key post-processing module.
-- **`pair_evaluation.py`**: Spearman, AUC-ROC, cosine similarity for sentence pairs (MUSTS experiments).
+- **`pair_evaluation.py`**: Spearman, AUC-ROC, cosine similarity for sentence pairs.
 - **`cli_utils.py`**: `parse_layers()` for `--layers "0-12"` or `"0,6,12"` syntax.
 
 ### Extraction CLIs (`src/`)
@@ -47,13 +41,12 @@ conda run -n localLatin python ...
 
 ### Pipeline scripts (`scripts/`)
 
-- **`evaluate_vectors.py`**: Phase 9+ Experiment 1 evaluator. Applies 5 methods (baseline, sif_only, sif_abtt_fixed, sif_abtt_optimal, whitening), learns threshold on train, evaluates on test.
+- **`evaluate_vectors.py`**: Phase 9+ evaluator. Applies 5 methods (baseline, sif_only, sif_abtt_fixed, sif_abtt_optimal, whitening), learns threshold on train, evaluates on test.
 - **`run_phase8_canon_sweep.py`**: Phase 8 STS canon sweep with leak-free split.
-- **`run_phase9_exp2_*.py`** / **`run_phase10_exp2_*.py`**: MUSTS multilingual STS experiments (data prep, evaluate, contingency, bias, visualize).
 
 ### SLURM jobs (`slurm/`)
 
-Each phase has corresponding `.sbatch` files. Recent phases: `phase10.sbatch`, `phase10_exp2_qwen8b.sbatch`, `phase10_exp2_kalm12b.sbatch`.
+Each phase has corresponding `.sbatch` files.
 
 ## Data Flow
 
