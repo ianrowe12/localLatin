@@ -1,0 +1,11 @@
+model,focus_layer,target,n_top_tokens,n_content,n_short_subword,n_punctuation,n_number,n_empty
+LaTa,8,pc1_dot,12,12,0,0,0,0
+LaTa,8,abtt_norm,12,12,0,0,0,0
+PhilTa,6,pc1_dot,12,12,0,0,0,0
+PhilTa,6,abtt_norm,12,12,0,0,0,0
+LaBSE,1,pc1_dot,12,12,0,0,0,0
+LaBSE,1,abtt_norm,12,12,0,0,0,0
+Qwen3-0.6B,4,pc1_dot,12,8,4,0,0,0
+Qwen3-0.6B,4,abtt_norm,12,9,3,0,0,0
+KaLM-mini,5,pc1_dot,12,6,6,0,0,0
+KaLM-mini,5,abtt_norm,12,5,7,0,0,0

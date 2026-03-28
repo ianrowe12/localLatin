@@ -1,0 +1,29 @@
+{
+  "model_name": "sentence-transformers/LaBSE",
+  "model_type": "bert",
+  "max_length": 512,
+  "batch_size": 12,
+  "representation": "hidden",
+  "layers": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12
+  ],
+  "pooling": "mean",
+  "sif_a": 0.001,
+  "split_csv": "/u/irowerojas/localLatin/runs/phase9/phase9_split.csv",
+  "half_precision": false,
+  "num_model_layers": 12,
+  "timestamp": "run_20260213_162558",
+  "device": "cuda"
+}

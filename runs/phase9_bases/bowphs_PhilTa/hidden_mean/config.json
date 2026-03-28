@@ -1,0 +1,30 @@
+{
+  "model_name": "bowphs/PhilTa",
+  "max_length": 512,
+  "batch_size": 12,
+  "representation": "hidden_states",
+  "layers": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12
+  ],
+  "pooling": "mean",
+  "sif_a": 0.001,
+  "sif_prob_source": "corpus",
+  "sif_prob_cache": "",
+  "layer_indexing": {
+    "hidden_states": "0..N where 0 is embedding output, 1..N encoder blocks"
+  },
+  "timestamp": "run_20260213_162140",
+  "device": "cuda"
+}

@@ -1,0 +1,24 @@
+=== Phase 12c: Analysis ===
+Loading tokenizers...
+  Loaded 5 tokenizers
+
+=== Analysis 1: Δ_retrieval by token category ===
+  Saved figure + CSV (584179 token observations)
+
+=== Analysis 2: Positive vs Negative Selectivity ===
+  89.8% of queries had improved selectivity after ABTT
+
+=== Analysis 3: Exemplar Token Heatmaps ===
+  LaTa: heatmap saved
+  PhilTa: heatmap saved
+  LaBSE: heatmap saved
+  Qwen3-0.6B: heatmap saved
+  KaLM-mini: heatmap saved
+
+=== Analysis 4: Importance Share by Token Category ===
+  Saved figure + CSV
+
+=== All analyses complete ===
+Figures saved to: /u/irowerojas/localLatin/runs/phase12c/figures
+
+=== Done ===

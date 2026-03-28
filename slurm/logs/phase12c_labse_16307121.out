@@ -1,0 +1,158 @@
+=== Phase 12c: LaBSE Retrieval Attribution ===
+Loaded 320 query-partner triples
+Loading model: sentence-transformers/LaBSE (bert)
+Pre-tokenizing queries...
+  max_seq_len = 432
+Loading partner texts...
+
+=== Layer 1 ===
+  Pre-computing partner embeddings...
+  Partner embeddings computed: 320 positive + 320 negative
+  [10/320] 0.46 q/s, ~11 min left
+  [20/320] 0.52 q/s, ~10 min left
+  [30/320] 0.54 q/s, ~9 min left
+  [40/320] 0.55 q/s, ~9 min left
+  [50/320] 0.56 q/s, ~8 min left
+  [60/320] 0.56 q/s, ~8 min left
+  [70/320] 0.57 q/s, ~7 min left
+  [80/320] 0.57 q/s, ~7 min left
+  [90/320] 0.57 q/s, ~7 min left
+  [100/320] 0.57 q/s, ~6 min left
+  [110/320] 0.58 q/s, ~6 min left
+  [120/320] 0.58 q/s, ~6 min left
+  [130/320] 0.58 q/s, ~5 min left
+  [140/320] 0.58 q/s, ~5 min left
+  [150/320] 0.58 q/s, ~5 min left
+  [160/320] 0.58 q/s, ~5 min left
+  [170/320] 0.58 q/s, ~4 min left
+  [180/320] 0.58 q/s, ~4 min left
+  [190/320] 0.58 q/s, ~4 min left
+  [200/320] 0.58 q/s, ~3 min left
+  [210/320] 0.58 q/s, ~3 min left
+  [220/320] 0.58 q/s, ~3 min left
+  [230/320] 0.58 q/s, ~3 min left
+  [240/320] 0.58 q/s, ~2 min left
+  [250/320] 0.58 q/s, ~2 min left
+  [260/320] 0.58 q/s, ~2 min left
+  [270/320] 0.58 q/s, ~1 min left
+  [280/320] 0.59 q/s, ~1 min left
+  [290/320] 0.59 q/s, ~1 min left
+  [300/320] 0.59 q/s, ~1 min left
+  [310/320] 0.59 q/s, ~0 min left
+  [320/320] 0.59 q/s, ~0 min left
+  Layer 1 done in 9.1 min → /u/irowerojas/localLatin/runs/phase12c/attributions/sentence-transformers_LaBSE/layer1_retrieval_attr.npz
+
+=== Layer 6 ===
+  Pre-computing partner embeddings...
+  Partner embeddings computed: 320 positive + 320 negative
+  [10/320] 0.39 q/s, ~13 min left
+  [20/320] 0.42 q/s, ~12 min left
+  [30/320] 0.43 q/s, ~11 min left
+  [40/320] 0.44 q/s, ~11 min left
+  [50/320] 0.44 q/s, ~10 min left
+  [60/320] 0.44 q/s, ~10 min left
+  [70/320] 0.45 q/s, ~9 min left
+  [80/320] 0.45 q/s, ~9 min left
+  [90/320] 0.45 q/s, ~9 min left
+  [100/320] 0.45 q/s, ~8 min left
+  [110/320] 0.45 q/s, ~8 min left
+  [120/320] 0.45 q/s, ~7 min left
+  [130/320] 0.45 q/s, ~7 min left
+  [140/320] 0.45 q/s, ~7 min left
+  [150/320] 0.45 q/s, ~6 min left
+  [160/320] 0.45 q/s, ~6 min left
+  [170/320] 0.45 q/s, ~6 min left
+  [180/320] 0.45 q/s, ~5 min left
+  [190/320] 0.45 q/s, ~5 min left
+  [200/320] 0.45 q/s, ~4 min left
+  [210/320] 0.45 q/s, ~4 min left
+  [220/320] 0.45 q/s, ~4 min left
+  [230/320] 0.45 q/s, ~3 min left
+  [240/320] 0.45 q/s, ~3 min left
+  [250/320] 0.45 q/s, ~3 min left
+  [260/320] 0.45 q/s, ~2 min left
+  [270/320] 0.45 q/s, ~2 min left
+  [280/320] 0.45 q/s, ~1 min left
+  [290/320] 0.45 q/s, ~1 min left
+  [300/320] 0.45 q/s, ~1 min left
+  [310/320] 0.45 q/s, ~0 min left
+  [320/320] 0.45 q/s, ~0 min left
+  Layer 6 done in 11.8 min → /u/irowerojas/localLatin/runs/phase12c/attributions/sentence-transformers_LaBSE/layer6_retrieval_attr.npz
+
+=== Layer 9 ===
+  Pre-computing partner embeddings...
+  Partner embeddings computed: 320 positive + 320 negative
+  [10/320] 0.35 q/s, ~15 min left
+  [20/320] 0.37 q/s, ~13 min left
+  [30/320] 0.38 q/s, ~13 min left
+  [40/320] 0.39 q/s, ~12 min left
+  [50/320] 0.39 q/s, ~12 min left
+  [60/320] 0.39 q/s, ~11 min left
+  [70/320] 0.40 q/s, ~11 min left
+  [80/320] 0.40 q/s, ~10 min left
+  [90/320] 0.40 q/s, ~10 min left
+  [100/320] 0.40 q/s, ~9 min left
+  [110/320] 0.40 q/s, ~9 min left
+  [120/320] 0.40 q/s, ~8 min left
+  [130/320] 0.40 q/s, ~8 min left
+  [140/320] 0.40 q/s, ~8 min left
+  [150/320] 0.40 q/s, ~7 min left
+  [160/320] 0.40 q/s, ~7 min left
+  [170/320] 0.40 q/s, ~6 min left
+  [180/320] 0.40 q/s, ~6 min left
+  [190/320] 0.40 q/s, ~5 min left
+  [200/320] 0.40 q/s, ~5 min left
+  [210/320] 0.40 q/s, ~5 min left
+  [220/320] 0.40 q/s, ~4 min left
+  [230/320] 0.40 q/s, ~4 min left
+  [240/320] 0.40 q/s, ~3 min left
+  [250/320] 0.40 q/s, ~3 min left
+  [260/320] 0.40 q/s, ~2 min left
+  [270/320] 0.40 q/s, ~2 min left
+  [280/320] 0.40 q/s, ~2 min left
+  [290/320] 0.40 q/s, ~1 min left
+  [300/320] 0.40 q/s, ~1 min left
+  [310/320] 0.40 q/s, ~0 min left
+  [320/320] 0.40 q/s, ~0 min left
+  Layer 9 done in 13.2 min → /u/irowerojas/localLatin/runs/phase12c/attributions/sentence-transformers_LaBSE/layer9_retrieval_attr.npz
+
+=== Layer 11 ===
+  Pre-computing partner embeddings...
+  Partner embeddings computed: 320 positive + 320 negative
+  [10/320] 0.33 q/s, ~16 min left
+  [20/320] 0.35 q/s, ~14 min left
+  [30/320] 0.36 q/s, ~13 min left
+  [40/320] 0.36 q/s, ~13 min left
+  [50/320] 0.37 q/s, ~12 min left
+  [60/320] 0.37 q/s, ~12 min left
+  [70/320] 0.37 q/s, ~11 min left
+  [80/320] 0.37 q/s, ~11 min left
+  [90/320] 0.37 q/s, ~10 min left
+  [100/320] 0.37 q/s, ~10 min left
+  [110/320] 0.37 q/s, ~9 min left
+  [120/320] 0.37 q/s, ~9 min left
+  [130/320] 0.37 q/s, ~8 min left
+  [140/320] 0.38 q/s, ~8 min left
+  [150/320] 0.38 q/s, ~8 min left
+  [160/320] 0.38 q/s, ~7 min left
+  [170/320] 0.38 q/s, ~7 min left
+  [180/320] 0.38 q/s, ~6 min left
+  [190/320] 0.38 q/s, ~6 min left
+  [200/320] 0.38 q/s, ~5 min left
+  [210/320] 0.38 q/s, ~5 min left
+  [220/320] 0.38 q/s, ~4 min left
+  [230/320] 0.38 q/s, ~4 min left
+  [240/320] 0.38 q/s, ~4 min left
+  [250/320] 0.38 q/s, ~3 min left
+  [260/320] 0.38 q/s, ~3 min left
+  [270/320] 0.38 q/s, ~2 min left
+  [280/320] 0.38 q/s, ~2 min left
+  [290/320] 0.38 q/s, ~1 min left
+  [300/320] 0.38 q/s, ~1 min left
+  [310/320] 0.38 q/s, ~0 min left
+  [320/320] 0.38 q/s, ~0 min left
+  Layer 11 done in 14.1 min → /u/irowerojas/localLatin/runs/phase12c/attributions/sentence-transformers_LaBSE/layer11_retrieval_attr.npz
+
+All layers complete.
+
+=== Done ===

@@ -1,0 +1,682 @@
+=========================================
+Phase 12d: Filtering Sanity Check
+=========================================
+>>> LaTa
+Loaded 1278 files from split CSV
+  Train: 639, Test: 639
+Loading model: bowphs/LaTa (t5)
+Loading texts...
+
+=== Layer 1 ===
+  Extracting train embeddings (all tokens)...
+    [200/639]
+    [400/639]
+    [600/639]
+  Fitting ABTT PCs on train set...
+  Extracting test embeddings with 4 conditions...
+    [100/639]
+    [200/639]
+    [300/639]
+    [400/639]
+    [500/639]
+    [600/639]
+    baseline                   AUCROC=0.8671  Acc@1=0.6906  Gap=0.2080
+    filter_no_empty            AUCROC=0.9287  Acc@1=0.8812  Gap=0.3209
+    filter_content_only        AUCROC=0.9307  Acc@1=0.9031  Gap=0.3663
+    abtt_D10                   AUCROC=0.9508  Acc@1=0.8969  Gap=0.5567
+  Layer 1 done in 0.2 min
+
+=== Layer 4 ===
+  Extracting train embeddings (all tokens)...
+    [200/639]
+    [400/639]
+    [600/639]
+  Fitting ABTT PCs on train set...
+  Extracting test embeddings with 4 conditions...
+    [100/639]
+    [200/639]
+    [300/639]
+    [400/639]
+    [500/639]
+    [600/639]
+    baseline                   AUCROC=0.4678  Acc@1=0.0594  Gap=0.0290
+    filter_no_empty            AUCROC=0.9132  Acc@1=0.8313  Gap=0.1702
+    filter_content_only        AUCROC=0.9249  Acc@1=0.8344  Gap=0.1862
+    abtt_D10                   AUCROC=0.9569  Acc@1=0.8938  Gap=0.5658
+  Layer 4 done in 0.2 min
+
+=== Layer 8 ===
+  Extracting train embeddings (all tokens)...
+    [200/639]
+    [400/639]
+    [600/639]
+  Fitting ABTT PCs on train set...
+  Extracting test embeddings with 4 conditions...
+    [100/639]
+    [200/639]
+    [300/639]
+    [400/639]
+    [500/639]
+    [600/639]
+    baseline                   AUCROC=0.4634  Acc@1=0.0344  Gap=0.0235
+    filter_no_empty            AUCROC=0.8827  Acc@1=0.7656  Gap=0.1218
+    filter_content_only        AUCROC=0.8944  Acc@1=0.7875  Gap=0.1316
+    abtt_D10                   AUCROC=0.9542  Acc@1=0.8969  Gap=0.5551
+  Layer 8 done in 0.2 min
+
+=== Layer 12 ===
+  Extracting train embeddings (all tokens)...
+    [200/639]
+    [400/639]
+    [600/639]
+  Fitting ABTT PCs on train set...
+  Extracting test embeddings with 4 conditions...
+    [100/639]
+    [200/639]
+    [300/639]
+    [400/639]
+    [500/639]
+    [600/639]
+    baseline                   AUCROC=0.9292  Acc@1=0.8125  Gap=0.2481
+    filter_no_empty            AUCROC=0.9281  Acc@1=0.8281  Gap=0.2547
+    filter_content_only        AUCROC=0.9337  Acc@1=0.8562  Gap=0.2800
+    abtt_D10                   AUCROC=0.9629  Acc@1=0.8875  Gap=0.5373
+  Layer 12 done in 0.2 min
+
+Results saved to runs/phase12d/filtering_results_bowphs_LaTa.csv
+
+================================================================================
+SUMMARY: Filtering vs ABTT
+================================================================================
+
+Layer 1:
+  Condition                    AUCROC     Acc@1   Cos Gap
+  -------------------------  --------  --------  --------
+  baseline                     0.8671    0.6906    0.2080
+  filter_no_empty              0.9287    0.8812    0.3209
+  filter_content_only          0.9307    0.9031    0.3663
+  abtt_D10                     0.9508    0.8969    0.5567
+
+Layer 4:
+  Condition                    AUCROC     Acc@1   Cos Gap
+  -------------------------  --------  --------  --------
+  baseline                     0.4678    0.0594    0.0290
+  filter_no_empty              0.9132    0.8313    0.1702
+  filter_content_only          0.9249    0.8344    0.1862
+  abtt_D10                     0.9569    0.8938    0.5658
+
+Layer 8:
+  Condition                    AUCROC     Acc@1   Cos Gap
+  -------------------------  --------  --------  --------
+  baseline                     0.4634    0.0344    0.0235
+  filter_no_empty              0.8827    0.7656    0.1218
+  filter_content_only          0.8944    0.7875    0.1316
+  abtt_D10                     0.9542    0.8969    0.5551
+
+Layer 12:
+  Condition                    AUCROC     Acc@1   Cos Gap
+  -------------------------  --------  --------  --------
+  baseline                     0.9292    0.8125    0.2481
+  filter_no_empty              0.9281    0.8281    0.2547
+  filter_content_only          0.9337    0.8562    0.2800
+  abtt_D10                     0.9629    0.8875    0.5373
+>>> PhilTa
+Loaded 1278 files from split CSV
+  Train: 639, Test: 639
+Loading model: bowphs/PhilTa (t5)
+Loading texts...
+
+=== Layer 1 ===
+  Extracting train embeddings (all tokens)...
+    [200/639]
+    [400/639]
+    [600/639]
+  Fitting ABTT PCs on train set...
+  Extracting test embeddings with 4 conditions...
+    [100/639]
+    [200/639]
+    [300/639]
+    [400/639]
+    [500/639]
+    [600/639]
+    baseline                   AUCROC=0.7817  Acc@1=0.6094  Gap=0.0454
+    filter_no_empty            AUCROC=0.9390  Acc@1=0.8594  Gap=0.2629
+    filter_content_only        AUCROC=0.9392  Acc@1=0.8844  Gap=0.3063
+    abtt_D10                   AUCROC=0.9644  Acc@1=0.9031  Gap=0.5618
+  Layer 1 done in 0.2 min
+
+=== Layer 6 ===
+  Extracting train embeddings (all tokens)...
+    [200/639]
+    [400/639]
+    [600/639]
+  Fitting ABTT PCs on train set...
+  Extracting test embeddings with 4 conditions...
+    [100/639]
+    [200/639]
+    [300/639]
+    [400/639]
+    [500/639]
+    [600/639]
+    baseline                   AUCROC=0.4641  Acc@1=0.0531  Gap=0.0062
+    filter_no_empty            AUCROC=0.6959  Acc@1=0.3906  Gap=0.1741
+    filter_content_only        AUCROC=0.6823  Acc@1=0.4000  Gap=0.1813
+    abtt_D10                   AUCROC=0.9703  Acc@1=0.8812  Gap=0.5564
+  Layer 6 done in 0.2 min
+
+=== Layer 9 ===
+  Extracting train embeddings (all tokens)...
+    [200/639]
+    [400/639]
+    [600/639]
+  Fitting ABTT PCs on train set...
+  Extracting test embeddings with 4 conditions...
+    [100/639]
+    [200/639]
+    [300/639]
+    [400/639]
+    [500/639]
+    [600/639]
+    baseline                   AUCROC=0.4666  Acc@1=0.0594  Gap=0.0054
+    filter_no_empty            AUCROC=0.7243  Acc@1=0.4219  Gap=0.1718
+    filter_content_only        AUCROC=0.7056  Acc@1=0.4188  Gap=0.1811
+    abtt_D10                   AUCROC=0.9682  Acc@1=0.8875  Gap=0.5409
+  Layer 9 done in 0.2 min
+
+=== Layer 12 ===
+  Extracting train embeddings (all tokens)...
+    [200/639]
+    [400/639]
+    [600/639]
+  Fitting ABTT PCs on train set...
+  Extracting test embeddings with 4 conditions...
+    [100/639]
+    [200/639]
+    [300/639]
+    [400/639]
+    [500/639]
+    [600/639]
+    baseline                   AUCROC=0.9132  Acc@1=0.6875  Gap=0.1948
+    filter_no_empty            AUCROC=0.9173  Acc@1=0.7031  Gap=0.1951
+    filter_content_only        AUCROC=0.9261  Acc@1=0.7406  Gap=0.2145
+    abtt_D10                   AUCROC=0.9681  Acc@1=0.8781  Gap=0.4883
+  Layer 12 done in 0.2 min
+
+Results saved to runs/phase12d/filtering_results_bowphs_PhilTa.csv
+
+================================================================================
+SUMMARY: Filtering vs ABTT
+================================================================================
+
+Layer 1:
+  Condition                    AUCROC     Acc@1   Cos Gap
+  -------------------------  --------  --------  --------
+  baseline                     0.7817    0.6094    0.0454
+  filter_no_empty              0.9390    0.8594    0.2629
+  filter_content_only          0.9392    0.8844    0.3063
+  abtt_D10                     0.9644    0.9031    0.5618
+
+Layer 6:
+  Condition                    AUCROC     Acc@1   Cos Gap
+  -------------------------  --------  --------  --------
+  baseline                     0.4641    0.0531    0.0062
+  filter_no_empty              0.6959    0.3906    0.1741
+  filter_content_only          0.6823    0.4000    0.1813
+  abtt_D10                     0.9703    0.8812    0.5564
+
+Layer 9:
+  Condition                    AUCROC     Acc@1   Cos Gap
+  -------------------------  --------  --------  --------
+  baseline                     0.4666    0.0594    0.0054
+  filter_no_empty              0.7243    0.4219    0.1718
+  filter_content_only          0.7056    0.4188    0.1811
+  abtt_D10                     0.9682    0.8875    0.5409
+
+Layer 12:
+  Condition                    AUCROC     Acc@1   Cos Gap
+  -------------------------  --------  --------  --------
+  baseline                     0.9132    0.6875    0.1948
+  filter_no_empty              0.9173    0.7031    0.1951
+  filter_content_only          0.9261    0.7406    0.2145
+  abtt_D10                     0.9681    0.8781    0.4883
+>>> LaBSE
+Loaded 1278 files from split CSV
+  Train: 639, Test: 639
+Loading model: sentence-transformers/LaBSE (bert)
+Loading texts...
+
+=== Layer 1 ===
+  Extracting train embeddings (all tokens)...
+    [200/639]
+    [400/639]
+    [600/639]
+  Fitting ABTT PCs on train set...
+  Extracting test embeddings with 4 conditions...
+    [100/639]
+    [200/639]
+    [300/639]
+    [400/639]
+    [500/639]
+    [600/639]
+    baseline                   AUCROC=0.8430  Acc@1=0.5031  Gap=0.0709
+    filter_no_empty            AUCROC=0.8554  Acc@1=0.6094  Gap=0.0726
+    filter_content_only        AUCROC=0.8637  Acc@1=0.7438  Gap=0.0937
+    abtt_D10                   AUCROC=0.9704  Acc@1=0.8750  Gap=0.5126
+  Layer 1 done in 0.1 min
+
+=== Layer 6 ===
+  Extracting train embeddings (all tokens)...
+    [200/639]
+    [400/639]
+    [600/639]
+  Fitting ABTT PCs on train set...
+  Extracting test embeddings with 4 conditions...
+    [100/639]
+    [200/639]
+    [300/639]
+    [400/639]
+    [500/639]
+    [600/639]
+    baseline                   AUCROC=0.9039  Acc@1=0.6844  Gap=0.0815
+    filter_no_empty            AUCROC=0.9142  Acc@1=0.7688  Gap=0.0860
+    filter_content_only        AUCROC=0.9196  Acc@1=0.8094  Gap=0.0993
+    abtt_D10                   AUCROC=0.9669  Acc@1=0.8562  Gap=0.5219
+  Layer 6 done in 0.1 min
+
+=== Layer 9 ===
+  Extracting train embeddings (all tokens)...
+    [200/639]
+    [400/639]
+    [600/639]
+  Fitting ABTT PCs on train set...
+  Extracting test embeddings with 4 conditions...
+    [100/639]
+    [200/639]
+    [300/639]
+    [400/639]
+    [500/639]
+    [600/639]
+    baseline                   AUCROC=0.9163  Acc@1=0.7875  Gap=0.0914
+    filter_no_empty            AUCROC=0.9214  Acc@1=0.8219  Gap=0.0926
+    filter_content_only        AUCROC=0.9241  Acc@1=0.8313  Gap=0.0951
+    abtt_D10                   AUCROC=0.9712  Acc@1=0.8625  Gap=0.5562
+  Layer 9 done in 0.1 min
+
+=== Layer 11 ===
+  Extracting train embeddings (all tokens)...
+    [200/639]
+    [400/639]
+    [600/639]
+  Fitting ABTT PCs on train set...
+  Extracting test embeddings with 4 conditions...
+    [100/639]
+    [200/639]
+    [300/639]
+    [400/639]
+    [500/639]
+    [600/639]
+    baseline                   AUCROC=0.9479  Acc@1=0.8656  Gap=0.0595
+    filter_no_empty            AUCROC=0.9500  Acc@1=0.8688  Gap=0.0618
+    filter_content_only        AUCROC=0.9493  Acc@1=0.8719  Gap=0.0710
+    abtt_D10                   AUCROC=0.9695  Acc@1=0.9125  Gap=0.5994
+  Layer 11 done in 0.1 min
+
+Results saved to runs/phase12d/filtering_results_sentence-transformers_LaBSE.csv
+
+================================================================================
+SUMMARY: Filtering vs ABTT
+================================================================================
+
+Layer 1:
+  Condition                    AUCROC     Acc@1   Cos Gap
+  -------------------------  --------  --------  --------
+  baseline                     0.8430    0.5031    0.0709
+  filter_no_empty              0.8554    0.6094    0.0726
+  filter_content_only          0.8637    0.7438    0.0937
+  abtt_D10                     0.9704    0.8750    0.5126
+
+Layer 6:
+  Condition                    AUCROC     Acc@1   Cos Gap
+  -------------------------  --------  --------  --------
+  baseline                     0.9039    0.6844    0.0815
+  filter_no_empty              0.9142    0.7688    0.0860
+  filter_content_only          0.9196    0.8094    0.0993
+  abtt_D10                     0.9669    0.8562    0.5219
+
+Layer 9:
+  Condition                    AUCROC     Acc@1   Cos Gap
+  -------------------------  --------  --------  --------
+  baseline                     0.9163    0.7875    0.0914
+  filter_no_empty              0.9214    0.8219    0.0926
+  filter_content_only          0.9241    0.8313    0.0951
+  abtt_D10                     0.9712    0.8625    0.5562
+
+Layer 11:
+  Condition                    AUCROC     Acc@1   Cos Gap
+  -------------------------  --------  --------  --------
+  baseline                     0.9479    0.8656    0.0595
+  filter_no_empty              0.9500    0.8688    0.0618
+  filter_content_only          0.9493    0.8719    0.0710
+  abtt_D10                     0.9695    0.9125    0.5994
+>>> Qwen3-0.6B
+Loaded 1278 files from split CSV
+  Train: 639, Test: 639
+Loading model: Qwen/Qwen3-Embedding-0.6B (decoder)
+Loading texts...
+
+=== Layer 1 ===
+  Extracting train embeddings (all tokens)...
+    [200/639]
+    [400/639]
+    [600/639]
+  Fitting ABTT PCs on train set...
+  Extracting test embeddings with 4 conditions...
+    [100/639]
+    [200/639]
+    [300/639]
+    [400/639]
+    [500/639]
+    [600/639]
+    baseline                   AUCROC=0.9095  Acc@1=0.6375  Gap=0.0343
+    filter_no_empty            AUCROC=0.9104  Acc@1=0.7344  Gap=0.0441
+    filter_content_only        AUCROC=0.9145  Acc@1=0.8344  Gap=0.0755
+    abtt_D10                   AUCROC=0.9683  Acc@1=0.8656  Gap=0.5470
+  Layer 1 done in 0.7 min
+
+=== Layer 4 ===
+  Extracting train embeddings (all tokens)...
+    [200/639]
+    [400/639]
+    [600/639]
+  Fitting ABTT PCs on train set...
+  Extracting test embeddings with 4 conditions...
+    [100/639]
+    [200/639]
+    [300/639]
+    [400/639]
+    [500/639]
+    [600/639]
+    baseline                   AUCROC=0.7837  Acc@1=0.4969  Gap=0.0056
+    filter_no_empty            AUCROC=0.8887  Acc@1=0.8250  Gap=0.0468
+    filter_content_only        AUCROC=0.8904  Acc@1=0.8500  Gap=0.0652
+    abtt_D10                   AUCROC=0.9659  Acc@1=0.8656  Gap=0.5243
+  Layer 4 done in 0.7 min
+
+=== Layer 14 ===
+  Extracting train embeddings (all tokens)...
+    [200/639]
+    [400/639]
+    [600/639]
+  Fitting ABTT PCs on train set...
+  Extracting test embeddings with 4 conditions...
+    [100/639]
+    [200/639]
+    [300/639]
+    [400/639]
+    [500/639]
+    [600/639]
+    baseline                   AUCROC=0.8573  Acc@1=0.6031  Gap=0.0135
+    filter_no_empty            AUCROC=0.9129  Acc@1=0.8219  Gap=0.0272
+    filter_content_only        AUCROC=0.9094  Acc@1=0.8500  Gap=0.0338
+    abtt_D10                   AUCROC=0.9719  Acc@1=0.8656  Gap=0.5010
+  Layer 14 done in 0.7 min
+
+=== Layer 28 ===
+  Extracting train embeddings (all tokens)...
+    [200/639]
+    [400/639]
+    [600/639]
+  Fitting ABTT PCs on train set...
+  Extracting test embeddings with 4 conditions...
+    [100/639]
+    [200/639]
+    [300/639]
+    [400/639]
+    [500/639]
+    [600/639]
+    baseline                   AUCROC=0.9519  Acc@1=0.8313  Gap=0.0997
+    filter_no_empty            AUCROC=0.9527  Acc@1=0.8594  Gap=0.0990
+    filter_content_only        AUCROC=0.9429  Acc@1=0.8656  Gap=0.1084
+    abtt_D10                   AUCROC=0.9706  Acc@1=0.8688  Gap=0.5487
+  Layer 28 done in 0.7 min
+
+Results saved to runs/phase12d/filtering_results_Qwen_Qwen3-Embedding-0.6B.csv
+
+================================================================================
+SUMMARY: Filtering vs ABTT
+================================================================================
+
+Layer 1:
+  Condition                    AUCROC     Acc@1   Cos Gap
+  -------------------------  --------  --------  --------
+  baseline                     0.9095    0.6375    0.0343
+  filter_no_empty              0.9104    0.7344    0.0441
+  filter_content_only          0.9145    0.8344    0.0755
+  abtt_D10                     0.9683    0.8656    0.5470
+
+Layer 4:
+  Condition                    AUCROC     Acc@1   Cos Gap
+  -------------------------  --------  --------  --------
+  baseline                     0.7837    0.4969    0.0056
+  filter_no_empty              0.8887    0.8250    0.0468
+  filter_content_only          0.8904    0.8500    0.0652
+  abtt_D10                     0.9659    0.8656    0.5243
+
+Layer 14:
+  Condition                    AUCROC     Acc@1   Cos Gap
+  -------------------------  --------  --------  --------
+  baseline                     0.8573    0.6031    0.0135
+  filter_no_empty              0.9129    0.8219    0.0272
+  filter_content_only          0.9094    0.8500    0.0338
+  abtt_D10                     0.9719    0.8656    0.5010
+
+Layer 28:
+  Condition                    AUCROC     Acc@1   Cos Gap
+  -------------------------  --------  --------  --------
+  baseline                     0.9519    0.8313    0.0997
+  filter_no_empty              0.9527    0.8594    0.0990
+  filter_content_only          0.9429    0.8656    0.1084
+  abtt_D10                     0.9706    0.8688    0.5487
+>>> KaLM-mini
+Loaded 1278 files from split CSV
+  Train: 639, Test: 639
+Loading model: KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5 (decoder)
+Loading texts...
+
+=== Layer 1 ===
+  Extracting train embeddings (all tokens)...
+    [200/639]
+    [400/639]
+    [600/639]
+  Fitting ABTT PCs on train set...
+  Extracting test embeddings with 4 conditions...
+    [100/639]
+    [200/639]
+    [300/639]
+    [400/639]
+    [500/639]
+    [600/639]
+    baseline                   AUCROC=0.9261  Acc@1=0.7500  Gap=0.0677
+    filter_no_empty            AUCROC=0.9243  Acc@1=0.8187  Gap=0.0815
+    filter_content_only        AUCROC=0.9195  Acc@1=0.8500  Gap=0.1363
+    abtt_D10                   AUCROC=0.9659  Acc@1=0.8750  Gap=0.5514
+  Layer 1 done in 0.4 min
+
+=== Layer 5 ===
+  Extracting train embeddings (all tokens)...
+    [200/639]
+    [400/639]
+    [600/639]
+  Fitting ABTT PCs on train set...
+  Extracting test embeddings with 4 conditions...
+    [100/639]
+    [200/639]
+    [300/639]
+    [400/639]
+    [500/639]
+    [600/639]
+    baseline                   AUCROC=0.8646  Acc@1=0.6438  Gap=0.0621
+    filter_no_empty            AUCROC=0.8629  Acc@1=0.7188  Gap=0.0712
+    filter_content_only        AUCROC=0.8549  Acc@1=0.7750  Gap=0.0922
+    abtt_D10                   AUCROC=0.9655  Acc@1=0.8531  Gap=0.5237
+  Layer 5 done in 0.4 min
+
+=== Layer 13 ===
+  Extracting train embeddings (all tokens)...
+    [200/639]
+    [400/639]
+    [600/639]
+  Fitting ABTT PCs on train set...
+  Extracting test embeddings with 4 conditions...
+    [100/639]
+    [200/639]
+    [300/639]
+    [400/639]
+    [500/639]
+    [600/639]
+    baseline                   AUCROC=0.8840  Acc@1=0.6156  Gap=0.0642
+    filter_no_empty            AUCROC=0.8873  Acc@1=0.6906  Gap=0.0710
+    filter_content_only        AUCROC=0.8803  Acc@1=0.7625  Gap=0.0825
+    abtt_D10                   AUCROC=0.9716  Acc@1=0.8219  Gap=0.4549
+  Layer 13 done in 0.4 min
+
+=== Layer 23 ===
+  Extracting train embeddings (all tokens)...
+    [200/639]
+    [400/639]
+    [600/639]
+  Fitting ABTT PCs on train set...
+  Extracting test embeddings with 4 conditions...
+    [100/639]
+    [200/639]
+    [300/639]
+    [400/639]
+    [500/639]
+    [600/639]
+    baseline                   AUCROC=0.9584  Acc@1=0.8906  Gap=0.0556
+    filter_no_empty            AUCROC=0.9563  Acc@1=0.8938  Gap=0.0567
+    filter_content_only        AUCROC=0.9519  Acc@1=0.8875  Gap=0.0620
+    abtt_D10                   AUCROC=0.9710  Acc@1=0.8938  Gap=0.5343
+  Layer 23 done in 0.4 min
+
+Results saved to runs/phase12d/filtering_results_KaLM-Embedding_KaLM-embedding-multilingual-mini-instruct-v2.5.csv
+
+================================================================================
+SUMMARY: Filtering vs ABTT
+================================================================================
+
+Layer 1:
+  Condition                    AUCROC     Acc@1   Cos Gap
+  -------------------------  --------  --------  --------
+  baseline                     0.9261    0.7500    0.0677
+  filter_no_empty              0.9243    0.8187    0.0815
+  filter_content_only          0.9195    0.8500    0.1363
+  abtt_D10                     0.9659    0.8750    0.5514
+
+Layer 5:
+  Condition                    AUCROC     Acc@1   Cos Gap
+  -------------------------  --------  --------  --------
+  baseline                     0.8646    0.6438    0.0621
+  filter_no_empty              0.8629    0.7188    0.0712
+  filter_content_only          0.8549    0.7750    0.0922
+  abtt_D10                     0.9655    0.8531    0.5237
+
+Layer 13:
+  Condition                    AUCROC     Acc@1   Cos Gap
+  -------------------------  --------  --------  --------
+  baseline                     0.8840    0.6156    0.0642
+  filter_no_empty              0.8873    0.6906    0.0710
+  filter_content_only          0.8803    0.7625    0.0825
+  abtt_D10                     0.9716    0.8219    0.4549
+
+Layer 23:
+  Condition                    AUCROC     Acc@1   Cos Gap
+  -------------------------  --------  --------  --------
+  baseline                     0.9584    0.8906    0.0556
+  filter_no_empty              0.9563    0.8938    0.0567
+  filter_content_only          0.9519    0.8875    0.0620
+  abtt_D10                     0.9710    0.8938    0.5343
+=========================================
+All models complete!
+=========================================
+                                                        model  layer           condition   aucroc  acc_at_1  acc_at_3  same_avg_cos  diff_avg_cos  cos_gap
+KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5      1            baseline 0.926088  0.750000  0.818750      0.955432      0.887700 0.067733
+KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5      1     filter_no_empty 0.924345  0.818750  0.859375      0.954849      0.873373 0.081475
+KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5      1 filter_content_only 0.919541  0.850000  0.871875      0.923406      0.787125 0.136281
+KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5      1            abtt_D10 0.965907  0.875000  0.900000      0.552342      0.000958 0.551384
+KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5      5            baseline 0.864598  0.643750  0.725000      0.947470      0.885346 0.062124
+KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5      5     filter_no_empty 0.862855  0.718750  0.793750      0.943887      0.872734 0.071152
+KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5      5 filter_content_only 0.854888  0.775000  0.806250      0.925739      0.833513 0.092225
+KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5      5            abtt_D10 0.965543  0.853125  0.896875      0.524581      0.000858 0.523722
+KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5     13            baseline 0.884035  0.615625  0.706250      0.941287      0.877043 0.064244
+KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5     13     filter_no_empty 0.887334  0.690625  0.775000      0.939542      0.868506 0.071036
+KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5     13 filter_content_only 0.880340  0.762500  0.821875      0.929938      0.847389 0.082549
+KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5     13            abtt_D10 0.971640  0.821875  0.896875      0.455637      0.000767 0.454870
+KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5     23            baseline 0.958395  0.890625  0.909375      0.967290      0.911674 0.055616
+KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5     23     filter_no_empty 0.956332  0.893750  0.906250      0.967759      0.911011 0.056748
+KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5     23 filter_content_only 0.951932  0.887500  0.915625      0.966237      0.904238 0.061999
+KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5     23            abtt_D10 0.970998  0.893750  0.918750      0.535463      0.001121 0.534343
+                                    Qwen/Qwen3-Embedding-0.6B      1            baseline 0.909548  0.637500  0.725000      0.975472      0.941222 0.034251
+                                    Qwen/Qwen3-Embedding-0.6B      1     filter_no_empty 0.910359  0.734375  0.818750      0.973118      0.929042 0.044076
+                                    Qwen/Qwen3-Embedding-0.6B      1 filter_content_only 0.914528  0.834375  0.884375      0.956760      0.881280 0.075480
+                                    Qwen/Qwen3-Embedding-0.6B      1            abtt_D10 0.968338  0.865625  0.896875      0.547773      0.000757 0.547016
+                                    Qwen/Qwen3-Embedding-0.6B      4            baseline 0.783749  0.496875  0.575000      0.997467      0.991838 0.005629
+                                    Qwen/Qwen3-Embedding-0.6B      4     filter_no_empty 0.888734  0.825000  0.846875      0.969558      0.922793 0.046765
+                                    Qwen/Qwen3-Embedding-0.6B      4 filter_content_only 0.890398  0.850000  0.878125      0.959845      0.894663 0.065182
+                                    Qwen/Qwen3-Embedding-0.6B      4            abtt_D10 0.965880  0.865625  0.900000      0.525231      0.000955 0.524276
+                                    Qwen/Qwen3-Embedding-0.6B     14            baseline 0.857282  0.603125  0.671875      0.993141      0.979594 0.013547
+                                    Qwen/Qwen3-Embedding-0.6B     14     filter_no_empty 0.912936  0.821875  0.853125      0.981893      0.954679 0.027214
+                                    Qwen/Qwen3-Embedding-0.6B     14 filter_content_only 0.909403  0.850000  0.878125      0.978342      0.944509 0.033833
+                                    Qwen/Qwen3-Embedding-0.6B     14            abtt_D10 0.971911  0.865625  0.903125      0.501713      0.000710 0.501002
+                                    Qwen/Qwen3-Embedding-0.6B     28            baseline 0.951901  0.831250  0.884375      0.942714      0.843042 0.099672
+                                    Qwen/Qwen3-Embedding-0.6B     28     filter_no_empty 0.952709  0.859375  0.884375      0.946786      0.847761 0.099025
+                                    Qwen/Qwen3-Embedding-0.6B     28 filter_content_only 0.942927  0.865625  0.896875      0.942132      0.833704 0.108428
+                                    Qwen/Qwen3-Embedding-0.6B     28            abtt_D10 0.970626  0.868750  0.903125      0.548900      0.000236 0.548664
+                                                  bowphs/LaTa      1            baseline 0.867146  0.690625  0.756250      0.851206      0.643189 0.208017
+                                                  bowphs/LaTa      1     filter_no_empty 0.928738  0.881250  0.912500      0.808245      0.487371 0.320874
+                                                  bowphs/LaTa      1 filter_content_only 0.930748  0.903125  0.915625      0.794091      0.427815 0.366276
+                                                  bowphs/LaTa      1            abtt_D10 0.950846  0.896875  0.931250      0.557727      0.001073 0.556654
+                                                  bowphs/LaTa      4            baseline 0.467797  0.059375  0.078125      0.933658      0.904641 0.029017
+                                                  bowphs/LaTa      4     filter_no_empty 0.913194  0.831250  0.856250      0.887773      0.717545 0.170228
+                                                  bowphs/LaTa      4 filter_content_only 0.924904  0.834375  0.875000      0.887970      0.701784 0.186186
+                                                  bowphs/LaTa      4            abtt_D10 0.956891  0.893750  0.918750      0.567168      0.001372 0.565795
+                                                  bowphs/LaTa      8            baseline 0.463442  0.034375  0.046875      0.914797      0.891286 0.023511
+                                                  bowphs/LaTa      8     filter_no_empty 0.882664  0.765625  0.796875      0.905581      0.783795 0.121786
+                                                  bowphs/LaTa      8 filter_content_only 0.894437  0.787500  0.812500      0.908527      0.776951 0.131577
+                                                  bowphs/LaTa      8            abtt_D10 0.954150  0.896875  0.912500      0.556127      0.000978 0.555150
+                                                  bowphs/LaTa     12            baseline 0.929178  0.812500  0.875000      0.813912      0.565772 0.248139
+                                                  bowphs/LaTa     12     filter_no_empty 0.928139  0.828125  0.878125      0.824630      0.569911 0.254719
+                                                  bowphs/LaTa     12 filter_content_only 0.933717  0.856250  0.887500      0.823501      0.543534 0.279967
+                                                  bowphs/LaTa     12            abtt_D10 0.962946  0.887500  0.918750      0.537873      0.000565 0.537308
+                                                bowphs/PhilTa      1            baseline 0.781652  0.609375  0.659375      0.957636      0.912249 0.045387
+                                                bowphs/PhilTa      1     filter_no_empty 0.938980  0.859375  0.896875      0.852282      0.589406 0.262876
+                                                bowphs/PhilTa      1 filter_content_only 0.939151  0.884375  0.906250      0.832705      0.526398 0.306307
+                                                bowphs/PhilTa      1            abtt_D10 0.964428  0.903125  0.925000      0.562979      0.001164 0.561815
+                                                bowphs/PhilTa      6            baseline 0.464132  0.053125  0.068750      0.950183      0.943973 0.006211
+                                                bowphs/PhilTa      6     filter_no_empty 0.695939  0.390625  0.431250      0.689833      0.515777 0.174056
+                                                bowphs/PhilTa      6 filter_content_only 0.682303  0.400000  0.437500      0.663763      0.482449 0.181314
+                                                bowphs/PhilTa      6            abtt_D10 0.970324  0.881250  0.912500      0.557643      0.001193 0.556450
+                                                bowphs/PhilTa      9            baseline 0.466588  0.059375  0.075000      0.945725      0.940327 0.005398
+                                                bowphs/PhilTa      9     filter_no_empty 0.724316  0.421875  0.443750      0.732205      0.560356 0.171849
+                                                bowphs/PhilTa      9 filter_content_only 0.705566  0.418750  0.456250      0.706972      0.525875 0.181096
+                                                bowphs/PhilTa      9            abtt_D10 0.968202  0.887500  0.903125      0.541406      0.000529 0.540877
+                                                bowphs/PhilTa     12            baseline 0.913215  0.687500  0.746875      0.826722      0.631881 0.194841
+                                                bowphs/PhilTa     12     filter_no_empty 0.917280  0.703125  0.756250      0.838478      0.643363 0.195115
+                                                bowphs/PhilTa     12 filter_content_only 0.926079  0.740625  0.815625      0.832675      0.618146 0.214529
+                                                bowphs/PhilTa     12            abtt_D10 0.968123  0.878125  0.906250      0.489157      0.000867 0.488290
+                                  sentence-transformers/LaBSE      1            baseline 0.842996  0.503125  0.587500      0.940142      0.869204 0.070939
+                                  sentence-transformers/LaBSE      1     filter_no_empty 0.855372  0.609375  0.703125      0.945360      0.872715 0.072645
+                                  sentence-transformers/LaBSE      1 filter_content_only 0.863660  0.743750  0.818750      0.935441      0.841725 0.093716
+                                  sentence-transformers/LaBSE      1            abtt_D10 0.970364  0.875000  0.912500      0.512879      0.000298 0.512581
+                                  sentence-transformers/LaBSE      6            baseline 0.903879  0.684375  0.778125      0.943349      0.861800 0.081549
+                                  sentence-transformers/LaBSE      6     filter_no_empty 0.914230  0.768750  0.825000      0.946206      0.860207 0.085999
+                                  sentence-transformers/LaBSE      6 filter_content_only 0.919586  0.809375  0.859375      0.942586      0.843320 0.099267
+                                  sentence-transformers/LaBSE      6            abtt_D10 0.966930  0.856250  0.896875      0.523572      0.001653 0.521919
+                                  sentence-transformers/LaBSE      9            baseline 0.916271  0.787500  0.843750      0.952743      0.861324 0.091420
+                                  sentence-transformers/LaBSE      9     filter_no_empty 0.921425  0.821875  0.853125      0.954890      0.862340 0.092550
+                                  sentence-transformers/LaBSE      9 filter_content_only 0.924130  0.831250  0.878125      0.955684      0.860591 0.095094
+                                  sentence-transformers/LaBSE      9            abtt_D10 0.971242  0.862500  0.890625      0.556702      0.000528 0.556174
+                                  sentence-transformers/LaBSE     11            baseline 0.947927  0.865625  0.887500      0.972119      0.912637 0.059482
+                                  sentence-transformers/LaBSE     11     filter_no_empty 0.950004  0.868750  0.884375      0.971298      0.909469 0.061829
+                                  sentence-transformers/LaBSE     11 filter_content_only 0.949344  0.871875  0.881250      0.968471      0.897483 0.070988
+                                  sentence-transformers/LaBSE     11            abtt_D10 0.969502  0.912500  0.925000      0.600043      0.000616 0.599428

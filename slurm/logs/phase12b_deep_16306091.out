@@ -1,0 +1,95 @@
+=== Phase 12b Deep Analysis (5 methods) ===
+Start: Mon Mar  2 19:09:04 CST 2026
+Phase 12b Deep Analysis — 5 Methods
+
+
+======================================================================
+  METHOD 1: Signal-to-Noise Ratio (SNR)
+======================================================================
+  LaTa: done
+  PhilTa: done
+  LaBSE: done
+  Qwen3-0.6B: done
+  KaLM-mini: done
+  SNR figures saved
+
+======================================================================
+  METHOD 2: Attribution Delta (ΔIG)
+======================================================================
+  LaTa: done
+  PhilTa: done
+  LaBSE: done
+  Qwen3-0.6B: done
+  KaLM-mini: done
+  ΔIG figures saved
+
+======================================================================
+  METHOD 3: Cosine Resolution Gap
+======================================================================
+  Pairs: 222 same-folder, 203619 cross-folder
+  LaTa: density plots saved
+  PhilTa: density plots saved
+  LaBSE: density plots saved
+  Qwen3-0.6B: density plots saved
+  KaLM-mini: density plots saved
+  Gap scatter saved
+
+======================================================================
+  METHOD 4: Effective Dimensionality
+======================================================================
+  LaTa: done
+  PhilTa: done
+  LaBSE: done
+  Qwen3-0.6B: done
+  KaLM-mini: done
+  Effective dimensionality figures saved
+
+======================================================================
+  METHOD 5: Retrieval Rank Shift
+======================================================================
+  LaTa: done
+  PhilTa: done
+  LaBSE: done
+  Qwen3-0.6B: done
+  KaLM-mini: done
+  Rank shift figures saved
+
+======================================================================
+  SUMMARY TABLE
+======================================================================
+
+  LaTa:
+    L1 early         SNR=18.285  d_eff=10.8→101.8  R@1=0→0%  CGS=+0.3473
+    L4 max dip       SNR=5.649  d_eff=1.5→74.2  R@1=0→0%  CGS=+0.5360
+    L8 mid dip       SNR=3.993  d_eff=1.5→77.3  R@1=0→0%  CGS=+0.5310
+    L12 best         SNR=34.383  d_eff=47.1→107.9  R@1=0→0%  CGS=+0.2884
+
+  PhilTa:
+    L1 early         SNR=6.438  d_eff=1.5→111.7  R@1=0→0%  CGS=+0.5166
+    L6 worst         SNR=0.704  d_eff=1.0→76.1  R@1=0→0%  CGS=+0.5510
+    L9 mid dip       SNR=1.026  d_eff=1.0→80.9  R@1=0→0%  CGS=+0.5363
+    L12 best         SNR=16.093  d_eff=46.0→118.9  R@1=0→0%  CGS=+0.2928
+
+  LaBSE:
+    L1 worst         SNR=11.160  d_eff=11.0→106.8  R@1=0→0%  CGS=+0.4408
+    L6 mid           SNR=14.172  d_eff=13.7→85.2  R@1=0→0%  CGS=+0.4398
+    L9 late          SNR=14.964  d_eff=7.6→73.6  R@1=0→0%  CGS=+0.4641
+    L11 best         SNR=10.256  d_eff=20.1→80.7  R@1=0→0%  CGS=+0.5393
+
+  Qwen3-0.6B:
+    L1 early         SNR=17.888  d_eff=43.9→97.9  R@1=0→0%  CGS=+0.5120
+    L4 worst         SNR=0.480  d_eff=1.0→103.6  R@1=0→0%  CGS=+0.5182
+    L14 mid          SNR=4.310  d_eff=1.0→87.6  R@1=0→0%  CGS=+0.4870
+    L28 best         SNR=27.289  d_eff=37.1→102.2  R@1=0→0%  CGS=+0.4489
+
+  KaLM-mini:
+    L1 early         SNR=25.953  d_eff=47.5→94.3  R@1=0→0%  CGS=+0.4830
+    L5 worst         SNR=18.343  d_eff=4.9→95.2  R@1=0→0%  CGS=+0.4610
+    L13 mid          SNR=13.601  d_eff=12.2→88.1  R@1=0→0%  CGS=+0.3904
+    L23 best         SNR=10.744  d_eff=44.5→115.9  R@1=0→0%  CGS=+0.4785
+
+
+Phase 12b deep analysis complete.
+All outputs in: runs/phase12b/deep
+
+End: Mon Mar  2 19:10:01 CST 2026

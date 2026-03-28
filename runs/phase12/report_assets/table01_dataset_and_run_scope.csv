@@ -1,0 +1,17 @@
+metric,value,notes
+n_models,5,"LaTa, PhilTa, LaBSE, Qwen3-0.6B, KaLM-mini"
+n_samples_total,60,From phase12_samples.csv
+n_samples_similar,30,Query set with same-folder partners
+n_samples_dissimilar,30,Singleton/no-partner sample set
+n_samples_train,18,Train split
+n_samples_test,42,Test split
+LaTa_layers_found,12,"Expected 12; found layers 1,2,3,4,5,6,7,8,9,10,11,12"
+LaTa_files_per_layer,1278,Number of texts attributed at each saved layer
+PhilTa_layers_found,12,"Expected 12; found layers 1,2,3,4,5,6,7,8,9,10,11,12"
+PhilTa_files_per_layer,1278,Number of texts attributed at each saved layer
+LaBSE_layers_found,4,"Expected 4; found layers 1,6,9,11"
+LaBSE_files_per_layer,60,Number of texts attributed at each saved layer
+Qwen3-0.6B_layers_found,4,"Expected 4; found layers 1,4,14,28"
+Qwen3-0.6B_files_per_layer,60,Number of texts attributed at each saved layer
+KaLM-mini_layers_found,4,"Expected 4; found layers 1,5,13,23"
+KaLM-mini_files_per_layer,60,Number of texts attributed at each saved layer
