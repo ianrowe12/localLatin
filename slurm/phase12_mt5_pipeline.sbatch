@@ -32,7 +32,7 @@ EMB_DIR="$REPO_ROOT/runs/phase9_bases/${SLUG}/hidden_mean"
 if [ ! -f "$EMB_DIR/hidden_layer12_embeddings.npy" ]; then
     echo ">>> Step 1: Extract embeddings (layers 1-12)"
     conda run -n localLatin python src/extract_hidden_cli.py \
-        --meta_csv "$REPO_ROOT/runs/phase9/meta.csv" \
+        --meta_csv "$REPO_ROOT/runs/phase9_bases/bowphs_LaTa/hidden_mean/meta.csv" \
         --runs_root "$REPO_ROOT/runs/phase9_bases" \
         --run_dir "$EMB_DIR" \
         --model_name "$MODEL" \

@@ -23,6 +23,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.append(str(Path(__file__).resolve().parents[1] / "src"))
+from token_filtering import classify_token_for_filtering
 
 MODELS = {
     "LaTa": {
@@ -60,26 +61,15 @@ MODELS = {
         "selected_layers": [1, 5, 13, 23],
         "labels": ["L1 early", "L5 worst", "L13 mid", "L23 best"],
     },
+    "mt5-base": {
+        "slug": "google_mt5-base",
+        "hf": "google/mt5-base",
+        "trust": False,
+        "selected_layers": [1, 4, 8, 12],
+        "labels": ["L1 early", "L4 worst", "L8 mid", "L12 best"],
+    },
 }
-
-LATIN_PUNCTUATION = set(".,;:!?()[]{}\"'-/\\@#$%^&*+=<>~`")
 CATEGORIES = ["content", "short_subword", "empty"]
-
-
-def classify_token(s: str) -> str:
-    s = s.strip()
-    if not s:
-        return "empty"
-    clean = s.lstrip("▁##Ġ")
-    if not clean:
-        return "empty"
-    if all(c in LATIN_PUNCTUATION for c in clean):
-        return "punctuation"
-    if clean.isdigit():
-        return "number"
-    if len(clean) <= 2:
-        return "short_subword"
-    return "content"
 
 
 def load_attribution_data(attr_dir, slug, layer):
@@ -122,7 +112,7 @@ def analysis1_delta_retrieval(attr_dir, fig_dir, tokenizers):
                 delta = ig_ap - ig_bp  # positive = ABTT helped this token
 
                 tokens = decode_tokens(data["input_ids"][qi], sl, tok)
-                cats = [classify_token(t) for t in tokens]
+                cats = [classify_token_for_filtering(t) for t in tokens]
 
                 for ci, cat in enumerate(cats):
                     if cat in CATEGORIES:
@@ -364,7 +354,7 @@ def analysis4_importance_share(attr_dir, fig_dir, tokenizers):
                 if sl == 0:
                     continue
                 tokens = decode_tokens(data["input_ids"][qi], sl, tok)
-                cats = [classify_token(t) for t in tokens]
+                cats = [classify_token_for_filtering(t) for t in tokens]
 
                 ig_base = np.abs(data["ig_baseline_pos"][qi, :sl])
                 ig_abtt = np.abs(data["ig_abtt_pos"][qi, :sl])
@@ -450,6 +440,11 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--attr_dir", default="runs/phase12c/attributions")
     p.add_argument("--fig_dir", default="runs/phase12c/figures")
+    p.add_argument(
+        "--fail_if_empty",
+        action="store_true",
+        help="Exit non-zero if no analysis data is found.",
+    )
     args = p.parse_args()
 
     fig_dir = Path(args.fig_dir)
@@ -470,6 +465,10 @@ def main():
     df2 = analysis2_selectivity(args.attr_dir, fig_dir, tokenizers)
     analysis3_heatmaps(args.attr_dir, fig_dir, tokenizers)
     df4 = analysis4_importance_share(args.attr_dir, fig_dir, tokenizers)
+
+    has_data = any(not df.empty for df in (df1, df2, df4))
+    if args.fail_if_empty and not has_data:
+        raise SystemExit("No phase12c analysis data found.")
 
     print("\n=== All analyses complete ===")
     print(f"Figures saved to: {fig_dir}")

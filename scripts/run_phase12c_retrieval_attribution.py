@@ -28,6 +28,7 @@ from attribution_targets import get_embedding_layer
 from retrieval_targets import ABTTCosSimTarget, BaselineCosSimTarget
 from canon_retrieval import load_texts
 from cli_utils import parse_layers
+from token_filtering import TOKEN_FILTER_CHOICES, build_token_keep_lookup
 
 try:
     from captum.attr import LayerIntegratedGradients
@@ -46,7 +47,18 @@ def parse_args():
     p.add_argument("--max_length", type=int, default=512)
     p.add_argument("--D", type=int, default=10, help="Number of PCs for ABTT")
     p.add_argument("--n_steps", type=int, default=50, help="IG integration steps")
+    p.add_argument(
+        "--token_filter",
+        choices=list(TOKEN_FILTER_CHOICES),
+        default="all",
+        help="Token-level pooling filter for both baseline and ABTT targets.",
+    )
     p.add_argument("--half_precision", action="store_true")
+    p.add_argument(
+        "--require_all_layers",
+        action="store_true",
+        help="Exit non-zero if any requested layer is missing or not produced.",
+    )
     p.add_argument("--trust_remote_code", action="store_true")
     return p.parse_args()
 
@@ -84,7 +96,15 @@ def load_model(model_name, model_type, half_precision, trust_remote_code, device
     return fwd, tokenizer, resolved
 
 
-def embed_text(model, tokenizer, text, layer_idx, device, max_length=512):
+def embed_text(
+    model,
+    tokenizer,
+    text,
+    layer_idx,
+    device,
+    max_length=512,
+    token_keep_lookup: np.ndarray | None = None,
+):
     """Get mean-pooled hidden state at `layer_idx` for a single text. Returns (dim,) tensor."""
     enc = tokenizer(text, truncation=True, max_length=max_length,
                     padding=False, return_tensors="pt")
@@ -99,8 +119,13 @@ def embed_text(model, tokenizer, text, layer_idx, device, max_length=512):
             return_dict=True,
         )
     hidden = outputs.hidden_states[layer_idx].float()  # (1, seq, dim)
-    mask = attention_mask.unsqueeze(-1).float()
-    pooled = (hidden * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1.0)
+    mask = attention_mask.float()
+    if token_keep_lookup is not None:
+        keep_lookup = torch.as_tensor(
+            token_keep_lookup, device=device, dtype=torch.float32
+        )
+        mask = mask * keep_lookup[input_ids]
+    pooled = (hidden * mask.unsqueeze(-1)).sum(dim=1) / mask.sum(dim=1, keepdim=True).clamp(min=1.0)
     return pooled.squeeze(0)  # (dim,)
 
 
@@ -139,6 +164,10 @@ def main():
         args.trust_remote_code, device,
     )
     emb_layer = get_embedding_layer(fwd_model, resolved_type)
+    token_keep_lookup = build_token_keep_lookup(tokenizer, args.token_filter)
+    token_keep_lookup_t = torch.as_tensor(
+        token_keep_lookup, device=device, dtype=torch.float32
+    )
 
     # Pre-tokenize all query texts
     print("Pre-tokenizing queries...")
@@ -162,12 +191,14 @@ def main():
     pc_dir = Path(args.pc_dir)
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    fulfilled_layers: set[int] = set()
 
     for layer in layers:
         print(f"\n=== Layer {layer} ===")
         out_path = out_dir / f"layer{layer}_retrieval_attr.npz"
         if out_path.exists():
             print(f"  Already exists, skipping: {out_path}")
+            fulfilled_layers.add(layer)
             continue
 
         layer_start = time.time()
@@ -190,9 +221,9 @@ def main():
 
         for qi in range(n_queries):
             pos_emb = embed_text(fwd_model, tokenizer, pos_texts[qi],
-                                 layer, device, args.max_length)
+                                 layer, device, args.max_length, token_keep_lookup)
             neg_emb = embed_text(fwd_model, tokenizer, neg_texts[qi],
-                                 layer, device, args.max_length)
+                                 layer, device, args.max_length, token_keep_lookup)
             pos_raw_embs.append(pos_emb)
             pos_abtt_embs.append(abtt_clean(pos_emb, pcs, mean_vec))
             neg_raw_embs.append(neg_emb)
@@ -219,13 +250,13 @@ def main():
 
             # Build 4 target functions for this query
             t_base_pos = BaselineCosSimTarget(
-                fwd_model, layer, pos_raw_embs[qi]).to(device)
+                fwd_model, layer, pos_raw_embs[qi], token_keep_lookup=token_keep_lookup_t).to(device)
             t_abtt_pos = ABTTCosSimTarget(
-                fwd_model, layer, pos_abtt_embs[qi], pcs, mean_vec).to(device)
+                fwd_model, layer, pos_abtt_embs[qi], pcs, mean_vec, token_keep_lookup=token_keep_lookup_t).to(device)
             t_base_neg = BaselineCosSimTarget(
-                fwd_model, layer, neg_raw_embs[qi]).to(device)
+                fwd_model, layer, neg_raw_embs[qi], token_keep_lookup=token_keep_lookup_t).to(device)
             t_abtt_neg = ABTTCosSimTarget(
-                fwd_model, layer, neg_abtt_embs[qi], pcs, mean_vec).to(device)
+                fwd_model, layer, neg_abtt_embs[qi], pcs, mean_vec, token_keep_lookup=token_keep_lookup_t).to(device)
 
             try:
                 scores_bp = run_ig_for_query(input_ids, attention_mask,
@@ -265,9 +296,17 @@ def main():
             seq_lengths=seq_lengths,
             input_ids=all_input_ids,
         )
+        fulfilled_layers.add(layer)
 
         elapsed = time.time() - layer_start
         print(f"  Layer {layer} done in {elapsed/60:.1f} min → {out_path}")
+
+    if args.require_all_layers:
+        missing_layers = [layer for layer in layers if layer not in fulfilled_layers]
+        if missing_layers:
+            raise SystemExit(
+                f"Missing requested attribution layers for {args.model_name}: {missing_layers}"
+            )
 
     print("\nAll layers complete.")
 

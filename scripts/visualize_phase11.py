@@ -40,6 +40,7 @@ SHORT = {
     "sentence-transformers/LaBSE": "LaBSE",
     "Qwen/Qwen3-Embedding-0.6B": "Qwen3-0.6B",
     "KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5": "KaLM-mini",
+    "google/mt5-base": "mt5-base",
 }
 COLORS = {
     "LaTa": "#1f77b4",
@@ -47,6 +48,7 @@ COLORS = {
     "LaBSE": "#2ca02c",
     "Qwen3-0.6B": "#d62728",
     "KaLM-mini": "#9467bd",
+    "mt5-base": "#8c564b",
 }
 METHOD_COLORS = {
     "baseline": "#bdbdbd",
@@ -71,6 +73,7 @@ MAX_LAYERS = {
     "sentence-transformers/LaBSE": 12,
     "Qwen/Qwen3-Embedding-0.6B": 28,
     "KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5": 24,
+    "google/mt5-base": 12,
 }
 
 MODELS = list(SHORT.keys())
@@ -97,7 +100,8 @@ def _save(fig, out: Path, name: str, dpi: int):
 
 def fig1_distributions(dist_dir: Path, out: Path, dpi: int):
     """1x5 histograms of same vs different directory cosine similarities."""
-    fig, axes = plt.subplots(1, 5, figsize=(20, 4), sharey=True)
+    fig, axes = plt.subplots(1, len(MODELS), figsize=(4 * len(MODELS), 4), sharey=True)
+    axes = np.atleast_1d(axes)
     for ax, m in zip(axes, MODELS):
         slug = model_slug(m)
         npz_path = dist_dir / f"{slug}_baseline_distributions.npz"
@@ -329,7 +333,7 @@ def fig5_density_grid(dist_dir: Path, out: Path, dpi: int):
     """4×5 grid: rows = conditions, columns = models."""
     n_cond = len(_COND_SUFFIXES)
     n_models = len(MODELS)
-    fig, axes = plt.subplots(n_cond, n_models, figsize=(20, 14),
+    fig, axes = plt.subplots(n_cond, n_models, figsize=(3.8 * n_models, 14),
                              sharex=True, sharey="row")
 
     bins = np.linspace(-0.2, 1.0, 80)
@@ -395,10 +399,13 @@ _GAP_METHODS = [
 
 
 def fig6_gap_per_model(df: pd.DataFrame, out: Path, dpi: int):
-    """1×5 subplots: cosine gap across layers for each model, all methods."""
-    fig, axes = plt.subplots(1, 5, figsize=(22, 4.5), sharey=True)
+    """2x3 subplots: cosine gap across layers for each model, all methods."""
+    fig, axes = plt.subplots(2, 3, figsize=(15, 8), sharey=True)
+    axes = axes.flatten()
+    legend_handles = None
+    legend_labels = None
 
-    for ax, m in zip(axes, MODELS):
+    for idx, (ax, m) in enumerate(zip(axes, MODELS)):
         max_l = MAX_LAYERS.get(m, 12)
         for method, pooling, ls, lw, color, label in _GAP_METHODS:
             msub = df[(df["model"] == m) & (df["method"] == method)
@@ -407,20 +414,40 @@ def fig6_gap_per_model(df: pd.DataFrame, out: Path, dpi: int):
                 continue
             msub = msub.sort_values("layer").copy()
             msub["layer_pct"] = msub["layer"] / max_l * 100
-            ax.plot(msub["layer_pct"], msub["gap"],
-                    ls=ls, lw=lw, color=color,
-                    marker="o", ms=3, label=label)
+            line, = ax.plot(
+                msub["layer_pct"],
+                msub["gap"],
+                ls=ls,
+                lw=lw,
+                color=color,
+                marker="o",
+                ms=3,
+                label=label,
+            )
+            if idx == 0:
+                if legend_handles is None:
+                    legend_handles = []
+                    legend_labels = []
+                legend_handles.append(line)
+                legend_labels.append(label)
 
         ax.set_title(sn(m), fontweight="bold")
         ax.set_xlabel("Layer (%)")
         ax.set_xlim(0, 105)
         ax.grid(alpha=0.3)
-        ax.legend(fontsize=6.5, loc="best")
 
     axes[0].set_ylabel("Cosine Gap (same - diff)")
-    fig.suptitle("Fig 6: Layer-wise Cosine Gap — All Methods Compared (Hidden)",
-                 y=1.02, fontweight="bold")
-    fig.tight_layout()
+    axes[3].set_ylabel("Cosine Gap (same - diff)")
+    fig.legend(
+        legend_handles,
+        legend_labels,
+        loc="lower center",
+        ncol=3,
+        fontsize=8,
+        frameon=False,
+        bbox_to_anchor=(0.5, 0.01),
+    )
+    fig.tight_layout(rect=[0, 0.08, 1, 1])
     _save(fig, out, "fig6_gap_per_model", dpi)
 
 
@@ -429,10 +456,13 @@ def fig6_gap_per_model(df: pd.DataFrame, out: Path, dpi: int):
 # ═══════════════════════════════════════════════════════════════════════
 
 def fig7_aucroc_per_model(df: pd.DataFrame, out: Path, dpi: int):
-    """1×5 subplots: AUCROC across layers for each model, all methods."""
-    fig, axes = plt.subplots(1, 5, figsize=(22, 4.5), sharey=True)
+    """2x3 subplots: AUCROC across layers for each model, all methods."""
+    fig, axes = plt.subplots(2, 3, figsize=(15, 8), sharey=True)
+    axes = axes.flatten()
+    legend_handles = None
+    legend_labels = None
 
-    for ax, m in zip(axes, MODELS):
+    for idx, (ax, m) in enumerate(zip(axes, MODELS)):
         max_l = MAX_LAYERS.get(m, 12)
         for method, pooling, ls, lw, color, label in _GAP_METHODS:
             msub = df[(df["model"] == m) & (df["method"] == method)
@@ -441,21 +471,41 @@ def fig7_aucroc_per_model(df: pd.DataFrame, out: Path, dpi: int):
                 continue
             msub = msub.sort_values("layer").copy()
             msub["layer_pct"] = msub["layer"] / max_l * 100
-            ax.plot(msub["layer_pct"], msub["aucroc"],
-                    ls=ls, lw=lw, color=color,
-                    marker="o", ms=3, label=label)
+            line, = ax.plot(
+                msub["layer_pct"],
+                msub["aucroc"],
+                ls=ls,
+                lw=lw,
+                color=color,
+                marker="o",
+                ms=3,
+                label=label,
+            )
+            if idx == 0:
+                if legend_handles is None:
+                    legend_handles = []
+                    legend_labels = []
+                legend_handles.append(line)
+                legend_labels.append(label)
 
         ax.set_title(sn(m), fontweight="bold")
         ax.set_xlabel("Layer (%)")
         ax.set_xlim(0, 105)
         ax.set_ylim(0.4, 1.02)
         ax.grid(alpha=0.3)
-        ax.legend(fontsize=6.5, loc="best")
 
     axes[0].set_ylabel("AUCROC")
-    fig.suptitle("Fig 7: Layer-wise AUCROC — All Methods Compared (Hidden)",
-                 y=1.02, fontweight="bold")
-    fig.tight_layout()
+    axes[3].set_ylabel("AUCROC")
+    fig.legend(
+        legend_handles,
+        legend_labels,
+        loc="lower center",
+        ncol=3,
+        fontsize=8,
+        frameon=False,
+        bbox_to_anchor=(0.5, 0.01),
+    )
+    fig.tight_layout(rect=[0, 0.08, 1, 1])
     _save(fig, out, "fig7_aucroc_per_model", dpi)
 
 

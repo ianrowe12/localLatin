@@ -36,24 +36,7 @@ from canon_retrieval import (
 )
 from pair_evaluation import safe_auc_roc
 from sif_abtt import compute_pcs
-
-# Token classification (same as Phase 12c)
-LATIN_PUNCTUATION = set(".,;:!?()[]{}\"'-/\\@#$%^&*+=<>~`")
-
-def classify_token(s: str) -> str:
-    s = s.strip()
-    if not s:
-        return "empty"
-    clean = s.lstrip("▁##Ġ")
-    if not clean:
-        return "empty"
-    if all(c in LATIN_PUNCTUATION for c in clean):
-        return "empty"  # treat punctuation as empty for filtering
-    if clean.isdigit():
-        return "empty"  # treat numbers as empty for filtering
-    if len(clean) <= 2:
-        return "short_subword"
-    return "content"
+from token_filtering import classify_token_for_filtering
 
 
 def parse_args():
@@ -124,7 +107,7 @@ def build_token_masks(input_ids, attention_mask, tokenizer):
     """Build 3 masks: all, no-empty, content-only."""
     seq_len = int(attention_mask.sum())
     tokens = [tokenizer.decode([tid]) for tid in input_ids[:seq_len].tolist()]
-    cats = [classify_token(t) for t in tokens]
+    cats = [classify_token_for_filtering(t) for t in tokens]
 
     # Pad to full length
     full_len = len(attention_mask)

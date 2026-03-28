@@ -3,7 +3,7 @@
 Changes from Phase 10 (evaluate_vectors.py):
 - Exclude layer 0 from all processing
 - New directory-level assignment accuracy at k (Task B redefinition)
-- Optimize D on train via AUCROC instead of compute_assignment_acc
+- Optimize D on train via exact rank-1 directory assignment accuracy
 - Report train_aucroc and train_dir_acc_at_1 for best-config selection
 - Save similarity distributions for Figure 1
 """
@@ -45,6 +45,21 @@ def parse_args() -> argparse.Namespace:
         help="Comma-separated encoder-only model names.",
     )
     parser.add_argument(
+        "--reprs",
+        default="",
+        help="Optional comma-separated reprs to evaluate, e.g. 'hidden' or 'hidden,ff1'.",
+    )
+    parser.add_argument(
+        "--hidden_mean_subdir",
+        default="hidden_mean",
+        help="Subdirectory to use for hidden/mean embeddings.",
+    )
+    parser.add_argument(
+        "--hidden_sif_subdir",
+        default="hidden_sif",
+        help="Subdirectory to use for hidden/sif embeddings.",
+    )
+    parser.add_argument(
         "--D_values", default="1,2,3,5,7,10",
         help="Comma-separated D values for ABTT sweep.",
     )
@@ -61,12 +76,18 @@ def model_slug(name: str) -> str:
 
 
 def find_embedding_file(
-    runs_root: Path, slug: str, repr_name: str, pooling: str, layer: int,
+    runs_root: Path,
+    slug: str,
+    repr_name: str,
+    pooling: str,
+    layer: int,
+    subdir_override: Optional[str] = None,
 ) -> Optional[Path]:
     """Locate the raw (un-normalized) embedding .npy file."""
     suffix = "" if pooling == "mean" else "_sif"
     fname = f"{repr_name}_layer{layer}_embeddings{suffix}.npy"
-    candidate = runs_root / "phase9_bases" / slug / f"{repr_name}_{pooling}" / fname
+    subdir = subdir_override or f"{repr_name}_{pooling}"
+    candidate = runs_root / "phase9_bases" / slug / subdir / fname
     if candidate.exists():
         return candidate
     candidate2 = runs_root / "phase9_bases" / slug / fname
@@ -76,12 +97,17 @@ def find_embedding_file(
 
 
 def discover_layers(
-    runs_root: Path, slug: str, repr_name: str, pooling: str,
+    runs_root: Path,
+    slug: str,
+    repr_name: str,
+    pooling: str,
+    subdir_override: Optional[str] = None,
 ) -> List[int]:
     """Find which layers have embeddings extracted, excluding layer 0."""
     suffix = "" if pooling == "mean" else "_sif"
     pattern = f"{repr_name}_layer*_embeddings{suffix}.npy"
-    base_dir = runs_root / "phase9_bases" / slug / f"{repr_name}_{pooling}"
+    subdir = subdir_override or f"{repr_name}_{pooling}"
+    base_dir = runs_root / "phase9_bases" / slug / subdir
     if not base_dir.exists():
         base_dir = runs_root / "phase9_bases" / slug
     if not base_dir.exists():
@@ -115,6 +141,13 @@ def learn_threshold_on_train(
     df = sweep_thresholds(sims, labels, thresholds)
     best_idx = df["f1"].idxmax()
     return float(df.loc[best_idx, "threshold"])
+
+
+def has_partner_flags(folder_ids: np.ndarray) -> np.ndarray:
+    """Return a boolean mask marking rows whose directory has another member."""
+    unique_ids, counts = np.unique(folder_ids, return_counts=True)
+    multi_ids = set(unique_ids[counts > 1])
+    return np.array([fid in multi_ids for fid in folder_ids], dtype=bool)
 
 
 def compute_assignment_acc(
@@ -163,7 +196,7 @@ def directory_assignment_accuracy_at_k(
     For each file i:
     1. Compute dir_score[d] = max(sim[i,j] for j in d, j != i) for each directory d
     2. Add "__NEW__" pseudo-directory with score = tau
-    3. Rank all entries descending by score
+    3. Rank all entries descending by score, breaking ties lexically by label
     4. If has_partner[i]: correct if folder_ids[i] in top-k
     5. If not has_partner[i]: correct if "__NEW__" in top-k
     6. Return fraction correct over all files
@@ -199,7 +232,7 @@ def directory_assignment_accuracy_at_k(
         dir_scores["__NEW__"] = tau
 
         # Rank descending by score
-        ranked = sorted(dir_scores.keys(), key=lambda d: dir_scores[d], reverse=True)
+        ranked = sorted(dir_scores.keys(), key=lambda d: (-dir_scores[d], d))
         top_k = set(ranked[:k])
 
         if has_partner[i]:
@@ -217,9 +250,10 @@ def find_optimal_D_phase11(
     train_folder_ids: np.ndarray,
     D_values: List[int],
 ) -> Tuple[int, float]:
-    """Sweep D values on train set, return best D by AUCROC."""
+    """Sweep D values on train set, return best D by exact rank-1 directory accuracy."""
     best_D = D_values[0]
     best_score = -1.0
+    train_has_partner = has_partner_flags(train_folder_ids)
 
     for D in D_values:
         cleaner = EmbeddingCleaner(num_components=D, center=True)
@@ -227,12 +261,14 @@ def find_optimal_D_phase11(
         cleaned = cleaner.transform(train_emb)
         cleaned_norm = l2_normalize(cleaned)
         sim = similarity_matrix(cleaned_norm)
-
-        sims = upper_triangle(sim)
-        labels = upper_triangle_labels(train_folder_ids)
-
-        # Optimize on AUCROC
-        score = safe_auc_roc(sims, labels)
+        tau = learn_threshold_on_train(cleaned, train_folder_ids)
+        score = directory_assignment_accuracy_at_k(
+            sim,
+            train_folder_ids,
+            train_has_partner,
+            tau,
+            k=1,
+        )
         if score > best_score:
             best_score = score
             best_D = D
@@ -317,9 +353,7 @@ def evaluate_single(
     train_aucroc = safe_auc_roc(train_sims, train_labels)
 
     # Train directory acc
-    unique_tr, counts_tr = np.unique(train_folder_ids, return_counts=True)
-    multi_tr = set(unique_tr[counts_tr > 1])
-    train_has_partner = np.array([fid in multi_tr for fid in train_folder_ids])
+    train_has_partner = has_partner_flags(train_folder_ids)
     train_dir_acc_at_1 = directory_assignment_accuracy_at_k(
         train_sim, train_folder_ids, train_has_partner, tau, k=1
     )
@@ -421,14 +455,21 @@ def main() -> None:
     seq2seq_models = [m.strip() for m in args.models.split(",") if m.strip()]
     encoder_models = [m.strip() for m in args.encoder_models.split(",") if m.strip()]
     D_values = [int(d.strip()) for d in args.D_values.split(",")]
+    requested_reprs = {r.strip() for r in args.reprs.split(",") if r.strip()}
 
     results: List[Dict] = []
 
     model_configs = []
     for m in seq2seq_models:
-        model_configs.append((m, "seq2seq", ["hidden", "ff1"]))
+        reprs = ["hidden", "ff1"]
+        if requested_reprs:
+            reprs = [r for r in reprs if r in requested_reprs]
+        model_configs.append((m, "seq2seq", reprs))
     for m in encoder_models:
-        model_configs.append((m, "encoder", ["hidden", "ffn_int"]))
+        reprs = ["hidden", "ffn_int"]
+        if requested_reprs:
+            reprs = [r for r in reprs if r in requested_reprs]
+        model_configs.append((m, "encoder", reprs))
 
     # Track which models have had distributions saved (baseline, hidden, mean, last layer)
     dist_saved: set = set()
@@ -441,7 +482,18 @@ def main() -> None:
 
         for repr_name in reprs:
             for pooling in ["mean", "sif"]:
-                layers = discover_layers(runs_root, slug, repr_name, pooling)
+                subdir_override = None
+                if repr_name == "hidden":
+                    subdir_override = (
+                        args.hidden_mean_subdir if pooling == "mean" else args.hidden_sif_subdir
+                    )
+                layers = discover_layers(
+                    runs_root,
+                    slug,
+                    repr_name,
+                    pooling,
+                    subdir_override=subdir_override,
+                )
                 if not layers:
                     print(f"  [{repr_name}/{pooling}] No layers found, skipping.")
                     continue
@@ -449,7 +501,12 @@ def main() -> None:
 
                 for layer in layers:
                     emb_path = find_embedding_file(
-                        runs_root, slug, repr_name, pooling, layer
+                        runs_root,
+                        slug,
+                        repr_name,
+                        pooling,
+                        layer,
+                        subdir_override=subdir_override,
                     )
                     if emb_path is None:
                         print(f"    Layer {layer}: embedding file not found, skipping.")

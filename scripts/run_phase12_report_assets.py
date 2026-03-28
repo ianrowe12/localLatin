@@ -18,9 +18,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from transformers import AutoTokenizer
+from token_filtering import classify_token
 
 
-MODEL_ORDER = ["LaTa", "PhilTa", "LaBSE", "Qwen3-0.6B", "KaLM-mini"]
+MODEL_ORDER = ["LaTa", "PhilTa", "LaBSE", "Qwen3-0.6B", "KaLM-mini", "mt5-base"]
 
 MODEL_CONFIGS = {
     "LaTa": {
@@ -63,11 +64,18 @@ MODEL_CONFIGS = {
         "report_layers": [1, 5, 13, 23],
         "arch": "Decoder",
     },
+    "mt5-base": {
+        "slug": "google_mt5-base",
+        "hf_model": "google/mt5-base",
+        "tokenizer": "google/mt5-base",
+        "trust_remote_code": False,
+        "report_layers": [1, 4, 8, 12],
+        "arch": "T5 Encoder",
+    },
 }
 
 ARCH_ORDER = ["T5 Encoder", "BERT", "Decoder"]
 TOKEN_CATEGORIES = ["content", "short_subword", "punctuation", "number", "empty"]
-LATIN_PUNCTUATION = set(".,;:!?()[]{}\"'-/\\@#$%^&*+=<>~`")
 
 
 def parse_args() -> argparse.Namespace:
@@ -80,22 +88,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sample_csv", required=True, help="runs/phase12/phase12_samples.csv")
     parser.add_argument("--out_dir", required=True, help="Output directory for report assets")
     return parser.parse_args()
-
-
-def classify_token(token_str: str) -> str:
-    s = token_str.strip()
-    if not s:
-        return "empty"
-    clean = s.lstrip("▁##Ġ")
-    if not clean:
-        return "empty"
-    if all(c in LATIN_PUNCTUATION for c in clean):
-        return "punctuation"
-    if clean.isdigit():
-        return "number"
-    if len(clean) <= 2:
-        return "short_subword"
-    return "content"
 
 
 def parse_layer(path: Path) -> int:
@@ -146,7 +138,11 @@ def collect_coverage(attr_dir: Path, sample_csv: Path) -> Tuple[pd.DataFrame, pd
     coverage_df = pd.DataFrame(rows)
 
     table01_rows = [
-        {"metric": "n_models", "value": 5, "notes": "LaTa, PhilTa, LaBSE, Qwen3-0.6B, KaLM-mini"},
+        {
+            "metric": "n_models",
+            "value": len(MODEL_ORDER),
+            "notes": ", ".join(MODEL_ORDER),
+        },
         {"metric": "n_samples_total", "value": int(len(sample_df)), "notes": "From phase12_samples.csv"},
         {
             "metric": "n_samples_similar",

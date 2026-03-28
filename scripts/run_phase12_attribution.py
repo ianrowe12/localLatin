@@ -30,6 +30,7 @@ from attribution_targets import (
 )
 from canon_retrieval import load_texts
 from cli_utils import parse_layers
+from token_filtering import TOKEN_FILTER_CHOICES, build_token_keep_lookup
 
 try:
     from captum.attr import FeatureAblation, LayerIntegratedGradients
@@ -63,6 +64,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--checkpoint_every", type=int, default=100,
         help="Save checkpoint every N files.",
+    )
+    parser.add_argument(
+        "--token_filter",
+        choices=list(TOKEN_FILTER_CHOICES),
+        default="all",
+        help="Token-level pooling filter for attribution targets.",
     )
     return parser.parse_args()
 
@@ -183,6 +190,10 @@ def main() -> None:
         args.trust_remote_code, device,
     )
     emb_layer = get_embedding_layer(forward_model, resolved_type)
+    token_keep_lookup = build_token_keep_lookup(tokenizer, args.token_filter)
+    token_keep_lookup_t = torch.as_tensor(
+        token_keep_lookup, device=device, dtype=torch.float32
+    )
 
     pc_dir = Path(args.pc_dir)
     out_dir = Path(args.out_dir)
@@ -217,8 +228,12 @@ def main() -> None:
         mean_vec = torch.from_numpy(pc_data["mean_vec"]).to(device)
 
         # Build target modules
-        pc1_target = PC1DotTarget(forward_model, layer, pc1, mean_vec).to(device)
-        abtt_target = ABTTNormTarget(forward_model, layer, pcs, mean_vec).to(device)
+        pc1_target = PC1DotTarget(
+            forward_model, layer, pc1, mean_vec, token_keep_lookup=token_keep_lookup_t
+        ).to(device)
+        abtt_target = ABTTNormTarget(
+            forward_model, layer, pcs, mean_vec, token_keep_lookup=token_keep_lookup_t
+        ).to(device)
 
         # Check for existing checkpoint
         checkpoint_path = out_dir / f"layer{layer}_checkpoint.npz"

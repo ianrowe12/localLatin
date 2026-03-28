@@ -25,6 +25,12 @@ from transformers import AutoModel, AutoTokenizer
 from canon_retrieval import l2_normalize, load_texts, save_json
 from sif_abtt import sif_weights_from_ids, token_probabilities
 from cli_utils import parse_layers
+from token_filtering import (
+    TOKEN_FILTER_CHOICES,
+    build_token_keep_lookup,
+    token_filter_subdir,
+    torch_token_keep_mask,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -43,6 +49,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--layers", default="", help="Layer list, e.g. 0-12 or 0,6,12.")
     parser.add_argument("--pooling", choices=["mean", "sif"], default="mean")
+    parser.add_argument(
+        "--token_filter",
+        choices=list(TOKEN_FILTER_CHOICES),
+        default="all",
+        help="Optional token-level pooling filter.",
+    )
     parser.add_argument("--max_length", type=int, default=512)
     parser.add_argument("--batch_size", type=int, default=12)
     parser.add_argument("--run_dir", default="", help="Optional explicit run directory.")
@@ -104,26 +116,31 @@ def pool_embeddings(
     token_probs: Optional[Dict[int, float]] = None,
     sif_a: float = 1e-3,
     special_ids: Optional[set] = None,
+    token_keep_lookup: Optional[np.ndarray] = None,
     is_decoder: bool = False,
 ) -> torch.Tensor:
     """Pool token-level representations to sentence-level."""
+    if input_ids is None:
+        raise ValueError("input_ids required for pooled extraction.")
+    keep_mask = torch_token_keep_mask(input_ids, attention_mask, token_keep_lookup)
     if pooling == "mean":
-        mask = attention_mask.unsqueeze(-1).float()
-        denom = mask.sum(dim=1).clamp(min=1.0)
+        mask = keep_mask.unsqueeze(-1)
+        denom = keep_mask.sum(dim=1, keepdim=True).clamp(min=1.0)
         return (hidden * mask).sum(dim=1) / denom
     elif pooling == "sif":
-        if input_ids is None:
-            raise ValueError("input_ids required for SIF pooling.")
         if special_ids is None:
             special_ids = set()
         input_ids_np = input_ids.detach().cpu().numpy()
         weights_np = sif_weights_from_ids(
-            input_ids_np, token_probs or {}, a=sif_a, special_ids=list(special_ids)
+            input_ids_np,
+            token_probs or {},
+            a=sif_a,
+            special_ids=list(special_ids),
+            token_keep_lookup=token_keep_lookup,
         )
         weights = torch.from_numpy(weights_np).to(hidden.device)
-        mask = attention_mask.float()
-        scaled = hidden * (mask * weights).unsqueeze(-1)
-        denom = (mask * weights).sum(dim=1, keepdim=True).clamp(min=1.0)
+        scaled = hidden * (keep_mask * weights).unsqueeze(-1)
+        denom = (keep_mask * weights).sum(dim=1, keepdim=True).clamp(min=1.0)
         return scaled.sum(dim=1) / denom
     else:
         raise ValueError(f"Unknown pooling: {pooling}")
@@ -141,6 +158,7 @@ def extract_hidden_embeddings(
     token_probs: Optional[Dict[int, float]],
     sif_a: float,
     special_ids: set,
+    token_keep_lookup: Optional[np.ndarray],
     device: str,
     is_decoder: bool = False,
 ) -> np.ndarray:
@@ -171,6 +189,7 @@ def extract_hidden_embeddings(
             token_probs=token_probs,
             sif_a=sif_a,
             special_ids=special_ids,
+            token_keep_lookup=token_keep_lookup,
             is_decoder=is_decoder,
         )
         embeddings.append(pooled.detach().cpu().float().numpy().astype(np.float32))
@@ -190,6 +209,7 @@ def extract_ffn_intermediate_embeddings(
     token_probs: Optional[Dict[int, float]],
     sif_a: float,
     special_ids: set,
+    token_keep_lookup: Optional[np.ndarray],
     device: str,
     is_decoder: bool = False,
 ) -> np.ndarray:
@@ -249,6 +269,7 @@ def extract_ffn_intermediate_embeddings(
             token_probs=token_probs,
             sif_a=sif_a,
             special_ids=special_ids,
+            token_keep_lookup=token_keep_lookup,
             is_decoder=is_decoder,
         )
         embeddings.append(pooled.detach().cpu().float().numpy().astype(np.float32))
@@ -261,7 +282,12 @@ def main() -> None:
     paths = meta["path"].tolist()
 
     run_id = datetime.now().strftime("run_%Y%m%d_%H%M%S")
-    run_dir = Path(args.run_dir) if args.run_dir else Path(args.runs_root) / run_id
+    default_subdir = token_filter_subdir(args.repr, args.pooling, args.token_filter)
+    run_dir = (
+        Path(args.run_dir)
+        if args.run_dir
+        else Path(args.runs_root) / default_subdir / run_id
+    )
     run_dir.mkdir(parents=True, exist_ok=True)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -280,6 +306,7 @@ def main() -> None:
     model_type = detect_model_type(model)
     is_decoder = model_type in ("decoder", "decoder_wrapped")
     num_layers = get_num_layers(model, model_type)
+    token_keep_lookup = build_token_keep_lookup(tokenizer, args.token_filter)
 
     # For hidden states: layer 0 = embedding output, 1..N = transformer layers
     # Total hidden_states entries = num_layers + 1
@@ -315,7 +342,11 @@ def main() -> None:
         else:
             texts = load_texts(paths)
         token_probs = token_probabilities(
-            tokenizer, texts, batch_size=128, max_length=args.max_length
+            tokenizer,
+            texts,
+            batch_size=128,
+            max_length=args.max_length,
+            token_keep_lookup=token_keep_lookup,
         )
 
     special_ids = set(getattr(tokenizer, "all_special_ids", []))
@@ -328,6 +359,7 @@ def main() -> None:
         "representation": args.repr,
         "layers": layers,
         "pooling": args.pooling,
+        "token_filter": args.token_filter,
         "sif_a": args.sif_a,
         "split_csv": args.split_csv,
         "half_precision": args.half_precision,
@@ -356,6 +388,7 @@ def main() -> None:
                 token_probs=token_probs,
                 sif_a=args.sif_a,
                 special_ids=special_ids,
+                token_keep_lookup=token_keep_lookup,
                 device=device,
                 is_decoder=is_decoder,
             )
@@ -372,6 +405,7 @@ def main() -> None:
                 token_probs=token_probs,
                 sif_a=args.sif_a,
                 special_ids=special_ids,
+                token_keep_lookup=token_keep_lookup,
                 device=device,
                 is_decoder=is_decoder,
             )

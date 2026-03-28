@@ -1,10 +1,12 @@
 """Compute cosine similarity distributions for Phase 11 density histogram figures.
 
-Saves distributions for 4 conditions per model:
+Saves distributions for 6 conditions per model:
   1. Baseline (hidden, mean), last layer
   2. Baseline (hidden, mean), best middle layer (30-70% depth, by AUCROC)
   3. SIF+ABTT optimal (hidden, sif), last layer
   4. SIF+ABTT optimal (hidden, sif), best middle layer
+  5. ABTT optimal (hidden, mean), last layer
+  6. ABTT optimal (hidden, mean), best middle layer
 """
 from __future__ import annotations
 
@@ -20,19 +22,13 @@ sys.path.append(str(Path(__file__).resolve().parents[1] / "src"))
 from canon_retrieval import l2_normalize, similarity_matrix, upper_triangle, upper_triangle_labels
 from sif_abtt import EmbeddingCleaner
 
-MODELS = [
-    "bowphs/LaTa",
-    "bowphs/PhilTa",
-    "sentence-transformers/LaBSE",
-    "Qwen/Qwen3-Embedding-0.6B",
-    "KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5",
-]
 MAX_LAYERS = {
     "bowphs/LaTa": 12,
     "bowphs/PhilTa": 12,
     "sentence-transformers/LaBSE": 12,
     "Qwen/Qwen3-Embedding-0.6B": 28,
     "KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5": 24,
+    "google/mt5-base": 12,
 }
 
 
@@ -69,6 +65,9 @@ def main():
     parser.add_argument("--split_csv", required=True)
     parser.add_argument("--runs_root", required=True)
     parser.add_argument("--dist_dir", required=True)
+    parser.add_argument("--models", default="", help="Optional comma-separated model names.")
+    parser.add_argument("--hidden_mean_subdir", default="hidden_mean")
+    parser.add_argument("--hidden_sif_subdir", default="hidden_sif")
     args = parser.parse_args()
 
     results = pd.read_csv(args.results_csv)
@@ -81,9 +80,14 @@ def main():
     train_mask = split_meta["split"].values == "train"
     test_folder_ids = split_meta.loc[test_mask, "folder_id"].values
 
-    for model in MODELS:
+    if args.models:
+        models = [m.strip() for m in args.models.split(",") if m.strip()]
+    else:
+        models = list(dict.fromkeys(results["model"].tolist()))
+
+    for model in models:
         slug = model_slug(model)
-        max_l = MAX_LAYERS[model]
+        max_l = MAX_LAYERS.get(model, int(results.loc[results["model"] == model, "layer"].max()))
         short = model.split("/")[-1]
         print(f"\n=== {short} ===")
 
@@ -112,30 +116,45 @@ def main():
             & (results["method"] == "sif_abtt_optimal")
             & (results["repr"] == "hidden")
         ]
+        abtt_opt = results[
+            (results["model"] == model)
+            & (results["method"] == "abtt_optimal")
+            & (results["repr"] == "hidden")
+        ]
 
         def get_D(layer):
             row = opt[opt["layer"] == layer]
+            return int(row["D"].iloc[0]) if not row.empty else 10
+
+        def get_abtt_D(layer):
+            row = abtt_opt[abtt_opt["layer"] == layer]
             return int(row["D"].iloc[0]) if not row.empty else 10
 
         print(f"  Last layer: L{last_layer}, Middle layer: L{mid_layer}")
         print(f"  D(last)={get_D(last_layer)}, D(mid)={get_D(mid_layer)}")
 
         # --- Condition 1: Baseline, last layer ---
-        emb_path = find_embedding_file(runs_root, slug, "hidden", "mean", last_layer)
+        emb_path = runs_root / "phase9_bases" / slug / args.hidden_mean_subdir / f"hidden_layer{last_layer}_embeddings.npy"
+        if not emb_path.exists():
+            emb_path = find_embedding_file(runs_root, slug, "hidden", "mean", last_layer)
         if emb_path:
             emb = np.load(emb_path)
             compute_and_save(emb[test_mask], test_folder_ids,
                              dist_dir / f"{slug}_baseline_last.npz")
 
         # --- Condition 2: Baseline, middle layer ---
-        emb_path = find_embedding_file(runs_root, slug, "hidden", "mean", mid_layer)
+        emb_path = runs_root / "phase9_bases" / slug / args.hidden_mean_subdir / f"hidden_layer{mid_layer}_embeddings.npy"
+        if not emb_path.exists():
+            emb_path = find_embedding_file(runs_root, slug, "hidden", "mean", mid_layer)
         if emb_path:
             emb = np.load(emb_path)
             compute_and_save(emb[test_mask], test_folder_ids,
                              dist_dir / f"{slug}_baseline_middle.npz")
 
         # --- Condition 3: SIF+ABTT, last layer ---
-        emb_path = find_embedding_file(runs_root, slug, "hidden", "sif", last_layer)
+        emb_path = runs_root / "phase9_bases" / slug / args.hidden_sif_subdir / f"hidden_layer{last_layer}_embeddings_sif.npy"
+        if not emb_path.exists():
+            emb_path = find_embedding_file(runs_root, slug, "hidden", "sif", last_layer)
         if emb_path:
             emb = np.load(emb_path)
             D = get_D(last_layer)
@@ -146,7 +165,9 @@ def main():
                              dist_dir / f"{slug}_sif_abtt_last.npz")
 
         # --- Condition 4: SIF+ABTT, middle layer ---
-        emb_path = find_embedding_file(runs_root, slug, "hidden", "sif", mid_layer)
+        emb_path = runs_root / "phase9_bases" / slug / args.hidden_sif_subdir / f"hidden_layer{mid_layer}_embeddings_sif.npy"
+        if not emb_path.exists():
+            emb_path = find_embedding_file(runs_root, slug, "hidden", "sif", mid_layer)
         if emb_path:
             emb = np.load(emb_path)
             D = get_D(mid_layer)
@@ -155,6 +176,32 @@ def main():
             test_cleaned = cleaner.transform(emb[test_mask])
             compute_and_save(test_cleaned, test_folder_ids,
                              dist_dir / f"{slug}_sif_abtt_middle.npz")
+
+        # --- Condition 5: ABTT-only, last layer ---
+        emb_path = runs_root / "phase9_bases" / slug / args.hidden_mean_subdir / f"hidden_layer{last_layer}_embeddings.npy"
+        if not emb_path.exists():
+            emb_path = find_embedding_file(runs_root, slug, "hidden", "mean", last_layer)
+        if emb_path:
+            emb = np.load(emb_path)
+            D = get_abtt_D(last_layer)
+            cleaner = EmbeddingCleaner(num_components=D, center=True)
+            cleaner.fit(emb[train_mask])
+            test_cleaned = cleaner.transform(emb[test_mask])
+            compute_and_save(test_cleaned, test_folder_ids,
+                             dist_dir / f"{slug}_abtt_last.npz")
+
+        # --- Condition 6: ABTT-only, middle layer ---
+        emb_path = runs_root / "phase9_bases" / slug / args.hidden_mean_subdir / f"hidden_layer{mid_layer}_embeddings.npy"
+        if not emb_path.exists():
+            emb_path = find_embedding_file(runs_root, slug, "hidden", "mean", mid_layer)
+        if emb_path:
+            emb = np.load(emb_path)
+            D = get_abtt_D(mid_layer)
+            cleaner = EmbeddingCleaner(num_components=D, center=True)
+            cleaner.fit(emb[train_mask])
+            test_cleaned = cleaner.transform(emb[test_mask])
+            compute_and_save(test_cleaned, test_folder_ids,
+                             dist_dir / f"{slug}_abtt_middle.npz")
 
     print("\nDone.")
 

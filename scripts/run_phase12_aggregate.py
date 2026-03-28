@@ -23,6 +23,7 @@ from scipy.stats import spearmanr
 from transformers import AutoTokenizer
 
 sys.path.append(str(Path(__file__).resolve().parents[1] / "src"))
+from token_filtering import classify_token
 
 
 # Model configs: name → (slug, layers, tokenizer_name, trust_remote_code)
@@ -37,34 +38,14 @@ MODEL_CONFIGS = {
         "KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5",
         True,
     ),
+    "mt5-base": ("google_mt5-base", range(1, 13), "google/mt5-base", False),
 }
 
 ARCH_GROUPS = {
-    "T5 Encoder": ["LaTa", "PhilTa"],
+    "T5 Encoder": ["LaTa", "PhilTa", "mt5-base"],
     "BERT": ["LaBSE"],
     "Decoder": ["Qwen3-0.6B", "KaLM-mini"],
 }
-
-# Simple Latin token classification heuristics
-LATIN_PUNCTUATION = set(".,;:!?()[]{}\"'-/\\@#$%^&*+=<>~`")
-
-
-def classify_token(token_str: str) -> str:
-    """Classify a token string into a category."""
-    s = token_str.strip()
-    if not s:
-        return "empty"
-    # Remove leading subword markers (▁ for sentencepiece, ## for wordpiece, Ġ for BPE)
-    clean = s.lstrip("▁##Ġ")
-    if not clean:
-        return "subword_marker"
-    if all(c in LATIN_PUNCTUATION for c in clean):
-        return "punctuation"
-    if clean.isdigit():
-        return "number"
-    if len(clean) <= 2:
-        return "short_subword"
-    return "content"
 
 
 def load_attributions(attr_dir: Path, model_slug: str, layer: int) -> dict:
@@ -264,6 +245,7 @@ def analysis_e_layerwise_evolution(
                 "LaBSE": "sentence-transformers/LaBSE",
                 "Qwen3-0.6B": "Qwen/Qwen3-Embedding-0.6B",
                 "KaLM-mini": "KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5",
+                "mt5-base": "google/mt5-base",
             }.get(mname, "")
             sub = rdf[(rdf["model"] == model_hf) & (rdf["method"] == "baseline") & (rdf["repr"] == "hidden")]
             if not sub.empty:

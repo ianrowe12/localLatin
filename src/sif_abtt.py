@@ -18,6 +18,7 @@ def _count_token_ids(
     texts: Sequence[str],
     batch_size: int = 128,
     max_length: int = 512,
+    token_keep_lookup: Optional[np.ndarray] = None,
 ) -> Tuple[Dict[int, int], int]:
     special_ids = set(getattr(tokenizer, "all_special_ids", []))
     counts: Dict[int, int] = {}
@@ -35,6 +36,8 @@ def _count_token_ids(
             for tok in seq:
                 if tok in special_ids:
                     continue
+                if token_keep_lookup is not None and token_keep_lookup[int(tok)] <= 0:
+                    continue
                 counts[tok] = counts.get(tok, 0) + 1
                 total += 1
     return counts, total
@@ -45,13 +48,18 @@ def token_probabilities(
     texts: Sequence[str],
     batch_size: int = 128,
     max_length: int = 512,
+    token_keep_lookup: Optional[np.ndarray] = None,
 ) -> Dict[int, float]:
     """Estimate unigram token probabilities p(w) from text.
 
     Uses tokenizer IDs directly to avoid string-level normalization issues.
     """
     counts, total = _count_token_ids(
-        tokenizer=tokenizer, texts=texts, batch_size=batch_size, max_length=max_length
+        tokenizer=tokenizer,
+        texts=texts,
+        batch_size=batch_size,
+        max_length=max_length,
+        token_keep_lookup=token_keep_lookup,
     )
     if total == 0:
         return {}
@@ -63,6 +71,7 @@ def sif_weights_from_ids(
     token_probs: Dict[int, float],
     a: float = 1e-3,
     special_ids: Optional[Sequence[int]] = None,
+    token_keep_lookup: Optional[np.ndarray] = None,
 ) -> np.ndarray:
     """Compute SIF weights for each token id.
 
@@ -77,6 +86,8 @@ def sif_weights_from_ids(
     if special_ids:
         for tok in special_ids:
             weights[input_ids == tok] = 0.0
+    if token_keep_lookup is not None:
+        weights *= token_keep_lookup[input_ids]
     return weights
 
 
@@ -140,9 +151,14 @@ class UnigramProbEstimator:
         texts: Sequence[str],
         batch_size: int = 128,
         max_length: int = 512,
+        token_keep_lookup: Optional[np.ndarray] = None,
     ) -> "UnigramProbEstimator":
         counts, total = _count_token_ids(
-            tokenizer=tokenizer, texts=texts, batch_size=batch_size, max_length=max_length
+            tokenizer=tokenizer,
+            texts=texts,
+            batch_size=batch_size,
+            max_length=max_length,
+            token_keep_lookup=token_keep_lookup,
         )
         probs = {tok: count / total for tok, count in counts.items()} if total else {}
         return cls(token_probs=probs, total_tokens=total)

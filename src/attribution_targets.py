@@ -25,12 +25,17 @@ class PC1DotTarget(nn.Module):
         layer_idx: int,
         pc1: torch.Tensor,
         mean_vec: torch.Tensor,
+        token_keep_lookup: torch.Tensor | None = None,
     ):
         super().__init__()
         self.model = model
         self.layer_idx = layer_idx
         self.register_buffer("pc1", pc1.float())           # (hidden_dim,)
         self.register_buffer("mean_vec", mean_vec.float())  # (hidden_dim,)
+        if token_keep_lookup is not None:
+            self.register_buffer("token_keep_lookup", token_keep_lookup.float())
+        else:
+            self.token_keep_lookup = None
 
     def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
         outputs = self.model(
@@ -40,8 +45,10 @@ class PC1DotTarget(nn.Module):
             return_dict=True,
         )
         hidden = outputs.hidden_states[self.layer_idx].float()  # (batch, seq, dim)
-        mask = attention_mask.unsqueeze(-1).float()
-        pooled = (hidden * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1.0)  # (batch, dim)
+        mask = attention_mask.float()
+        if self.token_keep_lookup is not None:
+            mask = mask * self.token_keep_lookup[input_ids]
+        pooled = (hidden * mask.unsqueeze(-1)).sum(dim=1) / mask.sum(dim=1, keepdim=True).clamp(min=1.0)
         centered = pooled - self.mean_vec
         return (centered * self.pc1).sum(dim=-1)  # (batch,)
 
@@ -55,12 +62,17 @@ class ABTTNormTarget(nn.Module):
         layer_idx: int,
         pcs: torch.Tensor,
         mean_vec: torch.Tensor,
+        token_keep_lookup: torch.Tensor | None = None,
     ):
         super().__init__()
         self.model = model
         self.layer_idx = layer_idx
         self.register_buffer("pcs", pcs.float())            # (D, hidden_dim)
         self.register_buffer("mean_vec", mean_vec.float())   # (hidden_dim,)
+        if token_keep_lookup is not None:
+            self.register_buffer("token_keep_lookup", token_keep_lookup.float())
+        else:
+            self.token_keep_lookup = None
 
     def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
         outputs = self.model(
@@ -70,8 +82,10 @@ class ABTTNormTarget(nn.Module):
             return_dict=True,
         )
         hidden = outputs.hidden_states[self.layer_idx].float()
-        mask = attention_mask.unsqueeze(-1).float()
-        pooled = (hidden * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1.0)
+        mask = attention_mask.float()
+        if self.token_keep_lookup is not None:
+            mask = mask * self.token_keep_lookup[input_ids]
+        pooled = (hidden * mask.unsqueeze(-1)).sum(dim=1) / mask.sum(dim=1, keepdim=True).clamp(min=1.0)
         centered = pooled - self.mean_vec             # (batch, dim)
         proj = centered @ self.pcs.T @ self.pcs       # (batch, dim)
         cleaned = centered - proj

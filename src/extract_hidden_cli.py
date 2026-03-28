@@ -12,8 +12,14 @@ import torch
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
 from canon_retrieval import l2_normalize, load_texts, save_json
-from sif_abtt import sif_weights_from_ids
+from sif_abtt import sif_weights_from_ids, token_probabilities
 from cli_utils import parse_layers
+from token_filtering import (
+    TOKEN_FILTER_CHOICES,
+    build_token_keep_lookup,
+    token_filter_subdir,
+    torch_token_keep_mask,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -23,6 +29,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model_name", default="bowphs/LaTa", help="Model name.")
     parser.add_argument("--layers", default="", help="Layer list, e.g. 0-12 or 0,6,12.")
     parser.add_argument("--pooling", choices=["mean", "lasttok", "sif"], default="mean")
+    parser.add_argument(
+        "--token_filter",
+        choices=list(TOKEN_FILTER_CHOICES),
+        default="all",
+        help="Optional token-level pooling filter.",
+    )
     parser.add_argument("--max_length", type=int, default=512)
     parser.add_argument("--batch_size", type=int, default=12)
     parser.add_argument("--run_dir", default="", help="Optional explicit run directory.")
@@ -64,13 +76,17 @@ def _save_prob_cache(path: Path, token_probs: dict, meta: dict) -> None:
 
 
 def _batch_token_probs(
-    input_ids: np.ndarray, special_ids: set[int]
+    input_ids: np.ndarray,
+    special_ids: set[int],
+    token_keep_lookup: np.ndarray | None = None,
 ) -> dict[int, float]:
     counts: dict[int, int] = {}
     total = 0
     for seq in input_ids:
         for tok in seq:
             if int(tok) in special_ids:
+                continue
+            if token_keep_lookup is not None and token_keep_lookup[int(tok)] <= 0:
                 continue
             counts[int(tok)] = counts.get(int(tok), 0) + 1
             total += 1
@@ -87,15 +103,24 @@ def pool_hidden(
     token_probs: dict[int, float] | None = None,
     sif_a: float = 1e-3,
     special_ids: set[int] | None = None,
+    token_keep_lookup: np.ndarray | None = None,
 ) -> torch.Tensor:
+    keep_mask = torch_token_keep_mask(input_ids, attention_mask, token_keep_lookup)
     if pooling == "mean":
-        mask = attention_mask.unsqueeze(-1).float()
-        denom = mask.sum(dim=1).clamp(min=1.0)
+        mask = keep_mask.unsqueeze(-1)
+        denom = keep_mask.sum(dim=1, keepdim=True).clamp(min=1.0)
         return (hidden * mask).sum(dim=1) / denom
-    lengths = attention_mask.sum(dim=1) - 1
-    lengths = lengths.clamp(min=0)
     batch_idx = torch.arange(hidden.size(0), device=hidden.device)
     if pooling == "lasttok":
+        seq_len = hidden.size(1)
+        positions = torch.arange(seq_len, device=hidden.device).unsqueeze(0).expand_as(keep_mask)
+        filtered_last = torch.where(
+            keep_mask > 0,
+            positions,
+            torch.full_like(positions, -1),
+        ).max(dim=1).values
+        fallback = attention_mask.sum(dim=1) - 1
+        lengths = torch.where(filtered_last >= 0, filtered_last, fallback).clamp(min=0)
         return hidden[batch_idx, lengths]
     if pooling != "sif":
         raise ValueError(f"Unknown pooling: {pooling}")
@@ -105,12 +130,15 @@ def pool_hidden(
         special_ids = set()
     input_ids_np = input_ids.detach().cpu().numpy()
     weights_np = sif_weights_from_ids(
-        input_ids_np, token_probs or {}, a=sif_a, special_ids=list(special_ids)
+        input_ids_np,
+        token_probs or {},
+        a=sif_a,
+        special_ids=list(special_ids),
+        token_keep_lookup=token_keep_lookup,
     )
     weights = torch.from_numpy(weights_np).to(hidden.device)
-    mask = attention_mask.float()
-    scaled = hidden * (mask * weights).unsqueeze(-1)
-    denom = (mask * weights).sum(dim=1, keepdim=True).clamp(min=1.0)
+    scaled = hidden * (keep_mask * weights).unsqueeze(-1)
+    denom = (keep_mask * weights).sum(dim=1, keepdim=True).clamp(min=1.0)
     return scaled.sum(dim=1) / denom
 
 
@@ -127,6 +155,7 @@ def extract_layer_embeddings(
     sif_a: float,
     sif_prob_source: str,
     special_ids: set[int],
+    token_keep_lookup: np.ndarray | None,
     device: str,
 ) -> np.ndarray:
     embeddings = []
@@ -145,7 +174,9 @@ def extract_layer_embeddings(
         batch_token_probs = token_probs
         if pooling == "sif" and sif_prob_source == "batch":
             batch_token_probs = _batch_token_probs(
-                input_ids.detach().cpu().numpy(), special_ids
+                input_ids.detach().cpu().numpy(),
+                special_ids,
+                token_keep_lookup=token_keep_lookup,
             )
         outputs = encoder(
             input_ids=input_ids,
@@ -162,6 +193,7 @@ def extract_layer_embeddings(
             token_probs=batch_token_probs,
             sif_a=sif_a,
             special_ids=special_ids,
+            token_keep_lookup=token_keep_lookup,
         )
         embeddings.append(pooled.detach().cpu().numpy().astype(np.float32))
     return np.concatenate(embeddings, axis=0)
@@ -173,7 +205,12 @@ def main() -> None:
     paths = meta["path"].tolist()
 
     run_id = datetime.now().strftime("run_%Y%m%d_%H%M%S")
-    run_dir = Path(args.run_dir) if args.run_dir else Path(args.runs_root) / run_id
+    default_subdir = token_filter_subdir("hidden", args.pooling, args.token_filter)
+    run_dir = (
+        Path(args.run_dir)
+        if args.run_dir
+        else Path(args.runs_root) / default_subdir / run_id
+    )
     run_dir.mkdir(parents=True, exist_ok=True)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -182,6 +219,7 @@ def main() -> None:
     encoder = model.get_encoder() if hasattr(model, "get_encoder") else model.encoder
     encoder.to(device)
     encoder.eval()
+    token_keep_lookup = build_token_keep_lookup(tokenizer, args.token_filter)
 
     total_layers = len(encoder.block)
     max_layer = total_layers
@@ -205,7 +243,11 @@ def main() -> None:
             from sif_abtt import token_probabilities
 
             token_probs = token_probabilities(
-                tokenizer, texts, batch_size=128, max_length=args.max_length
+                tokenizer,
+                texts,
+                batch_size=128,
+                max_length=args.max_length,
+                token_keep_lookup=token_keep_lookup,
             )
             if prob_cache_path:
                 _save_prob_cache(
@@ -225,6 +267,7 @@ def main() -> None:
         "representation": "hidden_states",
         "layers": layers,
         "pooling": args.pooling,
+        "token_filter": args.token_filter,
         "sif_a": args.sif_a,
         "sif_prob_source": args.sif_prob_source,
         "sif_prob_cache": str(prob_cache_path) if prob_cache_path else "",
@@ -251,6 +294,7 @@ def main() -> None:
             sif_a=args.sif_a,
             sif_prob_source=args.sif_prob_source,
             special_ids=set(getattr(tokenizer, "all_special_ids", [])),
+            token_keep_lookup=token_keep_lookup,
             device=device,
         )
         emb_norm = l2_normalize(emb)
