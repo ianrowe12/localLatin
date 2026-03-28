@@ -1,0 +1,7 @@
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+aiosqlite>=0.20.0
+pyyaml>=6.0
+pandas>=2.0.0
+numpy>=1.24.0
+eval_type_backport>=0.2.0  # needed for Python <3.10

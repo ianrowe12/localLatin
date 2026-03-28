@@ -13,13 +13,11 @@
 \usepackage{amssymb} 
 \usepackage{amsmath} 
 \usepackage{xcolor} 
+\usepackage{subcaption}
 
 
 % For proper rendering and hyphenation of words containing Latin characters (including in bib files)
 \usepackage[T1]{fontenc}
-% For Vietnamese characters
-% \usepackage[T5]{fontenc}
-% See https://www.latex-project.org/help/documentation/encguide.pdf for other character sets
 
 % This assumes your files are encoded as UTF8
 \usepackage[utf8]{inputenc}
@@ -44,27 +42,11 @@
 %
 % and set <dim> to something 5cm or larger.
 
-
-\newcommand{\abu}[1]{\textcolor{red}{TODO (Ian): #1}}
-
-\title{Instructions for *ACL Proceedings}
+\title{Semantic Matching in Medieval Latin: A Benchmark, Layerwise Analysis, and Geometric Repair
+}
+%Geometric Repair of Layerwise Retrieval Collapse in Medieval Latin Semantic Matching
 
 % Author information can be set in various styles:
-% For several authors from the same institution:
-% \author{Author 1 \and ... \and Author n \\
-%         Address line \\ ... \\ Address line}
-% if the names do not fit well on one line use
-%         Author 1 \\ {\bf Author 2} \\ ... \\ {\bf Author n} \\
-% For authors from different institutions:
-% \author{Author 1 \\ Address line \\  ... \\ Address line
-%         \And  ... \And
-%         Author n \\ Address line \\ ... \\ Address line}
-% To start a separate ``row'' of authors use \AND, as in
-% \author{Author 1 \\ Address line \\  ... \\ Address line
-%         \AND
-%         Author 2 \\ Address line \\ ... \\ Address line \And
-%         Author 3 \\ Address line \\ ... \\ Address line}
-
 \author{First Author \\
   Affiliation / Address line 1 \\
   Affiliation / Address line 2 \\
@@ -76,86 +58,132 @@
   Affiliation / Address line 3 \\
   \texttt{email@domain} \\}
 
-%\author{
-%  \textbf{First Author\textsuperscript{1}},
-%  \textbf{Second Author\textsuperscript{1,2}},
-%  \textbf{Third T. Author\textsuperscript{1}},
-%  \textbf{Fourth Author\textsuperscript{1}},
-%\\
-%  \textbf{Fifth Author\textsuperscript{1,2}},
-%  \textbf{Sixth Author\textsuperscript{1}},
-%  \textbf{Seventh Author\textsuperscript{1}},
-%  \textbf{Eighth Author \textsuperscript{1,2,3,4}},
-%\\
-%  \textbf{Ninth Author\textsuperscript{1}},
-%  \textbf{Tenth Author\textsuperscript{1}},
-%  \textbf{Eleventh E. Author\textsuperscript{1,2,3,4,5}},
-%  \textbf{Twelfth Author\textsuperscript{1}},
-%\\
-%  \textbf{Thirteenth Author\textsuperscript{3}},
-%  \textbf{Fourteenth F. Author\textsuperscript{2,4}},
-%  \textbf{Fifteenth Author\textsuperscript{1}},
-%  \textbf{Sixteenth Author\textsuperscript{1}},
-%\\
-%  \textbf{Seventeenth S. Author\textsuperscript{4,5}},
-%  \textbf{Eighteenth Author\textsuperscript{3,4}},
-%  \textbf{Nineteenth N. Author\textsuperscript{2,5}},
-%  \textbf{Twentieth Author\textsuperscript{1}}
-%\\
-%\\
-%  \textsuperscript{1}Affiliation 1,
-%  \textsuperscript{2}Affiliation 2,
-%  \textsuperscript{3}Affiliation 3,
-%  \textsuperscript{4}Affiliation 4,
-%  \textsuperscript{5}Affiliation 5
-%\\
-%  \small{
-%    \textbf{Correspondence:} \href{mailto:email@domain}{email@domain}
-%  }
-%}
-
 \begin{document}
 \maketitle
 \begin{abstract}
-Pre-trained language models offer a convenient embed-and-compare approach to semantic matching, yet for under-resourced historical languages the quality of these representations varies dramatically across model depth. We present a layerwise analysis of five models spanning three architectures (two Latin-adapted T5 encoders, a multilingual BERT sentence encoder, and two multilingual decoder-only models) on a new Medieval Latin duplicate-detection benchmark of 1,278 canon-law fragments. Baseline mean-pooled embeddings from the T5 models suffer a catastrophic mid-layer collapse where AUCROC falls below chance, while decoder-only and BERT models remain more stable. A simple, train-free pipeline combining SIF-weighted pooling with All-but-the-Top principal-component removal (SIF+ABTT) eliminates the collapse entirely: every layer of every model achieves AUCROC above 0.95, rendering layer selection unnecessary. PCA whitening, by contrast, fails across all models. These results show that apparent model limitations on Medieval Latin can be artifacts of representation geometry rather than absent semantic knowledge, and that lightweight post-processing suffices to unlock strong retrieval performance without any task-specific fine-tuning.
+
+
+
+Medieval canon law texts preserve some of the earliest sustained records of judicial reasoning in Western Europe, but they survive in manuscript families shaped by spelling variation, fragmentation, and editorial change. 
+As a result, strict semantic matching is a prerequisite for scholarly workflows such as consolidating duplicate passages and linking fragments across witnesses. We introduce a new Medieval Latin dataset of 1,705 canon law fragments grouped into 840 families of meaning-equivalent variants, and evaluate two tasks: duplicate detection and open-set semantic deduplication.
+We conduct a layerwise analysis of internal representations across a diverse set of Latin-adapted and multilingual models and uncover a striking failure mode. 
+In Latin-adapted T5 encoders, standard mean-pooled hidden states undergo a pronounced mid-layer collapse, causing cosine similarity to lose discriminative power. In contrast, multilingual encoders such as LaBSE and decoder-based models remain substantially more stable.
+Motivated by this diagnosis, we apply a simple train-free geometric repair based on All-but-the-Top post-processing, which largely removes the mid-layer failure mode and restores semantic separation.
+Finally, we show that the resulting representations support more reliable instance-level attribution using integrated gradients, enabling an inspectable, scholar-facing semantic matching pipeline. 
+%Together, our results show that the main bottleneck in Medieval Latin semantic matching is not missing semantic content, but how internal representations are extracted and normalized.
+
+
+
+% Semantic matching with sentence embeddings works well in many high-resource settings. Historical text is less forgiving, and layer choice can change the outcome a great deal. We evaluate six pre-trained models from three architecture families on a new Medieval Latin duplicate-detection benchmark with 1,705 canon-law fragments. The set includes two Latin-adapted T5 encoders, a multilingual BERT sentence encoder, a multilingual T5, and two decoder-only models. Mean-pooled embeddings from the Latin T5 encoders collapse sharply in the middle layers, whereas the other models stay much steadier across depth. When we fit All-but-the-Top (ABTT) \citep{mu2018allbutthetop} on the training split and apply it after pooling, most of that collapse disappears and pairwise separation returns. We also revisit directory assignment, where the system offers a top-$k$ shortlist to a human expert, and report how often the labeled directory would be chosen as the model's first, second, third, fourth, fifth, or some other option. To make those rankings easier to inspect, we add example-level integrated-gradient visualizations over original tokens and companion attention maps. Taken together, the results point to representation geometry, not missing semantic content, as the main source of the mid-layer failure.
 \end{abstract}
 
 \section{Introduction}
-%\footnote{\url{http://acl-org.github.io/ACLPUB/formatting.html}}
 
 
-\abu{Make a case for the lack of Medieval Latin in existing benchmarks.
-Find languages in benchmarks (such as multilingual MTEB) and existing STS datasets (such as MUSTS, including low-resource languages: lack of Medieval Latin.}
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\columnwidth]{paper_fig_density_2x2.pdf}
+\vspace{-18pt}
+\caption{Cosine similarity distributions for PhilTa at the last layer and at the mid layer, before and after ABTT. 
+At the dip layer. ABTT-based post-processing produces much clearer cosine score separation between semantically similar and different passages. 
+%Y-axes are shared within each row.
+}
+\vspace{-12pt}
+\label{fig:density}
+\end{figure}
 
 
-Medieval canon law sits at the intersection of law, religion, and political authority, and it preserves some of the earliest sustained records of judicial reasoning in Western Europe. A large portion of this tradition survives not as single authoritative documents, but as families of manuscript copies that contain both accidental variation (spelling, wording) and deliberate intervention introduced during their transmission. 
-In practice, scholars who want to study how these judicial opinions articulate and reshape concepts like justice, authority, equity, and rights must first do something far more basic: identify when two passages are semantically the same despite surface variation, and determine whether a newly surfaced fragment matches anything already known.
+Medieval canon law offers a rich record of early judicial reasoning, reflecting evolving ideas about authority, justice, and social order. Yet, these texts do not exist as stable, single versions. Instead, they are preserved through manuscript traditions that introduce variation in wording, fragmentary transmission, and editorial intervention. 
+As a result, passages that express the same legal principle may differ substantially on the surface, while others diverge in subtle but meaningful ways. 
+For scholars, identifying strict semantic equivalence across such variants is a fundamental step in consolidating textual evidence, linking fragments, and tracing the transmission of legal thought.
 
 
-This paper targets that bottleneck with two strict semantic matching tasks tailored to the canon-law setting. 
-Duplicate Detection asks, given two passages, whether they express the same meaning (strict semantic equivalence). 
-Open-set Semantic Deduplication reflects the actual workflow scholars face: given a new passage, determine whether a strict semantic duplicate exists anywhere in an existing corpus, and return No Duplicate when none exists. These tasks operationalize a recurring humanities need to consolidate variants across witnesses and avoid redundant annotation, while remaining concrete enough to benchmark NLP models.
+We study this problem by introducing new data of Medieval Latin canon law passages organized into 840 families of meaning-equivalent variants. 
+We consider two complementary tasks. \emph{(i)}~Duplicate detection evaluates whether a pair of passages conveys the same meaning under a strict notion of equivalence. 
+\emph{(ii)}~Open-set semantic deduplication reflects corpus-level workflows, requiring models to determine whether a newly observed passage matches any existing passage or represents a previously unseen instance. 
+%Together, these tasks capture both controlled evaluation and practical usage scenarios in manuscript-driven corpora.
+
+
+A standard approach is to encode passages using pretrained models and compare them with cosine similarity. While this paradigm is effective for high-resource languages, its behavior in historical languages such as Medieval Latin remains poorly understood. 
+In particular, it remains unclear how semantic information is distributed across model depth and whether commonly used representation extraction methods preserve or distort that information. This motivates a closer examination of model internals rather than treating sentence embeddings as fixed outputs.
+
+
+To this end, we analyze representations across layers for a range of Latin-adapted and multilingual models. 
+This analysis reveals a consistent failure mode in Latin-adapted T5 encoders: representations obtained via mean pooling lose discriminative structure in intermediate layers, leading to a collapse in semantic separability. 
+Notably, this behavior is not observed to the same extent in multilingual encoders or decoder-based models, which exhibit more stable trends across depth. %These results suggest that performance differences cannot be attributed solely to model pretraining or data, but are strongly influenced by how representations are extracted.
 
 
 
-A straightforward way to approach both tasks is to embed passages with a pretrained model and compare them using cosine similarity. Yet historical languages are exactly where this “just use the embedding” recipe is most brittle: tokenization artifacts, orthographic variation, domain mismatch, and the model’s own representational geometry can all dominate the similarity signal. This motivates a key question that typical benchmark papers rarely answer: where, across a model’s depth, does semantic equivalence actually become separable—and when do common embedding choices hide that signal? Rather than treating a model as a black box and reporting a single “best” layer by convention, we analyze internal representations across layers and quantify how semantic separability evolves with depth for Latin-adapted encoders and multilingual baselines.
-
-That analysis reveals a sharp failure mode with practical consequences. For Latin-adapted T5-family encoders, naïve sentence representations formed by mean-pooling hidden states exhibit a pronounced mid-layer collapse: across a wide band of middle layers, cosine similarity becomes weakly discriminative, and performance can approach chance—despite strong performance in shallow and late layers. In contrast, a multilingual sentence encoder designed for sentence-level semantics is substantially more stable and tends to peak in later layers. The takeaway is not merely that “layer choice matters,” but that apparent limitations of a model on Medieval Latin semantic matching can be artifacts of representation geometry and extraction, not absence of semantic knowledge.
-
-Guided by this diagnosis, we evaluate a simple, train-free intervention that corrects the geometry rather than the model. We combine SIF-weighted pooling (to reduce dominance of frequent tokens and formulaic phrasing) with All-but-the-Top post-processing (to remove dominant global directions that inflate cosine similarity for unrelated passages). This SIF+ABTT pipeline consistently restores semantic separability, eliminates the mid-layer collapse, and yields strong performance across both tasks without any labeled task-specific training. Importantly, once we apply this train-free correction, Latin-focused models become highly competitive with multilingual baselines, clarifying what these models already encode and how to reliably extract it for scholarly workflows.
-
-Overall, the paper makes three contributions: (i) a new Medieval Latin benchmark for strict semantic matching under both pairwise and open-set deduplication formulations; (ii) a layerwise analysis that exposes a geometry-driven mid-layer failure mode in Latin-adapted encoders under standard pooling; and (iii) a strong, training-free SIF+ABTT representation pipeline that substantially improves robustness and performance across models and tasks, with direct implications for building practical tools for manuscript-scale humanities research.
-
-\section{Tasks and Dataset Construction}
+This observation points to a geometric explanation. 
+When representations are dominated by a small number of global directions, cosine similarity becomes less sensitive to semantic distinctions, particularly in intermediate layers. 
+We address this issue using a simple, train-free correction based on All-but-the-Top (ABTT) post-processing, which removes dominant components from the embedding space. 
+This correction restores semantic separation and stabilizes performance across layers without modifying model parameters.
 
 
-\subsection{Tasks}
+% Medieval canon law texts preserve some of the earliest sustained records of judicial reasoning in Western Europe, capturing evolving views of justice, authority, and social order. 
+% However, these texts do not survive as single authoritative documents. 
+% Instead, they are transmitted through manuscript traditions that introduce substantial variation, including differences in spelling, fragmentary preservation, and deliberate editorial intervention. 
+% As a result, multiple passages may express the same underlying legal principle despite surface-level differences, while others diverge in subtle but meaningful ways. 
+% For scholars, identifying when two passages are strictly semantically equivalent is not a peripheral task but a prerequisite for consolidating duplicate material, linking fragments across witnesses, and studying how legal reasoning circulates across the corpus.
 
-\noindent
-\textbf{Task 1: Semantic Equivalence.}
-%We define duplicate detection as the task of strict semantic equivalence classification. 
-Let $p_1$ and $p_2$ denote two passages, and let $\equiv$ be a semantic equivalence relation such that $p_1 \equiv p_2$ if and only if the two passages express the same meaning (i.e., they are semantically equivalent). 
-Given an input pair $(p_1, p_2)$, the task is to predict a binary label
+
+
+
+%To operationalize this need, we introduce a new benchmark for semantic matching in Medieval Latin canon law, consisting of 1,705 passages grouped into 840 families of meaning-equivalent variants. 
+%We formulate two tasks: \emph{(i)}~Duplicate Detection, whether a pair of passages conveys the same meaning under a strict notion of semantic equivalence; and \emph{(ii)}~Open-set Semantic Deduplication, a more realistic workflow: given a new passage, determine whether a semantically equivalent passage exists in a reference corpus or whether it should be treated as new. %These tasks emphasize strict equivalence rather than graded similarity and require models to operate in an open-set setting where no match may exist.
+
+
+
+A natural approach to both tasks is to embed passages using pretrained models and compare them via cosine similarity. While this paradigm is effective for high-resource languages, its behavior in historical languages such as Medieval Latin remains poorly understood. 
+In particular, standard practice treats sentence representations as fixed outputs, without examining how semantic information is distributed across model depth or how representation extraction affects downstream performance. 
+This raises a key question: to what extent do failures in semantic matching arise from limitations of the underlying model, as opposed to how its internal representations are used?
+
+
+To answer this, we conduct a layerwise analysis of internal representations across a diverse set of models, including Latin-adapted encoders and multilingual models.
+We uncover a striking and consistent failure mode. 
+In Latin-adapted T5 encoders, standard mean-pooled hidden states undergo a pronounced mid-layer collapse, in which cosine similarity loses discriminative power and semantic separation degrades sharply, in some cases approaching chance. 
+In contrast, multilingual encoders such as LaBSE and decoder-based models exhibit substantially more stable behavior across depth. 
+This finding shows that model performance on Medieval Latin semantic matching depends critically on how representations are extracted, and that naïve pooling can obscure usable semantic information.
+
+
+
+This observation leads to a key insight: the primary bottleneck is not missing semantic content, but the geometry of the representation space induced by common extraction methods. 
+When representations become anisotropic or dominated by a few global directions, cosine similarity fails to distinguish semantically equivalent from non-equivalent passages, particularly in intermediate layers.
+
+
+
+Motivated by this diagnosis, we apply a simple, train-free geometric correction based on All-but-the-Top (ABTT) post-processing~\cite{mu2018allbutthetop}. 
+By removing dominant directions from the embedding space, this approach restores semantic separation and largely eliminates the mid-layer collapse.
+The resulting representations are more stable across layers and yield consistently stronger performance on both duplicate detection and open-set semantic deduplication, without requiring any task-specific training.
+
+
+Beyond improving matching performance, geometric correction also enhances interpretability. 
+We find that applying integrated gradients on corrected representations produces clearer and more localized token-level attributions for semantic matches, whereas raw representations yield diffuse and less informative explanations.
+This enables an inspectable, scholar-facing workflow in which retrieved matches can be both ranked and explained, supporting more reliable use of NLP tools in humanities research.
+
+In summary, this paper makes the following contributions:
+(1) we introduce a new benchmark for strict semantic matching in Medieval Latin canon law, including both pairwise and open-set formulations;
+(2) we provide a layerwise analysis revealing a previously unreported mid-layer collapse in Latin-adapted T5 representations under standard pooling;
+(3) we show that a simple train-free geometric correction restores semantic separability and improves robustness across models and layers; and
+(4) we demonstrate that improved representation geometry leads to more reliable instance-level attribution, enabling an inspectable semantic matching pipeline for humanities scholars.
+
+
+
+% Medieval canon law preserves some of the earliest continuous records of legal reasoning in Western Europe. Many of those texts survive in families of manuscript copies, shaped by ordinary scribal noise and by deliberate editorial change. Anyone trying to study how these texts talk about justice, authority, or rights runs into the same practical problem early on. Which passages are actually saying the same thing, even when the wording shifts? That is the retrieval problem we study here.
+
+% This corpus sits well outside the usual coverage of multilingual benchmark suites. Most evaluation sets for modern embedding models focus on contemporary, high-resource languages. Historical Latin, especially in medieval legal prose, barely appears. Off-the-shelf benchmark scores therefore say very little about whether a model can handle this corpus. We address that gap with a new \textbf{Medieval Latin semantic equivalence benchmark} containing 1,705 canon-law fragments grouped into 840 families of meaning-equivalent variants.
+
+% The starting point is straightforward. We encode each passage with a pre-trained model and rank candidates by cosine similarity. Historical Latin makes that setup harder than it sounds. Tokenization matters. Spelling variation matters too. And the geometry of the embedding space can distort similarity even when the underlying meaning is still there. So we do not stop at a single best layer. We examine the full depth profile. In the two Latin-adapted T5 encoders, the middle layers fall apart. Cosine similarity carries little class information there, and AUCROC can drop to chance or worse (Figure~\ref{fig:dip}). Decoder-only models and LaBSE show much smaller declines.
+
+% We then apply ABTT \citep{mu2018allbutthetop}, fit on the training split, to remove the leading principal components of the embedding space. On this corpus, that step removes most of the mid-layer dip and makes the layerwise curves much flatter. We also bring back an earlier directory-assignment setting in which the system proposes a short ranked list of candidate directories to a human expert. Inclusive Acc@K is not the right summary for that workflow, so we instead report which ranked option the labeled directory would lead the expert to select. We pair that with example-level integrated-gradient explanations over original tokens. The resulting pipeline does more than rank passages. It gives a scholar something concrete to inspect before choosing a directory.
+
+\section{Task and Dataset}
+
+\subsection{Task Definition}
+
+We study two related tasks.
+
+\paragraph{Task A.} Let $p_1$ and $p_2$ be two passages and let $\equiv$ denote semantic equivalence, so that $p_1 \equiv p_2$ holds exactly when the two passages express the same meaning. Given an input pair $(p_1, p_2)$, the task is to predict
 \[
 y =
 \begin{cases}
@@ -163,33 +191,19 @@ y =
 0 & \text{otherwise.}
 \end{cases}
 \]
-We can implement the above using a scoring function $f(p_1, p_2)$ that predicts $y$.
+We score pairs by cosine similarity and classify with a learned threshold $\tau$.
 
-\noindent
-\textbf{Task 2: Open-set Semantic Deduplication.}
-We define open-set semantic deduplication as the problem of determining whether a new passage has a strict semantic duplicate in a given corpus, and identifying such duplicate(s) when they exist.
-Let $C = \{c_1, \ldots, c_N\}$ be a corpus of passages, and let $p$ be a new passage. 
-Using the same equivalence relation $\equiv$, we define the duplicate set
-\[
-D(p; C) = \{\, c \in C \mid p \equiv c \,\}.
-\]
-The goal is to return a passage \(c \in  D(p; C)\) if \(D(p; C) \neq \varnothing \), and output \textsc{No Duplicate} if \(D(p; C) = \varnothing \).
-We consider this formulation to be open-set because the correct outcome may be that no semantically equivalent passage exists in the corpus.
-
+\paragraph{Task B.} Given a query passage $q$, the system scores each directory by the maximum cosine similarity between $q$ and any document already assigned to that directory. We also add a pseudo-option \texttt{\_\_NEW\_\_} with score $\tau$ for cases where the query should open a new directory. The model then presents the top-$k$ options to a human expert, along with token-level explanations for individual candidate pairs. During evaluation, we simulate that expert by assuming the labeled directory would be selected whenever it appears in the shortlist. We report cumulative top-$K$ accuracy: for each $K$ from 1 to 5, the fraction of queries whose labeled directory appears among the top $K$ options.
 
 \subsection{Dataset Construction}
 
-
-
-\section{Methodology}
-
-\subsection{Dataset}
-
-Our corpus consists of 1,278 medieval Latin manuscript fragments related to canon law, organized into 538 directories. Each directory represents one original legal text, and files within the same directory are semantically equivalent fragments, different manuscript copies of the same underlying text. Directory sizes range from 1 to 22 files.
+\textcolor{red}{This is the part we agreed you'd fill in (professor)}
 
 \subsection{Train/Test Split}
 
-We split the corpus into a balanced 639/639 train/test partition with a leak-free protocol (Table~\ref{tab:split}). Singletons (279 directories with one file) are distributed across splits. Doubletons (74 directories with two files) contribute one file to each split. Multi-file directories ($\geq$3 files, 185 directories) are split proportionally with at least two files in training to ensure meaningful fitting of post-processing parameters.
+The corpus contains 1,705 medieval Latin manuscript fragments drawn from canon law and organized into 840 directories. Each directory corresponds to one original legal text, and the files inside it are manuscript copies that express the same content. Directory sizes range from 1 to 10 files.
+
+We split the corpus into a 787/918 train/test set with a leak-free protocol (Table~\ref{tab:split}). Singletons, which make up 545 one-file directories, go to one side or the other. Each doubleton, 108 directories in total, contributes one file to each split. Multi-file directories ($\geq$3 files, 187 directories) are divided proportionally, with at least two files left in training so that post-processing parameters can be fit in a meaningful way.
 
 \begin{table}[t]
 \centering
@@ -198,166 +212,153 @@ We split the corpus into a balanced 639/639 train/test partition with a leak-fre
 \toprule
 \textbf{Category} & \textbf{Dirs} & \textbf{Train} & \textbf{Test} \\
 \midrule
-Singletons (1 file) & 279 & 79 & 200 \\
-Doubletons (2 files) & 74 & 74 & 74 \\
-Multi-file ($\geq$3) & 185 & 486 & 365 \\
+Singletons (1 file) & 545 & 272 & 273 \\
+Doubletons (2 files) & 108 & 108 & 108 \\
+Multi-file ($\geq$3) & 187 & 407 & 537 \\
 \midrule
-\textbf{Total} & 538 & \textbf{639} & \textbf{639} \\
+\textbf{Total} & 840 & \textbf{787} & \textbf{918} \\
 \bottomrule
 \end{tabular}
-\caption{Train/test split statistics. The test set contains 320 ``existing'' files (with a same-directory partner in test) and 319 ``new'' files (no test-set partner).}
+\caption{Train and test split statistics. The test set contains 645 ``existing'' files, which have a same-directory partner in test, and 273 ``new'' files, which do not.}
 \label{tab:split}
 \end{table}
 
-All parameter fitting (token probabilities for SIF, principal components for ABTT, PCA whitening, and threshold selection) uses only training data. Evaluation uses only test files, with 222 positive pairs and 427 train-set positive pairs.
+All fitting, including ABTT principal components and threshold tuning, uses training data only. The test set contains 604 positive pairs.
+
+\section{Methodology}
 
 \subsection{Models}
 
-We evaluate five pretrained models spanning three architectures:
+We evaluate six pre-trained models from three architecture families:
 
 \begin{itemize}
-\item \textbf{LaTa}: A T5-based seq2seq model pretrained on Latin text \citep{riemenschneider2023lata}. We extract from the encoder (12 transformer blocks).
-\item \textbf{PhilTa}: A philologically-oriented variant of LaTa, also T5-based \citep{riemenschneider2023lata}.
-\item \textbf{LaBSE}: A language-agnostic BERT sentence encoder supporting 109 languages \citep{feng2022labse}, with 12 encoder layers.
-\item \textbf{Qwen3-0.6B}: A multilingual decoder-only embedding model with 28 transformer layers \citep{qwen3embedding2025}.
-\item \textbf{KaLM-mini}: A multilingual decoder-only embedding model with 24 transformer layers \citep{kalm2025embedding}.
+\item \textbf{LaTa}: a T5-based seq2seq model pre-trained on Latin \citep{riemenschneider2023lata}. We extract encoder hidden states (12 transformer blocks).
+\item \textbf{PhilTa}: a philologically-oriented variant of LaTa, also T5-based \citep{riemenschneider2023lata}.
+\item \textbf{LaBSE}: a language-agnostic BERT sentence encoder covering 109 languages \citep{feng2022labse} (12 encoder layers).
+\item \textbf{mt5-base}: a multilingual T5 encoder-decoder \citep{xue2021mt5} (12 encoder layers).
+\item \textbf{Qwen3-0.6B}: a multilingual decoder-only embedding model (28 layers) \citep{qwen3embedding2025}.
+\item \textbf{KaLM-mini}: a multilingual decoder-only embedding model (24 layers) \citep{kalm2025embedding}.
 \end{itemize}
 
 \subsection{Embedding Extraction}
 
-For each model, we extract hidden-state representations from layers 1 through the final transformer block (excluding layer 0, the static embedding output). Model depths vary: 12 layers for LaTa, PhilTa, and LaBSE; 28 for Qwen3-0.6B; 24 for KaLM-mini. For the T5 models, we additionally extract feed-forward intermediate (FF1) representations from layers 1--12; for LaBSE and the decoder-only models, we extract FFN intermediate (post-first-linear) representations. Token-level representations are aggregated into sentence embeddings via either mean pooling (baseline) or SIF-weighted pooling.
+We extract hidden-state representations from every transformer block, starting at layer 1 and ending at the final block, while skipping layer 0, the static embedding table. LaTa, PhilTa, LaBSE, and mt5-base each contribute 12 layers. Qwen3-0.6B contributes 28, and KaLM-mini contributes 24. Token representations at each layer are then pooled into a single sentence vector, either by plain mean pooling or by SIF weighting.
 
-\subsection{Post-Processing Methods}
+For the paper-facing pooling baseline, we remove only tokenizer artifacts with no lexical content, such as whitespace, padding, or tokenizer-prefix-only tokens. We keep punctuation and numerals in the pooled representations. In the explanation figures, though, we always show the original decoded tokens rather than filtered display tokens.
 
-We compare five post-processing configurations:
+\subsection{Post-Processing: ABTT}
 
-\paragraph{Baseline.} Mean-pooled token embeddings with no post-processing.
+Our main post-processing method is All-but-the-Top (ABTT) \citep{mu2018allbutthetop}. We center the pooled sentence embeddings, compute the top-$D$ principal components by SVD on the training set, and project those components out of both train and test embeddings. At each layer we search $D \in \{1,2,3,5,7,10\}$ and keep the value that maximizes training-set directory accuracy at rank 1 in Task B. We refer to that as the \textbf{optimal} setting.
 
-\paragraph{SIF weighting.} Each token $w_i$ receives weight (Equation~\ref{eq:sif}):
-\begin{equation}
-\alpha_i = \frac{a}{a + p(w_i)}
-\label{eq:sif}
-\end{equation}
-where $p(w_i)$ is the unigram probability estimated from the training set and $a = 10^{-3}$ \citep{arora2017sif}. The sentence embedding is the weighted average of token vectors.
+We also compare against two simpler alternatives. One is SIF-weighted pooling \citep{arora2017sif} without ABTT. The other is PCA whitening \citep{su2021whitening}. SIF assigns each token $w_i$ the weight $\alpha_i = a / (a + p(w_i))$, where $p(w_i)$ is the unigram probability estimated on the training set and $a = 10^{-3}$.
 
-\paragraph{ABTT (PC removal).} After computing sentence embeddings, we center them and compute the top-$D$ principal components via SVD on the training embeddings. These components are projected out from both train and test embeddings \citep{mu2018allbutthetop}. We test two variants: \textbf{SIF+ABTT (fixed)} with $D{=}10$, and \textbf{SIF+ABTT (optimal)} where $D \in \{1,2,3,5,7,10\}$ is selected per layer to maximize training-set AUCROC.
+\subsection{Example-Level Attribution}
 
-\paragraph{PCA whitening.} We apply PCA with whitening (decorrelation + variance normalization) fitted on the training embeddings \citep{su2021whitening}.
-
-\subsection{Threshold Learning}
-
-For threshold-based classification, we learn a cosine similarity threshold $\tau$ that maximizes F1 score on the training pairs. This threshold is used in density-plot visualizations and as a diagnostic for class separation.
+For the explanation figures, we use integrated gradients \citep{sundararajan2017axiomatic} as a local attribution method. Given a query passage and one candidate partner passage, we compute per-sequence token attributions toward pair cosine similarity. The displayed axes always use the original decoded tokens rather than filtered display tokens, even when a token's attribution is close to zero. The heatmap in Figure~\ref{fig:pairmatrix} is therefore a derived pairwise view: token-token cosine similarity is combined with the marginal integrated-gradient scores of the two sequences. We show that view before and after ABTT on the same example. We also render companion self-attention maps for the same pair as supporting context only, since ABTT is applied after encoding and does not change the model's internal attention weights.
 
 \subsection{Evaluation Metrics}
 
-We evaluate with: \textbf{AUCROC} over pairwise cosine similarities (same-directory = positive), our primary metric; \textbf{cosine gap}, the difference between mean same-directory and mean different-directory cosine similarity (a diagnostic of class separation); and \textbf{Acc@$k$}, the fraction of test files whose nearest neighbor (or top-$k$) shares its directory.
+For Task A, the main measure is \textbf{AUCROC}, computed over pairwise cosine similarities, with same-directory pairs treated as positive. We also report \textbf{cosine gap}, the difference between the mean same-directory and mean different-directory cosine similarity, as a direct measure of class separation.
+
+For Task B, we report \textbf{cumulative top-$K$ accuracy}. For each $K$ from 1 to 5, the metric gives the fraction of test queries whose labeled directory appears among the model's top $K$ options. This directly answers the deployment question: if the expert inspects the top $K$ candidates, how likely are they to find the correct directory? We still use training-set directory accuracy at rank 1 as the model-selection signal for ABTT's $D$.
 
 \section{Results}
 
-\subsection{The Anisotropy Dip}
+\subsection{The Mid-Layer Dip}
 
-Figure~\ref{fig:dip} shows our headline finding. When using baseline mean-pooled embeddings, LaTa and PhilTa exhibit a catastrophic performance collapse in middle encoder layers. LaTa's AUCROC drops from its best early-layer value to below 0.5 (chance) in middle layers; PhilTa shows a nearly identical pattern. Both models recover partially at the final layer.
+The main result shows up immediately in the layerwise plots. Baseline mean-pooled embeddings from LaTa and PhilTa collapse in the middle encoder layers. LaTa drops from strong early-layer AUCROC to below 0.5, which is chance, and PhilTa follows almost the same path. Both recover somewhat by the final layer.
 
-LaBSE is substantially more resistant: its worst layer remains well above chance, and performance improves steadily toward the final layer. The two decoder-only models (Qwen3-0.6B and KaLM-mini) show a qualitatively different pattern, with milder or absent mid-layer collapse, consistent with their architectural differences from encoder-only and encoder-decoder models.
+LaBSE and mt5-base do not show the same kind of collapse, and even their weakest layers remain well above chance. Qwen3-0.6B and KaLM-mini also vary much less across depth, which fits their decoder-only architecture.
 
 \begin{figure*}[t]
 \centering
-\includegraphics[width=\textwidth]{fig7_aucroc_per_model.pdf}
-\caption{AUCROC vs.\ normalized layer depth (\% of total layers) for five models and five post-processing methods (hidden states). Baseline embeddings (gray) collapse to below-chance performance in middle layers for LaTa and PhilTa, while decoder-only models (Qwen3-0.6B, KaLM-mini) and LaBSE remain more stable. SIF+ABTT (red) eliminates the dip entirely across all models.}
+\includegraphics[width=\textwidth]{fig_release_aucroc_per_model.pdf}
+\caption{AUCROC across normalized layer depth for the six models. LaTa and PhilTa show the clearest mid-layer dip before post-processing. ABTT flattens those curves much more than SIF or whitening.}
 \label{fig:dip}
 \end{figure*}
 
-Applying SIF+ABTT completely eliminates this collapse. With optimal $D$ selection, every layer of every model achieves AUCROC above 0.951. The worst SIF+ABTT result across all 88 model-layer combinations (KaLM-mini layer 6, 0.951) still exceeds baseline performance at most layers for the T5 models. The performance range within each model shrinks to 1--2 percentage points: LaTa spans 0.957--0.971, PhilTa 0.967--0.980, LaBSE 0.955--0.978, Qwen3-0.6B 0.960--0.979, and KaLM-mini 0.951--0.967.
+After ABTT, the scores within each model cluster much more tightly across depth.
 
-\subsection{Method Comparison}
+\subsection{Similarity Distributions}
 
-Table~\ref{tab:methods} compares the best AUCROC achieved by each post-processing method across all layers.
 
-\begin{table}[t]
+
+Figure~\ref{fig:density} shows the same pattern from another angle. It compares PhilTa at the last layer and at its dip layer. Before ABTT, the dip-layer cosine scores for true duplicates and non-duplicates overlap heavily. After ABTT, those distributions separate much more clearly at the same layer.
+
+\subsection{Cosine Gap Analysis}
+
+\begin{figure*}[!t]
 \centering
-\small
-\begin{tabular}{llcc}
-\toprule
-\textbf{Model} & \textbf{Method} & \textbf{Best AUCROC} & \textbf{Layer} \\
-\midrule
-\multirow{4}{*}{LaTa} & Baseline & 0.929 & 12 \\
- & SIF only & 0.927 & 1 \\
- & SIF+ABTT (opt.) & \textbf{0.967} & 6 \\
- & Whitening & 0.541 & 4 \\
-\midrule
-\multirow{4}{*}{PhilTa} & Baseline & 0.913 & 12 \\
- & SIF only & 0.946 & 1 \\
- & SIF+ABTT (opt.) & \textbf{0.967} & 12 \\
- & Whitening & 0.525 & 6 \\
-\midrule
-\multirow{4}{*}{LaBSE} & Baseline & 0.943 & 12 \\
- & SIF only & 0.942 & 12 \\
- & SIF+ABTT (opt.) & \textbf{0.978} & 12 \\
- & Whitening & 0.556 & 2 \\
-\midrule
-\multirow{4}{*}{Qwen3-0.6B} & Baseline & 0.952 & 28 \\
- & SIF only & 0.931 & 28 \\
- & SIF+ABTT (opt.) & \textbf{0.969} & 3 \\
- & Whitening & 0.578 & 3 \\
-\midrule
-\multirow{4}{*}{KaLM-mini} & Baseline & 0.958 & 23 \\
- & SIF only & 0.951 & 23 \\
- & SIF+ABTT (opt.) & \textbf{0.957} & 3 \\
- & Whitening & 0.578 & 18 \\
-\bottomrule
-\end{tabular}
-\caption{Best AUCROC per model and method (hidden states, 5 models). SIF+ABTT consistently achieves the highest performance. Whitening fails across all models.}
-\label{tab:methods}
-\end{table}
-
-SIF weighting alone provides a modest improvement for the T5 models but does not fully correct the mid-layer collapse. ABTT removal is the critical addition that flattens performance across layers. The decoder-only models (Qwen3-0.6B, KaLM-mini) also benefit from SIF+ABTT, though their baseline performance is already more stable across layers.
-
-PCA whitening fails catastrophically across all five models: the decorrelation destroys discriminative signal rather than enhancing it.
-
-\subsection{Cosine Similarity Gap}
-
-Figure~\ref{fig:gap} shows the cosine gap (mean same-directory similarity minus mean different-directory similarity) across layers. The gap quantifies how well-separated the two classes are in cosine space.
-
-\begin{figure*}[t]
-\centering
-\includegraphics[width=\textwidth]{fig6_gap_per_model.pdf}
-\caption{Cosine similarity gap vs.\ normalized layer depth for five models and all methods. SIF+ABTT maintains a large gap at every layer, while baseline gaps collapse to near zero in middle layers for the T5 models.}
+\includegraphics[width=\textwidth]{fig_release_gap_per_model.pdf}
+\caption{Cosine gap across normalized layer depth for the six models. In the Latin T5 models, the baseline gap nearly vanishes in the middle layers. ABTT restores a positive gap across depth more reliably than the alternative baselines.}
 \label{fig:gap}
 \end{figure*}
 
-Baseline embeddings have a mean gap of just 0.048 across all model-layer combinations, dropping to near zero in middle layers where anisotropy is worst. SIF+ABTT increases the mean gap to 0.552, an 11$\times$ improvement. The gap ranges from 0.471 to 0.646 across all SIF+ABTT configurations, indicating robust class separation at every layer of every model.
+The cosine-gap plots tell the same story in a more compact way. In LaTa and PhilTa, the baseline gap nearly disappears in the dip region. ABTT restores a clear positive gap across all layers.
 
-\begin{figure*}[t]
+\subsection{Task B: Simulated Human Selection}
+
+We next return to the directory-assignment setting that motivates deployment. For each query, the system scores every directory by its best document match and then presents the top five options, along with the implicit \texttt{\_\_NEW\_\_} fallback. During evaluation, the ``human'' is simulated by selecting the labeled directory whenever it appears in the shortlist. Table~\ref{tab:taskb} reports cumulative top-$K$ accuracy: the fraction of queries whose labeled directory appears within the top $K$ options, for $K = 1, \ldots, 5$.
+
+\begin{table*}[t]
 \centering
-\includegraphics[width=\textwidth]{fig5_density_grid.pdf}
-\caption{Density plots of pairwise cosine similarities for baseline (top row) vs.\ SIF+ABTT optimal (bottom row) at the last layer and a representative middle layer for each of the five models. Baseline middle layers show overlapping distributions (the ``dip''), while SIF+ABTT produces clean bimodal separation at all depths.}
-\label{fig:density}
+\small
+\setlength{\tabcolsep}{10pt}
+\begin{tabular}{lrrrrr}
+\toprule
+\textbf{Model} & \textbf{Top-1} & \textbf{Top-2} & \textbf{Top-3} & \textbf{Top-4} & \textbf{Top-5} \\
+\midrule
+LaTa & 86.2 & 93.0 & 95.2 & 96.3 & 96.7 \\
+PhilTa & 88.2 & 93.9 & 96.3 & 96.7 & 97.2 \\
+LaBSE & 88.0 & 94.0 & 95.4 & 96.4 & 97.1 \\
+Qwen3-0.6B & 87.7 & 93.8 & 96.0 & 97.2 & 97.2 \\
+KaLM-mini & 88.0 & 93.5 & 95.5 & 96.1 & 96.5 \\
+mt5-base & 88.3 & 94.6 & 96.0 & 96.7 & 97.1 \\
+\bottomrule
+\end{tabular}
+\caption{Cumulative top-$K$ accuracy for Task B across the six models. Each cell gives the percentage of test queries whose labeled directory appears within the model's top $K$ options. All models exceed 93\% by Top-2 and 95\% by Top-3.}
+\label{tab:taskb}
+\end{table*}
+
+The cumulative view directly answers the deployment question: if the expert inspects the top $K$ candidates, how likely are they to find the correct directory? All six models place the labeled directory in the top-1 position more than 86\% of the time, and by Top-2 every model exceeds 93\%. The marginal gains from Top-3 onward are small, suggesting that a shortlist of two or three options suffices for nearly all queries.
+
+\subsection{Example-Level Explanations}
+
+Integrated gradients are local explanations, so we focus on concrete examples rather than global summaries. For a query passage and one candidate partner passage, we compute per-sequence integrated gradients toward pair cosine similarity and display the original decoded tokens on both axes. Figure~\ref{fig:pairmatrix} gives the main explanation view, a derived pairwise heatmap built from token-token cosine similarity and weighted by the marginal integrated-gradient scores of the two passages.
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=\textwidth]{fig_pair_matrix_philta.pdf}
+\caption{Derived pairwise heatmap for one PhilTa retrieval case. The left panel shows the baseline representation and the right panel shows the same example after ABTT. Both axes use original decoded tokens, and the cell values combine token-token cosine similarity with single-sequence integrated-gradient scores.}
+\label{fig:pairmatrix}
 \end{figure*}
 
-\subsection{Optimal \textit{D} Analysis}
+The pairwise heatmap carries most of the interpretive weight. It is meant to help a human decide whether the retrieved directory looks plausible, not to stand in for a global account of model behavior. Figure~\ref{fig:attention} adds one more view of the same example.
 
-The number of principal components removed ($D$) shows model-dependent and architecture-dependent patterns. LaTa and PhilTa require minimal correction: $D{=}1$ at early layers, increasing to $D{=}2$--3 at later layers. LaBSE shows a striking reversal: early layers need aggressive correction ($D{=}7$--10) while final layers require only $D{=}1$--2, suggesting that LaBSE's later layers are already better conditioned. The decoder-only models show a different pattern: Qwen3-0.6B uses moderate $D{=}3$--5 in early and middle layers, increasing to $D{=}7$--10 in later layers. KaLM-mini requires more aggressive correction throughout, with $D{=}7$--10 at most layers, suggesting higher anisotropy across its full depth.
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=\textwidth]{fig_attention_philta.pdf}
+\caption{Companion self-attention maps for the same PhilTa example. Because ABTT is applied after encoding, attention is included only as supporting context, not as a before-and-after comparison.}
+\label{fig:attention}
+\end{figure*}
 
-The fixed $D{=}10$ setting performs within 1.6\% of the per-layer optimal across all configurations (mean deficit 0.4\%), making it a safe default when per-layer tuning is impractical.
+The attention map provides extra context around the same query and candidate pair. It is not the explanation itself, and it is not meant to make a before-and-after claim about ABTT.
+
 
 \section{Discussion}
 
-\paragraph{Why whitening fails.} While whitening has shown promise for English sentence similarity tasks \citep{su2021whitening, huang2021whiteningbert}, it fails completely in our setting. We hypothesize that decorrelation destroys dimensions that carry discriminative signal for this domain; the variance structure of Latin legal text embeddings is itself informative, and normalizing it removes the basis for distinguishing semantically equivalent fragments.
+PCA whitening has worked well for English sentence similarity \citep{su2021whitening, huang2021whiteningbert}, but it performs poorly here. A plausible reason is that whitening removes variance that still helps separate equivalent from non-equivalent Latin legal passages. In this corpus, the original variance structure seems to carry useful signal rather than just noise.
 
-\paragraph{Layer irrelevance as a practical advantage.} A key practical implication of SIF+ABTT is that practitioners need not perform expensive layer selection. With post-processing, any layer from any of the five models yields strong AUCROC. This eliminates a significant hyperparameter from the pipeline.
+The depth profiles also differ by architecture. The strongest dip appears in the two Latin T5 encoders. mt5-base shows a milder version of the same pattern, and LaBSE plus the decoder-only models vary much less across depth. Architecture and pre-training objective are the most likely reasons. After ABTT, those differences matter less in practice because the weak middle layers become much more usable. It also reduces the need to hunt for a narrow ``good'' layer band before retrieval.
 
-\paragraph{Latin-specific vs.\ multilingual models.} The Latin-specific T5 models and the multilingual models achieve comparable peak AUCROC after SIF+ABTT, suggesting that the post-processing is effective enough to close the gap between domain-specific and general-purpose models.
+We also tested SIF-weighted pooling and whitening as simpler alternatives. They can help in individual cases, but neither produces the same consistent repair across models and layers. Mean pooling plus ABTT remains the safer default for this retrieval pipeline.
 
-\paragraph{Architecture-specific dip patterns.} The mid-layer collapse is most severe in the T5 encoder-decoder models (LaTa, PhilTa), moderate in the BERT encoder (LaBSE), and mildest in the decoder-only models (Qwen3-0.6B, KaLM-mini). This gradient suggests that the anisotropy dip is not a universal property of transformer depth but depends on pre-training objective and architecture. Regardless, SIF+ABTT corrects the geometry across all three architecture families.
+The explanation component is intentionally local. The derived pair matrix and the companion attention map are there to help a scholar inspect one ranked option, not to summarize the model as a whole. That fits the human-in-the-loop directory-assignment setting much better than our earlier aggregate token-category analyses.
 
 
 \section*{Limitations}
 
-Our evaluation is limited to a single domain (medieval canon law) and a single language (Latin). The corpus of 1,278 fragments, while substantial for this domain, is small by modern NLP standards. We evaluate only five models; other architectures (e.g., encoder-only models fine-tuned on Latin) may behave differently. The SIF+ABTT pipeline assumes access to a representative unlabeled corpus for estimating token frequencies and principal components; its effectiveness in extremely low-resource settings with fewer than a few hundred documents remains untested.
-
-\section*{Acknowledgments}
-
-%% TODO: Add acknowledgments.
+Our study covers one domain, medieval canon law, and one language, Latin. The 1,705-fragment corpus is large for this field, but it is still small by current NLP standards. We test six models, and models outside this set may behave differently. ABTT also needs enough unlabeled documents to estimate principal components well, and we have not tested it in settings with only a few hundred texts or fewer. The explanation analysis is local and example-based, and the human-in-the-loop results are simulated from ground truth rather than validated through a live user study.
 
 \bibliography{custom}
 

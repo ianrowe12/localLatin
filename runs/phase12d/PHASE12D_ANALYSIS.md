@@ -8,7 +8,7 @@ This experiment provides a direct empirical answer.
 
 ## Methods
 
-For each of 5 models at 4 layers, we compute document embeddings from token-level hidden states using 4 strategies:
+For each of 6 models at 4 layers, we compute document embeddings from token-level hidden states using 4 strategies:
 
 | Condition | What it does |
 |-----------|-------------|
@@ -44,6 +44,15 @@ Higher is better. Look for the **blue bar (ABTT) consistently being the tallest*
 
 ![Acc@1 Comparison](fig_filtering_vs_abtt_acc1.png)
 
+<details>
+<summary><strong>How to read this graph</strong></summary>
+
+Same layout as AUCROC, but the metric is Acc@1 (accuracy at rank 1): given a query, does the most similar document in the test set belong to the same source folder (i.e., is it the correct partner)?
+
+The pattern is even more dramatic here — at dip layers the red baseline bars collapse to near-zero (random retrieval), while the blue ABTT bars stay high.
+
+</details>
+
 ---
 
 ## Key Numbers
@@ -56,8 +65,12 @@ Higher is better. Look for the **blue bar (ABTT) consistently being the tallest*
 | LaTa | L8 | 0.463 | 0.883 | 0.894 | **0.954** | **+0.060** |
 | PhilTa | L6 (dip) | 0.464 | 0.696 | 0.682 | **0.970** | **+0.274** |
 | PhilTa | L9 | 0.467 | 0.724 | 0.706 | **0.968** | **+0.244** |
+| MT5-base | L4 (dip) | 0.710 | 0.843 | 0.854 | **0.972** | **+0.118** |
+| MT5-base | L8 | 0.691 | 0.704 | 0.738 | **0.953** | **+0.215** |
 
 At PhilTa L6, filtering only recovers **24%** of the gap between baseline and ABTT. ABTT closes the remaining **76%**.
+
+MT5-base (Google's massively multilingual T5, 101 languages) exhibits the **same dip-layer phenomenon** as the Latin-trained T5 models, confirming that ABTT's advantage is architecture-dependent, not language-dependent.
 
 ### BERT (LaBSE — No Empty Tokens)
 

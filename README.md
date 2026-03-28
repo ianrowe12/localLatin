@@ -59,7 +59,7 @@ conda activate localLatin
 pip install -r /u/irowerojas/localLatin/requirements.txt
 ```
 
-**Important (Delta / non-interactive shells):** ALWAYS install
+**Important (Delta / non-interactive shells):** ALWAYS install/
 packages via `conda run` so they land in the correct env:
 ```bash
 module load miniforge3-python
