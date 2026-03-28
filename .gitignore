@@ -28,3 +28,37 @@ runs/redo_results/test.tsv
 # SLURM logs
 slurm-*.out
 slurm-*.err
+slurm/logs/
+
+# Frontend build artifacts
+web/frontend/node_modules/
+web/frontend/dist/
+
+# Data directories (too large for git)
+canon_labelled/
+canon_unlabelled/
+
+# Heavy experiment output directories
+runs/phase9_bases/
+runs/phase11_filtered/
+runs/phase11_release/
+runs/phase12/pcs/
+runs/phase12_filtered/
+runs/phase12_release/
+runs/phase12c/
+runs/phase12c_filtered/
+runs/phase12d_filtered/
+runs/phase12e_release/
+runs/phase12f_examples/
+runs/phase_resubmit/
+runs/phase_resubmit_bases/
+runs/paper_assets/
+runs/paper_release_assets/
+runs/paper_track_handoff/
+runs/_smoke*/
+runs/_resubmit*/
+
+# Overleaf binary figures
+overleaf_drafts/figures/*.pdf
+overleaf_drafts/figures/*.png
+overleaf_drafts/notes/
