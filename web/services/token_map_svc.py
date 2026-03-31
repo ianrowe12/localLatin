@@ -78,6 +78,30 @@ def list_examples(store: DataStore, model: str | None = None, bucket: str | None
     return results
 
 
+def resolve_example_id(
+    store: DataStore,
+    file_id: int,
+    candidate_dir: str,
+    model: str | None = None,
+) -> int | None:
+    """Find the example_id for a (query file_id, candidate_dir) pair."""
+    if store.ig_examples is None:
+        return None
+
+    df = store.ig_examples
+    mask = (df["query_file_id"] == file_id) & (df["candidate_folder_id"] == candidate_dir)
+    if model:
+        slug = normalize_slug(model)
+        mask = mask & df["model_name"].apply(lambda x: normalize_slug(str(x)) == slug)
+
+    matches = df[mask]
+    if matches.empty:
+        return None
+
+    eid = int(matches.iloc[0]["example_id"])
+    return eid if eid in store.ig_artifact_paths else None
+
+
 def load_token_map(store: DataStore, example_id: int) -> TokenMapResponse | None:
     if example_id not in store.ig_artifact_paths:
         return None

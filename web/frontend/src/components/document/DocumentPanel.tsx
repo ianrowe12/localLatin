@@ -1,6 +1,5 @@
 import { useMemo, useCallback } from 'react'
 import { useTokens, type PinMatch } from '../../contexts/TokenContext'
-import type { TokenMapResponse } from '../../api/tokenMap'
 import { useTokenRefs } from '../connections/TokenRefRegistry'
 import DocumentHeader from './DocumentHeader'
 import TokenSpan from './TokenSpan'
@@ -13,13 +12,19 @@ interface TokenLike {
   category: string
 }
 
+export interface TokenMapLike {
+  similarity_matrix?: number[][]
+  top_matches?: Record<string, { candidate_idx: number; score: number }[]>
+  ig_weighted_matrix?: number[][] | null
+}
+
 interface DocumentPanelProps {
   side: 'query' | 'candidate'
   filename?: string
   dirLabel?: string
   score?: number
   tokens?: TokenLike[]
-  tokenMap?: TokenMapResponse | null
+  tokenMap?: TokenMapLike | null
   loading?: boolean
   scrollRef?: React.RefObject<HTMLDivElement>
 }

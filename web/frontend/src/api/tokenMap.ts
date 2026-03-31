@@ -48,6 +48,7 @@ interface HookState<T> {
 export function useTokenMap(
   queryId: number | null,
   candidateId: string | null,
+  model?: string,
 ): HookState<TokenMapResponse> {
   const [state, setState] = useState<HookState<TokenMapResponse>>({
     data: null,
@@ -62,7 +63,7 @@ export function useTokenMap(
       return
     }
 
-    const key = `${queryId}:${candidateId}`
+    const key = `${queryId}:${candidateId}:${model ?? ''}`
     const cached = cache.current.get(key)
     if (cached) {
       setState({ data: cached, loading: false, error: null })
@@ -72,8 +73,10 @@ export function useTokenMap(
     let cancelled = false
     setState((prev) => ({ ...prev, loading: true, error: null }))
 
+    const params = new URLSearchParams({ candidate_dir: candidateId })
+    if (model) params.set('model', model)
     apiFetch<TokenMapResponse>(
-      `/api/queries/${queryId}/token-map/${encodeURIComponent(candidateId)}`,
+      `/api/query/${queryId}/token_map?${params}`,
     )
       .then((data) => {
         if (cancelled) return
@@ -88,7 +91,7 @@ export function useTokenMap(
     return () => {
       cancelled = true
     }
-  }, [queryId, candidateId])
+  }, [queryId, candidateId, model])
 
   return state
 }

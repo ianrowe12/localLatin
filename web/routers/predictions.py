@@ -52,12 +52,18 @@ async def get_predictions(
         if dir_files and dir_files[0] in texts:
             preview = texts[dir_files[0]][:200]
 
+        candidate_files = [
+            CandidateFile(filename=fname, text=texts.get(fname, ""))
+            for fname in dir_files
+        ]
+
         predictions.append(Prediction(
             rank=pred["rank"],
             dir_name=dir_name,
             score=pred["score"],
             dir_files=dir_files,
             preview_text=preview,
+            candidate_files=candidate_files,
         ))
 
     return PredictionResponse(

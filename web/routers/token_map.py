@@ -29,3 +29,22 @@ async def get_token_map(
     if result is None:
         raise ExampleNotFoundError(example_id)
     return result
+
+
+@router.get("/query/{file_id}/token_map", response_model=TokenMapResponse)
+async def get_token_map_by_query(
+    file_id: int,
+    candidate_dir: str = Query(..., description="Candidate directory name"),
+    model: str = Query("", description="Model slug (optional, narrows lookup)"),
+    store: DataStore = Depends(get_store),
+) -> TokenMapResponse:
+    """Look up a token map by query file_id + candidate directory."""
+    example_id = token_map_svc.resolve_example_id(
+        store, file_id, candidate_dir, model or None,
+    )
+    if example_id is None:
+        raise ExampleNotFoundError(f"{file_id}/{candidate_dir}")
+    result = token_map_svc.load_token_map(store, example_id)
+    if result is None:
+        raise ExampleNotFoundError(example_id)
+    return result

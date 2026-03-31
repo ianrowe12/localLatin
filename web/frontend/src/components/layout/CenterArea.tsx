@@ -2,11 +2,11 @@ import { useCallback, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useApp } from '../../contexts/AppContext'
 import { useQueryDetail, usePredictions } from '../../api/queries'
-import { useTokenMap } from '../../api/tokenMap'
 import { TokenRefProvider } from '../connections/TokenRefRegistry'
 import ConnectionOverlay from '../connections/ConnectionOverlay'
 import DocumentPanel from '../document/DocumentPanel'
 import DraggableDivider from './DraggableDivider'
+import { buildWordMatchMap } from '../../utils/wordSimilarity'
 
 export default function CenterArea() {
   const [splitPercent, setSplitPercent] = useState(50)
@@ -32,20 +32,26 @@ export default function CenterArea() {
   const candidateDir = currentPrediction?.dir_name ?? null
   const candidateFile = currentPrediction?.candidate_files?.[0] ?? null
 
-  // Candidate tokens: use tokenMap's candidate_tokens when available,
-  // since they carry proper token indices
-  const tokenMap = useTokenMap(activeQueryId, candidateDir)
-
+  // Candidate tokens: simple tokenization from candidate file text
   const candidateTokens = useMemo(() => {
-    if (tokenMap.data?.candidate_tokens) {
-      return tokenMap.data.candidate_tokens.map((t) => ({
-        text: t.text,
-        index: t.idx,
-        category: t.is_content ? 'content' : 'punctuation',
-      }))
+    if (candidateFile?.text) {
+      return candidateFile.text
+        .split(/\s+/)
+        .filter((t) => t.length > 0)
+        .map((t, i) => ({
+          text: t,
+          index: i,
+          category: /^[.,;:!?()\[\]]+$/.test(t) ? 'punctuation' : 'content',
+        }))
     }
     return undefined
-  }, [tokenMap.data])
+  }, [candidateFile])
+
+  // Word-match similarity for cross-panel highlighting
+  const wordMatchMap = useMemo(() => {
+    if (!queryDetail.data?.tokens || !candidateTokens) return null
+    return buildWordMatchMap(queryDetail.data.tokens, candidateTokens)
+  }, [queryDetail.data?.tokens, candidateTokens])
 
   const handleDrag = useCallback((newPercent: number) => {
     setSplitPercent(newPercent)
@@ -66,7 +72,7 @@ export default function CenterArea() {
             side="query"
             filename={queryDetail.data?.filename}
             tokens={queryDetail.data?.tokens}
-            tokenMap={tokenMap.data}
+            tokenMap={wordMatchMap}
             loading={queryDetail.loading}
             scrollRef={queryScrollRef}
           />
@@ -94,8 +100,8 @@ export default function CenterArea() {
                 dirLabel={currentPrediction?.dir_name}
                 score={currentPrediction?.score}
                 tokens={candidateTokens}
-                tokenMap={tokenMap.data}
-                loading={tokenMap.loading || predictions.loading}
+                tokenMap={wordMatchMap}
+                loading={predictions.loading}
                 scrollRef={candidateScrollRef}
               />
             </motion.div>

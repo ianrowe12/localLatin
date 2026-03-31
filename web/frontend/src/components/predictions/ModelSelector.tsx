@@ -1,9 +1,17 @@
+import { useEffect } from 'react'
 import { useApp } from '../../contexts/AppContext'
 import { useModels } from '../../api/models'
 
 export default function ModelSelector() {
   const { activeModel, setActiveModel } = useApp()
   const { data: models } = useModels()
+
+  // Auto-select first model when models load and none is selected
+  useEffect(() => {
+    if (!activeModel && models && models.length > 0) {
+      setActiveModel(models[0].slug)
+    }
+  }, [activeModel, models, setActiveModel])
 
   return (
     <select

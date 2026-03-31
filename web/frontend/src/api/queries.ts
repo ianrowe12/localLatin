@@ -145,7 +145,7 @@ export function useQueryDetail(id: number | null): HookState<QueryDetail> {
     let cancelled = false
     setState((prev) => ({ ...prev, loading: true, error: null }))
 
-    apiFetch<QueryDetail>(`/api/queries/${id}`)
+    apiFetch<QueryDetail>(`/api/query/${id}`)
       .then((data) => {
         if (cancelled) return
         cache.current.set(id, data)
@@ -195,7 +195,7 @@ export function usePredictions(
     let cancelled = false
     setState((prev) => ({ ...prev, loading: true, error: null }))
 
-    apiFetch<PredictionResponse>(`/api/queries/${queryId}/predictions/${model}`)
+    apiFetch<PredictionResponse>(`/api/query/${queryId}/predictions?model=${encodeURIComponent(model)}`)
       .then((data) => {
         if (cancelled) return
         cache.current.set(key, data)
