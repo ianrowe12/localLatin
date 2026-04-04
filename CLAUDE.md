@@ -101,3 +101,37 @@ canon/ (1,278 .txt files, 538 dirs)
 - **Experiment outputs**: `runs/` (not in git)
 - **Analysis docs**: `runs/phase9/EXPERIMENT_1_ANALYSIS.md`, `runs/phase10/experiment1/ANALYSIS_*.md`
 - **Paper drafts**: `overleaf_drafts/`
+
+## Webapp (Git Subtree)
+
+The scholar review webapp lives in a separate repo ([localLatin-webapp](https://github.com/ianrowe12/localLatin-webapp)) embedded as a git subtree at `web/`. Zero code imports cross the boundary — the webapp reads research data via configurable paths.
+
+### Running the webapp
+
+```bash
+cd web && cp config.yaml.example config.yaml  # set data_root to ".."
+cd .. && python -m web                         # from repo root
+```
+
+Frontend: `cd web/frontend && npm install && npm run dev` (or `npm run dev:mock` for mock data).
+
+### Subtree workflow
+
+```bash
+# Pull latest webapp changes from the webapp repo
+git subtree pull --prefix=web webapp main --squash
+
+# Push web/ changes made in this repo back to the webapp repo
+git subtree push --prefix=web webapp main
+```
+
+### Data contract
+
+The webapp reads these files (relative to `data_root` in `web/config.yaml`):
+- `canon_unlabelled/` — 2,238 query .txt files
+- `canon_labelled/` — 859 directories of candidate .txt files
+- `runs/phase_resubmit/unlabelled/unlabelled_predictions.csv` — model predictions
+- `runs/phase12f_examples/` — IG visualization artifacts (CSV + NPZ)
+- `runs/phase_resubmit/webapp/feedback.db` — auto-created SQLite
+
+Run `bash scripts/export_webapp_data.sh` to verify all required data files are present.

@@ -31,9 +31,13 @@ slurm-*.out
 slurm-*.err
 slurm/logs/
 
-# Frontend build artifacts
+# Webapp (git subtree at web/) — build artifacts and local config
 web/frontend/node_modules/
 web/frontend/dist/
+web/config.yaml
+web/__pycache__/
+web/routers/__pycache__/
+web/services/__pycache__/
 
 # Heavy experiment output directories
 runs/phase9_bases/
@@ -53,16 +57,14 @@ runs/paper_track_handoff/
 runs/_smoke*/
 runs/_resubmit*/
 
-# Webapp data: allow through, everything else in these dirs stays ignored
-# runs/phase_resubmit/ — only allow predictions CSV and webapp dir
+# Research pipeline outputs in runs/phase_resubmit/ — allow predictions CSV and webapp data through
 runs/phase_resubmit/**/*.npy
 runs/phase_resubmit/**/*.pkl
 runs/phase_resubmit/**/meta.csv
 runs/phase_resubmit/**/phase9_split.csv
 runs/phase_resubmit/**/scoreboard*.csv
 runs/phase_resubmit/unlabelled/results/
-# runs/phase12f_examples/ — allow CSV + artifacts (npz files ~27MB total)
-# (no ignore rule needed — just removed the blanket ignore above)
+# runs/phase12f_examples/ — IG artifacts for webapp token map visualization
 
 # Overleaf binary figures
 overleaf_drafts/figures/*.pdf
