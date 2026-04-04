@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "locallatin-webapp"
+version = "0.1.0"
+description = "Scholar review interface for localLatin manuscript retrieval"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "aiosqlite>=0.20.0",
+    "pyyaml>=6.0",
+    "pandas>=2.0.0",
+    "numpy>=1.24.0",
+    "eval_type_backport>=0.2.0",
+]
+
+[project.optional-dependencies]
+tokenizers = ["transformers>=4.30.0"]
+dev = ["ruff", "mypy"]
+
+[tool.setuptools]
+package-dir = {"web" = "."}
+packages = ["web", "web.routers", "web.services"]
