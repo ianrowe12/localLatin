@@ -24,7 +24,7 @@ export default function SearchBar({ value, onChange }: SearchBarProps) {
   }, [internal, onChange])
 
   return (
-    <div className="relative">
+    <div data-tour="search-bar" className="relative">
       {/* Search icon */}
       <svg
         width="14"

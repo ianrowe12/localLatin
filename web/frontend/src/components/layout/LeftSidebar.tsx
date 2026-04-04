@@ -49,6 +49,7 @@ export default function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
 
   return (
     <motion.aside
+      data-tour="query-list"
       className="h-full flex-shrink-0 overflow-hidden border-r border-stone-200/60 dark:border-stone-700/60
                  bg-white/60 dark:bg-surface-800/60 backdrop-blur-sm"
       animate={{ width: isOpen ? 280 : 48 }}

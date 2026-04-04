@@ -41,7 +41,7 @@ export default function PredictionList() {
 
   if (loading) {
     return (
-      <div className="px-2 py-2">
+      <div data-tour="predictions" className="px-2 py-2">
         <div className="text-xs font-semibold uppercase tracking-wider text-stone-400 mb-2 px-2">
           Predictions
         </div>
@@ -51,7 +51,7 @@ export default function PredictionList() {
   }
 
   return (
-    <div className="px-2 py-2">
+    <div data-tour="predictions" className="px-2 py-2">
       <div className="text-xs font-semibold uppercase tracking-wider text-stone-400 mb-2 px-2">
         Predictions
       </div>

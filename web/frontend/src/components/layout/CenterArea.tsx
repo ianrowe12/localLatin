@@ -65,6 +65,7 @@ export default function CenterArea() {
       >
         {/* Query panel */}
         <div
+          data-tour="query-panel"
           style={{ width: `${splitPercent}%` }}
           className="h-full overflow-hidden flex flex-col"
         >
@@ -82,6 +83,7 @@ export default function CenterArea() {
 
         {/* Candidate panel */}
         <div
+          data-tour="candidate-panel"
           style={{ width: `${100 - splitPercent}%` }}
           className="h-full overflow-hidden flex flex-col"
         >

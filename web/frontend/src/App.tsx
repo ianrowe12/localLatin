@@ -1,6 +1,7 @@
 import { AppProvider } from './contexts/AppContext'
 import { TokenProvider } from './contexts/TokenContext'
 import { FeedbackProvider } from './contexts/FeedbackContext'
+import { TourProvider } from './components/onboarding/TourProvider'
 import AppShell from './components/layout/AppShell'
 
 export default function App() {
@@ -8,7 +9,9 @@ export default function App() {
     <AppProvider>
       <TokenProvider>
         <FeedbackProvider>
-          <AppShell />
+          <TourProvider>
+            <AppShell />
+          </TourProvider>
         </FeedbackProvider>
       </TokenProvider>
     </AppProvider>

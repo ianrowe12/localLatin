@@ -51,7 +51,7 @@ export default function FeedbackPanel() {
 
   if (activeQueryId === null) {
     return (
-      <div className="flex-shrink-0">
+      <div data-tour="feedback" className="flex-shrink-0">
         <p className="text-xs text-stone-400 dark:text-stone-500 font-ui text-center py-4">
           Select a query to provide feedback
         </p>
@@ -60,7 +60,7 @@ export default function FeedbackPanel() {
   }
 
   return (
-    <div className="flex-shrink-0 flex flex-col gap-3">
+    <div data-tour="feedback" className="flex-shrink-0 flex flex-col gap-3">
       <div className="text-xs font-semibold uppercase tracking-wider text-stone-400 mb-0">
         Your Assessment
       </div>

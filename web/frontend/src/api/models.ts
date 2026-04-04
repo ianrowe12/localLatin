@@ -13,6 +13,13 @@ export interface ModelInfo {
   prediction_count: number
 }
 
+export interface RecentReview {
+  file_id: number
+  filename: string
+  timestamp: string
+  model_slug: string
+}
+
 export interface StatsResponse {
   total_queries: number
   reviewed_count: number
@@ -21,6 +28,8 @@ export interface StatsResponse {
   reviews_by_model: Record<string, number>
   reviews_by_reviewer: Record<string, number>
   rank_distribution: Record<string, number>
+  recent_reviews: RecentReview[]
+  next_unreviewed_ids: number[]
 }
 
 // ---------------------------------------------------------------------------

@@ -125,6 +125,13 @@ class FeedbackEntry(BaseModel):
 
 # --- Stats ---
 
+class RecentReview(BaseModel):
+    file_id: int
+    filename: str
+    timestamp: str
+    model_slug: str
+
+
 class StatsResponse(BaseModel):
     total_queries: int
     reviewed_count: int
@@ -133,6 +140,8 @@ class StatsResponse(BaseModel):
     reviews_by_model: Dict[str, int]
     reviews_by_reviewer: Dict[str, int]
     rank_distribution: Dict[str, int]
+    recent_reviews: List[RecentReview] = []
+    next_unreviewed_ids: List[int] = []
 
 
 # --- Models ---

@@ -12,7 +12,7 @@ const FILTERS = [
 
 export default function FilterChips({ active, onChange }: FilterChipsProps) {
   return (
-    <div className="flex gap-1.5" role="group" aria-label="Filter queries">
+    <div data-tour="filter-chips" className="flex gap-1.5" role="group" aria-label="Filter queries">
       {FILTERS.map(({ key, label }) => {
         const isActive = active === key
         return (

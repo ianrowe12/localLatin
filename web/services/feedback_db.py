@@ -120,6 +120,37 @@ class FeedbackDB:
             "rank_distribution": rank_dist,
         }
 
+    async def get_recent_reviews(self, limit: int = 10) -> list[dict]:
+        assert self._db is not None
+        rows = await (
+            await self._db.execute(
+                "SELECT DISTINCT query_id, timestamp, model_slug FROM feedback ORDER BY timestamp DESC LIMIT ?",
+                (limit,),
+            )
+        ).fetchall()
+        return [
+            {
+                "file_id": r["query_id"],
+                "timestamp": r["timestamp"],
+                "model_slug": r["model_slug"],
+            }
+            for r in rows
+        ]
+
+    async def get_next_unreviewed(self, all_file_ids: list[int], limit: int = 5) -> list[int]:
+        assert self._db is not None
+        rows = await (
+            await self._db.execute("SELECT DISTINCT query_id FROM feedback")
+        ).fetchall()
+        reviewed = {r["query_id"] for r in rows}
+        result: list[int] = []
+        for fid in all_file_ids:
+            if fid not in reviewed:
+                result.append(fid)
+                if len(result) >= limit:
+                    break
+        return result
+
     async def export_csv(
         self, model: str | None = None, reviewer: str | None = None
     ) -> str:

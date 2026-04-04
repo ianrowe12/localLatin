@@ -9,15 +9,20 @@ import {
 
 export type Theme = 'light' | 'dark'
 
+export type View = 'dashboard' | 'review'
+
 export interface AppContextValue {
   theme: Theme
   toggleTheme: () => void
+  currentView: View
+  setCurrentView: (view: View) => void
   activeQueryId: number | null
   setActiveQueryId: (id: number | null) => void
   activeModel: string
   setActiveModel: (slug: string) => void
   activePredictionRank: number
   setActivePredictionRank: (rank: number) => void
+  navigateToQuery: (fileId: number) => void
 }
 
 const AppContext = createContext<AppContextValue | null>(null)
@@ -38,6 +43,7 @@ function applyThemeClass(theme: Theme): void {
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<Theme>(getInitialTheme)
+  const [currentView, setCurrentView] = useState<View>('dashboard')
   const [activeQueryId, setActiveQueryId] = useState<number | null>(null)
   const [activeModel, setActiveModel] = useState<string>('')
   const [activePredictionRank, setActivePredictionRank] = useState<number>(1)
@@ -51,15 +57,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setTheme((prev) => (prev === 'light' ? 'dark' : 'light'))
   }, [])
 
+  const navigateToQuery = useCallback((fileId: number) => {
+    setActiveQueryId(fileId)
+    setActivePredictionRank(1)
+    setCurrentView('review')
+  }, [])
+
   const value: AppContextValue = {
     theme,
     toggleTheme,
+    currentView,
+    setCurrentView,
     activeQueryId,
     setActiveQueryId,
     activeModel,
     setActiveModel,
     activePredictionRank,
     setActivePredictionRank,
+    navigateToQuery,
   }
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>
