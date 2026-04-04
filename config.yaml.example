@@ -1,0 +1,32 @@
+app:
+  title: "localLatin Scholar Review"
+  version: "0.1.0"
+  debug: false
+  host: "0.0.0.0"
+  port: 8000
+
+paths:
+  # Root directory containing the data files (canon_unlabelled/, canon_labelled/, runs/).
+  # - Subtree mode (webapp at localLatin/web/): ".."
+  # - Standalone mode: path to the research repo, e.g. "/Users/you/git/localLatin"
+  # - HPC: "/projects/beto/irowerojas/localLatin"
+  # Can also be set via LOCALLATIN_DATA_ROOT env var.
+  data_root: ".."
+  canon_unlabelled: "canon_unlabelled"
+  canon_labelled: "canon_labelled"
+  predictions_combined: "runs/phase_resubmit/unlabelled/unlabelled_predictions.csv"
+  predictions_dir: "runs/phase_resubmit/unlabelled"
+  ig_artifacts_dir: "runs/phase12f_examples/artifacts"
+  ig_examples_csv: "runs/phase12f_examples/phase12f_examples.csv"
+  feedback_db: "runs/phase_resubmit/webapp/feedback.db"
+
+cors:
+  allow_origins:
+    - "http://localhost:3000"
+    - "http://localhost:5173"
+  allow_methods: ["*"]
+  allow_headers: ["*"]
+
+pagination:
+  default_page_size: 50
+  max_page_size: 200
