@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LocalLatin - Meeting Summary (April 5, 2026)</title>
+<style>
+  :root {
+    --bg: #fafafa; --fg: #1a1a1a; --muted: #666; --accent: #2563eb;
+    --card-bg: #fff; --card-border: #e5e7eb; --table-stripe: #f9fafb;
+    --green: #059669; --red: #dc2626; --amber: #d97706; --purple: #7c3aed;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--fg); line-height: 1.6; padding: 2rem; max-width: 1100px; margin: 0 auto; }
+  h1 { font-size: 1.8rem; margin-bottom: 0.25rem; }
+  h2 { font-size: 1.35rem; margin: 2rem 0 0.75rem; padding-bottom: 0.4rem; border-bottom: 2px solid var(--accent); color: var(--accent); }
+  h3 { font-size: 1.1rem; margin: 1.25rem 0 0.5rem; color: var(--fg); }
+  .subtitle { color: var(--muted); font-size: 0.95rem; margin-bottom: 1.5rem; }
+  .card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 8px; padding: 1.25rem; margin-bottom: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+  .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+  .metric-card { text-align: center; padding: 1rem; border-radius: 8px; background: var(--card-bg); border: 1px solid var(--card-border); }
+  .metric-card .value { font-size: 2rem; font-weight: 700; color: var(--accent); }
+  .metric-card .label { font-size: 0.8rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 0.25rem; }
+  .metric-card .detail { font-size: 0.75rem; color: var(--muted); margin-top: 0.15rem; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; margin: 0.75rem 0; }
+  th { background: var(--accent); color: white; padding: 0.6rem 0.8rem; text-align: left; font-weight: 600; }
+  td { padding: 0.5rem 0.8rem; border-bottom: 1px solid var(--card-border); }
+  tr:nth-child(even) { background: var(--table-stripe); }
+  .best { font-weight: 700; color: var(--green); }
+  .tag { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
+  .tag-done { background: #dcfce7; color: #166534; }
+  .tag-todo { background: #fef3c7; color: #92400e; }
+  .tag-blocked { background: #fee2e2; color: #991b1b; }
+  .finding { padding: 0.75rem 1rem; margin: 0.5rem 0; border-left: 4px solid var(--accent); background: #eff6ff; border-radius: 0 6px 6px 0; }
+  .finding.green { border-left-color: var(--green); background: #ecfdf5; }
+  .finding.amber { border-left-color: var(--amber); background: #fffbeb; }
+  details { margin: 0.5rem 0; }
+  details summary { cursor: pointer; font-weight: 600; color: var(--accent); padding: 0.25rem 0; }
+  details summary:hover { text-decoration: underline; }
+  .cols2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  @media (max-width: 700px) { .cols2 { grid-template-columns: 1fr; } .metric-grid { grid-template-columns: 1fr 1fr; } }
+  .checklist { list-style: none; padding: 0; }
+  .checklist li { padding: 0.35rem 0; display: flex; align-items: center; gap: 0.5rem; }
+  .checklist li::before { content: ''; width: 14px; height: 14px; border-radius: 3px; border: 2px solid var(--card-border); flex-shrink: 0; }
+  .checklist li.done::before { background: var(--green); border-color: var(--green); }
+  .footnote { font-size: 0.8rem; color: var(--muted); margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--card-border); }
+</style>
+</head>
+<body>
+
+<h1>LocalLatin - Progress Summary</h1>
+<p class="subtitle">Meeting of April 5, 2026 &mdash; Latin Manuscript Retrieval via Transformer Internal Representations</p>
+
+<!-- ================================================================ -->
+<h2>1. Executive Summary</h2>
+
+<div class="metric-grid">
+  <div class="metric-card">
+    <div class="value">98.8%</div>
+    <div class="label">Best AUCROC</div>
+    <div class="detail">Qwen3-0.6B L1, SIF+ABTT</div>
+  </div>
+  <div class="metric-card">
+    <div class="value">89.4%</div>
+    <div class="label">Best Dir Acc@1</div>
+    <div class="detail">LaBSE L11 / Qwen3-0.6B L5</div>
+  </div>
+  <div class="metric-card">
+    <div class="value">92.3%</div>
+    <div class="label">Best Assignment Acc</div>
+    <div class="detail">Qwen3-0.6B L5, ABTT optimal</div>
+  </div>
+  <div class="metric-card">
+    <div class="value">95-97%</div>
+    <div class="label">Top-3 Retrieval</div>
+    <div class="detail">All 6 models, cumulative</div>
+  </div>
+</div>
+
+<div class="metric-grid">
+  <div class="metric-card">
+    <div class="value">6</div>
+    <div class="label">Models Tested</div>
+    <div class="detail">LaTa, PhilTa, LaBSE, mt5, Qwen3, KaLM</div>
+  </div>
+  <div class="metric-card">
+    <div class="value">700</div>
+    <div class="label">Configurations</div>
+    <div class="detail">7 post-processing methods</div>
+  </div>
+  <div class="metric-card">
+    <div class="value">6</div>
+    <div class="label">Attribution Methods</div>
+    <div class="detail">IG, BERTScore, OT, Attn, DLA, Standalone</div>
+  </div>
+  <div class="metric-card">
+    <div class="value">2,238</div>
+    <div class="label">Unlabelled Predictions</div>
+    <div class="detail">Top-10 per query, 6 models</div>
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<h2>2. Dataset</h2>
+
+<div class="cols2">
+  <div class="card">
+    <h3>Labelled Corpus (canon_labelled)</h3>
+    <table>
+      <tr><td><strong>Directories</strong></td><td>840</td></tr>
+      <tr><td><strong>Files</strong></td><td>1,705</td></tr>
+      <tr><td>Singleton dirs (1 file)</td><td>545</td></tr>
+      <tr><td>Doubleton dirs (2 files)</td><td>108</td></tr>
+      <tr><td>Multi-file dirs (3+)</td><td>187</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h3>Split (50/50 leak-free)</h3>
+    <table>
+      <tr><td><strong>Train</strong></td><td>787 files</td></tr>
+      <tr><td><strong>Test</strong></td><td>918 files (645 queryable)</td></tr>
+      <tr><td>Train pairs</td><td>309,291 (354 positive)</td></tr>
+      <tr><td>Test pairs</td><td>420,903 (604 positive)</td></tr>
+      <tr><td>Train/test overlap</td><td>0</td></tr>
+    </table>
+  </div>
+</div>
+
+<p style="margin-top:0.5rem;"><strong>Unlabelled set:</strong> 2,238 flat .txt files with no directory labels, ready for human review via the webapp.</p>
+
+<!-- ================================================================ -->
+<h2>3. Top Results (700 Configurations)</h2>
+
+<h3>Best per Metric</h3>
+<table>
+  <tr><th>Metric</th><th>Model</th><th>Layer</th><th>Method</th><th>Value</th></tr>
+  <tr><td><strong>Best AUCROC</strong></td><td>Qwen3-0.6B</td><td>L1</td><td>SIF+ABTT fixed</td><td class="best">0.9883</td></tr>
+  <tr><td><strong>Best Dir Acc@1</strong></td><td>LaBSE / Qwen3-0.6B</td><td>L11 / L5</td><td>SIF+ABTT / ABTT optimal</td><td class="best">89.4%</td></tr>
+  <tr><td><strong>Best Assignment Acc</strong></td><td>Qwen3-0.6B</td><td>L5</td><td>ABTT optimal</td><td class="best">92.3%</td></tr>
+</table>
+
+<h3>Method Ranking (Avg AUCROC Across All Models)</h3>
+<table>
+  <tr><th>Method</th><th>Avg AUCROC</th><th>vs Baseline</th></tr>
+  <tr><td class="best">ABTT optimal</td><td class="best">0.9803</td><td>+0.166</td></tr>
+  <tr><td class="best">ABTT fixed (D=10)</td><td class="best">0.9802</td><td>+0.166</td></tr>
+  <tr><td>SIF + ABTT optimal</td><td>0.9775</td><td>+0.163</td></tr>
+  <tr><td>SIF + ABTT fixed</td><td>0.9775</td><td>+0.163</td></tr>
+  <tr><td>SIF only</td><td>0.8796</td><td>+0.065</td></tr>
+  <tr><td>Baseline</td><td>0.8145</td><td>&mdash;</td></tr>
+  <tr><td style="color:var(--red);">Whitening</td><td style="color:var(--red);">0.6591</td><td style="color:var(--red);">-0.155</td></tr>
+</table>
+
+<div class="finding green">
+  <strong>Key finding:</strong> ABTT fixed (D=10) matches ABTT optimal &mdash; no per-layer tuning needed. D=10 is a robust universal default.
+</div>
+
+<!-- ================================================================ -->
+<h2>4. Cumulative Top-K (Task B)</h2>
+
+<p>For a Latin scholar checking the top K model suggestions, what is the probability of finding the correct directory?</p>
+
+<h3>Single-seed Results</h3>
+<table>
+  <tr><th>Model</th><th>Top-1</th><th>Top-2</th><th>Top-3</th><th>Top-5</th></tr>
+  <tr><td>mt5-base</td><td class="best">88.3%</td><td class="best">94.6%</td><td>96.0%</td><td>97.1%</td></tr>
+  <tr><td>PhilTa</td><td>88.2%</td><td>93.9%</td><td class="best">96.3%</td><td class="best">97.2%</td></tr>
+  <tr><td>LaBSE</td><td>88.0%</td><td>94.0%</td><td>95.4%</td><td>97.1%</td></tr>
+  <tr><td>KaLM-mini</td><td>88.0%</td><td>93.5%</td><td>95.5%</td><td>96.5%</td></tr>
+  <tr><td>Qwen3-0.6B</td><td>87.7%</td><td>93.8%</td><td>96.0%</td><td>97.2%</td></tr>
+  <tr><td>LaTa</td><td>86.2%</td><td>93.0%</td><td>95.2%</td><td>96.7%</td></tr>
+</table>
+
+<h3>M-Seed Validation (M=5, mean &plusmn; std)</h3>
+<table>
+  <tr><th>Model</th><th>Top-1</th><th>Top-2</th><th>Top-3</th><th>Top-5</th></tr>
+  <tr><td>LaBSE</td><td class="best">88.5 &plusmn; 1.3</td><td>93.8 &plusmn; 1.0</td><td>95.2 &plusmn; 0.6</td><td>96.3 &plusmn; 0.5</td></tr>
+  <tr><td>PhilTa</td><td>88.0 &plusmn; 1.2</td><td class="best">94.5 &plusmn; 0.6</td><td>96.3 &plusmn; 0.6</td><td>97.4 &plusmn; 0.6</td></tr>
+  <tr><td>LaTa</td><td>87.8 &plusmn; 0.7</td><td>94.2 &plusmn; 0.6</td><td class="best">96.5 &plusmn; 0.6</td><td class="best">97.5 &plusmn; 0.2</td></tr>
+  <tr><td>Qwen3-0.6B</td><td>87.8 &plusmn; 1.1</td><td>93.4 &plusmn; 0.7</td><td>95.4 &plusmn; 0.8</td><td>96.4 &plusmn; 0.3</td></tr>
+  <tr><td>mt5-base</td><td>87.0 &plusmn; 0.5</td><td>93.8 &plusmn; 0.5</td><td>95.6 &plusmn; 0.5</td><td>96.5 &plusmn; 0.4</td></tr>
+  <tr><td>KaLM-mini</td><td>86.2 &plusmn; 0.7</td><td>94.3 &plusmn; 0.6</td><td>95.9 &plusmn; 0.3</td><td>96.7 &plusmn; 0.6</td></tr>
+</table>
+
+<div class="finding green">
+  <strong>All 6 models reach 95&ndash;97% at Top-3.</strong> A scholar checking 3 suggestions will find the correct source 95%+ of the time.
+</div>
+
+<!-- ================================================================ -->
+<h2>5. Key Findings</h2>
+
+<div class="finding green">
+  <strong>ABTT is the real deal.</strong> Consistently the best post-processing method across all models. SIF adds marginal value. Whitening consistently hurts.
+</div>
+
+<div class="finding green">
+  <strong>Architecture effect, not language.</strong> mt5-base (no Latin training, 101 languages) achieves 0.987 AUCROC with ABTT (+0.157 over baseline). The anisotropy dip and ABTT's correction are structural properties of T5-family architectures.
+</div>
+
+<div class="finding">
+  <strong>Filtering vs ABTT (Phase 12d):</strong> Token filtering is at best a 47% solution. ABTT closes the remaining 53&ndash;76% of the gap. LaBSE (zero empty tokens) proves filtering can't explain ABTT's gains: filtering +0.02 vs ABTT +0.13 AUCROC.
+</div>
+
+<div class="finding">
+  <strong>Token-level retrieval attribution (Phase 12c):</strong> 89.5% of query-layer pairs show improved selectivity after ABTT. ABTT unmasks content tokens by removing PC1 noise from all token embeddings.
+</div>
+
+<!-- ================================================================ -->
+<h2>6. Token Attribution Methods (6-Method Comparison)</h2>
+
+<p>80 example pairs tested across LaBSE, LaTa, PhilTa, Qwen3-0.6B. Each method produces a token-to-token attribution matrix showing which query tokens drive similarity with which candidate tokens.</p>
+
+<table>
+  <tr><th>Method</th><th>Sparsity &darr;</th><th>Content Focus &uarr;</th><th>Shared Token Match &uarr;</th><th>Top-5 Precision &uarr;</th></tr>
+  <tr><td>IG + ABTT (baseline)</td><td>0.41</td><td>0.54</td><td>0.17</td><td>0.54</td></tr>
+  <tr><td class="best">BERTScore greedy</td><td class="best">0.08</td><td class="best">0.68</td><td class="best">0.42</td><td class="best">0.59</td></tr>
+  <tr><td>Optimal Transport (EMD)</td><td class="best">0.07</td><td>0.56</td><td>0.28</td><td>0.57</td></tr>
+  <tr><td>Attention cross-sim (Ditto)</td><td>0.27</td><td>0.33</td><td>0.09</td><td>0.53</td></tr>
+  <tr><td>DLA</td><td>0.29</td><td>0.37</td><td>0.11</td><td>0.35</td></tr>
+  <tr><td>Attention standalone</td><td>0.35</td><td>0.36</td><td>0.12</td><td>0.51</td></tr>
+</table>
+
+<div class="finding green">
+  <strong>BERTScore is the best attribution method.</strong> 5x sparser than IG+ABTT, 2.5x better at matching shared tokens, highest content focus. No gradient computation needed &mdash; works on cached embeddings in milliseconds.
+</div>
+
+<div class="finding amber">
+  <strong>Professor wants slightly lower sparsity</strong> (a few top tokens highlighted, not just 1&ndash;2). Top-K=5 highlighting has been added to all comparison panels.
+</div>
+
+<!-- ================================================================ -->
+<h2>7. Webapp Status</h2>
+
+<div class="cols2">
+  <div class="card">
+    <h3>Features (Code Complete)</h3>
+    <ul class="checklist">
+      <li class="done">6-model support with model switcher</li>
+      <li class="done">2,238 unlabelled queries (virtualized list)</li>
+      <li class="done">Top-10 predictions per query per model</li>
+      <li class="done">Token hover highlighting + SVG bezier lines</li>
+      <li class="done">Heatmap view mode</li>
+      <li class="done">Feedback collection (rank, notes, reviewer)</li>
+      <li class="done">Dashboard progress tracking</li>
+      <li class="done">CSV export of reviews</li>
+      <li class="done">Dark/light mode</li>
+      <li class="done">Interactive tutorial</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Tech Stack</h3>
+    <table>
+      <tr><td><strong>Backend</strong></td><td>FastAPI + SQLite</td></tr>
+      <tr><td><strong>Frontend</strong></td><td>React 18 + TypeScript + Vite</td></tr>
+      <tr><td><strong>Styling</strong></td><td>Tailwind CSS 3</td></tr>
+      <tr><td><strong>Data</strong></td><td>All in-memory (~20MB)</td></tr>
+      <tr><td><strong>GPU needed?</strong></td><td>No</td></tr>
+      <tr><td><strong>Target deploy</strong></td><td>ai.csr.uky.edu</td></tr>
+    </table>
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<h2>8. Action Items from March 31 Meeting</h2>
+
+<table>
+  <tr><th>#</th><th>Action Item</th><th>Status</th><th>Notes</th></tr>
+  <tr>
+    <td>1</td>
+    <td><strong>Redesign Task B split</strong><br>Query/reference paradigm, no duplicate directories</td>
+    <td><span class="tag tag-todo">To Do</span></td>
+    <td>New split: 1 query set per dir, M=5 seed repetition, acc@K</td>
+  </tr>
+  <tr>
+    <td>2</td>
+    <td><strong>Verify positive pair count</strong><br>354 seems too low for Task A</td>
+    <td><span class="tag tag-todo">To Do</span></td>
+    <td>Should be n*(n-1)/2 per directory. Bundled with item 1.</td>
+  </tr>
+  <tr>
+    <td>3</td>
+    <td><strong>Implement DLA + Attention Score</strong><br>Two new attribution methods</td>
+    <td><span class="tag tag-done">Done</span></td>
+    <td>Both added to 6-panel comparison. Metrics in CSV.</td>
+  </tr>
+  <tr>
+    <td>4</td>
+    <td><strong>Regenerate attribution plots</strong><br>6-method comparison figures</td>
+    <td><span class="tag tag-done">Done</span></td>
+    <td>80 examples, 6 methods, metrics CSV generated.</td>
+  </tr>
+  <tr>
+    <td>5</td>
+    <td><strong>Prepare Leiden demo examples</strong><br>~10 example pairs for collaborator meeting</td>
+    <td><span class="tag tag-todo">To Do</span></td>
+    <td>Script + HTML report needed. Will use 6-panel figures.</td>
+  </tr>
+  <tr>
+    <td>6</td>
+    <td><strong>Webapp: labels & headings</strong><br>"Not tech savvy, tell everything"</td>
+    <td><span class="tag tag-todo">To Do</span></td>
+    <td>Section labels, subtitles, descriptive headings.</td>
+  </tr>
+  <tr>
+    <td>7</td>
+    <td><strong>Webapp: auto-highlight top K tokens</strong><br>Pre-highlight 5 tokens on load</td>
+    <td><span class="tag tag-todo">To Do</span></td>
+    <td>Backend computes top-5 by IG score, frontend auto-pins.</td>
+  </tr>
+  <tr>
+    <td>8</td>
+    <td><strong>Webapp: reviewer login session</strong><br>Name at beginning, not per-review</td>
+    <td><span class="tag tag-todo">To Do</span></td>
+    <td>ReviewerContext + login modal + localStorage persistence.</td>
+  </tr>
+  <tr>
+    <td>9</td>
+    <td><strong>Webapp: deploy to ai.csr.uky.edu</strong><br>VM deployment with DB persistence</td>
+    <td><span class="tag tag-todo">To Do</span></td>
+    <td>systemd, nginx, production config. DB must persist.</td>
+  </tr>
+  <tr>
+    <td>10</td>
+    <td><strong>Find undergrad researcher</strong><br>NSF REU, US national/PR</td>
+    <td><span class="tag tag-todo">To Do</span></td>
+    <td>Any year. Caitlyn already on team; need 1 more. ASAP.</td>
+  </tr>
+</table>
+
+<!-- ================================================================ -->
+<h2>9. Execution Plan (GAMEPLAN.md)</h2>
+
+<p>All remaining action items are organized into 2 sequential runs with 3 parallel agents each. See <code>GAMEPLAN.md</code> for full copy-paste-ready prompts.</p>
+
+<div class="card">
+  <h3>Run 1 &mdash; Core Code Changes (3 agents in parallel)</h3>
+  <table>
+    <tr><th>Agent</th><th>Task</th><th>Files</th></tr>
+    <tr><td><strong>1.1</strong></td><td>Task B split redesign + positive pair verification</td><td>src/canon_split_v2.py, scripts/evaluate_vectors.py</td></tr>
+    <tr><td><strong>1.2</strong></td><td>DLA + Attention Score implementation</td><td>src/direct_logit_attribution.py, scripts/run_resubmit_ig_comparison.py</td></tr>
+    <tr><td><strong>1.3</strong></td><td>Webapp UI polish + reviewer session</td><td>web/frontend/src/components/, web/frontend/src/contexts/</td></tr>
+  </table>
+</div>
+
+<div class="card">
+  <h3>Run 2 &mdash; Integration & Deployment (3 agents in parallel, after Run 1)</h3>
+  <table>
+    <tr><th>Agent</th><th>Task</th><th>Files</th></tr>
+    <tr><td><strong>2.1</strong></td><td>M-seed evaluation + SLURM jobs + visualization</td><td>scripts/run_taskb_mseed.py, slurm/</td></tr>
+    <tr><td><strong>2.2</strong></td><td>Regen plots + Leiden demo (10 examples + HTML)</td><td>scripts/run_leiden_examples.py</td></tr>
+    <tr><td><strong>2.3</strong></td><td>Webapp auto-highlight + deployment to ai.csr.uky.edu</td><td>web/, deploy/</td></tr>
+  </table>
+</div>
+
+<!-- ================================================================ -->
+<h2>10. Paper Figures Reference</h2>
+
+<details>
+  <summary>All 15 figures available in overleaf_drafts/figures/</summary>
+  <table>
+    <tr><th>Figure</th><th>Description</th></tr>
+    <tr><td>paper_fig_density_2x2.png</td><td>Main figure: baseline vs ABTT, last vs middle layers</td></tr>
+    <tr><td>fig_release_aucroc_per_model.png</td><td>AUCROC across layers for all 6 models</td></tr>
+    <tr><td>fig_release_gap_per_model.png</td><td>Cosine gap across layers for all 6 models</td></tr>
+    <tr><td>taskb_topk_table.png</td><td>Cumulative top-K table (single seed)</td></tr>
+    <tr><td>taskb_mseed_table.png</td><td>M-seed top-K table (mean &plusmn; std)</td></tr>
+    <tr><td>taskb_mseed_breakdown.png</td><td>M-seed breakdown by folder type</td></tr>
+    <tr><td>taskb_mseed_topk_bar.png</td><td>M-seed top-K bar chart</td></tr>
+    <tr><td>fig_filtering_vs_abtt.png</td><td>Phase 12d: filtering is a 47% solution</td></tr>
+    <tr><td>fig_analysis2_selectivity.png</td><td>Partner selectivity scatter (89.5% improved)</td></tr>
+    <tr><td>fig_analysis3_heatmap_LaTa.png</td><td>Baseline vs ABTT heatmap (LaTa)</td></tr>
+    <tr><td>fig_analysis3_heatmap_PhilTa.png</td><td>Baseline vs ABTT heatmap (PhilTa)</td></tr>
+    <tr><td>fig_analysis4_importance_share.png</td><td>Token category stacked bars</td></tr>
+    <tr><td>fig_pair_matrix_philta.png</td><td>Attention-weighted cross-similarity</td></tr>
+    <tr><td>fig_attention_philta.png</td><td>Full attention pattern</td></tr>
+    <tr><td>taskb_rank_distribution_table.png</td><td>Rank distribution (earlier version)</td></tr>
+  </table>
+</details>
+
+<div class="footnote">
+  <p>Generated April 5, 2026. All results from <code>runs/phase_resubmit/</code>. Gameplan details in <code>GAMEPLAN.md</code>.</p>
+  <p>Repo: <code>/projects/beto/irowerojas/localLatin</code></p>
+</div>
+
+</body>
+</html>

@@ -10,6 +10,7 @@ export interface Connection {
   score: number
   rank: number // 0-based among top matches
   isPinned: boolean
+  isAutoHighlighted: boolean
 }
 
 export function useConnectionState(): { activeConnections: Connection[] } {
@@ -29,6 +30,7 @@ export function useConnectionState(): { activeConnections: Connection[] } {
           score: match.score,
           rank: match.rank,
           isPinned: true,
+          isAutoHighlighted: pin.source === 'auto',
         })
       }
     }
@@ -47,6 +49,7 @@ export function useConnectionState(): { activeConnections: Connection[] } {
           score: match.score,
           rank: match.rank,
           isPinned: false,
+          isAutoHighlighted: false,
         })
       }
     }

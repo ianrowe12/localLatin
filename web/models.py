@@ -74,6 +74,12 @@ class TopMatch(BaseModel):
     score: float
 
 
+class AutoHighlight(BaseModel):
+    query_idx: int
+    ig_score: float
+    matches: List[TopMatch]
+
+
 class TokenMapResponse(BaseModel):
     example_id: int
     model: str
@@ -91,6 +97,7 @@ class TokenMapResponse(BaseModel):
     query_ig_abtt: List[float]
     candidate_ig_baseline: List[float]
     candidate_ig_abtt: List[float]
+    auto_highlights: Optional[List[AutoHighlight]] = None
 
 
 class TokenMapExampleSummary(BaseModel):

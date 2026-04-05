@@ -1,0 +1,19 @@
+[Unit]
+Description=LocalLatin Scholar Review - FastAPI backend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/u/irowerojas/localLatin
+Environment=LOCALLATIN_CONFIG=/u/irowerojas/localLatin/web/config.production.yaml
+Environment=PATH=/u/irowerojas/.local/bin:/usr/bin:/bin
+ExecStart=/u/irowerojas/.local/bin/uvicorn web.app:create_app --factory --host 127.0.0.1 --port 8000 --workers 2 --log-level info
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=locallatin
+
+[Install]
+WantedBy=default.target

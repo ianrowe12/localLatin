@@ -57,11 +57,21 @@ export default function RightSidebar({ isOpen, onToggle }: RightSidebarProps) {
 
         {isOpen && (
           <div className="flex flex-col flex-1 overflow-hidden px-3 pb-3 gap-3">
-            {/* Model selector */}
-            <ModelSelector />
+            {/* Model selection */}
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wider text-stone-400 mb-1.5 block">
+                Model Selection
+              </label>
+              <ModelSelector />
+            </div>
 
-            {/* View mode toggle */}
-            <ViewModeToggle />
+            {/* Visualization mode */}
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wider text-stone-400 mb-1.5 block">
+                Visualization Mode
+              </label>
+              <ViewModeToggle />
+            </div>
 
             {/* Prediction list — scrollable */}
             <div className="flex-1 overflow-y-auto rounded-lg bg-stone-50 dark:bg-surface-900/50">

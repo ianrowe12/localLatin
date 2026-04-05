@@ -43,6 +43,7 @@ export default function ConnectionOverlay({
               score={conn.score}
               rank={conn.rank}
               isPinned={conn.isPinned}
+              isAutoHighlighted={conn.isAutoHighlighted}
             />
           )
         })}

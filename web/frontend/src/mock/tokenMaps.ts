@@ -272,6 +272,7 @@ export const MOCK_TOKEN_MAPS: Map<string, TokenMapResponse> = new Map([
       query_ig_abtt: makeIgScores(Q1_TOKENS),
       candidate_ig_baseline: makeIgScores(C1_TOKENS),
       candidate_ig_abtt: makeIgScores(C1_TOKENS),
+      auto_highlights: null,
     },
   ],
   [
@@ -293,6 +294,7 @@ export const MOCK_TOKEN_MAPS: Map<string, TokenMapResponse> = new Map([
       query_ig_abtt: makeIgScores(Q1_TOKENS),
       candidate_ig_baseline: makeIgScores(C1_P3_TOKENS),
       candidate_ig_abtt: makeIgScores(C1_P3_TOKENS),
+      auto_highlights: null,
     },
   ],
   [
@@ -314,6 +316,7 @@ export const MOCK_TOKEN_MAPS: Map<string, TokenMapResponse> = new Map([
       query_ig_abtt: makeIgScores(Q3_TOKENS),
       candidate_ig_baseline: makeIgScores(C3_TOKENS),
       candidate_ig_abtt: makeIgScores(C3_TOKENS),
+      auto_highlights: null,
     },
   ],
 ])

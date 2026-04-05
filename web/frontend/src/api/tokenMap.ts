@@ -16,6 +16,12 @@ export interface TopMatch {
   score: number
 }
 
+export interface AutoHighlight {
+  query_idx: number
+  ig_score: number
+  matches: TopMatch[]
+}
+
 export interface TokenMapResponse {
   example_id: number
   model: string
@@ -33,6 +39,7 @@ export interface TokenMapResponse {
   query_ig_abtt: number[]
   candidate_ig_baseline: number[]
   candidate_ig_abtt: number[]
+  auto_highlights: AutoHighlight[] | null
 }
 
 // ---------------------------------------------------------------------------

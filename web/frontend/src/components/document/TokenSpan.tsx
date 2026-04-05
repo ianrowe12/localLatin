@@ -8,6 +8,7 @@ interface TokenSpanProps {
   isHovered: boolean
   isPinned: boolean
   pinColor?: string
+  isAutoHighlighted?: boolean
   highlightScore?: number
   spanRef?: (el: HTMLSpanElement | null) => void
   onMouseEnter?: () => void
@@ -37,6 +38,7 @@ function TokenSpanInner({
   isHovered,
   isPinned,
   pinColor,
+  isAutoHighlighted,
   highlightScore,
   spanRef,
   onMouseEnter,
@@ -54,10 +56,19 @@ function TokenSpanInner({
     ringClass = 'ring-2 ring-accent/60 animate-pulse-glow'
     bgStyle = { backgroundColor: 'rgba(99, 102, 241, 0.1)' }
   } else if (isPinned && pinColor) {
-    ringClass = 'ring-2'
-    bgStyle = {
-      backgroundColor: pinColor + '26', // ~15% opacity
-      boxShadow: `0 0 0 2px ${pinColor}`,
+    if (isAutoHighlighted) {
+      ringClass = ''
+      bgStyle = {
+        backgroundColor: pinColor + '1A',
+        outline: `2px dashed ${pinColor}`,
+        outlineOffset: '-1px',
+      }
+    } else {
+      ringClass = 'ring-2'
+      bgStyle = {
+        backgroundColor: pinColor + '26',
+        boxShadow: `0 0 0 2px ${pinColor}`,
+      }
     }
   } else if (highlightScore != null && highlightScore > 0) {
     bgStyle = { backgroundColor: similarityToColor(highlightScore, theme) }
@@ -103,6 +114,7 @@ const TokenSpan = memo(TokenSpanInner, (prev, next) => {
     prev.isHovered === next.isHovered &&
     prev.isPinned === next.isPinned &&
     prev.pinColor === next.pinColor &&
+    prev.isAutoHighlighted === next.isAutoHighlighted &&
     prev.highlightScore === next.highlightScore &&
     prev.spanRef === next.spanRef
   )
