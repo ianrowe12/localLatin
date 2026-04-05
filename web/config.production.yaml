@@ -1,0 +1,26 @@
+app:
+  title: "localLatin Scholar Review"
+  version: "0.1.0"
+  debug: false
+  host: "127.0.0.1"
+  port: 8000
+
+paths:
+  repo_root: "/u/irowerojas/localLatin"
+  canon_unlabelled: "canon_unlabelled"
+  canon_labelled: "canon_labelled"
+  predictions_combined: "runs/phase_resubmit/unlabelled/unlabelled_predictions.csv"
+  predictions_dir: "runs/phase_resubmit/unlabelled"
+  ig_artifacts_dir: "runs/phase12f_examples/artifacts"
+  ig_examples_csv: "runs/phase12f_examples/phase12f_examples.csv"
+  feedback_db: "data/feedback.db"
+
+cors:
+  allow_origins:
+    - "https://ai.csr.uky.edu"
+  allow_methods: ["*"]
+  allow_headers: ["*"]
+
+pagination:
+  default_page_size: 50
+  max_page_size: 200

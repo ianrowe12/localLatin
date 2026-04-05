@@ -38,6 +38,16 @@ FEATURED_MODELS = {
         "layer": 6,
         "model_short": "PhilTa",
     },
+    "sentence-transformers/LaBSE": {
+        "model_type": "bert",
+        "layer": 12,
+        "model_short": "LaBSE",
+    },
+    "Qwen/Qwen3-Embedding-0.6B": {
+        "model_type": "decoder",
+        "layer": 23,
+        "model_short": "Qwen3-0.6B",
+    },
 }
 
 BUCKET_ORDER = [

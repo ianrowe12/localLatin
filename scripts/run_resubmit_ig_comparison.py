@@ -1,10 +1,12 @@
 """Compare IG-based pair matrices against token-alignment methods.
 
-Produces side-by-side 4-panel comparison figures for selected example pairs:
+Produces side-by-side 6-panel comparison figures for selected example pairs:
   Panel A: Current approach (ABTT + IG pair matrix)
   Panel B: BERTScore-style greedy alignment on ABTT-cleaned token embeddings
   Panel C: Optimal Transport (EMD) with IG-derived mass on ABTT-cleaned tokens
   Panel D: Attention-weighted cross-similarity (Ditto-inspired)
+  Panel E: Direct Logit Attribution (norm-weighted cosine)
+  Panel F: Standalone Attention Score (column-mean importance)
 
 All methods operate on pre-computed artifacts from Phase 12e (hidden states,
 attention matrices, IG scores, PCs). No model re-run is needed.
@@ -16,6 +18,10 @@ Research basis (from Run 1 agents):
     Transport plan T[i,j] directly shows token-to-token mass flow.
   - Attention-weighted cross-sim: run1_geometry_alignment.md Area 1 (Ditto)
     Per-instance attention diagonal as pooling weights, no corpus-level stats.
+  - DLA: Elhage et al. "A Mathematical Framework for Transformer Circuits"
+    Single-pass geometric decomposition -- no gradients needed.
+  - Standalone Attention: column-mean (received attention) vs diagonal (self-attention)
+    Tokens important in the "attention economy" get higher weight.
 
 Usage:
     python scripts/run_resubmit_ig_comparison.py \\
@@ -35,6 +41,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
+import matplotlib.patches as mpatches
 import numpy as np
 import pandas as pd
 
@@ -106,6 +113,8 @@ def pretty_role(role: str) -> str:
         return "Same-source"
     if role == "predicted_directory":
         return "Predicted (wrong)"
+    if role == "pair_example":
+        return "Pair example"
     return role.replace("_", " ")
 
 
@@ -209,6 +218,85 @@ def build_attention_crosssim(
 
 
 # ---------------------------------------------------------------------------
+# Method E: Direct Logit Attribution (DLA) pair matrix
+# ---------------------------------------------------------------------------
+
+def build_dla_pair_matrix(
+    q_hidden_clean: np.ndarray,
+    c_hidden_clean: np.ndarray,
+) -> np.ndarray:
+    """DLA pair matrix: cosine * normalized geometric mean of token norms.
+
+    Unlike IG (causal contribution), DLA measures geometric alignment --
+    which token pairs point in similar directions, weighted by magnitude.
+    Single-pass, no gradients needed.
+    """
+    cos = cosine_matrix(q_hidden_clean, c_hidden_clean)
+    q_norms = np.linalg.norm(q_hidden_clean, axis=1)
+    c_norms = np.linalg.norm(c_hidden_clean, axis=1)
+    weight = np.sqrt(q_norms[:, None] * c_norms[None, :])
+    w_min, w_max = weight.min(), weight.max()
+    if w_max - w_min > 1e-12:
+        weight = (weight - w_min) / (w_max - w_min)
+    else:
+        weight = np.ones_like(weight)
+    return cos * weight
+
+
+# ---------------------------------------------------------------------------
+# Method F: Standalone Attention Score (column-mean importance)
+# ---------------------------------------------------------------------------
+
+def build_attention_standalone(
+    q_hidden_clean: np.ndarray,
+    c_hidden_clean: np.ndarray,
+    q_attention: np.ndarray,
+    c_attention: np.ndarray,
+) -> np.ndarray:
+    """Cross-similarity weighted by attention column mean (received attention).
+
+    Unlike the Ditto-inspired diagonal method (how much a token attends to
+    itself), this uses column mean (how much OTHER tokens attend to this
+    token). Tokens that are "important" in the attention economy -- i.e.,
+    those that many other tokens look at -- receive higher weight.
+
+    Self-loops (diagonal) are excluded before computing column mean.
+    """
+    cos = cosine_matrix(q_hidden_clean, c_hidden_clean)
+
+    q_attn_no_diag = q_attention.copy()
+    np.fill_diagonal(q_attn_no_diag, 0.0)
+    c_attn_no_diag = c_attention.copy()
+    np.fill_diagonal(c_attn_no_diag, 0.0)
+
+    q_col_mean = q_attn_no_diag.mean(axis=0).clip(min=0)
+    c_col_mean = c_attn_no_diag.mean(axis=0).clip(min=0)
+
+    q_imp = q_col_mean / (q_col_mean.sum() + 1e-12)
+    c_imp = c_col_mean / (c_col_mean.sum() + 1e-12)
+
+    weight = np.sqrt(q_imp[:, None] * c_imp[None, :])
+    return cos * weight
+
+
+# ---------------------------------------------------------------------------
+# Top-K cell highlighting
+# ---------------------------------------------------------------------------
+
+def highlight_topk_cells(ax: plt.Axes, matrix: np.ndarray, k: int = 5) -> None:
+    """Draw red rectangles around the top-K cells by absolute value."""
+    flat_idx = np.argsort(np.abs(matrix).ravel())[-k:]
+    nq, nc = matrix.shape
+    for idx in flat_idx:
+        i, j = divmod(int(idx), nc)
+        rect = mpatches.Rectangle(
+            (j - 0.5, i - 0.5), 1, 1,
+            linewidth=1.5, edgecolor="red", facecolor="none",
+        )
+        ax.add_patch(rect)
+
+
+# ---------------------------------------------------------------------------
 # Quality metrics
 # ---------------------------------------------------------------------------
 
@@ -245,6 +333,17 @@ def shared_token_score(m: np.ndarray, q_tok: list[str], c_tok: list[str]) -> flo
             if qt == ct:
                 shared += np.abs(m[i, j])
     return shared / total
+
+
+def topk_precision(m: np.ndarray, q_tok: list[str], c_tok: list[str], k: int = 5) -> float:
+    """Fraction of top-K cells (by |value|) that are content-content pairs."""
+    flat_idx = np.argsort(np.abs(m).ravel())[-k:]
+    nc = m.shape[1]
+    q_content = [is_content_token(t) for t in q_tok]
+    c_content = [is_content_token(t) for t in c_tok]
+    hits = sum(1 for idx in flat_idx
+               if q_content[int(idx) // nc] and c_content[int(idx) % nc])
+    return hits / k
 
 
 # ---------------------------------------------------------------------------
@@ -290,16 +389,20 @@ def render_comparison(
     _, panel_b = build_bertscore_matrix(q_hc, c_hc)
     panel_c = build_ot_transport_plan(q_hc, c_hc, q_ig, c_ig)
     panel_d = build_attention_crosssim(q_hc, c_hc, q_attn, c_attn)
+    panel_e = build_dla_pair_matrix(q_hc, c_hc)
+    panel_f = build_attention_standalone(q_hc, c_hc, q_attn, c_attn)
 
     # --- Render figure ---
-    fig = plt.figure(figsize=(22, 13))
-    gs = gridspec.GridSpec(2, 2, figure=fig, hspace=0.35, wspace=0.25)
+    fig = plt.figure(figsize=(33, 13))
+    gs = gridspec.GridSpec(2, 3, figure=fig, hspace=0.35, wspace=0.25)
 
     panels = [
         (gs[0, 0], panel_a, "A: ABTT + IG pair matrix (current)", "RdBu_r", True),
         (gs[0, 1], panel_b, "B: BERTScore greedy alignment\n(per-token ABTT, no IG)", "YlOrRd", False),
-        (gs[1, 0], panel_c, "C: Optimal Transport (EMD)\n(IG mass, per-token ABTT cost)", "YlOrRd", False),
-        (gs[1, 1], panel_d, "D: Attention-weighted cross-sim\n(Ditto-inspired, per-token ABTT)", "YlOrRd", False),
+        (gs[0, 2], panel_c, "C: Optimal Transport (EMD)\n(IG mass, per-token ABTT cost)", "YlOrRd", False),
+        (gs[1, 0], panel_d, "D: Attention-weighted cross-sim\n(Ditto-inspired, per-token ABTT)", "YlOrRd", False),
+        (gs[1, 1], panel_e, "E: Direct Logit Attribution\n(norm-weighted cosine, per-token ABTT)", "YlOrRd", False),
+        (gs[1, 2], panel_f, "F: Attention Score (standalone)\n(col-mean importance, per-token ABTT)", "YlOrRd", False),
     ]
 
     for subplot_spec, matrix, title, cmap, diverging in panels:
@@ -319,12 +422,14 @@ def render_comparison(
         ax.set_ylabel("Query tokens", fontsize=8)
         ax.set_title(title, fontweight="bold", fontsize=9)
         fig.colorbar(im, ax=ax, shrink=0.7, pad=0.02)
+        highlight_topk_cells(ax, matrix, k=5)
 
     fig.suptitle(
         f"{row['model_name']}  Layer {int(row['layer'])}  |  "
         f"Example {int(row['example_id'])}  |  "
         f"{pretty_role(row['candidate_role'])}  |  "
-        f"Correct rank: {int(row['correct_rank'])}",
+        f"Bucket: {row.get('bucket', 'N/A')}  |  "
+        f"Gold: {'similar' if row.get('gold_similar', -1) == 1 else 'not similar'}",
         fontweight="bold", fontsize=12,
     )
 
@@ -339,17 +444,21 @@ def render_comparison(
         "example_id": int(row["example_id"]),
         "model_name": row["model_name"],
         "candidate_role": row["candidate_role"],
-        "correct_rank": int(row["correct_rank"]),
+        "bucket": row.get("bucket", "unknown"),
+        "gold_similar": int(row.get("gold_similar", -1)),
     }
     for label, mat in [
         ("ig_abtt", panel_a),
         ("bertscore", panel_b),
         ("ot_emd", panel_c),
         ("attn_crosssim", panel_d),
+        ("dla", panel_e),
+        ("attn_standalone", panel_f),
     ]:
         metrics[f"{label}_sparsity"] = sparsity_ratio(mat)
         metrics[f"{label}_content_focus"] = content_focus(mat, q_tokens, c_tokens)
         metrics[f"{label}_shared_token"] = shared_token_score(mat, q_tokens, c_tokens)
+        metrics[f"{label}_topk_precision"] = topk_precision(mat, q_tokens, c_tokens)
 
     return metrics
 
@@ -539,8 +648,8 @@ def main() -> None:
 
         # Summary
         print("\n=== Metrics Summary (mean across examples) ===")
-        methods = ["ig_abtt", "bertscore", "ot_emd", "attn_crosssim"]
-        for suffix in ["content_focus", "shared_token", "sparsity"]:
+        methods = ["ig_abtt", "bertscore", "ot_emd", "attn_crosssim", "dla", "attn_standalone"]
+        for suffix in ["content_focus", "shared_token", "sparsity", "topk_precision"]:
             cols = [f"{m}_{suffix}" for m in methods]
             present = [c for c in cols if c in metrics_df.columns]
             if present:
@@ -548,8 +657,80 @@ def main() -> None:
                 for c in present:
                     label = c.replace(f"_{suffix}", "")
                     print(f"  {label:20s}: {metrics_df[c].mean():.4f}")
+        # Summary table (CSV + LaTeX)
+        write_summary_table(metrics_df, out_dir)
     else:
         print("No examples were processed.")
+
+
+# ---------------------------------------------------------------------------
+# Summary table generation
+# ---------------------------------------------------------------------------
+
+METHODS = ["ig_abtt", "bertscore", "ot_emd", "attn_crosssim", "dla", "attn_standalone"]
+METHOD_LABELS = {
+    "ig_abtt": "ABTT + IG",
+    "bertscore": "BERTScore",
+    "ot_emd": "OT (EMD)",
+    "attn_crosssim": "Attn cross-sim",
+    "dla": "DLA",
+    "attn_standalone": "Attn standalone",
+}
+METRIC_SUFFIXES = ["sparsity", "content_focus", "shared_token", "topk_precision"]
+METRIC_LABELS = {
+    "sparsity": "Sparsity",
+    "content_focus": "Content Focus",
+    "shared_token": "Shared Token",
+    "topk_precision": "Top-5 Prec.",
+}
+
+
+def write_summary_table(metrics_df: pd.DataFrame, out_dir: Path) -> None:
+    """Generate CSV + LaTeX table comparing 6 methods across 4 metrics."""
+    rows = []
+    for m in METHODS:
+        row_data = {"Method": METHOD_LABELS[m]}
+        for s in METRIC_SUFFIXES:
+            col = f"{m}_{s}"
+            if col in metrics_df.columns:
+                row_data[METRIC_LABELS[s]] = metrics_df[col].mean()
+        rows.append(row_data)
+
+    summary = pd.DataFrame(rows)
+    csv_path = out_dir / "method_comparison_table.csv"
+    summary.to_csv(csv_path, index=False)
+    print(f"\nSummary CSV: {csv_path}")
+
+    # Find best per column (highest value) for bolding
+    metric_cols = [METRIC_LABELS[s] for s in METRIC_SUFFIXES]
+    best = {col: summary[col].max() for col in metric_cols if col in summary.columns}
+
+    # LaTeX with booktabs
+    header = " & ".join(f"\\textbf{{{METRIC_LABELS[s]}}}" for s in METRIC_SUFFIXES)
+    lines = [
+        "\\begin{tabular}{lrrrr}",
+        "\\toprule",
+        f"\\textbf{{Method}} & {header} \\\\",
+        "\\midrule",
+    ]
+    for _, row_data in summary.iterrows():
+        vals = []
+        for s in METRIC_SUFFIXES:
+            label = METRIC_LABELS[s]
+            if label in row_data and not pd.isna(row_data[label]):
+                v = row_data[label]
+                formatted = f"{v:.3f}"
+                if label in best and abs(v - best[label]) < 1e-6:
+                    formatted = f"\\textbf{{{formatted}}}"
+                vals.append(formatted)
+            else:
+                vals.append("--")
+        lines.append(f"{row_data['Method']} & {' & '.join(vals)} \\\\")
+    lines.extend(["\\bottomrule", "\\end{tabular}"])
+
+    tex_path = out_dir / "method_comparison_table.tex"
+    tex_path.write_text("\n".join(lines) + "\n")
+    print(f"LaTeX table: {tex_path}")
 
 
 if __name__ == "__main__":

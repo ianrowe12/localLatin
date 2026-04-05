@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from web.models import TokenEntry, TokenMapExampleSummary, TokenMapResponse, TopMatch
+from web.models import AutoHighlight, TokenEntry, TokenMapExampleSummary, TokenMapResponse, TopMatch
 from web.services.data_store import DataStore, normalize_slug
 
 logger = logging.getLogger(__name__)
@@ -165,6 +165,25 @@ def load_token_map(store: DataStore, example_id: int) -> TokenMapResponse | None
             for ci in top_idx
         ]
 
+    # Auto-highlights: top K=5 query tokens by |IG score|
+    auto_highlights = None
+    if "query_ig_abtt" in data:
+        abs_ig = np.abs(q_ig_abtt[:q_len])
+        if abs_ig.max() > 1e-6:
+            K = 5
+            top_k_idx = np.argsort(abs_ig)[-K:][::-1]
+            auto_highlights = []
+            for qi in top_k_idx:
+                qi = int(qi)
+                row = sim_arr[qi]
+                n_matches = min(2, c_len)
+                top_ci = np.argsort(row)[-n_matches:][::-1]
+                auto_highlights.append(AutoHighlight(
+                    query_idx=qi,
+                    ig_score=float(abs_ig[qi]),
+                    matches=[TopMatch(candidate_idx=int(ci), score=float(row[ci])) for ci in top_ci],
+                ))
+
     # Decode tokens
     query_input_ids = data.get("query_input_ids")
     cand_input_ids = data.get("candidate_input_ids")
@@ -197,4 +216,5 @@ def load_token_map(store: DataStore, example_id: int) -> TokenMapResponse | None
         query_ig_abtt=q_ig_abtt[:q_len].tolist(),
         candidate_ig_baseline=c_ig_base[:c_len].tolist(),
         candidate_ig_abtt=c_ig_abtt[:c_len].tolist(),
+        auto_highlights=auto_highlights,
     )

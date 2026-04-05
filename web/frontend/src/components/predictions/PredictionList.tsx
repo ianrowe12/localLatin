@@ -42,9 +42,12 @@ export default function PredictionList() {
   if (loading) {
     return (
       <div data-tour="predictions" className="px-2 py-2">
-        <div className="text-xs font-semibold uppercase tracking-wider text-stone-400 mb-2 px-2">
-          Predictions
+        <div className="text-xs font-semibold uppercase tracking-wider text-stone-400 mb-1 px-2">
+          Predicted Sources
         </div>
+        <p className="font-ui text-xs text-stone-400 dark:text-stone-500 px-2 mb-2">
+          Ranked by similarity
+        </p>
         <p className="text-xs text-stone-400 text-center mt-4 font-ui">Loading...</p>
       </div>
     )
@@ -52,9 +55,12 @@ export default function PredictionList() {
 
   return (
     <div data-tour="predictions" className="px-2 py-2">
-      <div className="text-xs font-semibold uppercase tracking-wider text-stone-400 mb-2 px-2">
-        Predictions
+      <div className="text-xs font-semibold uppercase tracking-wider text-stone-400 mb-1 px-2">
+        Predicted Sources
       </div>
+      <p className="font-ui text-xs text-stone-400 dark:text-stone-500 px-2 mb-2">
+        Ranked by similarity
+      </p>
       {predictions.length === 0 ? (
         <p className="text-xs text-stone-400 dark:text-stone-500 text-center mt-4 font-ui">
           {activeQueryId === null

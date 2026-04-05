@@ -51,8 +51,9 @@ function PredictionCardInner({ prediction, rank, isActive, onClick }: Prediction
           </div>
 
           {/* Score text */}
-          <div className="text-xs text-stone-500 font-mono mt-1">
-            {prediction.score.toFixed(3)}
+          <div className="text-xs text-stone-500 mt-1">
+            <span className="font-ui">Similarity:</span>{' '}
+            <span className="font-mono">{prediction.score.toFixed(3)}</span>
           </div>
         </div>
       </div>

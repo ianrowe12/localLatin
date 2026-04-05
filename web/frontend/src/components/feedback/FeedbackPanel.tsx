@@ -1,6 +1,7 @@
 import { useCallback } from 'react'
 import { useApp } from '../../contexts/AppContext'
 import { useFeedback } from '../../contexts/FeedbackContext'
+import { useReviewer } from '../../contexts/ReviewerContext'
 import MatchPills from './MatchPills'
 import NotesTextarea from './NotesTextarea'
 import SubmitButton from './SubmitButton'
@@ -8,6 +9,7 @@ import SubmitButton from './SubmitButton'
 export default function FeedbackPanel() {
   const { activeQueryId, activeModel, setActiveQueryId } = useApp()
   const { getDraft, updateDraft, submitFeedback } = useFeedback()
+  const { reviewerName, clearReviewer } = useReviewer()
 
   const draft = activeQueryId !== null ? getDraft(activeQueryId, activeModel) : null
 
@@ -27,22 +29,14 @@ export default function FeedbackPanel() {
     [activeQueryId, activeModel, updateDraft],
   )
 
-  const handleReviewerChange = useCallback(
-    (reviewer: string) => {
-      if (activeQueryId === null) return
-      updateDraft(activeQueryId, activeModel, { reviewer })
-    },
-    [activeQueryId, activeModel, updateDraft],
-  )
-
   const handleSubmit = useCallback(async () => {
     if (activeQueryId === null) return
-    await submitFeedback(activeQueryId, activeModel)
+    await submitFeedback(activeQueryId, activeModel, reviewerName ?? undefined)
     // Auto-advance to next query after a short delay
     setTimeout(() => {
       setActiveQueryId(activeQueryId + 1)
     }, 500)
-  }, [activeQueryId, activeModel, submitFeedback, setActiveQueryId])
+  }, [activeQueryId, activeModel, reviewerName, submitFeedback, setActiveQueryId])
 
   const handleSkip = useCallback(() => {
     if (activeQueryId === null) return
@@ -75,19 +69,22 @@ export default function FeedbackPanel() {
         onChange={handleNotesChange}
       />
 
-      {/* Reviewer name */}
-      <input
-        type="text"
-        value={draft?.reviewer ?? 'scholar'}
-        onChange={(e) => handleReviewerChange(e.target.value)}
-        placeholder="Reviewer name"
-        className="w-full h-8 px-2 rounded-lg border border-stone-200 dark:border-stone-700
-                   bg-white dark:bg-surface-800 text-xs font-ui
-                   text-stone-700 dark:text-stone-300
-                   placeholder:text-stone-400 dark:placeholder:text-stone-500
-                   focus:outline-none focus:ring-2 focus:ring-accent/30"
-        aria-label="Reviewer name"
-      />
+      {/* Reviewer identity (read-only) */}
+      <div className="flex items-center gap-2 text-xs font-ui text-stone-500 dark:text-stone-400">
+        <span>
+          Reviewing as{' '}
+          <span className="font-medium text-stone-700 dark:text-stone-200">
+            {reviewerName}
+          </span>
+        </span>
+        <button
+          type="button"
+          onClick={clearReviewer}
+          className="text-accent hover:text-accent-dark transition-colors underline"
+        >
+          change
+        </button>
+      </div>
 
       <SubmitButton
         onSubmit={handleSubmit}

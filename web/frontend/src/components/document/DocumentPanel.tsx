@@ -23,6 +23,7 @@ interface DocumentPanelProps {
   filename?: string
   dirLabel?: string
   score?: number
+  rank?: number
   tokens?: TokenLike[]
   tokenMap?: TokenMapLike | null
   loading?: boolean
@@ -34,6 +35,7 @@ export default function DocumentPanel({
   filename,
   dirLabel,
   score,
+  rank,
   tokens,
   tokenMap,
   loading,
@@ -46,6 +48,7 @@ export default function DocumentPanel({
     pinnedTokens,
     pinToken,
     viewMode,
+    autoHighlightedTokens,
   } = useTokens()
 
   const tokenRefs = useTokenRefs()
@@ -141,6 +144,7 @@ export default function DocumentPanel({
             filename={filename}
             dirLabel={dirLabel}
             score={score}
+            rank={rank}
             side={side}
           />
         )}
@@ -172,6 +176,7 @@ export default function DocumentPanel({
         filename={filename}
         dirLabel={dirLabel}
         score={score}
+        rank={rank}
         side={side}
       />
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4">
@@ -201,6 +206,18 @@ export default function DocumentPanel({
             const isPinned = side === 'query' ? !!pinEntry : isCandidatePinned
             const pinColor = side === 'query' ? pinEntry?.color : candidatePinColor
 
+            let isAutoHighlighted = side === 'query'
+              ? autoHighlightedTokens.has(idx)
+              : false
+            if (side === 'candidate' && isCandidatePinned) {
+              for (const [queryIdx, entry] of pinnedTokens) {
+                if (entry.matches.some((m) => m.candidateIdx === idx) && autoHighlightedTokens.has(queryIdx)) {
+                  isAutoHighlighted = true
+                  break
+                }
+              }
+            }
+
             let highlightScore: number | undefined
             if (side === 'candidate' && candidateHighlights) {
               highlightScore = candidateHighlights[idx]
@@ -225,6 +242,7 @@ export default function DocumentPanel({
                 isHovered={isHovered}
                 isPinned={isPinned}
                 pinColor={pinColor}
+                isAutoHighlighted={isAutoHighlighted}
                 highlightScore={highlightScore}
                 spanRef={tokenRefs.registerRef(tokenRefId)}
                 onMouseEnter={

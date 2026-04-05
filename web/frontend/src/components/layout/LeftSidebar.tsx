@@ -104,6 +104,16 @@ export default function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
               <FilterChips active={filter} onChange={handleFilter} />
             </div>
 
+            {/* Query list heading */}
+            <div className="px-3 pt-2 pb-1 flex-shrink-0">
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-stone-400 px-2">
+                Unlabeled Manuscripts
+              </h2>
+              <p className="font-ui text-xs text-stone-400 dark:text-stone-500 px-2 mt-0.5">
+                Select a manuscript to review predictions
+              </p>
+            </div>
+
             {/* Query list */}
             <div className="flex-1 overflow-hidden mt-1">
               {loading && !data && (

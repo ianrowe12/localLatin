@@ -22,7 +22,9 @@ from canon_retrieval import load_text
 from canon_split_v2 import (
     build_meta_with_split_v2,
     generate_pairs_tsv,
+    log_pair_distribution,
     split_summary_v2,
+    taskb_split_summary,
 )
 
 
@@ -89,6 +91,15 @@ def main():
     print(f"  Test queries: {summary['n_test_query']}")
     print(f"  Overlap: {summary['train_test_overlap']}")
 
+    # --- Step 3b: Task B query/reference summary ---
+    tb_summary = taskb_split_summary(meta)
+    print(f"\n  Task B split:")
+    print(f"    Queries: {tb_summary['n_queries']} "
+          f"({tb_summary['n_queries_with_reference']} with reference, "
+          f"{tb_summary['n_queries_none']} expecting 'none')")
+    print(f"    Reference directories: {tb_summary['n_reference_directories']}")
+    print(f"    Reference files: {tb_summary['n_reference_files']}")
+
     # --- Step 4: Task A — pairwise TSVs ---
     print("\nGenerating Task A (pairwise) TSVs...")
     print("  train_task_a.tsv (this may take a moment)...")
@@ -100,6 +111,15 @@ def main():
     test_a_info = generate_pairs_tsv(meta, "test", str(out / "test_task_a.tsv"))
     print(f"    {test_a_info['n_pairs']} pairs "
           f"({test_a_info['n_positive']} pos, {test_a_info['n_negative']} neg)")
+
+    # --- Step 4b: Positive pair distribution (diagnostic) ---
+    print("\n--- Train pair distribution ---")
+    train_pair_dist = log_pair_distribution(meta, "train")
+    train_pair_dist.to_csv(out / "train_pair_distribution.csv", index=False)
+
+    print("\n--- Test pair distribution ---")
+    test_pair_dist = log_pair_distribution(meta, "test")
+    test_pair_dist.to_csv(out / "test_pair_distribution.csv", index=False)
 
     # --- Step 5: Task B — file-level TSVs ---
     print("\nGenerating Task B (file-level) TSVs...")
@@ -134,6 +154,7 @@ def main():
             "train": train_b_count,
             "test": test_b_count,
         },
+        "task_b_split": tb_summary,
     }
     summary_path = out / "resubmit_summary.json"
     with open(summary_path, "w") as f:

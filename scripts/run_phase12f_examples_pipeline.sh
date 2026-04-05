@@ -42,7 +42,9 @@ $PYTHON_BIN scripts/run_phase12e_pair_explanations.py \
   --examples_csv "$EXAMPLES_CSV" \
   --pc_root "$PC_ROOT" \
   --out_dir "$OUT_ROOT" \
-  --token_filter tokenizer_empty
+  --token_filter tokenizer_empty \
+  --trust_remote_code \
+  --skip_existing
 
 $PYTHON_BIN scripts/run_phase12f_visualize.py \
   --examples_csv "$EXAMPLES_CSV" \

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useApp } from '../../contexts/AppContext'
 import { useQueryDetail, usePredictions } from '../../api/queries'
@@ -7,6 +7,8 @@ import ConnectionOverlay from '../connections/ConnectionOverlay'
 import DocumentPanel from '../document/DocumentPanel'
 import DraggableDivider from './DraggableDivider'
 import { buildWordMatchMap } from '../../utils/wordSimilarity'
+import { useTokenMap } from '../../api/tokenMap'
+import { useTokens, type PinMatch } from '../../contexts/TokenContext'
 
 export default function CenterArea() {
   const [splitPercent, setSplitPercent] = useState(50)
@@ -53,6 +55,30 @@ export default function CenterArea() {
     return buildWordMatchMap(queryDetail.data.tokens, candidateTokens)
   }, [queryDetail.data?.tokens, candidateTokens])
 
+  const { applyAutoHighlights } = useTokens()
+
+  const tokenMapResult = useTokenMap(
+    activeQueryId,
+    candidateDir,
+    activeModel || undefined,
+  )
+
+  const effectiveTokenMap = tokenMapResult.data ?? wordMatchMap
+
+  const autoHighlightKey = tokenMapResult.data?.example_id
+  useEffect(() => {
+    if (!tokenMapResult.data?.auto_highlights) return
+    const highlights = tokenMapResult.data.auto_highlights.map((ah) => ({
+      queryIdx: ah.query_idx,
+      matches: ah.matches.map((m, rank) => ({
+        candidateIdx: m.candidate_idx,
+        score: m.score,
+        rank: rank + 1,
+      })),
+    }))
+    applyAutoHighlights(highlights)
+  }, [autoHighlightKey, applyAutoHighlights])
+
   const handleDrag = useCallback((newPercent: number) => {
     setSplitPercent(newPercent)
   }, [])
@@ -73,7 +99,7 @@ export default function CenterArea() {
             side="query"
             filename={queryDetail.data?.filename}
             tokens={queryDetail.data?.tokens}
-            tokenMap={wordMatchMap}
+            tokenMap={effectiveTokenMap}
             loading={queryDetail.loading}
             scrollRef={queryScrollRef}
           />
@@ -101,8 +127,9 @@ export default function CenterArea() {
                 filename={candidateFile?.filename}
                 dirLabel={currentPrediction?.dir_name}
                 score={currentPrediction?.score}
+                rank={activePredictionRank}
                 tokens={candidateTokens}
-                tokenMap={wordMatchMap}
+                tokenMap={effectiveTokenMap}
                 loading={predictions.loading}
                 scrollRef={candidateScrollRef}
               />

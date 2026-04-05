@@ -6,6 +6,7 @@ interface ConnectionLineProps {
   score: number
   rank: number
   isPinned: boolean
+  isAutoHighlighted?: boolean
 }
 
 export default function ConnectionLine({
@@ -14,9 +15,10 @@ export default function ConnectionLine({
   score,
   rank,
   isPinned,
+  isAutoHighlighted,
 }: ConnectionLineProps) {
-  const strokeWidth = isPinned ? 2.5 : [2.5, 2, 1.5][rank] ?? 1.5
-  const opacity = isPinned ? 0.85 : 0.3 + score * 0.55
+  const strokeWidth = isAutoHighlighted ? 2 : isPinned ? 2.5 : [2.5, 2, 1.5][rank] ?? 1.5
+  const opacity = isAutoHighlighted ? 0.55 : isPinned ? 0.85 : 0.3 + score * 0.55
 
   return (
     <motion.path
@@ -33,7 +35,7 @@ export default function ConnectionLine({
         opacity: { duration: 0.2 },
       }}
       strokeDasharray={
-        rank === 0 ? undefined : rank === 1 ? '6 3' : '3 3'
+        isAutoHighlighted ? '6 4' : rank === 0 ? undefined : rank === 1 ? '6 3' : '3 3'
       }
     />
   )

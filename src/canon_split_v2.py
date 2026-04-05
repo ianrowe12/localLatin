@@ -84,6 +84,131 @@ def canon_train_test_split_v2(
     return meta
 
 
+def canon_taskb_query_reference_split(
+    meta: pd.DataFrame,
+    random_seed: int = 42,
+) -> pd.DataFrame:
+    """Assign taskb_role (query/reference/train) and has_reference_dir within test set.
+
+    Prerequisite: meta must already have 'split' column from canon_train_test_split_v2().
+
+    Rules applied per directory's test files (n_test = number of test files):
+        n_test=1, singleton dir: 50% coin flip → query (match "none") or reference
+        n_test=1, multi-file dir: query with has_reference_dir=False
+        n_test=2: 1 query, 1 reference
+        n_test=3: 1 query, 2 reference
+        n_test>=4: n_test//2 queries, rest reference
+    """
+    rng = np.random.default_rng(random_seed)
+    meta = meta.copy()
+
+    taskb_role = np.full(len(meta), "train", dtype=object)
+    has_reference_dir = np.zeros(len(meta), dtype=bool)
+
+    test_mask = meta["split"] == "test"
+
+    for folder_id, group in meta[test_mask].groupby("folder_id"):
+        idx = group.index.to_numpy()
+        folder_size = int(group["folder_size"].iloc[0])
+        n_test = len(idx)
+
+        if n_test == 0:
+            continue
+
+        shuffled = rng.permutation(idx)
+
+        if n_test == 1 and folder_size == 1:
+            # Singleton dir: 50% → query (match "none"), 50% → reference
+            if rng.random() < 0.5:
+                taskb_role[shuffled[0]] = "query"
+                has_reference_dir[shuffled[0]] = False
+            else:
+                taskb_role[shuffled[0]] = "reference"
+        elif n_test == 1:
+            # Multi-file dir with only 1 file in test (edge case)
+            taskb_role[shuffled[0]] = "query"
+            has_reference_dir[shuffled[0]] = False
+        elif n_test == 2:
+            taskb_role[shuffled[0]] = "query"
+            taskb_role[shuffled[1]] = "reference"
+            has_reference_dir[shuffled[0]] = True
+        elif n_test == 3:
+            taskb_role[shuffled[0]] = "query"
+            taskb_role[shuffled[1]] = "reference"
+            taskb_role[shuffled[2]] = "reference"
+            has_reference_dir[shuffled[0]] = True
+        else:
+            # 4+ test files: ~50% query, rest reference
+            n_query = n_test // 2
+            for qi in range(n_query):
+                taskb_role[shuffled[qi]] = "query"
+                has_reference_dir[shuffled[qi]] = True
+            for ri in range(n_query, n_test):
+                taskb_role[shuffled[ri]] = "reference"
+
+    meta["taskb_role"] = taskb_role
+    meta["has_reference_dir"] = has_reference_dir
+    return meta
+
+
+def taskb_split_summary(meta: pd.DataFrame) -> dict:
+    """Summary statistics for the Task B query/reference split."""
+    n_queries = int((meta["taskb_role"] == "query").sum())
+    n_reference = int((meta["taskb_role"] == "reference").sum())
+    n_train = int((meta["taskb_role"] == "train").sum())
+
+    queries = meta[meta["taskb_role"] == "query"]
+    n_queries_with_ref = int(queries["has_reference_dir"].sum())
+    n_queries_none = n_queries - n_queries_with_ref
+
+    ref_dirs = meta[meta["taskb_role"] == "reference"]["folder_id"].nunique()
+
+    return {
+        "n_queries": n_queries,
+        "n_queries_with_reference": n_queries_with_ref,
+        "n_queries_none": n_queries_none,
+        "n_reference_files": n_reference,
+        "n_reference_directories": ref_dirs,
+        "n_train": n_train,
+    }
+
+
+def log_pair_distribution(meta: pd.DataFrame, split_name: str) -> pd.DataFrame:
+    """Compute per-directory positive pair counts for a given split.
+
+    Returns DataFrame with columns: folder_id, folder_size, n_in_split, n_positive_pairs.
+    Also prints a summary grouped by folder_size.
+    """
+    split_df = meta[meta["split"] == split_name]
+    rows = []
+    for folder_id, group in split_df.groupby("folder_id"):
+        n = len(group)
+        folder_size = int(group["folder_size"].iloc[0])
+        n_pairs = n * (n - 1) // 2
+        rows.append({
+            "folder_id": folder_id,
+            "folder_size": folder_size,
+            "n_in_split": n,
+            "n_positive_pairs": n_pairs,
+        })
+
+    result = pd.DataFrame(rows) if rows else pd.DataFrame(
+        columns=["folder_id", "folder_size", "n_in_split", "n_positive_pairs"]
+    )
+
+    print(f"\nPositive pair distribution for '{split_name}' split:")
+    print(f"{'Folder size':>12} {'Dirs':>5} {'Files in split':>15} {'Positive pairs':>15}")
+    for fs, grp in result.groupby("folder_size"):
+        print(f"{fs:>12} {len(grp):>5} {int(grp['n_in_split'].sum()):>15} "
+              f"{int(grp['n_positive_pairs'].sum()):>15}")
+
+    total_pairs = int(result["n_positive_pairs"].sum())
+    print(f"{'TOTAL':>12} {len(result):>5} {int(result['n_in_split'].sum()):>15} "
+          f"{total_pairs:>15}")
+
+    return result
+
+
 def build_meta_with_split_v2(
     canon_root: str,
     random_seed: int = 42,
@@ -98,6 +223,17 @@ def build_meta_with_split_v2(
     df = df.reset_index(drop=True)
     df["file_id"] = np.arange(len(df), dtype=np.int32)
     df = canon_train_test_split_v2(df, random_seed=random_seed)
+
+    # has_test_partner: True if folder has >= 2 files in the test set
+    test_mask = df["split"] == "test"
+    folder_test_counts = df[test_mask].groupby("folder_id").size()
+    df["has_test_partner"] = df["folder_id"].map(
+        lambda fid: folder_test_counts.get(fid, 0) >= 2
+    )
+
+    # Task B query/reference split within test set
+    df = canon_taskb_query_reference_split(df, random_seed=random_seed)
+
     return df
 
 

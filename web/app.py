@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -44,6 +45,8 @@ async def lifespan(app: FastAPI):
 
 
 def create_app(config_path: str | None = None) -> FastAPI:
+    if config_path is None:
+        config_path = os.environ.get("LOCALLATIN_CONFIG")
     settings = load_settings(config_path)
 
     logging.basicConfig(

@@ -19,7 +19,7 @@ export interface FeedbackContextValue {
   drafts: Map<string, FeedbackDraft>
   getDraft: (queryId: number, model: string) => FeedbackDraft
   updateDraft: (queryId: number, model: string, patch: Partial<FeedbackDraft>) => void
-  submitFeedback: (queryId: number, model: string) => Promise<void>
+  submitFeedback: (queryId: number, model: string, reviewer?: string) => Promise<void>
   undoLastSubmit: () => void
   lastSubmittedKey: string | null
 }
@@ -83,7 +83,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
   )
 
   const submitFeedback = useCallback(
-    async (queryId: number, model: string): Promise<void> => {
+    async (queryId: number, model: string, reviewer?: string): Promise<void> => {
       const key = makeDraftKey(queryId, model)
       const draft = drafts.get(key) ?? emptyDraft()
 
@@ -93,7 +93,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
         correct_rank: draft.correctRank,
         correct_dir: null,
         notes: draft.notes,
-        reviewer: draft.reviewer,
+        reviewer: reviewer ?? draft.reviewer,
       })
 
       lastSubmittedDraft.current = { key, draft: { ...draft } }

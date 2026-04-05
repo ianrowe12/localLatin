@@ -2,12 +2,14 @@ import { useStats } from '../../api/models'
 import { useApp } from '../../contexts/AppContext'
 import { useTour } from '../onboarding/TourProvider'
 import { DASHBOARD_TOUR_STEPS, REVIEW_TOUR_STEPS } from '../onboarding/tourSteps'
+import { useReviewer } from '../../contexts/ReviewerContext'
 import ThemeToggle from '../common/ThemeToggle'
 
 export default function Header() {
   const { data: stats } = useStats()
   const { currentView, setCurrentView } = useApp()
   const { startTour } = useTour()
+  const { reviewerName } = useReviewer()
 
   const handleHelp = () => {
     startTour(currentView === 'dashboard' ? DASHBOARD_TOUR_STEPS : REVIEW_TOUR_STEPS)
@@ -19,19 +21,24 @@ export default function Header() {
 
   return (
     <header
-      className="h-14 px-4 flex items-center justify-between
+      className="h-[4.25rem] px-4 flex items-center justify-between
                  bg-white/80 dark:bg-surface-800/80 backdrop-blur-sm
                  border-b border-stone-200/60 dark:border-stone-700/60
                  shadow-glass dark:shadow-glass-dark"
     >
       {/* Left: Title */}
-      <div className="flex items-baseline gap-2 flex-shrink-0">
-        <h1 className="font-latin text-xl font-semibold text-stone-800 dark:text-stone-100">
-          LocalLatin
-        </h1>
-        <span className="font-ui text-sm text-stone-500 dark:text-stone-400">
-          Manuscript Review Tool
-        </span>
+      <div className="flex flex-col flex-shrink-0">
+        <div className="flex items-baseline gap-2">
+          <h1 className="font-latin text-xl font-semibold text-stone-800 dark:text-stone-100">
+            LocalLatin
+          </h1>
+          <span className="font-ui text-sm text-stone-500 dark:text-stone-400">
+            Manuscript Review Tool
+          </span>
+        </div>
+        <p className="font-ui text-xs text-stone-400 dark:text-stone-500">
+          Review model predictions for Latin manuscript source identification
+        </p>
       </div>
 
       {/* Center: Stats progress */}
@@ -79,6 +86,25 @@ export default function Header() {
           </button>
         )}
         <ThemeToggle />
+
+        {/* Reviewer badge */}
+        {reviewerName && (
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded-full
+                          bg-accent/10 dark:bg-accent/15">
+            <span
+              className="w-5 h-5 rounded-full bg-accent text-white
+                         flex items-center justify-center text-[10px] font-bold font-ui
+                         uppercase leading-none"
+              aria-hidden="true"
+            >
+              {reviewerName[0]}
+            </span>
+            <span className="text-xs font-ui font-medium text-accent dark:text-accent-light">
+              {reviewerName}
+            </span>
+          </div>
+        )}
+
         <button
           type="button"
           onClick={handleHelp}
