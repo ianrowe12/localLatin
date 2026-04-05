@@ -32,8 +32,12 @@ from run_resubmit_ig_comparison import (  # noqa: E402
     METRIC_LABELS,
 )
 
-# 10 examples: 2–3 per bucket, balanced across LaTa / PhilTa
-DEFAULT_IDS = [1, 3, 8, 12, 19, 21, 27, 28, 31, 36]
+# 10 examples: one per model per bucket (4 models × 4 buckets = 16; pick 10)
+# IDs assume 4 models sorted: LaBSE, LaTa, PhilTa, Qwen3-0.6B; 5 per bucket per model
+# correct_similar: LaBSE(1), Qwen(16); correct_not_similar: LaTa(26), PhilTa(31)
+# wrong_similar: LaBSE(41), LaTa(46), PhilTa(53), Qwen(56)
+# wrong_not_similar: LaBSE(62), Qwen(76)
+DEFAULT_IDS = [1, 16, 26, 31, 41, 46, 53, 56, 62, 76]
 
 
 def parse_args() -> argparse.Namespace:
@@ -54,7 +58,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--example_ids",
         default=",".join(str(i) for i in DEFAULT_IDS),
-        help="Comma-separated example IDs to include",
+        help="Comma-separated example IDs to include (defaults assume 4-model CSV)",
     )
     return p.parse_args()
 
