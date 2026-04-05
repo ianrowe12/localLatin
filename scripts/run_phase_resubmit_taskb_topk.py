@@ -118,42 +118,46 @@ def apply_postprocess(
 
 
 def build_rankings(
-    sim: np.ndarray,
-    test_paths: np.ndarray,
-    test_folder_ids: np.ndarray,
-    test_has_partner: np.ndarray,
+    rect_sim: np.ndarray,
+    query_paths: np.ndarray,
+    query_folder_ids: np.ndarray,
+    query_has_reference: np.ndarray,
+    ref_paths: np.ndarray,
+    ref_folder_ids: np.ndarray,
     tau: float,
     top_k: int,
 ) -> list[dict]:
-    dir_members: Dict[str, List[int]] = {}
-    for idx, folder_id in enumerate(test_folder_ids):
-        dir_members.setdefault(str(folder_id), []).append(idx)
+    """Rank reference directories for each query using rectangular similarity.
+
+    rect_sim: (n_query, n_ref) cosine similarities.
+    Each reference directory's score = max similarity among its member files.
+    """
+    # Build reference directory -> column indices mapping
+    ref_dir_members: Dict[str, List[int]] = {}
+    for j, folder_id in enumerate(ref_folder_ids):
+        ref_dir_members.setdefault(str(folder_id), []).append(j)
 
     rows: list[dict] = []
-    for i in range(sim.shape[0]):
-        my_dir = str(test_folder_ids[i])
-        correct_label = my_dir if test_has_partner[i] else "__NEW__"
+    for i in range(rect_sim.shape[0]):
+        my_dir = str(query_folder_ids[i])
+        correct_label = my_dir if query_has_reference[i] else "__NEW__"
 
         ranked_entries: list[dict] = []
-        for directory, members in dir_members.items():
+        for directory, members in ref_dir_members.items():
             best_idx = None
             best_score = None
             for j in members:
-                if j == i:
-                    continue
-                score = float(sim[i, j])
+                score = float(rect_sim[i, j])
                 if best_score is None or score > best_score:
                     best_score = score
                     best_idx = j
-            if best_idx is None:
-                continue
             ranked_entries.append(
                 {
                     "label": directory,
                     "score": best_score,
                     "rep_idx": best_idx,
-                    "rep_path": str(test_paths[best_idx]),
-                    "rep_folder_id": str(test_folder_ids[best_idx]),
+                    "rep_path": str(ref_paths[best_idx]),
+                    "rep_folder_id": str(ref_folder_ids[best_idx]),
                 }
             )
 
@@ -174,9 +178,9 @@ def build_rankings(
 
         row = {
             "query_index": i,
-            "query_path": str(test_paths[i]),
+            "query_path": str(query_paths[i]),
             "query_folder_id": my_dir,
-            "has_partner": bool(test_has_partner[i]),
+            "has_reference_dir": bool(query_has_reference[i]),
             "correct_label": correct_label,
             "correct_rank": int(correct_rank),
             "correct_bucket": bucket,
@@ -300,11 +304,22 @@ def main() -> None:
     selected_df = pd.DataFrame(selected_rows)
     selected_df.to_csv(out_dir / "taskb_selected_configs.csv", index=False)
 
-    test_mask = split_df["split"].values == "test"
     train_mask = split_df["split"].values == "train"
-    test_paths = split_df.loc[test_mask, "path"].to_numpy()
-    test_folder_ids = split_df.loc[test_mask, "folder_id"].astype(str).to_numpy()
-    test_has_partner = split_df.loc[test_mask, "has_test_partner"].astype(bool).to_numpy()
+
+    # Detect query/reference paradigm (new) vs legacy
+    if "taskb_role" not in split_df.columns:
+        raise SystemExit(
+            "Split CSV missing 'taskb_role' column. "
+            "Re-run run_resubmit_data_prep.py to generate the updated split."
+        )
+
+    query_mask_full = split_df["taskb_role"].values == "query"
+    ref_mask_full = split_df["taskb_role"].values == "reference"
+    query_paths = split_df.loc[query_mask_full, "path"].to_numpy()
+    query_folder_ids = split_df.loc[query_mask_full, "folder_id"].astype(str).to_numpy()
+    query_has_reference = split_df.loc[query_mask_full, "has_reference_dir"].astype(bool).to_numpy()
+    ref_paths = split_df.loc[ref_mask_full, "path"].to_numpy()
+    ref_folder_ids = split_df.loc[ref_mask_full, "folder_id"].astype(str).to_numpy()
 
     query_rows = []
     summary_rows = []
@@ -327,15 +342,23 @@ def main() -> None:
         )
         emb_all = np.load(emb_path)
         train_emb = emb_all[train_mask]
-        test_emb = emb_all[test_mask]
-        train_emb, test_emb = apply_postprocess(train_emb, test_emb, method, d_value)
-        sim = similarity_matrix(l2_normalize(test_emb))
+        # Concatenate query + ref for post-processing (fit on train, transform both)
+        query_emb = emb_all[query_mask_full]
+        ref_emb = emb_all[ref_mask_full]
+        combined_test = np.concatenate([query_emb, ref_emb], axis=0)
+        train_emb, combined_pp = apply_postprocess(train_emb, combined_test, method, d_value)
+        n_q = len(query_emb)
+        query_emb_pp = combined_pp[:n_q]
+        ref_emb_pp = combined_pp[n_q:]
+        rect_sim = l2_normalize(query_emb_pp) @ l2_normalize(ref_emb_pp).T
 
         rows = build_rankings(
-            sim=sim,
-            test_paths=test_paths,
-            test_folder_ids=test_folder_ids,
-            test_has_partner=test_has_partner,
+            rect_sim=rect_sim,
+            query_paths=query_paths,
+            query_folder_ids=query_folder_ids,
+            query_has_reference=query_has_reference,
+            ref_paths=ref_paths,
+            ref_folder_ids=ref_folder_ids,
             tau=tau,
             top_k=args.top_k,
         )
@@ -382,7 +405,7 @@ def main() -> None:
                     "count": count,
                     "exclusive_pct": exclusive_pcts[bucket],
                     "cumulative_pct": cumulative_pcts[bucket],
-                    "n_test": total,
+                    "n_query": total,
                 }
             )
 

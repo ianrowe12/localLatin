@@ -129,6 +129,100 @@ def compute_assignment_acc(
     return existing_acc, new_acc, overall
 
 
+def evaluate_query_vs_directory(
+    query_emb_norm: np.ndarray,
+    ref_emb_norm: np.ndarray,
+    query_folder_ids: np.ndarray,
+    ref_folder_ids: np.ndarray,
+    query_has_reference: np.ndarray,
+    tau: float,
+    top_k: int = 5,
+) -> Dict:
+    """Evaluate queries against reference directories using max-sim aggregation.
+
+    For each query, similarity to a reference directory = max cosine sim to any
+    file in that directory. Queries with has_reference=False should match "__NEW__".
+    """
+    # Rectangular similarity: (n_query, n_ref)
+    rect_sim = query_emb_norm @ ref_emb_norm.T
+
+    # Build directory -> column indices mapping
+    ref_dir_members: Dict[str, List[int]] = {}
+    for j, fid in enumerate(ref_folder_ids):
+        ref_dir_members.setdefault(str(fid), []).append(j)
+
+    ref_dir_labels = sorted(ref_dir_members.keys())
+    n_query = len(query_folder_ids)
+    n_ref_dirs = len(ref_dir_labels)
+
+    # Query-to-directory similarity: (n_query, n_ref_dirs)
+    dir_sim = np.full((n_query, n_ref_dirs), -np.inf)
+    for d_idx, d_label in enumerate(ref_dir_labels):
+        members = ref_dir_members[d_label]
+        dir_sim[:, d_idx] = rect_sim[:, members].max(axis=1)
+
+    # Evaluate each query
+    acc_at_k_correct = np.zeros(top_k, dtype=int)
+    existing_correct = 0
+    existing_total = 0
+    new_correct = 0
+    new_total = 0
+
+    for i in range(n_query):
+        my_dir = str(query_folder_ids[i])
+        has_ref = bool(query_has_reference[i])
+        correct_label = my_dir if has_ref else "__NEW__"
+
+        # Build scored entries: all ref dirs + __NEW__ at tau
+        entries = []
+        for d_idx, d_label in enumerate(ref_dir_labels):
+            entries.append((float(dir_sim[i, d_idx]), d_label))
+        entries.append((float(tau), "__NEW__"))
+
+        # Sort descending by score, then by label for tie-breaking
+        entries.sort(key=lambda x: (-x[0], x[1]))
+
+        # Find rank of correct label
+        rank = None
+        for r, (_, label) in enumerate(entries):
+            if label == correct_label:
+                rank = r + 1  # 1-indexed
+                break
+
+        if rank is not None:
+            for k in range(top_k):
+                if rank <= k + 1:
+                    acc_at_k_correct[k] += 1
+
+        # Assignment accuracy
+        top1_score, top1_label = entries[0]
+        if has_ref:
+            existing_total += 1
+            if top1_score >= tau and top1_label == my_dir:
+                existing_correct += 1
+        else:
+            new_total += 1
+            if top1_label == "__NEW__":
+                # All dirs scored below tau
+                new_correct += 1
+
+    result = {}
+    for k in range(top_k):
+        result[f"dir_acc_at_{k+1}"] = acc_at_k_correct[k] / n_query if n_query > 0 else 0.0
+
+    result["existing_acc"] = existing_correct / existing_total if existing_total > 0 else 0.0
+    result["new_acc"] = new_correct / new_total if new_total > 0 else 0.0
+    result["overall_assignment_acc"] = (
+        (existing_correct + new_correct) / n_query if n_query > 0 else 0.0
+    )
+    result["n_query"] = n_query
+    result["n_reference_files"] = len(ref_folder_ids)
+    result["n_reference_dirs"] = n_ref_dirs
+    result["n_query_existing"] = existing_total
+    result["n_query_new"] = new_total
+    return result
+
+
 def find_optimal_D(
     train_emb: np.ndarray,
     train_folder_ids: np.ndarray,
@@ -249,7 +343,7 @@ def evaluate_single(
     acc1 = accuracy_at_k(test_sim, test_folder_ids, test_is_query, k=1)
     acc3 = accuracy_at_k(test_sim, test_folder_ids, test_is_query, k=3)
 
-    # Assignment accuracy
+    # Assignment accuracy (file-level, legacy)
     existing_acc, new_acc, overall_acc = compute_assignment_acc(
         test_sim, test_has_partner, tau
     )
@@ -257,7 +351,7 @@ def evaluate_single(
     n_existing = int(test_has_partner.sum())
     n_new = int(test_mask.sum()) - n_existing
 
-    return {
+    result = {
         "model": model_name,
         "repr": repr_name,
         "pooling": actual_pooling,
@@ -281,6 +375,29 @@ def evaluate_single(
         "n_existing": n_existing,
         "n_new": n_new,
     }
+
+    # Query-vs-directory evaluation (new Task B paradigm)
+    if "taskb_role" in split_meta.columns:
+        test_roles = split_meta.loc[test_mask, "taskb_role"].values
+        query_in_test = test_roles == "query"
+        ref_in_test = test_roles == "reference"
+
+        if query_in_test.any() and ref_in_test.any():
+            query_emb_norm = test_emb_norm[query_in_test]
+            ref_emb_norm = test_emb_norm[ref_in_test]
+            query_fids = test_folder_ids[query_in_test]
+            ref_fids = test_folder_ids[ref_in_test]
+            query_has_ref = split_meta.loc[test_mask, "has_reference_dir"].values[query_in_test].astype(bool)
+
+            qvd = evaluate_query_vs_directory(
+                query_emb_norm, ref_emb_norm,
+                query_fids, ref_fids, query_has_ref,
+                tau, top_k=5,
+            )
+            for key, val in qvd.items():
+                result[f"qvd_{key}"] = val
+
+    return result
 
 
 def discover_layers(
