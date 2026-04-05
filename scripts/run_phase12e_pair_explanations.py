@@ -46,6 +46,10 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--half_precision", action="store_true")
     parser.add_argument("--trust_remote_code", action="store_true")
+    parser.add_argument(
+        "--skip_existing", action="store_true",
+        help="Skip examples whose output NPZ already exists.",
+    )
     return parser.parse_args()
 
 
@@ -190,6 +194,16 @@ def main() -> None:
             skipped += 1
             continue
 
+        slug = model_slug(row.model_name)
+        out_path = (
+            artifacts_root / slug
+            / f"example{int(row.example_id):03d}_{row.candidate_role}.npz"
+        )
+        if args.skip_existing and out_path.exists():
+            print(f"[SKIP] Already exists: {out_path}")
+            skipped += 1
+            continue
+
         if row.model_name != current_model_name:
             current_model_name = row.model_name
             model, tokenizer, resolved_type = load_model(
@@ -207,7 +221,6 @@ def main() -> None:
                 dtype=torch.float32,
             )
 
-        slug = model_slug(row.model_name)
         pc_path = pc_root / slug / f"layer{int(row.layer)}_pcs.npz"
         if not pc_path.exists():
             raise FileNotFoundError(f"PC file missing: {pc_path}")
@@ -281,9 +294,7 @@ def main() -> None:
             args.n_steps,
         )
 
-        model_dir = artifacts_root / slug
-        model_dir.mkdir(parents=True, exist_ok=True)
-        out_path = model_dir / f"example{int(row.example_id):03d}_{row.candidate_role}.npz"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
         np.savez_compressed(
             out_path,
             example_id=np.array([int(row.example_id)], dtype=np.int32),

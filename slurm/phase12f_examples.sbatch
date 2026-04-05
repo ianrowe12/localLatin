@@ -7,7 +7,7 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=96g
 #SBATCH --gpus-per-node=1
-#SBATCH --time=16:00:00
+#SBATCH --time=06:00:00
 #SBATCH --output=slurm/logs/phase12f_4model_%j.out
 #SBATCH --error=slurm/logs/phase12f_4model_%j.err
 
