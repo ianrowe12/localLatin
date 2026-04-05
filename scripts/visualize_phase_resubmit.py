@@ -64,6 +64,11 @@ def parse_args() -> argparse.Namespace:
         default="bowphs/PhilTa",
         help="Featured model for density 2x2 figure.",
     )
+    parser.add_argument(
+        "--taskb_mseed_csv",
+        default=None,
+        help="Optional: aggregated_results.csv from M-seed Task B evaluation.",
+    )
     return parser.parse_args()
 
 
@@ -225,6 +230,53 @@ def plot_density_2x2(feature_model: str, dist_dir: Path, out_dir: Path) -> None:
     save(fig, out_dir, "paper_fig_density_2x2")
 
 
+def plot_taskb_mseed_bar(csv_path: Path, out_dir: Path) -> None:
+    """Bar chart of M-seed Task B results: best config per model at K=1,3,5."""
+    agg_df = pd.read_csv(csv_path)
+
+    model_order = [m for m in SHORT.keys() if m in agg_df["model"].values]
+    rows = []
+    for model in model_order:
+        sub = agg_df[(agg_df["model"] == model) & (agg_df["repr"] == "hidden")]
+        if sub.empty:
+            continue
+        rows.append(sub.loc[sub["dir_acc_at_1_mean"].idxmax()])
+    if not rows:
+        print("Warning: no Task B M-seed data to plot.")
+        return
+    best_df = pd.DataFrame(rows).reset_index(drop=True)
+
+    models = [SHORT.get(r["model"], r["model"]) for _, r in best_df.iterrows()]
+    ks = [1, 3, 5]
+    n_models = len(models)
+    n_k = len(ks)
+    x = np.arange(n_models)
+    width = 0.8 / n_k
+    colors = ["#1f77b4", "#ff7f0e", "#2ca02c"]
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    for i, k in enumerate(ks):
+        means = best_df[f"dir_acc_at_{k}_mean"].values * 100
+        stds = best_df[f"dir_acc_at_{k}_std"].values * 100
+        offset = (i - n_k / 2 + 0.5) * width
+        ax.bar(
+            x + offset, means, width,
+            yerr=stds, capsize=3,
+            label=f"Top-{k}", color=colors[i], alpha=0.85,
+        )
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(models, fontsize=11)
+    ax.set_ylabel("Accuracy (%)", fontsize=13)
+    ax.set_title("Task B: Directory Accuracy (M=5 seeds)", fontsize=14, fontweight="bold")
+    ax.legend(fontsize=11)
+    ax.grid(axis="y", alpha=0.25, linewidth=0.8)
+    ymin = max(0, best_df["dir_acc_at_1_mean"].min() * 100 - 15)
+    ax.set_ylim(ymin, 105)
+    fig.tight_layout()
+    save(fig, out_dir, "fig_taskb_mseed_bar")
+
+
 def main() -> None:
     args = parse_args()
     out_dir = Path(args.out_dir)
@@ -256,6 +308,14 @@ def main() -> None:
         print(f"Saved density 2x2 to {out_dir}")
     else:
         print(f"Warning: dist_dir {dist_dir} not found, skipping density figure.")
+
+    if args.taskb_mseed_csv:
+        mseed_path = Path(args.taskb_mseed_csv)
+        if mseed_path.exists():
+            plot_taskb_mseed_bar(mseed_path, out_dir)
+            print(f"Saved Task B M-seed bar chart to {out_dir}")
+        else:
+            print(f"Warning: --taskb_mseed_csv {mseed_path} not found, skipping.")
 
     print(f"Saved release figures to {out_dir}")
 
