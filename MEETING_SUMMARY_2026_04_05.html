@@ -225,6 +225,26 @@
   <p style="margin-top: 0.75rem;"><strong>Potential experiment:</strong> OT currently uses IG for mass weights. Testing OT with uniform or attention-based mass instead would show whether IG actually helps OT. The <code>use_uniform=True</code> flag already exists in the code but wasn&rsquo;t evaluated.</p>
 </div>
 
+<div class="card" style="margin-top: 1rem;">
+  <h3>Reading the 6-panel figure: colors and value ranges</h3>
+  <p><strong>Panel A (IG+ABTT)</strong> uses a <span style="color:#2166ac;">blue</span>-white-<span style="color:#b2182b;">red</span> diverging colormap because its values can be <strong>negative</strong>. The formula is:</p>
+  <p style="font-family: monospace; background: var(--table-stripe); padding: 0.5rem; border-radius: 4px; margin: 0.5rem 0;">
+    pair[i,j] = cos(q<sub>i</sub>, c<sub>j</sub>) &times; sqrt(|IG<sub>q</sub>| &times; |IG<sub>c</sub>|) &times; sign(IG<sub>q</sub>) &times; sign(IG<sub>c</sub>)
+  </p>
+  <p>The <code>sign(IG)</code> terms carry through whether each token&rsquo;s gradient contribution was positive or negative. When one token has positive IG and the other has negative IG, the product is negative (blue). This encodes <em>opposing</em> gradient directions &mdash; tokens that push the similarity score in opposite directions.</p>
+
+  <p style="margin-top: 0.75rem;"><strong>Panels B&ndash;F</strong> all use a <span style="color:#b35806;">yellow-orange-red</span> sequential colormap with values &ge; 0 only. This is because none of these methods can produce negative values:</p>
+  <ul style="margin: 0.25rem 0 0 1.5rem;">
+    <li><strong>BERTScore (B):</strong> cosine similarity of matched token pairs &mdash; always &ge; 0 after ABTT cleaning (embeddings are well-separated).</li>
+    <li><strong>OT (C):</strong> transport plan weights &mdash; mass flow is non-negative by definition.</li>
+    <li><strong>Attention cross-sim (D):</strong> cosine &times; sqrt(attention weights) &mdash; attention weights are non-negative, and cosine of ABTT-cleaned tokens is consistently positive.</li>
+    <li><strong>DLA (E):</strong> cosine &times; normalized norms &mdash; norms are always positive.</li>
+    <li><strong>Attention standalone (F):</strong> same structure as D but with column-mean attention instead of diagonal.</li>
+  </ul>
+
+  <p style="margin-top: 0.75rem;">In short: Panel A has blue cells because IG gradients can oppose each other. Panels B&ndash;F have no negative values because they are built from inherently non-negative quantities (cosine of cleaned embeddings, transport mass, attention weights, norms).</p>
+</div>
+
 <!-- ================================================================ -->
 <h2>7. Webapp &mdash; &ldquo;UI is good, I hope they will like it&rdquo;</h2>
 
