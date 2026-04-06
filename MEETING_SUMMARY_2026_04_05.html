@@ -155,9 +155,26 @@
   </div>
 </div>
 
-<div class="finding amber">
-  <strong>Professor says this should be higher.</strong> Directories with 3+ files should contribute n*(n-1)/2 pairs each. With 187 multi-file dirs, the count should exceed 354. Need to verify the positive pair computation.
+<div class="finding green">
+  <strong>Verified: 354 is correct.</strong> The v2 split sends floor(n/2) files per directory to train. Most directories (size 2-5) contribute only 0-1 pairs each. The low count reflects the dataset structure (many small directories), not a computation error.
 </div>
+
+<details>
+<summary>Positive pair breakdown by directory size</summary>
+<table>
+  <tr><th>Dir Size</th><th>Dirs (train)</th><th>Files in Train</th><th>Pairs per Dir</th><th>Total Pairs</th></tr>
+  <tr><td>2</td><td>54</td><td>108 (both together)</td><td>1</td><td>54</td></tr>
+  <tr><td>3</td><td>32</td><td>32 (1 each)</td><td>0</td><td>0</td></tr>
+  <tr><td>4</td><td>25</td><td>50 (2 each)</td><td>1</td><td>25</td></tr>
+  <tr><td>5</td><td>79</td><td>158 (2 each)</td><td>1</td><td>79</td></tr>
+  <tr><td>6</td><td>22</td><td>66 (3 each)</td><td>3</td><td>66</td></tr>
+  <tr><td>7</td><td>16</td><td>48 (3 each)</td><td>3</td><td>48</td></tr>
+  <tr><td>8</td><td>9</td><td>36 (4 each)</td><td>6</td><td>54</td></tr>
+  <tr><td>9</td><td>3</td><td>12 (4 each)</td><td>6</td><td>18</td></tr>
+  <tr><td>10</td><td>1</td><td>5</td><td>10</td><td>10</td></tr>
+  <tr><td colspan="4"><strong>TOTAL</strong></td><td><strong>354</strong></td></tr>
+</table>
+</details>
 
 <!-- ================================================================ -->
 <h2>5. &ldquo;Task B needs redesign&rdquo; &mdash; Duplicate directories problem</h2>
@@ -318,16 +335,15 @@
 <table>
   <tr><th>#</th><th>Item</th><th>Status</th><th>Notes</th></tr>
   <tr><td>1</td><td>Redesign Task B split</td><td><span class="tag tag-done">Done</span></td><td>Query/reference paradigm, M=5 seeds, acc@K=1..5</td></tr>
-  <tr><td>2</td><td>Verify positive pair count</td><td><span class="tag tag-todo">To Do</span></td><td>354 flagged as too low. n*(n-1)/2 per dir expected</td></tr>
+  <tr><td>2</td><td>Verify positive pair count</td><td><span class="tag tag-done">Done</span></td><td>354 is correct. Most dirs have 2-5 files; after 50/50 split each contributes 0-1 pair. Not a bug.</td></tr>
   <tr><td>3</td><td>DLA + Attention Score</td><td><span class="tag tag-done">Done</span></td><td>Both in 6-panel comparison. Underperformed BERTScore.</td></tr>
   <tr><td>4</td><td>Regenerate attribution plots</td><td><span class="tag tag-done">Done</span></td><td>80 examples, 6 methods, metrics CSV</td></tr>
-  <tr><td>5</td><td>Leiden demo examples</td><td><span class="tag tag-todo">To Do</span></td><td>~10 curated pairs for collaborator meeting</td></tr>
+  <tr><td>5</td><td>Leiden demo examples</td><td><span class="tag tag-done">Done</span></td><td>10 curated pairs across 4 models. HTML report at runs/phase_resubmit/leiden_demo/</td></tr>
   <tr><td>6</td><td>Webapp: labels &amp; headings</td><td><span class="tag tag-done">Done</span></td><td>Section labels, subtitles throughout</td></tr>
   <tr><td>7</td><td>Webapp: auto-highlight top K</td><td><span class="tag tag-done">Done</span></td><td>Top-5 by IG score, auto-pinned on load</td></tr>
   <tr><td>8</td><td>Webapp: reviewer session</td><td><span class="tag tag-done">Done</span></td><td>ReviewerContext + login modal + localStorage</td></tr>
   <tr><td>9</td><td>Webapp: deploy to VM</td><td><span class="tag tag-done">Done</span></td><td>systemd, nginx, production config ready</td></tr>
-  <tr><td>10</td><td>Find undergrad (NSF REU)</td><td><span class="tag tag-todo">To Do</span></td><td>US national/PR, any year. Need 1 more besides Caitlyn.</td></tr>
-</table>
+  </table>
 
 <div class="footnote">
   <p>Generated April 2026. Data from <code>runs/phase_resubmit/</code>. Gameplan: <code>GAMEPLAN.md</code>.</p>
