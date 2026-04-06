@@ -44,6 +44,66 @@ export function similarityToColor(score: number, mode: 'light' | 'dark' = 'light
 }
 
 /**
+ * Map an importance score [0,1] to a palette-specific rgba background color.
+ * Blue palette for query tokens, orange/amber for candidate tokens.
+ */
+export function importanceToColor(
+  score: number,
+  palette: 'blue' | 'orange',
+  mode: 'light' | 'dark' = 'light',
+): string {
+  if (score < 0.15) return 'transparent'
+  if (palette === 'blue') {
+    // Query-side: blue family
+    if (score < 0.3) {
+      const a = (score - 0.15) / 0.15
+      return mode === 'light'
+        ? `rgba(147, 197, 253, ${a * 0.25})`   // blue-300
+        : `rgba(147, 197, 253, ${a * 0.18})`
+    }
+    if (score < 0.6) {
+      const a = (score - 0.3) / 0.3
+      return mode === 'light'
+        ? `rgba(59, 130, 246, ${0.12 + a * 0.25})`  // blue-500
+        : `rgba(96, 165, 250, ${0.12 + a * 0.25})`  // blue-400
+    }
+    if (score < 0.8) {
+      const a = (score - 0.6) / 0.2
+      return mode === 'light'
+        ? `rgba(37, 99, 235, ${0.3 + a * 0.25})`    // blue-600
+        : `rgba(147, 197, 253, ${0.25 + a * 0.25})`  // blue-300
+    }
+    const a = Math.min((score - 0.8) / 0.2, 1)
+    return mode === 'light'
+      ? `rgba(29, 78, 216, ${0.45 + a * 0.3})`      // blue-700
+      : `rgba(191, 219, 254, ${0.35 + a * 0.3})`    // blue-200
+  }
+  // Orange/amber palette for candidate-side
+  if (score < 0.3) {
+    const a = (score - 0.15) / 0.15
+    return mode === 'light'
+      ? `rgba(253, 186, 116, ${a * 0.25})`   // orange-300
+      : `rgba(253, 186, 116, ${a * 0.18})`
+  }
+  if (score < 0.6) {
+    const a = (score - 0.3) / 0.3
+    return mode === 'light'
+      ? `rgba(249, 115, 22, ${0.12 + a * 0.25})`  // orange-500
+      : `rgba(251, 146, 60, ${0.12 + a * 0.25})`  // orange-400
+  }
+  if (score < 0.8) {
+    const a = (score - 0.6) / 0.2
+    return mode === 'light'
+      ? `rgba(234, 88, 12, ${0.3 + a * 0.25})`     // orange-600
+      : `rgba(253, 186, 116, ${0.25 + a * 0.25})`  // orange-300
+  }
+  const a = Math.min((score - 0.8) / 0.2, 1)
+  return mode === 'light'
+    ? `rgba(194, 65, 12, ${0.45 + a * 0.3})`       // orange-700
+    : `rgba(254, 215, 170, ${0.35 + a * 0.3})`     // orange-200
+}
+
+/**
  * Get a similarity score as a stroke color for SVG lines.
  */
 export function similarityToStroke(score: number): string {

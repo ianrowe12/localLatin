@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import { similarityToColor } from '../../utils/colors'
+import { similarityToColor, importanceToColor } from '../../utils/colors'
 import { useApp } from '../../contexts/AppContext'
 
 interface TokenSpanProps {
@@ -10,6 +10,7 @@ interface TokenSpanProps {
   pinColor?: string
   isAutoHighlighted?: boolean
   highlightScore?: number
+  colorPalette?: 'blue' | 'orange'
   spanRef?: (el: HTMLSpanElement | null) => void
   onMouseEnter?: () => void
   onMouseLeave?: () => void
@@ -40,6 +41,7 @@ function TokenSpanInner({
   pinColor,
   isAutoHighlighted,
   highlightScore,
+  colorPalette,
   spanRef,
   onMouseEnter,
   onMouseLeave,
@@ -71,7 +73,11 @@ function TokenSpanInner({
       }
     }
   } else if (highlightScore != null && highlightScore > 0) {
-    bgStyle = { backgroundColor: similarityToColor(highlightScore, theme) }
+    bgStyle = {
+      backgroundColor: colorPalette
+        ? importanceToColor(highlightScore, colorPalette, theme)
+        : similarityToColor(highlightScore, theme),
+    }
   }
 
   // Dimming: if a query token is hovered but this candidate token is not highlighted
@@ -116,6 +122,7 @@ const TokenSpan = memo(TokenSpanInner, (prev, next) => {
     prev.pinColor === next.pinColor &&
     prev.isAutoHighlighted === next.isAutoHighlighted &&
     prev.highlightScore === next.highlightScore &&
+    prev.colorPalette === next.colorPalette &&
     prev.spanRef === next.spanRef
   )
 })

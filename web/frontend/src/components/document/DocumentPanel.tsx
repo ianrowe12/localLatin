@@ -62,30 +62,39 @@ export default function DocumentPanel({
     const matrix = tokenMap.similarity_matrix
     const scores = new Float64Array(tokens.length)
 
-    if (viewMode === 'heatmap') {
-      // Max across all query tokens for each candidate token
-      for (let ci = 0; ci < tokens.length; ci++) {
-        let maxScore = 0
-        for (let qi = 0; qi < matrix.length; qi++) {
-          const row = matrix[qi]
-          if (row && ci < row.length && row[ci] > maxScore) {
-            maxScore = row[ci]
-          }
-        }
-        scores[ci] = maxScore
-      }
-    } else if (hoveredQueryTokenIdx != null) {
-      // Highlight by the hovered query token
-      const row = matrix[hoveredQueryTokenIdx]
-      if (row) {
-        for (let ci = 0; ci < tokens.length && ci < row.length; ci++) {
-          scores[ci] = row[ci]
+    // Always compute column max (max similarity from any query token)
+    for (let ci = 0; ci < tokens.length; ci++) {
+      let maxScore = 0
+      for (let qi = 0; qi < matrix.length; qi++) {
+        const row = matrix[qi]
+        if (row && ci < row.length && row[ci] > maxScore) {
+          maxScore = row[ci]
         }
       }
+      scores[ci] = maxScore
     }
 
     return scores
-  }, [side, tokens, tokenMap, hoveredQueryTokenIdx, viewMode])
+  }, [side, tokens, tokenMap])
+
+  // Compute highlight scores for query tokens (row-max of similarity matrix)
+  const queryHighlights = useMemo(() => {
+    if (side !== 'query' || !tokens || !tokenMap?.similarity_matrix) {
+      return null
+    }
+    const matrix = tokenMap.similarity_matrix
+    const scores = new Float64Array(tokens.length)
+    for (let qi = 0; qi < tokens.length && qi < matrix.length; qi++) {
+      const row = matrix[qi]
+      if (!row) continue
+      let maxScore = 0
+      for (let ci = 0; ci < row.length; ci++) {
+        if (row[ci] > maxScore) maxScore = row[ci]
+      }
+      scores[qi] = maxScore
+    }
+    return scores
+  }, [side, tokens, tokenMap])
 
   // Handlers for query tokens
   const handleQueryMouseEnter = useCallback(
@@ -219,16 +228,28 @@ export default function DocumentPanel({
             }
 
             let highlightScore: number | undefined
+            if (side === 'query' && queryHighlights) {
+              const raw = queryHighlights[idx]
+              // Skip non-content tokens; apply power curve to compress middle range
+              highlightScore = (token.category === 'empty' || token.category === 'short_subword')
+                ? undefined
+                : raw < 0.15 ? 0 : Math.pow(raw, 1.5)
+            }
             if (side === 'candidate' && candidateHighlights) {
-              highlightScore = candidateHighlights[idx]
-              // Dim non-matching tokens when a query token is hovered
+              const raw = candidateHighlights[idx]
+              highlightScore = (token.category === 'empty' || token.category === 'short_subword')
+                ? undefined
+                : raw < 0.15 ? 0 : Math.pow(raw, 1.5)
               if (
                 isAnyHovered &&
                 viewMode !== 'heatmap' &&
-                (highlightScore == null || highlightScore < 0.1) &&
                 !isCandidatePinned
               ) {
-                highlightScore = 0
+                const hoverRow = tokenMap?.similarity_matrix?.[hoveredQueryTokenIdx!]
+                const hoverScore = hoverRow?.[idx] ?? 0
+                if (hoverScore < 0.1) {
+                  highlightScore = (highlightScore ?? 0) * 0.2
+                }
               }
             }
 
@@ -244,6 +265,7 @@ export default function DocumentPanel({
                 pinColor={pinColor}
                 isAutoHighlighted={isAutoHighlighted}
                 highlightScore={highlightScore}
+                colorPalette={side === 'query' ? 'blue' : 'orange'}
                 spanRef={tokenRefs.registerRef(tokenRefId)}
                 onMouseEnter={
                   side === 'query' ? () => handleQueryMouseEnter(idx) : undefined
