@@ -79,6 +79,21 @@
   </div>
 </div>
 
+<h3>Best Configuration per Model (ABTT optimal, D=10)</h3>
+<table>
+  <tr><th>Model</th><th>Layer</th><th>AUCROC</th><th>Dir Acc@1</th><th>Dir Acc@3</th><th>Assignment Acc</th></tr>
+  <tr><td>PhilTa</td><td>L1</td><td class="best">0.9863</td><td class="best">88.2%</td><td>96.3%</td><td class="best">91.1%</td></tr>
+  <tr><td>LaBSE</td><td>L11</td><td>0.9852</td><td>88.0%</td><td>95.4%</td><td>89.9%</td></tr>
+  <tr><td>mt5-base</td><td>L1</td><td>0.9851</td><td>88.3%</td><td class="best">96.0%</td><td>90.3%</td></tr>
+  <tr><td>KaLM-mini</td><td>L2</td><td>0.9850</td><td>88.0%</td><td>95.5%</td><td>90.6%</td></tr>
+  <tr><td>LaTa</td><td>L1</td><td>0.9816</td><td>86.2%</td><td>95.2%</td><td>90.4%</td></tr>
+  <tr><td>Qwen3-0.6B</td><td>L23</td><td>0.9809</td><td>87.7%</td><td>96.0%</td><td>90.3%</td></tr>
+</table>
+
+<div class="finding green">
+  <strong>All 6 models reach 98%+ AUCROC with ABTT.</strong> PhilTa leads on AUCROC (0.9863) and assignment accuracy (91.1%). mt5-base (no Latin training) matches domain-specific models.
+</div>
+
 <!-- ================================================================ -->
 <h2>2. ABTT is the Real Deal &mdash; Method Ranking</h2>
 
