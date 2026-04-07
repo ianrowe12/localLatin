@@ -25,8 +25,8 @@ DIST_DIR="$REPO_ROOT/runs/active/resubmit/distributions"
 
 mkdir -p "$RESULTS_DIR" "$DIST_DIR"
 
-echo "=== Phase 11 evaluation ==="
-conda run -n localLatin python scripts/run_phase11_evaluate.py \
+echo "=== Resubmit Task A evaluation ==="
+conda run -n localLatin python scripts/resubmit/run_resubmit_evaluate.py \
   --split_csv "$SPLIT_CSV" \
   --runs_root "$RUNS_ROOT" \
   --out_csv "$RESULTS_DIR/phase_resubmit_results.csv" \
@@ -40,7 +40,7 @@ conda run -n localLatin python scripts/run_phase11_evaluate.py \
   --dist_dir "$DIST_DIR"
 
 echo "=== Extra distributions ==="
-conda run -n localLatin python scripts/run_phase11_extra_distributions.py \
+conda run -n localLatin python scripts/resubmit/run_resubmit_distributions.py \
   --results_csv "$RESULTS_DIR/phase_resubmit_results.csv" \
   --split_csv "$SPLIT_CSV" \
   --runs_root "$RUNS_ROOT" \
