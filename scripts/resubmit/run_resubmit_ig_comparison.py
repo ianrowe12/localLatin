@@ -296,6 +296,37 @@ def highlight_topk_cells(ax: plt.Axes, matrix: np.ndarray, k: int = 5) -> None:
         ax.add_patch(rect)
 
 
+def highlight_topk_intersections(
+    ax: plt.Axes,
+    topk_q: np.ndarray,
+    topk_c: np.ndarray,
+    q_pos: np.ndarray,
+    c_pos: np.ndarray,
+) -> None:
+    """Outline cells where top query/candidate tokens intersect.
+
+    Maps absolute NPZ token indices into the displayed matrix coordinates
+    (after ``select_positions`` cropping) and draws a red rectangle at each
+    intersection that survives the crop. ``topk_q`` / ``topk_c`` come from
+    the precomputed ``topk_<method>_<variant>_query`` / ``..._candidate``
+    keys persisted by ``persist_attribution_methods.py`` (per-axis marginals,
+    not per-cell).
+    """
+    q_pos_to_disp = {int(p): i for i, p in enumerate(q_pos)}
+    c_pos_to_disp = {int(p): j for j, p in enumerate(c_pos)}
+    for q_abs in topk_q:
+        for c_abs in topk_c:
+            i = q_pos_to_disp.get(int(q_abs))
+            j = c_pos_to_disp.get(int(c_abs))
+            if i is None or j is None:
+                continue  # cell was cropped out by select_positions
+            rect = mpatches.Rectangle(
+                (j - 0.5, i - 0.5), 1, 1,
+                linewidth=1.2, edgecolor="red", facecolor="none",
+            )
+            ax.add_patch(rect)
+
+
 # ---------------------------------------------------------------------------
 # Quality metrics
 # ---------------------------------------------------------------------------
@@ -464,6 +495,132 @@ def render_comparison(
 
 
 # ---------------------------------------------------------------------------
+# Visualization: 6x2 ABTT vs baseline comparison (slide figure)
+# ---------------------------------------------------------------------------
+
+# (method_key, display label, colormap, diverging?). Order matches
+# MAIN_METHODS in persist_attribution_methods.py so the row index is stable
+# across the visualizer, the persist script, and the webapp.
+ABTT_COMPARE_METHODS: list[tuple[str, str, str, bool]] = [
+    ("ig",                   "IG pair matrix",     "RdBu_r", True),
+    ("bertscore",            "BERTScore",          "YlOrRd", False),
+    ("ot",                   "Optimal Transport",  "YlOrRd", False),
+    ("attention_weighted",   "Attn cross-sim",     "YlOrRd", False),
+    ("dla",                  "Direct Logit Attr.", "YlOrRd", False),
+    ("attention_standalone", "Attn standalone",    "YlOrRd", False),
+]
+
+
+def render_abtt_compare(
+    row: pd.Series,
+    data: dict[str, np.ndarray],
+    tokenizer,
+    out_path: Path,
+    max_tokens: int,
+) -> None:
+    """Render a 6x2 grid (methods x {baseline, ABTT}) for one example pair.
+
+    Loads precomputed ``pair_matrix_<method>_<variant>`` and matching
+    ``topk_*`` arrays from the NPZ artifact and renders them in a single
+    figure. Each row shares vmin/vmax across its two columns so the
+    baseline-vs-ABTT contrast is visually fair. Writes both PDF and PNG.
+    """
+    # Required-keys check -- give a clear hint instead of a raw KeyError.
+    missing = [
+        f"pair_matrix_{m}_{v}"
+        for m, _, _, _ in ABTT_COMPARE_METHODS
+        for v in ("baseline", "abtt")
+        if f"pair_matrix_{m}_{v}" not in data
+    ]
+    if missing:
+        raise KeyError(
+            f"missing precomputed keys (e.g. {missing[0]}) -- run "
+            f"scripts/resubmit/persist_attribution_methods.py first"
+        )
+
+    q_len = int(data["query_attention_mask"][0].sum())
+    c_len = int(data["candidate_attention_mask"][0].sum())
+    q_pos = select_positions(
+        data["query_ig_baseline"], data["query_ig_abtt"], q_len, max_tokens
+    )
+    c_pos = select_positions(
+        data["candidate_ig_baseline"], data["candidate_ig_abtt"], c_len, max_tokens
+    )
+    q_tokens = decode_tokens(tokenizer, data["query_input_ids"], q_pos)
+    c_tokens = decode_tokens(tokenizer, data["candidate_input_ids"], c_pos)
+
+    fig = plt.figure(figsize=(11, 26))
+    gs = gridspec.GridSpec(
+        6, 2,
+        figure=fig,
+        hspace=0.55, wspace=0.18,
+        left=0.13, right=0.95, top=0.94, bottom=0.04,
+    )
+    variants = [
+        ("baseline", "Baseline (no ABTT)"),
+        ("abtt",     "ABTT-cleaned"),
+    ]
+
+    for row_idx, (method, method_label, cmap, diverging) in enumerate(ABTT_COMPARE_METHODS):
+        M_full_base = data[f"pair_matrix_{method}_baseline"]
+        M_full_abtt = data[f"pair_matrix_{method}_abtt"]
+        # Subset NPZ matrices (stored at full masked length) to display window
+        M_base = M_full_base[np.ix_(q_pos, c_pos)]
+        M_abtt = M_full_abtt[np.ix_(q_pos, c_pos)]
+
+        # Per-row shared color scale: union of both variants
+        if diverging:
+            joint_abs = np.abs(np.concatenate([M_base.ravel(), M_abtt.ravel()]))
+            vmax = max(float(np.percentile(joint_abs, 95)), 1e-6)
+            vmin = -vmax
+        else:
+            joint_pos = np.concatenate([M_base[M_base > 0], M_abtt[M_abtt > 0]])
+            if joint_pos.size:
+                vmax = max(float(np.percentile(joint_pos, 95)), 1e-6)
+            else:
+                vmax = 1e-6
+            vmin = 0.0
+
+        for col_idx, (variant, variant_label) in enumerate(variants):
+            ax = fig.add_subplot(gs[row_idx, col_idx])
+            mat = M_base if variant == "baseline" else M_abtt
+            im = ax.imshow(mat, cmap=cmap, vmin=vmin, vmax=vmax, aspect="auto")
+            ax.set_xticks(range(len(c_tokens)))
+            ax.set_xticklabels(c_tokens, rotation=90, fontsize=5, fontfamily="monospace")
+            ax.set_yticks(range(len(q_tokens)))
+            ax.set_yticklabels(q_tokens, fontsize=5, fontfamily="monospace")
+            if row_idx == 0:
+                ax.set_title(variant_label, fontweight="bold", fontsize=10)
+            if col_idx == 0:
+                ax.set_ylabel(
+                    method_label,
+                    fontsize=10, fontweight="bold", labelpad=14,
+                )
+            else:
+                # Colorbar lives on the right column only
+                fig.colorbar(im, ax=ax, shrink=0.6, pad=0.02)
+
+            topk_q = data[f"topk_{method}_{variant}_query"]
+            topk_c = data[f"topk_{method}_{variant}_candidate"]
+            highlight_topk_intersections(ax, topk_q, topk_c, q_pos, c_pos)
+
+    fig.suptitle(
+        f"{row['model_name']}  Layer {int(row['layer'])}  |  "
+        f"Example {int(row['example_id'])}  |  "
+        f"{pretty_role(row['candidate_role'])}  |  "
+        f"Bucket: {row.get('bucket', 'N/A')}  |  "
+        f"Gold: {'similar' if row.get('gold_similar', -1) == 1 else 'not similar'}",
+        fontweight="bold", fontsize=12, y=0.985,
+    )
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    if out_path.suffix.lower() != ".png":
+        fig.savefig(out_path.with_suffix(".png"), dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+# ---------------------------------------------------------------------------
 # Detail figures for individual methods
 # ---------------------------------------------------------------------------
 
@@ -581,6 +738,20 @@ def parse_args() -> argparse.Namespace:
         "--only_correct", action="store_true",
         help="Only process correct_option (same-source) examples.",
     )
+    p.add_argument(
+        "--slide_figure_out", type=Path, default=None,
+        help="If set, render the canonical 6x2 ABTT-vs-baseline figure to this "
+             "PDF path (a matching .png is also written).",
+    )
+    p.add_argument(
+        "--slide_figure_model", type=str, default="sentence-transformers/LaBSE",
+        help="Model to use for the curated slide figure (default: LaBSE).",
+    )
+    p.add_argument(
+        "--slide_figure_example_id", type=int, default=None,
+        help="Specific example_id for the slide figure; default is the first "
+             "correct_similar bucket row for the chosen model.",
+    )
     return p.parse_args()
 
 
@@ -627,6 +798,15 @@ def main() -> None:
         metrics = render_comparison(row, data, tokenizers[model_name], comp_path, args.max_tokens)
         all_metrics.append(metrics)
 
+        # 6x2 ABTT-vs-baseline grid (loads from precomputed NPZ keys)
+        abtt_path = comp_dir / f"{slug}_{tag}_abtt_compare.pdf"
+        try:
+            render_abtt_compare(
+                row, data, tokenizers[model_name], abtt_path, args.max_tokens,
+            )
+        except KeyError as e:
+            print(f"[SKIP abtt-compare] {slug} example {int(row['example_id'])}: {e}")
+
         # Detail figures
         bs_path = detail_dir / f"{slug}_{tag}_bertscore.png"
         render_bertscore_detail(row, data, tokenizers[model_name], bs_path, args.max_tokens)
@@ -661,6 +841,37 @@ def main() -> None:
         write_summary_table(metrics_df, out_dir)
     else:
         print("No examples were processed.")
+
+    # Curated slide figure: render the canonical 6x2 grid for one example
+    if args.slide_figure_out is not None:
+        examples_full = pd.read_csv(args.examples_csv)
+        candidates = examples_full[examples_full["model_name"] == args.slide_figure_model]
+        if args.slide_figure_example_id is not None:
+            candidates = candidates[candidates["example_id"] == args.slide_figure_example_id]
+        elif "bucket" in candidates.columns:
+            candidates = candidates[candidates["bucket"] == "correct_similar"]
+        if candidates.empty:
+            print(
+                f"[WARN] Slide figure: no example found for "
+                f"model={args.slide_figure_model} "
+                f"example_id={args.slide_figure_example_id}"
+            )
+        else:
+            slide_row = candidates.iloc[0]
+            slide_data = load_artifact(artifacts_dir, slide_row)
+            slide_model = slide_row["model_name"]
+            if slide_model not in tokenizers:
+                from transformers import AutoTokenizer
+                tokenizers[slide_model] = AutoTokenizer.from_pretrained(slide_model)
+            try:
+                render_abtt_compare(
+                    slide_row, slide_data, tokenizers[slide_model],
+                    args.slide_figure_out, args.max_tokens,
+                )
+                print(f"\nSlide figure: {args.slide_figure_out}")
+                print(f"  (also wrote {args.slide_figure_out.with_suffix('.png')})")
+            except KeyError as e:
+                print(f"[ERROR] Slide figure could not be rendered: {e}")
 
 
 # ---------------------------------------------------------------------------
