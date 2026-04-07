@@ -46,6 +46,11 @@ runs/active/resubmit/unlabelled/results/
 # Off-repo archive symlink (if any)
 localLatin_archive/
 
+# Professor's "New resources" drop folder for raw datasets and papers — kept local only.
+# Datasets here get staged into data/ (e.g. data/decritals_labelled/) by their respective pipelines.
+# PDFs here get summarized into docs/research/ rather than committed.
+docs/New resources April 7/
+
 # Overleaf binary figures
 overleaf_drafts/figures/*.pdf
 overleaf_drafts/figures/*.png
