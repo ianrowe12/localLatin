@@ -21,7 +21,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-sys.path.append(str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.append(str(Path(__file__).resolve().parents[2] / "src"))
 
 from canon_retrieval import l2_normalize, similarity_matrix
 from sif_abtt import EmbeddingCleaner

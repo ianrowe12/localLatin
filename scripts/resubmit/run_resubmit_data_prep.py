@@ -16,7 +16,7 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.append(str(Path(__file__).resolve().parent.parent / "src"))
+sys.path.append(str(Path(__file__).resolve().parents[2] / "src"))
 
 from canon_retrieval import load_text
 from canon_split_v2 import (

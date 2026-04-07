@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 from sklearn.decomposition import PCA
 
-sys.path.append(str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.append(str(Path(__file__).resolve().parents[2] / "src"))
 
 from canon_retrieval import l2_normalize, similarity_matrix, sweep_thresholds, upper_triangle, upper_triangle_labels
 from canon_split_v2 import (

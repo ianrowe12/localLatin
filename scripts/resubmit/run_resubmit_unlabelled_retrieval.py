@@ -15,7 +15,7 @@ from typing import Dict, List, Tuple
 import numpy as np
 import pandas as pd
 
-sys.path.append(str(Path(__file__).resolve().parent.parent / "src"))
+sys.path.append(str(Path(__file__).resolve().parents[2] / "src"))
 
 from canon_retrieval import l2_normalize, upper_triangle, upper_triangle_labels, sweep_thresholds, similarity_matrix
 from sif_abtt import EmbeddingCleaner

@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 from sklearn.decomposition import PCA
 
-sys.path.append(str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.append(str(Path(__file__).resolve().parents[2] / "src"))
 
 from canon_retrieval import (
     accuracy_at_k,
