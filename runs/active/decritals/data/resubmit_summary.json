@@ -1,0 +1,47 @@
+{
+  "dataset": {
+    "canon_root": "data/decritals_labelled",
+    "seed": 42
+  },
+  "split": {
+    "total_files": 439,
+    "n_train": 213,
+    "n_test": 226,
+    "n_test_query": 191,
+    "n_folders": 104,
+    "n_singleton_folders": 58,
+    "n_pair_folders": 15,
+    "n_large_folders": 31,
+    "singletons_train": 29,
+    "singletons_test": 29,
+    "doubleton_folders_train": 7,
+    "doubleton_folders_test": 8,
+    "train_test_overlap": 0
+  },
+  "task_a_pairs": {
+    "train": {
+      "n_files": 213,
+      "n_pairs": 22578,
+      "n_positive": 937,
+      "n_negative": 21641
+    },
+    "test": {
+      "n_files": 226,
+      "n_pairs": 25425,
+      "n_positive": 1017,
+      "n_negative": 24408
+    }
+  },
+  "task_b_files": {
+    "train": 213,
+    "test": 226
+  },
+  "task_b_split": {
+    "n_queries": 113,
+    "n_queries_with_reference": 91,
+    "n_queries_none": 22,
+    "n_reference_files": 113,
+    "n_reference_directories": 46,
+    "n_train": 213
+  }
+}

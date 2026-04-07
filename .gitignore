@@ -3,6 +3,8 @@ canon/
 data/canon/
 data/canon_labelled/
 data/canon_unlabelled/
+data/decritals_labelled
+data/decritals_unlabelled
 third_party/SIF/
 .vscode/
 sa_drive_key.json
