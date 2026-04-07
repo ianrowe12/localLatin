@@ -17,7 +17,7 @@ sys.path.append(str(Path(__file__).resolve().parent.parent / "src"))
 
 def main():
     parser = argparse.ArgumentParser(description="Index unlabelled canon files for extraction.")
-    parser.add_argument("--unlabelled_root", default="canon_unlabelled", help="Root of unlabelled files.")
+    parser.add_argument("--unlabelled_root", default="data/canon_unlabelled", help="Root of unlabelled files.")
     parser.add_argument("--split_csv", default="runs/active/resubmit/data/phase_resubmit_split.csv",
                         help="Existing labelled split CSV.")
     parser.add_argument("--out_unlabelled", default="runs/active/resubmit/unlabelled/meta_unlabelled.csv")

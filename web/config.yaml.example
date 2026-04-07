@@ -6,14 +6,14 @@ app:
   port: 8000
 
 paths:
-  # Root directory containing the data files (canon_unlabelled/, canon_labelled/, runs/).
+  # Root directory containing the data files (data/canon_unlabelled/, data/canon_labelled/, runs/).
   # - Subtree mode (webapp at localLatin/web/): ".."
   # - Standalone mode: path to the research repo, e.g. "/Users/you/git/localLatin"
   # - HPC: "/projects/beto/irowerojas/localLatin"
   # Can also be set via LOCALLATIN_DATA_ROOT env var.
   data_root: ".."
-  canon_unlabelled: "canon_unlabelled"
-  canon_labelled: "canon_labelled"
+  canon_unlabelled: "data/canon_unlabelled"
+  canon_labelled: "data/canon_labelled"
   predictions_combined: "runs/active/resubmit/unlabelled/unlabelled_predictions.csv"
   predictions_dir: "runs/active/resubmit/unlabelled"
   ig_artifacts_dir: "runs/active/ig_examples/artifacts"

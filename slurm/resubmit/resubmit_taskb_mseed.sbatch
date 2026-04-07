@@ -29,7 +29,7 @@ mkdir -p "$OUT_DIR" "$FIG_DIR"
 
 echo "=== Task B M-seed evaluation (M=5) ==="
 conda run -n localLatin python scripts/resubmit/run_taskb_mseed.py \
-  --canon_root canon_labelled \
+  --canon_root data/canon_labelled \
   --split_csv "$SPLIT_CSV" \
   --runs_root "$RUNS_ROOT" \
   --out_dir "$OUT_DIR" \

@@ -56,7 +56,7 @@ def main():
         description="Resubmit data prep: 50/50 split + Task A/B TSVs"
     )
     parser.add_argument(
-        "--canon_root", default="canon_labelled",
+        "--canon_root", default="data/canon_labelled",
         help="Root directory of the labelled canon dataset.",
     )
     parser.add_argument(

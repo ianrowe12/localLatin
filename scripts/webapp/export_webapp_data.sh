@@ -22,13 +22,13 @@ check() {
     fi
 }
 
-check "canon_unlabelled/" \
-    "$ROOT/canon_unlabelled" "" \
-    "find '$ROOT/canon_unlabelled' -name '*.txt' | wc -l | tr -d ' '"
+check "data/canon_unlabelled/" \
+    "$ROOT/data/canon_unlabelled" "" \
+    "find '$ROOT/data/canon_unlabelled' -name '*.txt' | wc -l | tr -d ' '"
 
-check "canon_labelled/" \
-    "$ROOT/canon_labelled" "" \
-    "find '$ROOT/canon_labelled' -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' '"
+check "data/canon_labelled/" \
+    "$ROOT/data/canon_labelled" "" \
+    "find '$ROOT/data/canon_labelled' -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' '"
 
 check "predictions CSV" \
     "$ROOT/runs/active/resubmit/unlabelled/unlabelled_predictions.csv" "" \

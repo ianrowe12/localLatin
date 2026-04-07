@@ -18,8 +18,8 @@ class AppConfig(BaseModel):
 
 class PathsConfig(BaseModel):
     data_root: str = os.environ.get("LOCALLATIN_DATA_ROOT", ".")
-    canon_unlabelled: str = "canon_unlabelled"
-    canon_labelled: str = "canon_labelled"
+    canon_unlabelled: str = "data/canon_unlabelled"
+    canon_labelled: str = "data/canon_labelled"
     predictions_combined: str = "runs/active/resubmit/unlabelled/unlabelled_predictions.csv"
     predictions_dir: str = "runs/active/resubmit/unlabelled"
     ig_artifacts_dir: str = "runs/active/ig_examples/artifacts"

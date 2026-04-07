@@ -145,7 +145,7 @@ def build_store(settings: Settings) -> DataStore:
         fid = row["file_id"]
         store.file_ids.append(fid)
         store.file_id_to_filename[fid] = row["filename"]
-        store.file_id_to_path[fid] = f"canon_unlabelled/{row['filename']}"
+        store.file_id_to_path[fid] = f"data/canon_unlabelled/{row['filename']}"
     store.file_ids.sort()
 
     # --- Cache unlabelled text files ---

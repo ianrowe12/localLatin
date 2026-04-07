@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 NLP research project studying **Latin manuscript text retrieval** using internal representations of pre-trained language models. The core question: can embeddings from intermediate transformer layers retrieve related Latin manuscript fragments, and can post-processing (SIF weighting + ABTT/PC removal) fix the "anisotropy dip" that collapses retrieval in middle layers?
 
-The dataset is 1,278 `.txt` files in 538 directories under `canon/`, where each directory represents one original text. The project progresses through numbered phases (1-12), each addressing a specific experimental question. Primary metric: Assignment Accuracy.
+The dataset is 1,278 `.txt` files in 538 directories under `data/canon/`, where each directory represents one original text. The labelled retrieval corpus is 1,705 files in 840 directories under `data/canon_labelled/`, and the unlabelled query set is 2,238 files under `data/canon_unlabelled/`. Active work is paper resubmission — see GAMEPLAN.md. Primary metric: Assignment Accuracy.
 
 ## Environment & Running Code
 
@@ -41,22 +41,27 @@ conda run -n localLatin python ...
 
 ### Pipeline scripts (`scripts/`)
 
-- **`evaluate_vectors.py`**: Phase 9+ evaluator. Applies 5 methods (baseline, sif_only, sif_abtt_fixed, sif_abtt_optimal, whitening), learns threshold on train, evaluates on test.
-- **`run_phase8_canon_sweep.py`**: Phase 8 STS canon sweep with leak-free split.
+Grouped by purpose:
+- **`scripts/resubmit/`**: Active paper resubmission pipeline (`run_resubmit_data_prep.py`, `run_taskb_mseed.py`, `visualize_taskb_mseed.py`, `run_resubmit_ig_comparison.py`, `run_leiden_examples.py`, `evaluate_vectors.py`, `visualize_resubmit.py`, `index_unlabelled.py`, `run_resubmit_unlabelled_retrieval.py`).
+- **`scripts/ig/`**: IG artifact regeneration for the webapp (`run_ig_examples_pipeline.sh`, `run_phase12f_select_pair_examples.py`, `run_phase12f_visualize.py`).
+- **`scripts/webapp/`**: Webapp data export (`export_webapp_data.sh`).
+- **`scripts/common/`**: Shared helpers (`create_canon_split.py`, `data_prep.py`).
+- **`scripts/_archive/`**: Stale phase 3-12 pipelines preserved for reproducibility.
+
+Key active script: **`evaluate_vectors.py`** (Phase 9+ evaluator). Applies 5 methods (baseline, sif_only, sif_abtt_fixed, sif_abtt_optimal, whitening), learns threshold on train, evaluates on test.
 
 ### SLURM jobs (`slurm/`)
 
-Each phase has corresponding `.sbatch` files.
+Grouped by purpose: **`slurm/resubmit/`** (active resubmission jobs), **`slurm/ig/`** (IG artifact regen), **`slurm/_archive/`** (stale phase 3-12 sbatch).
 
 ## Data Flow
 
 ```
-canon/ (1,278 .txt files, 538 dirs)
-  → src/index_canon_cli.py → meta.csv
-  → scripts/data_prep.py → phase9_split.csv (50/50 train/test)
-  → src/extract_*.py → runs/phase9_bases/<model_slug>/<repr>_<pooling>/*.npy
-  → scripts/evaluate_vectors.py → results.csv (AUCROC, Acc@1, Assignment Acc, etc.)
-  → scripts/visualize_*.py → figures/
+data/canon_labelled/ (1,705 .txt files, 840 dirs)
+  → scripts/common/data_prep.py → runs/active/resubmit/data/phase_resubmit_split.csv (50/50 train/test)
+  → src/extract_*.py → runs/active/encoder_bases/<model_slug>/<repr>_<pooling>/*.npy
+  → scripts/resubmit/evaluate_vectors.py → runs/active/resubmit/results/*.csv
+  → scripts/resubmit/visualize_resubmit.py → overleaf_drafts/figures/
 ```
 
 ## Key Conventions
@@ -67,7 +72,7 @@ canon/ (1,278 .txt files, 538 dirs)
 
 **Layer indexing**: Hidden states 0 = embedding output, 1..N = transformer blocks. FF1 is 1-indexed (1..N). `--layers` accepts ranges like `0-12`.
 
-**Phase 9 bases path**: `runs/phase9_bases/<model_slug>/<repr>_<pooling>/` where `model_slug = model_name.replace("/", "_")`.
+**Encoder bases path**: `runs/active/encoder_bases/<model_slug>/<repr>_<pooling>/` where `model_slug = model_name.replace("/", "_")`. This is the canonical 6-model embedding cache.
 
 **"Winnable" queries**: Only files whose directory has >= 2 members can have a correct retrieval answer. `is_winnable` in meta.csv tracks this.
 
@@ -97,10 +102,12 @@ canon/ (1,278 .txt files, 538 dirs)
 ## Paths
 
 - **Repo root**: `/projects/beto/irowerojas/localLatin` (symlinked at `/u/irowerojas/localLatin`)
-- **Dataset**: `canon/` (1,278 files)
-- **Experiment outputs**: `runs/` (not in git)
-- **Analysis docs**: `runs/phase9/EXPERIMENT_1_ANALYSIS.md`, `runs/phase10/experiment1/ANALYSIS_*.md`
+- **Datasets**: `data/canon/` (1,278 raw files), `data/canon_labelled/` (1,705 labeled candidates in 840 dirs), `data/canon_unlabelled/` (2,238 unlabeled queries)
+- **Active experiment outputs**: `runs/active/resubmit/`, `runs/active/encoder_bases/`, `runs/active/ig_examples/`, `runs/active/resubmit_bases/`
+- **Off-repo archive** (old phases, reproducibility-sensitive): `/projects/beto/irowerojas/localLatin_archive/`
 - **Paper drafts**: `overleaf_drafts/`
+- **Project docs**: `docs/meetings/`, `docs/analyses/`, `docs/research/`
+- **Stale code preserved for grep-ability**: `scripts/_archive/`, `slurm/_archive/`, `src/_archive/`
 
 ## Webapp (Git Subtree)
 
@@ -128,10 +135,10 @@ git subtree push --prefix=web webapp main
 ### Data contract
 
 The webapp reads these files (relative to `data_root` in `web/config.yaml`):
-- `canon_unlabelled/` — 2,238 query .txt files
-- `canon_labelled/` — 859 directories of candidate .txt files
-- `runs/phase_resubmit/unlabelled/unlabelled_predictions.csv` — model predictions
-- `runs/phase12f_examples/` — IG visualization artifacts (CSV + NPZ)
-- `runs/phase_resubmit/webapp/feedback.db` — auto-created SQLite
+- `data/canon_unlabelled/` — 2,238 query .txt files
+- `data/canon_labelled/` — 840 directories of candidate .txt files
+- `runs/active/resubmit/unlabelled/unlabelled_predictions.csv` — model predictions
+- `runs/active/ig_examples/` — IG visualization artifacts (CSV + NPZ)
+- `runs/active/resubmit/webapp/feedback.db` — auto-created SQLite
 
-Run `bash scripts/export_webapp_data.sh` to verify all required data files are present.
+Run `bash scripts/webapp/export_webapp_data.sh` to verify all required data files are present.

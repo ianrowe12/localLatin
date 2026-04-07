@@ -7,8 +7,8 @@ app:
 
 paths:
   repo_root: "/u/irowerojas/localLatin"
-  canon_unlabelled: "canon_unlabelled"
-  canon_labelled: "canon_labelled"
+  canon_unlabelled: "data/canon_unlabelled"
+  canon_labelled: "data/canon_labelled"
   predictions_combined: "runs/active/resubmit/unlabelled/unlabelled_predictions.csv"
   predictions_dir: "runs/active/resubmit/unlabelled"
   ig_artifacts_dir: "runs/active/ig_examples/artifacts"

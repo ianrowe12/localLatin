@@ -18,7 +18,7 @@ conda run -n localLatin python -c "
 import sys; sys.path.insert(0, 'src')
 from canon_split_v2 import build_meta_with_split_v2, taskb_split_summary, log_pair_distribution
 
-meta = build_meta_with_split_v2('canon_labelled', random_seed=42)
+meta = build_meta_with_split_v2('data/canon_labelled', random_seed=42)
 print('Columns:', list(meta.columns))
 print()
 print('taskb_role value counts:')
