@@ -70,69 +70,121 @@ frozen; convergence requires hundreds of forward + backward passes per example
 
 ---
 
-## 3. Core Equations (transcribed from the paper)
+## 3. Core Equations (verified against the published PDF)
 
-> Equation numbers follow the published ACL Findings 2023 paper. They are
-> transcribed second-hand from a careful reading and should be verified
-> against the PDF before being copied into our own paper.
+> Equation numbers and forms below were verified by extracting text directly
+> from the ACL Findings 2023 PDF (`pymupdf`, 2026-04-07). The presentation
+> below is faithful to the paper's labeling, but pages 4–5 introduce the
+> objective in stages, so equations 2 and 4 are *intermediate* objectives that
+> get superseded by equation 8 — this is sometimes glossed over in summaries.
 
-Masked input and its complement:
-
-```
-x̃   = λ · x + (1 − λ) · b                           [Eq. 1]
-x̃^c = (1 − λ) · x + λ · b                           [Eq. 3]
-```
-
-Sparsity regulariser on the mask itself (squared mean — note: not L1):
+**Eq. 1 — Masked input** (`λ ∈ [0,1]ⁿ`, `b` is an uninformative baseline):
 
 ```
-Ω_λ = α_λ · [ (1/n) Σᵢ λᵢ ]²                        [Eq. 2]
+x̃ = λ · x + (1 − λ) · b
 ```
 
-Gaussian-kernel reparameterisation of the mask (`d(i, j)` is the spatial /
-positional distance between input units `i` and `j`):
+**Eq. 2 — Sufficiency objective.** Find `λ` that keeps the model's score for
+class `c` high while masking as much of the input as possible. The squared
+mean of `λ` is the sparsity term, which the paper underbraces and labels
+`Ω_λ`:
 
 ```
-w_{i→j} = wᵢ · exp( − d(i, j)² / σᵢ )              [Eq. 5]
-λⱼ      = sigmoid( Σᵢ w_{i→j} )                     [Eq. 6]
+arg min       −L(x̃, c)  +  α_λ · [ (1/n) Σᵢ λᵢ ]²
+λ∈[0,1]^n                  └──────────┬──────────┘
+                                     Ω_λ
 ```
 
-Log-barrier on the bandwidth vector (keeps `σ` from collapsing to zero unless
-the data demands it):
+`L(x̃, c)` is the model's score for class `c` on the masked input — either
+the log-likelihood of `c` (which suppresses other classes and yields
+class-*discriminative* explanations) or the log-sigmoid of the logit for `c`
+(which yields class-*indicative* explanations).
+
+**Eq. 3 — Complementary masked input** (Yu et al., 2019):
 
 ```
-Ω_σ = − α_σ · (1/n) Σᵢ log(σᵢ)                     [Eq. 7]
+x̃^c = (1 − λ) · x + λ · b
 ```
 
-Final objective optimised per instance, with classifier `M` frozen and
-`L(·, c)` denoting the per-class fidelity score (log-likelihood or
-sigmoid-weighted logit, depending on the model head):
+**Eq. 4 — Sufficiency + comprehensiveness** (intermediate; combines deletion
+and preservation games from Fong & Vedaldi 2017 into one loss):
 
 ```
-arg min_{w, σ}   − L(x̃, c)  +  L(x̃^c, c)  +  Ω_λ  +  Ω_σ      [Eq. 8]
+arg min       −L(x̃, c)  +  L(x̃^c, c)  +  Ω_λ
+λ∈[0,1]^n
 ```
 
-For images only, an extra neighbour-difference penalty `Ω_NB` (mean squared
-difference between 8-connected pixel masks) is added; this is *not* used for
-text. For text-only, the authors inject Gaussian noise (σ ≈ 0.03) into both
-`x̃` and `x̃^c` and randomly snap 5% of mask values to {0, 1} on each step as
-extra regularisation against degenerate solutions.
+**Eq. 5 — Gaussian influence kernel.** Reparameterize `λ` through new
+parameters `w ∈ ℝⁿ` and `σ ∈ ℝⁿ_{>0}`. The influence of weight `wᵢ` on
+position `j` decays with distance `d(i, j)`:
 
-**Initialisation** (per-instance, fresh each example):
+```
+w_{i→j} = wᵢ · exp( − d(i, j)² / σᵢ )
+```
 
-| Modality                | `w` init | `σ` init |
-| ----------------------- | -------- | -------- |
-| Text (BERT-base)        | 1.2      | 2.0      |
-| Image (ResNet-101)      | 0.5      | 1.2      |
-| Image (ViT-B/16, 384px) | 0.5      | 1.2      |
+**Eq. 6 — Mask construction:**
 
-**Optimiser:** Adam. The paper does not pin a fixed step count but reports a
-budget of "hundreds of forward and backward passes" per instance and wall-clock
-costs of 2–3 min (BERT-base), ~1 min (ResNet-101 / ViT-B/16).
+```
+λⱼ = sigmoid( Σᵢ w_{i→j} )
+```
 
-**Word-piece handling:** when a word is split into multiple sub-word tokens,
-the same `(w, σ)` parameters are tied across all pieces, so explanations are
-word-level rather than wordpiece-level.
+This gives spatial smoothness without a hard constraint: when `σᵢ` is large,
+neighbouring `λ` values are forced to be similar; when `σᵢ` is small, sharp
+boundaries are still allowed if the loss prefers them. This is the explicit
+contrast the paper draws against Fong & Vedaldi (2017), who used a
+fixed-resolution upsampling+blur scheme that *cannot* produce sharp masks.
+
+**Eq. 7 — Log-barrier on the bandwidth vector** (keeps `σ` away from zero
+unless the data forces sharpening):
+
+```
+Ω_σ = − α_σ · (1/n) Σᵢ log(σᵢ)
+```
+
+**Eq. 8 — Final objective**, optimised per instance over `(w, σ)` with the
+classifier frozen:
+
+```
+arg min       −L(x̃, c)  +  L(x̃^c, c)  +  Ω_λ  +  Ω_σ
+w, σ ∈ ℝⁿ
+```
+
+**Image-only addition:** for images, a further regulariser penalising squared
+differences between 8-connected pixel mask values is added. This is *not*
+used for text and is therefore not relevant to our manuscript pipeline.
+
+### Hyperparameters used in the paper's BERT-base text experiments
+
+These are stated explicitly in Appendix A.1 of the published PDF and pin
+down everything ambiguous in §3:
+
+| Quantity                                          | Value                          |
+| ------------------------------------------------- | ------------------------------ |
+| Sparsity weight `α_λ`                             | **1.0**                        |
+| Bandwidth log-barrier weight `α_σ`                | **1.2**                        |
+| `w` initialisation (uniform across positions)     | **1.2**                        |
+| `σ` initialisation (uniform across positions)     | **2.0**                        |
+| Per-step Gaussian noise added to `x̃` and `x̃^c`  | zero-mean, **σ_noise = 0.03**  |
+| Per-step random snap of mask values to {0, 1}     | **5%** of positions per step   |
+| Scoring function `L(·, c)`                        | log-likelihood of class `c`    |
+| Optimiser                                         | Adam                           |
+| Distance function for text                        | `d(i, j) = |i − j|` (word idx) |
+| Long-input handling (BERT-base 510 limit)         | split into segments, 100-token overlap, separate mask per segment |
+
+The paper does not state a fixed Adam step count — it characterises the
+budget only as "hundreds of forward and backward passes" per instance, and
+gives wall-clock figures of **2–3 minutes per BERT-base sample** and
+**~1 minute per image** (ResNet-101 or ViT-B/16) on modern hardware.
+
+**Word-piece handling.** When BERT's WordPiece tokenizer splits a word into
+multiple sub-word tokens, MaRC ties a single `(wᵢ, σᵢ)` parameter pair
+across all pieces of that word, so the resulting explanations are word-level
+rather than wordpiece-level. This is exactly what we'd want for Latin
+fragments where wordpiece boundaries are essentially arbitrary.
+
+The image hyperparameters (ResNet-101 / ViT-B/16) live in Appendix A.2 of
+the paper; we have not transcribed them here because they are not relevant
+to Latin manuscript retrieval.
 
 ---
 
@@ -223,15 +275,29 @@ Grounded in what is currently cached vs. what would have to be recomputed:
 
 ## 6. Limitations the Authors Admit (Section 7)
 
-1. **Human-likeness is upper-bounded by the model.** "If a network's reasoning
-   does not mirror human reasoning, the resulting rationales will be
-   incomprehensible to humans." MaRC cannot make a bad classifier interpretable.
-2. **Computational cost.** Hundreds of forward + backward passes per instance,
-   2–3 min for BERT-base, ~1 min for ResNet-101 / ViT-B/16. The authors
-   explicitly say this rules out real-time deployment.
-3. **Implicit limitation: requires spatial structure.** The Gaussian kernel
-   `d(i, j)` assumes a meaningful positional metric over input units (token
-   index, pixel coordinates). Unstructured feature vectors are out of scope.
+The paper's Section 7 (Limitations) is short — exactly two paragraphs — and
+makes only the following two claims explicitly:
+
+1. **Human-likeness is upper-bounded by the model.** Quoting directly:
+   *"the similarity to human rationales is always limited by the inner
+   workings of the respective neural network: If a network's reasoning does
+   not mirror human reasoning, the resulting rationales will be
+   incomprehensible to humans."* MaRC cannot make a bad classifier
+   interpretable.
+2. **Computational cost.** *"Rationales created by MaRC are the result of a
+   complete input optimization process. Therefore, the rationale creation
+   usually requires hundreds of forward passes and gradient evaluations …
+   creating a rationale for BERT-base can take two to three minutes
+   depending on the length of the input text, while ResNet-101 and ViT-B/16
+   are faster at about one minute."* The authors explicitly call this
+   infeasible for real-time applications.
+
+A third limitation — that MaRC requires a spatial structure on the input
+(token index, pixel grid) and does not apply to unstructured feature vectors
+— is **implicit** in the method (Eq. 5 needs `d(i, j)`) but is **not stated**
+in Section 7. The paper actually frames the spatial-structure requirement as
+a *generality* claim (it works for text, images, and "auditory data") rather
+than as a limitation, in the Conclusion.
 
 ---
 
@@ -258,7 +324,12 @@ Grounded in what is currently cached vs. what would have to be recomputed:
   August 2025 submission. It is not — it is an existing **ACL Findings 2023**
   paper. Our future related-work section should cite the 2023 venue, not the
   arXiv year.
-- Equation numbers and forms in §3 are transcribed from a careful reading
-  of the PDF rather than copy-pasted from a machine-readable source. They
-  should be verified against the published ACL Findings 2023 PDF before they
-  are reproduced in any of our own papers.
+- Equation forms and hyperparameters in §3 were extracted directly from the
+  PDF using `pymupdf` (installed into the `localLatin` conda environment on
+  2026-04-07 specifically for this verification pass). The previously
+  reported values in the first draft of this note (which were transcribed
+  second-hand by an exploration agent) all checked out, with one
+  presentation fix: the paper's Equation 2 is the *full* sufficiency arg-min
+  (`−L(x̃, c) + Ω_λ`), not the regularizer `Ω_λ` alone, and an intermediate
+  Equation 4 (sufficiency + comprehensiveness, before the `(w, σ)`
+  reparameterisation) was missing entirely. Both are fixed above.
