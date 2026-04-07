@@ -1,0 +1,264 @@
+# MaRC: Model Interpretability and Rationale Extraction by Input Mask Optimization
+
+Survey notes prepared 2026-04-07 in response to the resource bundle Prof. Siddique
+shared after the 2026-04-07 meeting (`docs/New resources April 7/`). His proposed
+direction — learned attention masks for attribution — turns out to have been
+already published as **MaRC**, so the goal of this note is to pin down what MaRC
+actually does so we can later design a variant that is (a) novel relative to MaRC
+and (b) compatible with our existing IG pipeline for Latin manuscript retrieval.
+
+> **Two corrections to flag up front**, since both the meeting notes and the
+> filename suggest otherwise:
+>
+> 1. **`docs/New resources April 7/github link.txt` is not empty** (the meeting
+>    report claimed no public code existed). The file contains exactly one line:
+>    `https://github.com/inas-argumentation/Explainability`. The same URL also
+>    appears inside the paper's Appendix A.
+> 2. **The paper is not a fresh August 2025 paper.** It is **Brinner & Zarrieß,
+>    Findings of ACL 2023** (Toronto, pp. 13722–13744). The arXiv ID
+>    `2508.11388` (uploaded 2025-08-15) is a late re-deposit of the existing
+>    ACL Findings paper, not a new contribution.
+
+---
+
+## 1. Citation
+
+- **Authors:** Marc Brinner and Sina Zarrieß (Bielefeld University, Faculty
+  for Linguistics and Literary Studies).
+- **Title:** *Model Interpretability and Rationale Extraction by Input Mask
+  Optimization.*
+- **Venue:** Findings of the Association for Computational Linguistics: ACL
+  2023, pages 13722–13744. Toronto, Canada.
+- **ACL Anthology:** <https://aclanthology.org/2023.findings-acl.867/>
+- **arXiv (late re-deposit, 2025-08-15):** 2508.11388 —
+  <https://arxiv.org/abs/2508.11388>
+- **Source code (public, confirmed live 2026-04-07):**
+  <https://github.com/inas-argumentation/Explainability>
+
+The repository is Python, contains `run_movie_reviews.py` and `run_imagenet.py`
+as the two entry points (text and image experiments), with subfolders
+`movie_reviews/` and `imagenet/`. There is **no LICENSE file visible** as of
+2026-04-07 — relevant if we ever want to copy code rather than re-implement.
+
+---
+
+## 2. Method Summary (≈260 words)
+
+MaRC produces a per-instance, per-token, soft mask `λ ∈ [0,1]^n` that explains
+why a frozen classifier predicts class `c` for input `x`. Rather than parameterise
+`λ` directly, MaRC introduces two latent vectors per instance — a weight vector
+`w ∈ ℝ^n` and a bandwidth vector `σ ∈ ℝ^n_{>0}` — and constructs `λ` from them
+through an unnormalised Gaussian influence kernel followed by a sigmoid (Eq. 5–6
+below). This Gaussian reparameterisation gives spatial smoothness "for free":
+neighbouring tokens or pixels can only get very different mask values if the
+optimiser actively shrinks `σ` for them. There is **no hard continuity
+constraint**, unlike Fong & Vedaldi (2017).
+
+The masked input is formed by **interpolation against an uninformative baseline**
+`b` rather than by hard zeroing: `x̃ = λ·x + (1−λ)·b`. For BERT-style text the
+baseline is a sequence of PAD tokens; for images it is a constant or blurred
+background. A complementary input `x̃^c = (1−λ)·x + λ·b` is also constructed, and
+the loss includes both: it pushes `x̃` to keep the original prediction
+(*sufficiency*) while pushing `x̃^c` away from it (*comprehensiveness*). Two
+regularisers shape `λ`: a squared-mean sparsity penalty on `λ` itself, and a
+log-barrier on `σ` that biases the Gaussian kernels to stay broad until the
+fidelity terms force them to localise.
+
+Optimisation is per-instance Adam over `(w, σ)` with the underlying classifier
+frozen; convergence requires hundreds of forward + backward passes per example
+(~2–3 min per BERT-base sample, ~1 min per ImageNet image).
+
+---
+
+## 3. Core Equations (transcribed from the paper)
+
+> Equation numbers follow the published ACL Findings 2023 paper. They are
+> transcribed second-hand from a careful reading and should be verified
+> against the PDF before being copied into our own paper.
+
+Masked input and its complement:
+
+```
+x̃   = λ · x + (1 − λ) · b                           [Eq. 1]
+x̃^c = (1 − λ) · x + λ · b                           [Eq. 3]
+```
+
+Sparsity regulariser on the mask itself (squared mean — note: not L1):
+
+```
+Ω_λ = α_λ · [ (1/n) Σᵢ λᵢ ]²                        [Eq. 2]
+```
+
+Gaussian-kernel reparameterisation of the mask (`d(i, j)` is the spatial /
+positional distance between input units `i` and `j`):
+
+```
+w_{i→j} = wᵢ · exp( − d(i, j)² / σᵢ )              [Eq. 5]
+λⱼ      = sigmoid( Σᵢ w_{i→j} )                     [Eq. 6]
+```
+
+Log-barrier on the bandwidth vector (keeps `σ` from collapsing to zero unless
+the data demands it):
+
+```
+Ω_σ = − α_σ · (1/n) Σᵢ log(σᵢ)                     [Eq. 7]
+```
+
+Final objective optimised per instance, with classifier `M` frozen and
+`L(·, c)` denoting the per-class fidelity score (log-likelihood or
+sigmoid-weighted logit, depending on the model head):
+
+```
+arg min_{w, σ}   − L(x̃, c)  +  L(x̃^c, c)  +  Ω_λ  +  Ω_σ      [Eq. 8]
+```
+
+For images only, an extra neighbour-difference penalty `Ω_NB` (mean squared
+difference between 8-connected pixel masks) is added; this is *not* used for
+text. For text-only, the authors inject Gaussian noise (σ ≈ 0.03) into both
+`x̃` and `x̃^c` and randomly snap 5% of mask values to {0, 1} on each step as
+extra regularisation against degenerate solutions.
+
+**Initialisation** (per-instance, fresh each example):
+
+| Modality                | `w` init | `σ` init |
+| ----------------------- | -------- | -------- |
+| Text (BERT-base)        | 1.2      | 2.0      |
+| Image (ResNet-101)      | 0.5      | 1.2      |
+| Image (ViT-B/16, 384px) | 0.5      | 1.2      |
+
+**Optimiser:** Adam. The paper does not pin a fixed step count but reports a
+budget of "hundreds of forward and backward passes" per instance and wall-clock
+costs of 2–3 min (BERT-base), ~1 min (ResNet-101 / ViT-B/16).
+
+**Word-piece handling:** when a word is split into multiple sub-word tokens,
+the same `(w, σ)` parameters are tied across all pieces, so explanations are
+word-level rather than wordpiece-level.
+
+---
+
+## 4. How MaRC Differs from Integrated Gradients
+
+1. **Computation model.** IG is a single-pass attribution: a Riemann sum of
+   gradients along a straight line from a baseline to the input, with `n_steps`
+   forward + backward passes and **no learnable parameters**. MaRC is a full
+   per-instance optimisation over a parameter set `(w, σ) ∈ ℝ^{2n}`, with
+   hundreds of Adam steps and explicit convergence dynamics.
+2. **Output type.** IG outputs signed, per-token gradient × input scores with
+   no sparsity prior; positive and negative attributions cancel. MaRC outputs a
+   non-negative `[0, 1]` soft mask with explicit sparsity (`Ω_λ`) and explicit
+   spatial smoothness (Gaussian `σ`), so contiguous spans emerge naturally and
+   can be thresholded into a hard rationale.
+3. **What is being explained.** IG explains the model's gradient with respect
+   to a target output. MaRC explains by *perturbation*: it directly tests
+   whether keeping only the masked tokens preserves the prediction
+   (*sufficiency*) and whether keeping only the complement collapses it
+   (*comprehensiveness*). MaRC's loss is therefore aligned with the standard
+   ERASER faithfulness metrics by construction; IG is not.
+4. **Compute.** IG is cheap (~tens of forward passes, no parameters, no
+   per-example state). MaRC is expensive: ~2–3 min per BERT-base example,
+   ~1 min per image. For our IG-comparison example pool that's a real
+   budget item, not a rounding error.
+5. **What needs to live in memory.** IG needs the model and the input. MaRC
+   needs the model, the input, *and* per-instance optimiser state for `(w, σ)`
+   plus the persistent computation graph through the masked-input path — every
+   evaluation step has to backprop through `λ → x̃ → M(x̃)`.
+
+---
+
+## 5. Implications for Our Latin Manuscript Retrieval Pipeline
+
+Grounded in what is currently cached vs. what would have to be recomputed:
+
+- **Our IG comparison consumes only cached NPZ artifacts.**
+  `scripts/resubmit/run_resubmit_ig_comparison.py` and
+  `scripts/ig/run_phase12f_visualize.py` never load a model — they only read
+  pre-baked NPZ files under `runs/active/ig_examples/artifacts/`. Each NPZ
+  carries `query_input_ids`, `query_hidden`, `query_attention`,
+  `query_ig_baseline`, `query_ig_abtt`, plus `pcs` and `mean_vec` for ABTT.
+  **No computation graph, no model state, no on-demand per-token gradients.**
+- **A faithful MaRC implementation cannot be built on the cached artifacts
+  alone.** MaRC needs to re-evaluate `L(x̃, c)` and `L(x̃^c, c)` after every
+  Adam step on `(w, σ)`, which requires fresh forward passes through a live
+  frozen model. The cached `query_hidden` is a frozen snapshot; we cannot
+  backprop through it.
+- **The minimum viable integration is a fork of the IG extraction step**, not
+  a new analysis script. The current IG runner is
+  `scripts/_archive/run_phase12e_pair_explanations.py` (lines 143–295 — IG
+  computation via Captum's `LayerIntegratedGradients` with `n_steps = 40`).
+  The change would be: add a new attribution target alongside
+  `PC1DotTarget` / `ABTTNormTarget` in `src/attribution_targets.py` that
+  exposes the masked-input scoring function MaRC needs (i.e. a callable
+  `λ → cosine_similarity(M(λ·x + (1−λ)·PAD), candidate)`), then run a per-pair
+  Adam loop over `(w, σ)` instead of Captum's IG path integral.
+- **Where we *could* cheat** for a cheap first pass: optimise a mask in
+  *cached embedding space* — i.e. learn weights over the rows of `query_hidden`
+  before mean-pool, then compare the resulting pooled vector against the
+  cached candidate vector. This is **not** MaRC (no live model, no
+  fidelity-on-the-classifier, no real perturbation), but it reuses 100% of the
+  existing artifacts, runs in seconds per example, and would be a useful
+  ablation / sanity check before paying for the real thing. It also gives us
+  something to compare *against* MaRC if we ever do run MaRC for real.
+- **Compute estimate for a real MaRC pass over our current IG example pool**:
+  4 models (LaTa, PhilTa, LaBSE, Qwen3-0.6B) × roughly 50 example pairs × ~100
+  Adam steps × per-step forward+backward ≈ **single-digit GPU-hours per model**
+  on `gpuA100x4`, but only after the new target and the per-pair Adam loop are
+  written. This would be a Phase-13-style experiment, not a quick patch.
+- **Variant design hooks** to keep in mind for our follow-up meeting:
+  - Replace the Gaussian distance kernel `d(i, j)` with one indexed by
+    *line/folio* position from the manuscript metadata, not just sequential
+    token index. This is a real linguistic difference from MaRC's sequence
+    prior and would matter for fragmentary inputs.
+  - Tie the fidelity loss `L(·, c)` to **ABTT-cleaned cosine similarity
+    against the candidate vector**, not classification log-likelihood, so the
+    explanation aligns with our actual retrieval objective rather than a
+    synthetic classifier head.
+  - Drop the per-instance optimisation in favour of an *amortised* mask
+    predictor (a small head that emits `(w, σ)` from a forward pass over the
+    cached hidden states). This gives up some faithfulness but turns the
+    method into something that scales to all 2,238 unlabelled queries instead
+    of a hand-curated example set. Being amortised is also a real
+    methodological difference from MaRC.
+
+---
+
+## 6. Limitations the Authors Admit (Section 7)
+
+1. **Human-likeness is upper-bounded by the model.** "If a network's reasoning
+   does not mirror human reasoning, the resulting rationales will be
+   incomprehensible to humans." MaRC cannot make a bad classifier interpretable.
+2. **Computational cost.** Hundreds of forward + backward passes per instance,
+   2–3 min for BERT-base, ~1 min for ResNet-101 / ViT-B/16. The authors
+   explicitly say this rules out real-time deployment.
+3. **Implicit limitation: requires spatial structure.** The Gaussian kernel
+   `d(i, j)` assumes a meaningful positional metric over input units (token
+   index, pixel coordinates). Unstructured feature vectors are out of scope.
+
+---
+
+## 7. Source Code Status
+
+- **Public, confirmed live 2026-04-07:**
+  <https://github.com/inas-argumentation/Explainability>
+- 100% Python; folders `movie_reviews/` and `imagenet/`; entry points
+  `run_movie_reviews.py` and `run_imagenet.py`; PyTorch-style stack inferred
+  from `requirements.txt` and the experiments described.
+- **No LICENSE file visible** — flag if we ever want to copy code rather than
+  re-implement from the paper.
+- The repo URL is also written into the paper's Appendix A and was already
+  saved in `docs/New resources April 7/github link.txt` (one-line file).
+
+---
+
+## 8. Discrepancy Log
+
+- The 2026-04-07 meeting notes say the GitHub link file was empty and that no
+  public source was found. This is wrong on both counts: the file contains the
+  URL, and the repo is live with both text and image implementations.
+- The 2025 arXiv re-deposit (`2508.11388`) makes the paper *look* like an
+  August 2025 submission. It is not — it is an existing **ACL Findings 2023**
+  paper. Our future related-work section should cite the 2023 venue, not the
+  arXiv year.
+- Equation numbers and forms in §3 are transcribed from a careful reading
+  of the PDF rather than copy-pasted from a machine-readable source. They
+  should be verified against the published ACL Findings 2023 PDF before they
+  are reproduced in any of our own papers.
