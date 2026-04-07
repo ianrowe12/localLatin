@@ -168,6 +168,55 @@ export function useQueryDetail(id: number | null): HookState<QueryDetail> {
 // usePredictions
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// useCandidateDirFiles
+// ---------------------------------------------------------------------------
+
+export function useCandidateDirFiles(
+  candidateDir: string | null,
+): HookState<CandidateFile[]> {
+  const [state, setState] = useState<HookState<CandidateFile[]>>({
+    data: null,
+    loading: false,
+    error: null,
+  })
+  const cache = useRef(new Map<string, CandidateFile[]>())
+
+  useEffect(() => {
+    if (candidateDir === null) {
+      setState({ data: null, loading: false, error: null })
+      return
+    }
+
+    const cached = cache.current.get(candidateDir)
+    if (cached) {
+      setState({ data: cached, loading: false, error: null })
+      return
+    }
+
+    let cancelled = false
+    setState((prev) => ({ ...prev, loading: true, error: null }))
+
+    const encoded = encodeURIComponent(candidateDir)
+    apiFetch<CandidateFile[]>(`/api/candidate_dir/${encoded}/files`)
+      .then((data) => {
+        if (cancelled) return
+        cache.current.set(candidateDir, data)
+        setState({ data, loading: false, error: null })
+      })
+      .catch((err: Error) => {
+        if (cancelled) return
+        setState((prev) => ({ ...prev, loading: false, error: err.message }))
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [candidateDir])
+
+  return state
+}
+
 export function usePredictions(
   queryId: number | null,
   model: string,

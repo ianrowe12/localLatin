@@ -22,6 +22,21 @@ export interface AutoHighlight {
   matches: TopMatch[]
 }
 
+export type AttributionMethod =
+  | 'ig'
+  | 'bertscore'
+  | 'ot'
+  | 'attention_weighted'
+  | 'dla'
+  | 'attention_standalone'
+
+export type AttributionVariant = 'baseline' | 'abtt'
+
+export interface AttributionTopHighlights {
+  query: number[]
+  candidate: number[]
+}
+
 export interface TokenMapResponse {
   example_id: number
   model: string
@@ -40,6 +55,36 @@ export interface TokenMapResponse {
   candidate_ig_baseline: number[]
   candidate_ig_abtt: number[]
   auto_highlights: AutoHighlight[] | null
+  available_methods?: AttributionMethod[]
+  pair_matrices?: Partial<
+    Record<AttributionMethod, Partial<Record<AttributionVariant, number[][]>>>
+  >
+  top_highlights?: Partial<
+    Record<
+      AttributionMethod,
+      Partial<Record<AttributionVariant, AttributionTopHighlights>>
+    >
+  >
+}
+
+export interface TokenMapExampleCard {
+  example_id: number
+  model_slug: string
+  bucket: string
+  query_file_id: number
+  query_folder_id: string
+  query_filename: string
+  candidate_folder_id: string
+  candidate_label: string
+  methods_available: AttributionMethod[]
+  gold_similar: number
+  baseline_pred: number
+  abtt_pred: number
+}
+
+export interface TokenMapExamplesGroupedResponse {
+  by_model: Record<string, TokenMapExampleCard[]>
+  bucket_order: string[]
 }
 
 // ---------------------------------------------------------------------------
@@ -99,6 +144,46 @@ export function useTokenMap(
       cancelled = true
     }
   }, [queryId, candidateId, model])
+
+  return state
+}
+
+// ---------------------------------------------------------------------------
+// useTokenMapExamplesGrouped
+// ---------------------------------------------------------------------------
+
+export function useTokenMapExamplesGrouped(): HookState<TokenMapExamplesGroupedResponse> {
+  const [state, setState] = useState<HookState<TokenMapExamplesGroupedResponse>>({
+    data: null,
+    loading: false,
+    error: null,
+  })
+  const cache = useRef<TokenMapExamplesGroupedResponse | null>(null)
+
+  useEffect(() => {
+    if (cache.current) {
+      setState({ data: cache.current, loading: false, error: null })
+      return
+    }
+
+    let cancelled = false
+    setState((prev) => ({ ...prev, loading: true, error: null }))
+
+    apiFetch<TokenMapExamplesGroupedResponse>('/api/token_map_examples_grouped')
+      .then((data) => {
+        if (cancelled) return
+        cache.current = data
+        setState({ data, loading: false, error: null })
+      })
+      .catch((err: Error) => {
+        if (cancelled) return
+        setState((prev) => ({ ...prev, loading: false, error: err.message }))
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   return state
 }

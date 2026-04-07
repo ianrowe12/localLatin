@@ -187,18 +187,37 @@ def build_store(settings: Settings) -> DataStore:
     if ig_csv_path.exists():
         logger.info("Loading IG examples from %s", ig_csv_path)
         store.ig_examples = pd.read_csv(ig_csv_path)
-        # Build artifact path index
+        # Each example_id has exactly one canonical owning model (per the CSV).
+        # The IG regen pipeline writes NPZ files keyed by global example_id, but
+        # historically leaked stray copies into wrong model dirs. Use the CSV as
+        # the source of truth: only register an artifact when its parent dir slug
+        # matches the example_id's CSV-declared owner.
+        eid_to_owner_slug: dict[int, str] = {
+            int(row["example_id"]): normalize_slug(str(row["model_name"]))
+            for _, row in store.ig_examples.iterrows()
+        }
+        skipped_stray = 0
         for model_dir in ig_artifacts_root.iterdir():
-            if model_dir.is_dir():
-                for npz_file in model_dir.glob("*.npz"):
-                    # Extract example_id from filename like "example001_pair_example.npz"
-                    name = npz_file.stem
-                    try:
-                        eid = int(name.split("_")[0].replace("example", ""))
-                        store.ig_artifact_paths[eid] = npz_file
-                    except (ValueError, IndexError):
-                        pass
-        logger.info("Indexed %d IG artifacts", len(store.ig_artifact_paths))
+            if not model_dir.is_dir():
+                continue
+            dir_slug = normalize_slug(model_dir.name)
+            for npz_file in model_dir.glob("*.npz"):
+                # Extract example_id from filename like "example001_pair_example.npz"
+                name = npz_file.stem
+                try:
+                    eid = int(name.split("_")[0].replace("example", ""))
+                except (ValueError, IndexError):
+                    continue
+                expected_slug = eid_to_owner_slug.get(eid)
+                if expected_slug is None or expected_slug != dir_slug:
+                    skipped_stray += 1
+                    continue
+                store.ig_artifact_paths[eid] = npz_file
+        logger.info(
+            "Indexed %d IG artifacts (skipped %d stray/orphan files)",
+            len(store.ig_artifact_paths),
+            skipped_stray,
+        )
     else:
         logger.warning("IG examples CSV not found at %s", ig_csv_path)
 

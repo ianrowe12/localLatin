@@ -2,10 +2,12 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useState,
   type ReactNode,
 } from 'react'
 import { PIN_COLORS } from '../utils/colors'
+import type { AttributionMethod, AttributionVariant } from '../api/tokenMap'
 
 export type ViewMode = 'connections' | 'heatmap' | 'ig'
 export type PinSource = 'manual' | 'auto'
@@ -44,6 +46,12 @@ export interface TokenContextValue {
   hasAutoHighlights: boolean
   hasIgData: boolean
   setHasIgData: (v: boolean) => void
+  selectedMethod: AttributionMethod | null
+  selectedVariant: AttributionVariant
+  availableMethods: AttributionMethod[]
+  setSelectedMethod: (m: AttributionMethod) => void
+  setSelectedVariant: (v: AttributionVariant) => void
+  setAvailableMethods: (methods: AttributionMethod[]) => void
 }
 
 const TokenContext = createContext<TokenContextValue | null>(null)
@@ -55,6 +63,19 @@ export function TokenProvider({ children }: { children: ReactNode }) {
   const [pinnedTokens, setPinnedTokens] = useState<Map<number, PinEntry>>(new Map())
   const [hasIgData, setHasIgData] = useState(false)
   const [autoHighlightedTokens, setAutoHighlightedTokens] = useState<Set<number>>(new Set())
+  const [selectedVariant, setSelectedVariant] = useState<AttributionVariant>('baseline')
+  const [availableMethods, setAvailableMethods] = useState<AttributionMethod[]>([])
+  const [selectedMethod, setSelectedMethod] = useState<AttributionMethod | null>(null)
+
+  // Keep selectedMethod consistent with availableMethods. If the current
+  // selection is no longer available (or is null), reset to the first
+  // available method. This runs as an effect to avoid stale closures.
+  useEffect(() => {
+    setSelectedMethod((prev) => {
+      if (prev && availableMethods.includes(prev)) return prev
+      return availableMethods[0] ?? null
+    })
+  }, [availableMethods])
 
   const pinToken = useCallback((queryIdx: number, matches: PinMatch[]) => {
     setPinnedTokens((prev) => {
@@ -137,6 +158,12 @@ export function TokenProvider({ children }: { children: ReactNode }) {
     hasAutoHighlights,
     hasIgData,
     setHasIgData,
+    selectedMethod,
+    selectedVariant,
+    availableMethods,
+    setSelectedMethod,
+    setSelectedVariant,
+    setAvailableMethods,
   }
 
   return <TokenContext.Provider value={value}>{children}</TokenContext.Provider>

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Query
 
 from web.dependencies import get_store
 from web.exceptions import ExampleNotFoundError
-from web.models import TokenMapExampleSummary, TokenMapResponse
+from web.models import TokenMapExampleSummary, TokenMapExamplesGroupedResponse, TokenMapResponse
 from web.services.data_store import DataStore
 from web.services import token_map_svc
 
@@ -18,6 +18,14 @@ async def list_token_map_examples(
     store: DataStore = Depends(get_store),
 ) -> list[TokenMapExampleSummary]:
     return token_map_svc.list_examples(store, model=model, bucket=bucket)
+
+
+@router.get("/token_map_examples_grouped", response_model=TokenMapExamplesGroupedResponse)
+async def list_token_map_examples_grouped(
+    store: DataStore = Depends(get_store),
+) -> TokenMapExamplesGroupedResponse:
+    result = token_map_svc.list_examples_grouped(store)
+    return TokenMapExamplesGroupedResponse(**result)
 
 
 @router.get("/token_map/{example_id}", response_model=TokenMapResponse)

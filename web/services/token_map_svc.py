@@ -15,6 +15,14 @@ from web.services.data_store import DataStore, normalize_slug
 logger = logging.getLogger(__name__)
 
 
+ATTRIBUTION_METHODS = (
+    "ig", "bertscore", "ot",
+    "attention_weighted", "dla", "attention_standalone",
+)
+ATTRIBUTION_VARIANTS = ("baseline", "abtt")
+BUCKET_ORDER = ["correct_similar", "correct_not_similar", "wrong_similar", "wrong_not_similar"]
+
+
 def _try_decode_tokens(input_ids: np.ndarray, model_slug: str) -> list[str] | None:
     """Try to decode token IDs using HuggingFace tokenizer. Returns None if unavailable."""
     try:
@@ -76,6 +84,54 @@ def list_examples(store: DataStore, model: str | None = None, bucket: str | None
             candidate_path=str(row.get("candidate_path", "")),
         ))
     return results
+
+
+def list_examples_grouped(store: DataStore) -> dict:
+    if store.ig_examples is None:
+        return {"by_model": {}, "bucket_order": BUCKET_ORDER}
+
+    by_model: dict[str, list[dict]] = {}
+    for _, row in store.ig_examples.iterrows():
+        eid = int(row["example_id"])
+        if eid not in store.ig_artifact_paths:
+            continue
+
+        # Trust NPZ contents over CSV's methods_available
+        npz_path = store.ig_artifact_paths[eid]
+        try:
+            data = _load_npz(str(npz_path))
+        except Exception as e:
+            logger.warning("Failed to load NPZ for example %d: %s", eid, e)
+            continue
+
+        methods = [
+            m for m in ATTRIBUTION_METHODS
+            if any(f"pair_matrix_{m}_{v}" in data for v in ATTRIBUTION_VARIANTS)
+        ]
+
+        slug = normalize_slug(npz_path.parent.name)
+        query_path = str(row.get("query_path", ""))
+        by_model.setdefault(slug, []).append({
+            "example_id": eid,
+            "model_slug": slug,
+            "bucket": str(row.get("bucket", "")),
+            "query_file_id": int(row.get("query_file_id", -1)),
+            "query_folder_id": str(row.get("query_folder_id", "")),
+            "query_filename": Path(query_path).name if query_path else "",
+            "candidate_folder_id": str(row.get("candidate_folder_id", "")),
+            "candidate_label": str(row.get("candidate_label", "")),
+            "methods_available": methods,
+            "gold_similar": int(row.get("gold_similar", 0) or 0),
+            "baseline_pred": int(row.get("baseline_pred", 0) or 0),
+            "abtt_pred": int(row.get("abtt_pred", 0) or 0),
+        })
+
+    # Sort cards within each model by (bucket order, example_id)
+    bucket_idx = {b: i for i, b in enumerate(BUCKET_ORDER)}
+    for cards in by_model.values():
+        cards.sort(key=lambda c: (bucket_idx.get(c["bucket"], 999), c["example_id"]))
+
+    return {"by_model": by_model, "bucket_order": BUCKET_ORDER}
 
 
 def resolve_example_id(
@@ -153,6 +209,32 @@ def load_token_map(store: DataStore, example_id: int) -> TokenMapResponse | None
         cos = np.array(sim_matrix)
         ig_weighted = (cos * weight * sign).tolist()
 
+    # Load all 12 attribution matrices defensively (skip any missing keys)
+    pair_matrices: dict[str, dict[str, list[list[float]]]] = {}
+    top_highlights: dict[str, dict[str, dict[str, list[int]]]] = {}
+    available_methods: list[str] = []
+
+    for method in ATTRIBUTION_METHODS:
+        method_present = False
+        for variant in ATTRIBUTION_VARIANTS:
+            mkey = f"pair_matrix_{method}_{variant}"
+            qk = f"topk_{method}_{variant}_query"
+            ck = f"topk_{method}_{variant}_candidate"
+            if mkey not in data:
+                continue
+            mat = np.asarray(data[mkey], dtype=np.float32)
+            # Trim to actual sequence lengths so the response never reports padding cells
+            mat = mat[:q_len, :c_len]
+            pair_matrices.setdefault(method, {})[variant] = mat.tolist()
+            if qk in data and ck in data:
+                top_highlights.setdefault(method, {})[variant] = {
+                    "query": np.asarray(data[qk]).astype(int).tolist(),
+                    "candidate": np.asarray(data[ck]).astype(int).tolist(),
+                }
+            method_present = True
+        if method_present:
+            available_methods.append(method)
+
     # Top matches (sparse format for frontend connection lines)
     top_matches: dict[str, list[TopMatch]] = {}
     sim_arr = np.array(sim_matrix)
@@ -217,4 +299,7 @@ def load_token_map(store: DataStore, example_id: int) -> TokenMapResponse | None
         candidate_ig_baseline=c_ig_base[:c_len].tolist(),
         candidate_ig_abtt=c_ig_abtt[:c_len].tolist(),
         auto_highlights=auto_highlights,
+        available_methods=available_methods,
+        pair_matrices=pair_matrices,
+        top_highlights=top_highlights,
     )

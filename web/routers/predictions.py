@@ -102,3 +102,19 @@ async def get_candidates(
         CandidateFile(filename=fname, text=text)
         for fname, text in sorted(texts.items())
     ]
+
+
+@router.get("/candidate_dir/{candidate_dir}/files", response_model=list[CandidateFile])
+async def get_candidate_dir_files(
+    candidate_dir: str,
+    store: DataStore = Depends(get_store),
+) -> list[CandidateFile]:
+    """Return all files in a labelled candidate directory. Used by the example gallery
+    when navigating to an off-top-10 candidate that's not in the predictions list."""
+    texts = store.labelled_texts.get(candidate_dir)
+    if texts is None:
+        return []
+    return [
+        CandidateFile(filename=fname, text=text)
+        for fname, text in sorted(texts.items())
+    ]

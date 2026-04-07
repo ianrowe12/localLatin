@@ -5,6 +5,7 @@ import LeftSidebar from './LeftSidebar'
 import CenterArea from './CenterArea'
 import RightSidebar from './RightSidebar'
 import DashboardView from '../dashboard/DashboardView'
+import ExamplesGallery from '../gallery/ExamplesGallery'
 
 export default function AppShell() {
   const { currentView } = useApp()
@@ -16,6 +17,8 @@ export default function AppShell() {
       <Header />
       {currentView === 'dashboard' ? (
         <DashboardView />
+      ) : currentView === 'examples' ? (
+        <ExamplesGallery />
       ) : (
         <div className="flex-1 flex overflow-hidden">
           <LeftSidebar

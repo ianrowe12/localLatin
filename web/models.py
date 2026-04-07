@@ -98,6 +98,9 @@ class TokenMapResponse(BaseModel):
     candidate_ig_baseline: List[float]
     candidate_ig_abtt: List[float]
     auto_highlights: Optional[List[AutoHighlight]] = None
+    available_methods: List[str] = Field(default_factory=list)
+    pair_matrices: Dict[str, Dict[str, List[List[float]]]] = Field(default_factory=dict)
+    top_highlights: Dict[str, Dict[str, Dict[str, List[int]]]] = Field(default_factory=dict)
 
 
 class TokenMapExampleSummary(BaseModel):
@@ -106,6 +109,26 @@ class TokenMapExampleSummary(BaseModel):
     bucket: str
     query_path: str
     candidate_path: str
+
+
+class TokenMapExampleCard(BaseModel):
+    example_id: int
+    model_slug: str
+    bucket: str
+    query_file_id: int
+    query_folder_id: str
+    query_filename: str
+    candidate_folder_id: str
+    candidate_label: str
+    methods_available: List[str]
+    gold_similar: int
+    baseline_pred: int
+    abtt_pred: int
+
+
+class TokenMapExamplesGroupedResponse(BaseModel):
+    by_model: Dict[str, List[TokenMapExampleCard]]
+    bucket_order: List[str]
 
 
 # --- Feedback ---

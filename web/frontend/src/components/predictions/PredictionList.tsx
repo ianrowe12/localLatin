@@ -1,12 +1,32 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useApp } from '../../contexts/AppContext'
 import { usePredictions } from '../../api/queries'
 import { useKeyboardShortcuts } from '../../utils/keyboard'
 import PredictionCard from './PredictionCard'
 
 export default function PredictionList() {
-  const { activeQueryId, activeModel, activePredictionRank, setActivePredictionRank } = useApp()
+  const {
+    activeQueryId,
+    activeModel,
+    activePredictionRank,
+    setActivePredictionRank,
+    overrideCandidateDir,
+    setOverrideCandidateDir,
+  } = useApp()
   const { data, loading } = usePredictions(activeQueryId, activeModel)
+
+  // If a gallery override candidate happens to be in the current model's
+  // top-10, sync the prediction list selection and release the override so
+  // the normal flow takes over. Otherwise leave the override intact —
+  // CenterArea uses it directly to render an off-list candidate.
+  useEffect(() => {
+    if (!overrideCandidateDir || !data?.predictions) return
+    const match = data.predictions.find((p) => p.dir_name === overrideCandidateDir)
+    if (match) {
+      setActivePredictionRank(match.rank)
+      setOverrideCandidateDir(null)
+    }
+  }, [overrideCandidateDir, data, setActivePredictionRank, setOverrideCandidateDir])
 
   const predictions = data?.predictions?.slice(0, 10) ?? []
   const maxRank = predictions.length
@@ -74,8 +94,13 @@ export default function PredictionList() {
               key={pred.rank}
               prediction={pred}
               rank={pred.rank}
-              isActive={pred.rank === activePredictionRank}
-              onClick={() => setActivePredictionRank(pred.rank)}
+              isActive={
+                !overrideCandidateDir && pred.rank === activePredictionRank
+              }
+              onClick={() => {
+                setActivePredictionRank(pred.rank)
+                setOverrideCandidateDir(null)
+              }}
             />
           ))}
         </div>

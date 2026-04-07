@@ -5,6 +5,7 @@ import ModelSelector from '../predictions/ModelSelector'
 import PredictionList from '../predictions/PredictionList'
 import FeedbackPanel from '../feedback/FeedbackPanel'
 import ViewModeToggle from '../common/ViewModeToggle'
+import AttributionMethodSelector from '../common/AttributionMethodSelector'
 import Toast from '../common/Toast'
 
 interface RightSidebarProps {
@@ -71,6 +72,14 @@ export default function RightSidebar({ isOpen, onToggle }: RightSidebarProps) {
                 Visualization Mode
               </label>
               <ViewModeToggle />
+            </div>
+
+            {/* Attribution method */}
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wider text-stone-400 mb-1.5 block">
+                Attribution Method
+              </label>
+              <AttributionMethodSelector />
             </div>
 
             {/* Prediction list — scrollable */}

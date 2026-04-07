@@ -61,7 +61,7 @@ export default function Header() {
 
       {/* Right: Actions */}
       <div className="flex items-center gap-2 flex-shrink-0">
-        {currentView === 'review' && (
+        {currentView !== 'dashboard' && (
           <button
             type="button"
             onClick={() => setCurrentView('dashboard')}
@@ -85,6 +85,34 @@ export default function Header() {
             </svg>
           </button>
         )}
+        <button
+          type="button"
+          onClick={() => setCurrentView('examples')}
+          className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors text-stone-600 dark:text-stone-300 ${
+            currentView === 'examples'
+              ? 'bg-stone-200 dark:bg-stone-700'
+              : 'hover:bg-stone-200 dark:hover:bg-stone-700'
+          }`}
+          aria-label="Browse example pairs"
+          title="Example pairs gallery"
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <rect x="3" y="3" width="7" height="7" />
+            <rect x="14" y="3" width="7" height="7" />
+            <rect x="3" y="14" width="7" height="7" />
+            <rect x="14" y="14" width="7" height="7" />
+          </svg>
+        </button>
         <ThemeToggle />
 
         {/* Reviewer badge */}
