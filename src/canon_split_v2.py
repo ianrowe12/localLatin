@@ -4,7 +4,11 @@ Split rules (v2 — professor-approved):
 - Singletons (1 file): distributed randomly ~50/50 between train and test.
 - Doubletons (2 files): whole folders assigned randomly 50/50.
   37 folders -> train, 37 folders -> test.  Both files stay together.
-- Multi-file (>=3 files): within each folder, files split ~50/50.
+- Multi-file (>=3 files): within each size-n class, train_n is varied
+  across folders using stratified uniform allocation over {1, ..., n-1}.
+  The remainder is weighted toward values nearest n/2 so the class average
+  stays ~50/50 while every class contributes same-folder positive pairs
+  to the train split (no class is forced to all-singletons-in-train).
 
 Evaluation: pairs are formed *within* each split.
 """
@@ -54,16 +58,44 @@ def canon_train_test_split_v2(
         else:
             split[idx] = "test"
 
-    # --- Multi-file (>=3): within-folder ~50/50 ---
-    for folder_id, group in meta[meta["folder_size"] >= 3].groupby("folder_id"):
-        idx = group.index.to_numpy()
-        n = len(idx)
-        shuffled = rng.permutation(idx)
-        train_n = n // 2
-        if train_n == 0:
-            train_n = 1
-        split[shuffled[:train_n]] = "train"
-        split[shuffled[train_n:]] = "test"
+    # --- Multi-file (>=3): varied per-folder allocation within each size class ---
+    # For each size-n class of K folders, distribute train_n values uniformly
+    # over {1, ..., n-1} via stratified allocation, with the remainder going
+    # to values nearest n/2 so the class average stays ~n/2. Determinism is
+    # preserved via the shared rng. This avoids the pathological case where
+    # every size-3 folder is forced to (1 train, 2 test) and contributes zero
+    # same-folder positive pairs to the training split.
+    multi_mask = meta["folder_size"] >= 3
+    if multi_mask.any():
+        multi_df = meta.loc[multi_mask, ["folder_id", "folder_size"]]
+        train_n_by_folder: Dict[str, int] = {}
+        for size_n in sorted(multi_df["folder_size"].unique().tolist()):
+            class_folder_ids = np.sort(
+                multi_df.loc[multi_df["folder_size"] == size_n, "folder_id"].unique()
+            )
+            K = len(class_folder_ids)
+            allowed = list(range(1, int(size_n)))
+            n_allowed = len(allowed)
+            base, rem = divmod(K, n_allowed)
+            counts = [base] * n_allowed
+            mid = size_n / 2.0
+            order = sorted(range(n_allowed), key=lambda i: (abs(allowed[i] - mid), i))
+            for r in range(rem):
+                counts[order[r]] += 1
+            values: List[int] = []
+            for val, cnt in zip(allowed, counts):
+                values.extend([val] * cnt)
+            shuffled_folders = rng.permutation(class_folder_ids)
+            shuffled_values = rng.permutation(np.asarray(values, dtype=np.int32))
+            for fid, tn in zip(shuffled_folders, shuffled_values):
+                train_n_by_folder[str(fid)] = int(tn)
+
+        for folder_id, group in meta.loc[multi_mask].groupby("folder_id"):
+            idx = group.index.to_numpy()
+            train_n = train_n_by_folder[str(folder_id)]
+            shuffled = rng.permutation(idx)
+            split[shuffled[:train_n]] = "train"
+            split[shuffled[train_n:]] = "test"
 
     meta["split"] = split
 
