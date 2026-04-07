@@ -7,7 +7,7 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=16G
 #SBATCH --time=00:10:00
-#SBATCH --output=runs/phase_resubmit/verify_taskb_split_%j.out
+#SBATCH --output=runs/active/resubmit/verify_taskb_split_%j.out
 
 cd /u/irowerojas/localLatin
 

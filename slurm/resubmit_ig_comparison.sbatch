@@ -20,10 +20,10 @@ module load miniforge3-python
 
 echo "=== Phase 12f IG Comparison — 6 methods, all examples (4 models) ==="
 conda run -n localLatin python scripts/run_resubmit_ig_comparison.py \
-    --examples_csv runs/phase12f_examples/phase12f_examples.csv \
-    --artifacts_dir runs/phase12f_examples/artifacts \
-    --out_dir runs/phase_resubmit/ig_comparison \
+    --examples_csv runs/active/ig_examples/phase12f_examples.csv \
+    --artifacts_dir runs/active/ig_examples/artifacts \
+    --out_dir runs/active/resubmit/ig_comparison \
     --max_tokens 20 \
     --max_examples 100
 
-echo "=== Done. Outputs in runs/phase_resubmit/ig_comparison/ ==="
+echo "=== Done. Outputs in runs/active/resubmit/ig_comparison/ ==="

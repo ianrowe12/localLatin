@@ -20,11 +20,11 @@ class PathsConfig(BaseModel):
     data_root: str = os.environ.get("LOCALLATIN_DATA_ROOT", ".")
     canon_unlabelled: str = "canon_unlabelled"
     canon_labelled: str = "canon_labelled"
-    predictions_combined: str = "runs/phase_resubmit/unlabelled/unlabelled_predictions.csv"
-    predictions_dir: str = "runs/phase_resubmit/unlabelled"
-    ig_artifacts_dir: str = "runs/phase12f_examples/artifacts"
-    ig_examples_csv: str = "runs/phase12f_examples/phase12f_examples.csv"
-    feedback_db: str = "runs/phase_resubmit/webapp/feedback.db"
+    predictions_combined: str = "runs/active/resubmit/unlabelled/unlabelled_predictions.csv"
+    predictions_dir: str = "runs/active/resubmit/unlabelled"
+    ig_artifacts_dir: str = "runs/active/ig_examples/artifacts"
+    ig_examples_csv: str = "runs/active/ig_examples/phase12f_examples.csv"
+    feedback_db: str = "runs/active/resubmit/webapp/feedback.db"
 
     def resolve(self, relative: str) -> Path:
         return Path(self.data_root) / relative

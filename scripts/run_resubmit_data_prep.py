@@ -60,7 +60,7 @@ def main():
         help="Root directory of the labelled canon dataset.",
     )
     parser.add_argument(
-        "--out_dir", default="runs/phase_resubmit/data",
+        "--out_dir", default="runs/active/resubmit/data",
         help="Output directory for split files.",
     )
     parser.add_argument("--seed", type=int, default=42)

@@ -34,7 +34,7 @@ def parse_args() -> argparse.Namespace:
         description="M-seed Task B evaluation with query/reference split."
     )
     parser.add_argument("--canon_root", default="canon_labelled")
-    parser.add_argument("--out_dir", default="runs/phase_resubmit/taskb_mseed")
+    parser.add_argument("--out_dir", default="runs/active/resubmit/taskb_mseed")
     parser.add_argument("--base_seed", type=int, default=42,
                         help="First seed; will use base_seed..base_seed+M-1")
     parser.add_argument("--M", type=int, default=5, help="Number of seed repetitions")

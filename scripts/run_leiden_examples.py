@@ -51,8 +51,8 @@ def parse_args() -> argparse.Namespace:
         help="Directory containing model-slug NPZ subdirectories",
     )
     p.add_argument(
-        "--out_dir", default="runs/phase_resubmit/leiden_demo",
-        help="Output directory (default: runs/phase_resubmit/leiden_demo)",
+        "--out_dir", default="runs/active/resubmit/leiden_demo",
+        help="Output directory (default: runs/active/resubmit/leiden_demo)",
     )
     p.add_argument("--max_tokens", type=int, default=20)
     p.add_argument(

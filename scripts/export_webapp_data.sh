@@ -31,16 +31,16 @@ check "canon_labelled/" \
     "find '$ROOT/canon_labelled' -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' '"
 
 check "predictions CSV" \
-    "$ROOT/runs/phase_resubmit/unlabelled/unlabelled_predictions.csv" "" \
-    "tail -n +2 '$ROOT/runs/phase_resubmit/unlabelled/unlabelled_predictions.csv' | wc -l | tr -d ' '"
+    "$ROOT/runs/active/resubmit/unlabelled/unlabelled_predictions.csv" "" \
+    "tail -n +2 '$ROOT/runs/active/resubmit/unlabelled/unlabelled_predictions.csv' | wc -l | tr -d ' '"
 
 check "IG examples CSV" \
-    "$ROOT/runs/phase12f_examples/phase12f_examples.csv" "" \
-    "tail -n +2 '$ROOT/runs/phase12f_examples/phase12f_examples.csv' | wc -l | tr -d ' '"
+    "$ROOT/runs/active/ig_examples/phase12f_examples.csv" "" \
+    "tail -n +2 '$ROOT/runs/active/ig_examples/phase12f_examples.csv' | wc -l | tr -d ' '"
 
 check "IG artifacts" \
-    "$ROOT/runs/phase12f_examples/artifacts" "" \
-    "find '$ROOT/runs/phase12f_examples/artifacts' -name '*.npz' | wc -l | tr -d ' '"
+    "$ROOT/runs/active/ig_examples/artifacts" "" \
+    "find '$ROOT/runs/active/ig_examples/artifacts' -name '*.npz' | wc -l | tr -d ' '"
 
 echo ""
 echo "Set data_root in web/config.yaml to: $(cd "$ROOT" && pwd)"

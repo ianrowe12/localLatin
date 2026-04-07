@@ -18,10 +18,10 @@ export REPO_ROOT="/u/irowerojas/localLatin"
 cd "$REPO_ROOT" || exit 1
 mkdir -p slurm/logs
 
-SPLIT_CSV="$REPO_ROOT/runs/phase_resubmit/data/phase_resubmit_split.csv"
-RUNS_ROOT="$REPO_ROOT/runs/phase_resubmit_bases"
-RESULTS_DIR="$REPO_ROOT/runs/phase_resubmit/results"
-DIST_DIR="$REPO_ROOT/runs/phase_resubmit/distributions"
+SPLIT_CSV="$REPO_ROOT/runs/active/resubmit/data/phase_resubmit_split.csv"
+RUNS_ROOT="$REPO_ROOT/runs/active/resubmit_bases"
+RESULTS_DIR="$REPO_ROOT/runs/active/resubmit/results"
+DIST_DIR="$REPO_ROOT/runs/active/resubmit/distributions"
 
 mkdir -p "$RESULTS_DIR" "$DIST_DIR"
 

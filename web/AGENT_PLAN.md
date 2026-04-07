@@ -221,11 +221,11 @@ This is the most complex feature. The architecture:
 |------|------|-------------|
 | `canon_unlabelled/` | 9MB | 2,238 flat `.txt` files — query documents |
 | `canon_labelled/` | 11MB | 1,724 `.txt` files in 859 dirs — labelled corpus |
-| `runs/phase_resubmit/unlabelled/unlabelled_predictions.csv` | 4.7MB | Combined predictions (all models) |
-| `runs/phase_resubmit/unlabelled/unlabelled_predictions_*.csv` | ~2.5MB each | Per-model predictions |
-| `runs/phase12f_examples/phase12f_examples.csv` | 17KB | Index of curated IG example pairs |
-| `runs/phase12f_examples/artifacts/` | 27MB | 40 NPZ files with token-level IG data |
-| `runs/phase_resubmit/webapp/feedback.db` | auto-created | SQLite feedback storage |
+| `runs/active/resubmit/unlabelled/unlabelled_predictions.csv` | 4.7MB | Combined predictions (all models) |
+| `runs/active/resubmit/unlabelled/unlabelled_predictions_*.csv` | ~2.5MB each | Per-model predictions |
+| `runs/active/ig_examples/phase12f_examples.csv` | 17KB | Index of curated IG example pairs |
+| `runs/active/ig_examples/artifacts/` | 27MB | 40 NPZ files with token-level IG data |
+| `runs/active/resubmit/webapp/feedback.db` | auto-created | SQLite feedback storage |
 
 All of these are committed to the repo.
 

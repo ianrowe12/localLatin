@@ -138,15 +138,15 @@ def predict_directories(
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Unlabelled -> labelled cross-dataset retrieval.")
-    parser.add_argument("--labelled_bases", default="runs/phase_resubmit_bases/phase9_bases",
+    parser.add_argument("--labelled_bases", default="runs/active/resubmit_bases/phase9_bases",
                         help="Root for labelled embeddings.")
-    parser.add_argument("--unlabelled_bases", default="runs/phase_resubmit/unlabelled/bases",
+    parser.add_argument("--unlabelled_bases", default="runs/active/resubmit/unlabelled/bases",
                         help="Root for unlabelled embeddings.")
-    parser.add_argument("--split_csv", default="runs/phase_resubmit/data/phase_resubmit_split.csv")
-    parser.add_argument("--unlabelled_meta", default="runs/phase_resubmit/data/unlabelled_meta.csv")
-    parser.add_argument("--results_csv", default="runs/phase_resubmit/results/phase_resubmit_results.csv",
+    parser.add_argument("--split_csv", default="runs/active/resubmit/data/phase_resubmit_split.csv")
+    parser.add_argument("--unlabelled_meta", default="runs/active/resubmit/data/unlabelled_meta.csv")
+    parser.add_argument("--results_csv", default="runs/active/resubmit/results/phase_resubmit_results.csv",
                         help="Evaluation results CSV for finding best model+layer+method.")
-    parser.add_argument("--out_dir", default="runs/phase_resubmit/unlabelled")
+    parser.add_argument("--out_dir", default="runs/active/resubmit/unlabelled")
     parser.add_argument("--top_k", type=int, default=10)
     parser.add_argument("--models", default="all", help="Comma-separated model names or 'all'")
     return parser.parse_args()

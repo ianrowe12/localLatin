@@ -27,7 +27,7 @@ Usage:
     python scripts/run_resubmit_ig_comparison.py \\
         --examples_csv runs/phase12e_release/phase12e_examples.csv \\
         --artifacts_dir runs/phase12e_release/artifacts \\
-        --out_dir runs/phase_resubmit/ig_comparison \\
+        --out_dir runs/active/resubmit/ig_comparison \\
         --max_tokens 20
 """
 from __future__ import annotations

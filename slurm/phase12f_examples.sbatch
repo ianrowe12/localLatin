@@ -28,10 +28,10 @@ echo "=== Artifacts done. Running 6-method comparison on all examples ==="
 
 # Step 4: Generate 6-method comparison figures + metrics + summary table
 conda run -n localLatin python scripts/run_resubmit_ig_comparison.py \
-    --examples_csv runs/phase12f_examples/phase12f_examples.csv \
-    --artifacts_dir runs/phase12f_examples/artifacts \
-    --out_dir runs/phase_resubmit/ig_comparison \
+    --examples_csv runs/active/ig_examples/phase12f_examples.csv \
+    --artifacts_dir runs/active/ig_examples/artifacts \
+    --out_dir runs/active/resubmit/ig_comparison \
     --max_tokens 20 \
     --max_examples 100
 
-echo "=== Done. Check runs/phase12f_examples/ and runs/phase_resubmit/ig_comparison/ ==="
+echo "=== Done. Check runs/active/ig_examples/ and runs/active/resubmit/ig_comparison/ ==="

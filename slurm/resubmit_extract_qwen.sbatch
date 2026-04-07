@@ -18,9 +18,9 @@ export REPO_ROOT="/u/irowerojas/localLatin"
 cd "$REPO_ROOT" || exit 1
 mkdir -p slurm/logs
 
-META_CSV="$REPO_ROOT/runs/phase_resubmit/data/meta.csv"
-SPLIT_CSV="$REPO_ROOT/runs/phase_resubmit/data/phase_resubmit_split.csv"
-BASES="$REPO_ROOT/runs/phase_resubmit_bases/phase9_bases"
+META_CSV="$REPO_ROOT/runs/active/resubmit/data/meta.csv"
+SPLIT_CSV="$REPO_ROOT/runs/active/resubmit/data/phase_resubmit_split.csv"
+BASES="$REPO_ROOT/runs/active/resubmit_bases/phase9_bases"
 SLUG="Qwen_Qwen3-Embedding-0.6B"
 
 echo "=== Extracting Qwen/Qwen3-Embedding-0.6B (mean pooling) ==="

@@ -66,10 +66,10 @@ The webapp reads these files from `data_root` at startup:
 |------|-------------|
 | `canon_unlabelled/` | 2,238 query .txt files |
 | `canon_labelled/` | 859 directories of candidate .txt files |
-| `runs/phase_resubmit/unlabelled/unlabelled_predictions.csv` | Combined model predictions |
-| `runs/phase12f_examples/phase12f_examples.csv` | IG example index |
-| `runs/phase12f_examples/artifacts/` | 40 NPZ files for token map visualization |
-| `runs/phase_resubmit/webapp/feedback.db` | Auto-created SQLite feedback storage |
+| `runs/active/resubmit/unlabelled/unlabelled_predictions.csv` | Combined model predictions |
+| `runs/active/ig_examples/phase12f_examples.csv` | IG example index |
+| `runs/active/ig_examples/artifacts/` | 40 NPZ files for token map visualization |
+| `runs/active/resubmit/webapp/feedback.db` | Auto-created SQLite feedback storage |
 
 All paths are configurable in `config.yaml` or via `LOCALLATIN_DATA_ROOT` env var.
 

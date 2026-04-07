@@ -77,7 +77,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--out_csv",
-        default="runs/phase12f_examples/phase12f_examples.csv",
+        default="runs/active/ig_examples/phase12f_examples.csv",
         help="Output CSV for Phase 12f examples.",
     )
     parser.add_argument(

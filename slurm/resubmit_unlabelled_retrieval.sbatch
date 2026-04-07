@@ -19,11 +19,11 @@ mkdir -p slurm/logs
 
 echo "=== Unlabelled retrieval ==="
 conda run -n localLatin python scripts/run_resubmit_unlabelled_retrieval.py \
-  --split_csv "$REPO_ROOT/runs/phase_resubmit/data/phase_resubmit_split.csv" \
-  --labelled_bases "$REPO_ROOT/runs/phase_resubmit_bases/phase9_bases" \
-  --unlabelled_bases "$REPO_ROOT/runs/phase_resubmit/unlabelled/bases" \
-  --unlabelled_meta "$REPO_ROOT/runs/phase_resubmit/data/unlabelled_meta.csv" \
-  --results_csv "$REPO_ROOT/runs/phase_resubmit/results/phase_resubmit_results.csv" \
-  --out_dir "$REPO_ROOT/runs/phase_resubmit/unlabelled"
+  --split_csv "$REPO_ROOT/runs/active/resubmit/data/phase_resubmit_split.csv" \
+  --labelled_bases "$REPO_ROOT/runs/active/resubmit_bases/phase9_bases" \
+  --unlabelled_bases "$REPO_ROOT/runs/active/resubmit/unlabelled/bases" \
+  --unlabelled_meta "$REPO_ROOT/runs/active/resubmit/data/unlabelled_meta.csv" \
+  --results_csv "$REPO_ROOT/runs/active/resubmit/results/phase_resubmit_results.csv" \
+  --out_dir "$REPO_ROOT/runs/active/resubmit/unlabelled"
 
 echo "=== Done ==="

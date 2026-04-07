@@ -35,9 +35,9 @@ Scholar review web application for the localLatin Latin manuscript retrieval pro
 The webapp reads these from `data_root`:
 - `canon_unlabelled/` — flat directory of 2,238 .txt query files
 - `canon_labelled/` — 859 subdirectories, each with .txt candidate files
-- `runs/phase_resubmit/unlabelled/unlabelled_predictions.csv` — CSV with columns: model, file_id, filename, rank1_dir, rank1_score, ..., rank10_dir, rank10_score, layer, pooling
-- `runs/phase12f_examples/phase12f_examples.csv` — IG example metadata
-- `runs/phase12f_examples/artifacts/<model_slug>/` — NPZ files with keys: query_embeddings, candidate_embeddings, query_ig_baseline, query_ig_abtt, candidate_ig_baseline, candidate_ig_abtt, query_input_ids, candidate_input_ids, layer, D
+- `runs/active/resubmit/unlabelled/unlabelled_predictions.csv` — CSV with columns: model, file_id, filename, rank1_dir, rank1_score, ..., rank10_dir, rank10_score, layer, pooling
+- `runs/active/ig_examples/phase12f_examples.csv` — IG example metadata
+- `runs/active/ig_examples/artifacts/<model_slug>/` — NPZ files with keys: query_embeddings, candidate_embeddings, query_ig_baseline, query_ig_abtt, candidate_ig_baseline, candidate_ig_abtt, query_input_ids, candidate_input_ids, layer, D
 
 ## Frontend
 

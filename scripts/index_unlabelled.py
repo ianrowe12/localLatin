@@ -1,8 +1,8 @@
 """Index canon_unlabelled and generate meta CSVs for embedding extraction.
 
 Outputs:
-  runs/phase_resubmit/unlabelled/meta_unlabelled.csv  — unlabelled file index
-  runs/phase_resubmit/data/meta.csv                    — labelled file index (from split CSV)
+  runs/active/resubmit/unlabelled/meta_unlabelled.csv  — unlabelled file index
+  runs/active/resubmit/data/meta.csv                    — labelled file index (from split CSV)
 """
 from __future__ import annotations
 
@@ -18,10 +18,10 @@ sys.path.append(str(Path(__file__).resolve().parent.parent / "src"))
 def main():
     parser = argparse.ArgumentParser(description="Index unlabelled canon files for extraction.")
     parser.add_argument("--unlabelled_root", default="canon_unlabelled", help="Root of unlabelled files.")
-    parser.add_argument("--split_csv", default="runs/phase_resubmit/data/phase_resubmit_split.csv",
+    parser.add_argument("--split_csv", default="runs/active/resubmit/data/phase_resubmit_split.csv",
                         help="Existing labelled split CSV.")
-    parser.add_argument("--out_unlabelled", default="runs/phase_resubmit/unlabelled/meta_unlabelled.csv")
-    parser.add_argument("--out_labelled_meta", default="runs/phase_resubmit/data/meta.csv")
+    parser.add_argument("--out_unlabelled", default="runs/active/resubmit/unlabelled/meta_unlabelled.csv")
+    parser.add_argument("--out_labelled_meta", default="runs/active/resubmit/data/meta.csv")
     args = parser.parse_args()
 
     # --- Unlabelled ---
