@@ -262,6 +262,27 @@ For Task A, the main measure is \textbf{AUCROC}, computed over pairwise cosine s
 
 For Task B, we report \textbf{cumulative top-$K$ accuracy}. For each $K$ from 1 to 5, the metric gives the fraction of test queries whose labeled directory appears among the model's top $K$ options. This directly answers the deployment question: if the expert inspects the top $K$ candidates, how likely are they to find the correct directory? We still use training-set directory accuracy at rank 1 as the model-selection signal for ABTT's $D$.
 
+\subsection{Directory Accuracy vs.\ Assignment Accuracy}
+\label{subsec:acc-vs-assignment}
+
+Two closely related Task~A numbers appear throughout our results and answer genuinely different questions. We state the distinction explicitly because the two are easy to conflate.
+
+\paragraph{Directory accuracy at rank~1 (Acc@1).} For each test file that has at least one same-directory partner elsewhere in the test set, we rank every other test file by cosine similarity and score the query correct if the top-ranked neighbour comes from the same directory. Every such query is forced to produce an answer; there is no ``I don't know'' option and the threshold $\tau$ plays no role. Acc@1 answers a single question: \emph{did we rank the correct item at the top?}
+
+\paragraph{Assignment accuracy.} Assignment accuracy adds the complementary question: \emph{did we make the right decision, including knowing when to say ``this is new''?} For every test file $i$ we compute $s_i = \max_{j \neq i} \cos(\mathbf{e}_i, \mathbf{e}_j)$ against the rest of the test set and compare it to the threshold $\tau$, which is learned on the training split by sweeping the $F_1$-optimal cut on same-directory versus different-directory pairs (no test data is used to fit $\tau$). The decision is binary first,
+\[
+\hat{y}_i =
+\begin{cases}
+\text{``existing''} & \text{if } s_i \geq \tau, \\
+\text{``new''}      & \text{if } s_i < \tau,
+\end{cases}
+\]
+and a file is scored correct iff this binary prediction matches ground truth (i.e.\ whether the file actually has a same-directory partner in the test set). Only on files that we predict as ``existing'' do we additionally look at the top-1 neighbour to recover the predicted directory. We report the overall rate as \textbf{overall assignment accuracy} and decompose it into \textbf{existing accuracy}, restricted to files whose true partner is in the test set, and \textbf{new accuracy}, restricted to files that should have been flagged as novel.
+
+In short, Acc@1 asks ``did we rank it correctly'', while assignment accuracy asks ``did we make the right decision, including abstaining when appropriate'': the two numbers can diverge sharply whenever $\tau$ is poorly calibrated or the novel-file subset is large.
+
+The query-vs-directory variant (\texttt{qvd\_*} columns in \texttt{phase\_resubmit\_results.csv}) applies exactly the same threshold rule after max-pooling similarities at the directory level instead of the file level, matching the deployment setting of Task~B.
+
 \section{Results}
 
 \subsection{The Mid-Layer Dip}
