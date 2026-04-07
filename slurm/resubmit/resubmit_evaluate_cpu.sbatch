@@ -59,7 +59,7 @@ conda run -n localLatin python scripts/run_phase11_extra_distributions.py \
   --dist_dir "$DIST_DIR"
 
 echo "=== Generating figures ==="
-conda run -n localLatin python scripts/visualize_phase_resubmit.py \
+conda run -n localLatin python scripts/resubmit/visualize_resubmit.py \
   --results_csv "$RESULTS_DIR/phase_resubmit_results.csv" \
   --dist_dir "$DIST_DIR" \
   --out_dir "$REPO_ROOT/overleaf_drafts/figures"

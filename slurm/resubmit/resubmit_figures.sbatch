@@ -19,7 +19,7 @@ cd "$REPO_ROOT" || exit 1
 mkdir -p slurm/logs
 
 echo "=== Generating resubmit figures ==="
-conda run -n localLatin python scripts/visualize_phase_resubmit.py \
+conda run -n localLatin python scripts/resubmit/visualize_resubmit.py \
   --results_csv "$REPO_ROOT/runs/active/resubmit/results/phase_resubmit_results.csv" \
   --dist_dir "$REPO_ROOT/runs/active/resubmit/distributions" \
   --out_dir "$REPO_ROOT/overleaf_drafts/figures"

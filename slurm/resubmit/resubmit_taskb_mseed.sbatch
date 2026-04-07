@@ -28,7 +28,7 @@ FIG_DIR="$REPO_ROOT/overleaf_drafts/figures"
 mkdir -p "$OUT_DIR" "$FIG_DIR"
 
 echo "=== Task B M-seed evaluation (M=5) ==="
-conda run -n localLatin python scripts/run_taskb_mseed.py \
+conda run -n localLatin python scripts/resubmit/run_taskb_mseed.py \
   --canon_root canon_labelled \
   --split_csv "$SPLIT_CSV" \
   --runs_root "$RUNS_ROOT" \
@@ -50,7 +50,7 @@ echo "All seeds results lines: $(wc -l < "$OUT_DIR/all_seeds_results.csv")"
 echo "Seed directories: $(ls -d "$OUT_DIR"/seed_* | wc -l)"
 
 echo "=== Generating Task B M-seed figures ==="
-conda run -n localLatin python scripts/visualize_taskb_mseed.py \
+conda run -n localLatin python scripts/resubmit/visualize_taskb_mseed.py \
   --agg_csv "$OUT_DIR/aggregated_results.csv" \
   --out_dir "$FIG_DIR"
 

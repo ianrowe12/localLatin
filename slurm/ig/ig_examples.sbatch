@@ -22,12 +22,12 @@ cd "$REPO_ROOT" || exit 1
 echo "=== Phase 12f: 4-model artifact generation (LaTa, PhilTa, LaBSE, Qwen3-0.6B) ==="
 
 # Step 1-3: Select examples, compute IG artifacts, create visualizations
-bash scripts/run_phase12f_examples_pipeline.sh
+bash scripts/ig/run_ig_examples_pipeline.sh
 
 echo "=== Artifacts done. Running 6-method comparison on all examples ==="
 
 # Step 4: Generate 6-method comparison figures + metrics + summary table
-conda run -n localLatin python scripts/run_resubmit_ig_comparison.py \
+conda run -n localLatin python scripts/resubmit/run_resubmit_ig_comparison.py \
     --examples_csv runs/active/ig_examples/phase12f_examples.csv \
     --artifacts_dir runs/active/ig_examples/artifacts \
     --out_dir runs/active/resubmit/ig_comparison \

@@ -18,7 +18,7 @@ cd "$REPO_ROOT" || exit 1
 mkdir -p slurm/logs
 
 echo "=== Unlabelled retrieval ==="
-conda run -n localLatin python scripts/run_resubmit_unlabelled_retrieval.py \
+conda run -n localLatin python scripts/resubmit/run_resubmit_unlabelled_retrieval.py \
   --split_csv "$REPO_ROOT/runs/active/resubmit/data/phase_resubmit_split.csv" \
   --labelled_bases "$REPO_ROOT/runs/active/resubmit_bases/phase9_bases" \
   --unlabelled_bases "$REPO_ROOT/runs/active/resubmit/unlabelled/bases" \
