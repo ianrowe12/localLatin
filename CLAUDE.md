@@ -102,6 +102,7 @@ data/canon_labelled/ (1,705 .txt files, 840 dirs)
 ## Paths
 
 - **Repo root**: `/projects/beto/irowerojas/localLatin` (symlinked at `/u/irowerojas/localLatin`)
+- **Legacy in-repo symlink**: `./localLatin` is a self-referential symlink (`localLatin -> /projects/beto/irowerojas/localLatin`) left over from early setup. It is gitignored and NOT in the GitHub repo — it only exists on the HPC working copy. Do not depend on it; use `/u/irowerojas/localLatin` (the home-dir convenience symlink) or the repo root path directly.
 - **Datasets**: `data/canon/` (1,278 raw files), `data/canon_labelled/` (1,705 labeled candidates in 840 dirs), `data/canon_unlabelled/` (2,238 unlabeled queries)
 - **Active experiment outputs**: `runs/active/resubmit/`, `runs/active/encoder_bases/`, `runs/active/ig_examples/`, `runs/active/resubmit_bases/`
 - **Off-repo archive** (old phases, reproducibility-sensitive): `/projects/beto/irowerojas/localLatin_archive/`

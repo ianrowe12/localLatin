@@ -40,6 +40,9 @@ runs/active/resubmit/**/phase9_split.csv
 runs/active/resubmit/**/scoreboard*.csv
 runs/active/resubmit/unlabelled/results/
 
+# Legacy self-referential convenience symlink at repo root — see CLAUDE.md
+/localLatin
+
 # Off-repo archive symlink (if any)
 localLatin_archive/
 
