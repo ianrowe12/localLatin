@@ -1,5 +1,5 @@
 import { useMemo, useCallback } from 'react'
-import { useTokens, type PinMatch } from '../../contexts/TokenContext'
+import { useTokens } from '../../contexts/TokenContext'
 import { useTokenRefs } from '../connections/TokenRefRegistry'
 import DocumentHeader from './DocumentHeader'
 import TokenSpan from './TokenSpan'
@@ -46,7 +46,6 @@ export default function DocumentPanel({
     setHoveredQueryTokenIdx,
     setHoveredMatches,
     pinnedTokens,
-    pinToken,
     viewMode,
     autoHighlightedTokens,
   } = useTokens()
@@ -125,24 +124,6 @@ export default function DocumentPanel({
       setHoveredMatches([])
     }
   }, [side, setHoveredQueryTokenIdx, setHoveredMatches])
-
-  const handleQueryClick = useCallback(
-    (idx: number) => {
-      if (side !== 'query' || !tokenMap?.similarity_matrix) return
-      const row = tokenMap.similarity_matrix[idx]
-      if (!row) return
-
-      // Build top matches sorted by score descending
-      const matches: PinMatch[] = row
-        .map((s, ci) => ({ candidateIdx: ci, score: s, rank: 0 }))
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 5)
-        .map((m, rank) => ({ ...m, rank: rank + 1 }))
-
-      pinToken(idx, matches)
-    },
-    [side, tokenMap, pinToken],
-  )
 
   // Loading state
   if (loading) {
@@ -272,9 +253,6 @@ export default function DocumentPanel({
                 }
                 onMouseLeave={
                   side === 'query' ? handleQueryMouseLeave : undefined
-                }
-                onClick={
-                  side === 'query' ? () => handleQueryClick(idx) : undefined
                 }
               />
             )

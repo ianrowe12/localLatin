@@ -91,11 +91,14 @@ function TokenSpanInner({
     extraClass = 'opacity-40 transition-opacity'
   }
 
+  const interactive = onMouseEnter != null || onClick != null
+
   return (
     <span
       ref={spanRef}
       className={`
-        inline-block rounded px-0.5 py-[1px] mx-[1px] cursor-pointer
+        inline-block rounded px-0.5 py-[1px] mx-[1px]
+        ${interactive ? 'cursor-pointer' : ''}
         transition-all duration-150 font-latin
         ${categoryClasses(token.category)}
         ${ringClass}

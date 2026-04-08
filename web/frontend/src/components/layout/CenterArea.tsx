@@ -78,6 +78,7 @@ export default function CenterArea() {
     selectedMethod,
     selectedVariant,
     setAvailableMethods,
+    clearAllPins,
   } = useTokens()
 
   const tokenMapResult = useTokenMap(
@@ -87,11 +88,14 @@ export default function CenterArea() {
   )
 
   // Keep the AttributionMethodSelector's available list in sync with whatever
-  // pair is currently loaded.
+  // pair is currently loaded. Also clear any leftover pins from a previous
+  // session/pair so each new pair starts with hover-only behavior (no sticky
+  // lines from stale pinnedTokens state).
   const availableMethodsKey = tokenMapResult.data?.example_id
   useEffect(() => {
     setAvailableMethods(tokenMapResult.data?.available_methods ?? [])
-  }, [availableMethodsKey, tokenMapResult.data, setAvailableMethods])
+    clearAllPins()
+  }, [availableMethodsKey, tokenMapResult.data, setAvailableMethods, clearAllPins])
 
   // When an attribution method is selected and a matching matrix is present
   // in the token-map payload, swap similarity_matrix and recompute top_matches
