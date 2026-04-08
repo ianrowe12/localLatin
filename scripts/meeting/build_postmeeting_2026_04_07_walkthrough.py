@@ -686,12 +686,13 @@ def build_html() -> str:
     </ul>
   </div>
   <div class="card">
-    <h3>Where our variant could differ</h3>
+    <h3>Where our variant could differ (summary)</h3>
+    <p>Four candidate hooks identified &mdash; each explained in detail below.</p>
     <ul>
-      <li><strong>Distance kernel:</strong> use line/folio position from manuscript metadata, not just sequential token index &mdash; a real linguistic difference for fragmentary inputs</li>
-      <li><strong>Fidelity loss:</strong> tie to <em>ABTT-cleaned cosine to candidate vector</em>, not classification log-likelihood &mdash; aligns with our retrieval objective, not a synthetic classifier head</li>
-      <li><strong>Amortized prediction:</strong> drop per-instance optimization in favor of a small head that emits <code>(w, &sigma;)</code> from a forward pass &mdash; scales to all 2,238 unlabelled queries instead of a hand-curated set</li>
-      <li><strong>Cheap first pass:</strong> optimize a mask in cached-embedding space (no live model) as a sanity-check baseline before paying for the real thing</li>
+      <li><strong>Hook 1:</strong> Folio-position distance kernel</li>
+      <li><strong>Hook 2:</strong> Retrieval-aligned fidelity loss</li>
+      <li><strong>Hook 3:</strong> Amortized mask predictor</li>
+      <li><strong>Hook 4:</strong> Cached-embedding shortcut (diagnostic baseline)</li>
     </ul>
   </div>
 </div>
@@ -704,6 +705,124 @@ def build_html() -> str:
   <summary>Click to expand: full 336-line survey at <code>docs/research/attribution_paper_2025_input_mask.md</code></summary>
   <p>The full survey covers: citation, method summary (260 words), all core equations verified against the PDF, the IG comparison, implications for our pipeline (with the four variant-design hooks above), the limitations the authors admit (Section 7 of the paper), source code status, and a discrepancy log of every place the paper's equation numbering differs from common summaries.</p>
 </details>
+
+<!-- ================================================================ -->
+<h3>Background: what attribution methods answer</h3>
+
+<p>Our retrieval system gives an answer (&ldquo;these two Latin fragments match&rdquo;), but it doesn&rsquo;t tell you <strong>why</strong>. Which specific Latin words in Fragment A made the model think it&rsquo;s related to Fragment B? Was it a shared name? A formulaic phrase? A structural marker?</p>
+
+<p><strong>Attribution methods</strong> produce a score per token telling you &ldquo;this word mattered a lot&rdquo; or &ldquo;this word was irrelevant&rdquo; to the similarity decision. We already have 6 such methods (Section 5). The question is whether we can build a 7th that&rsquo;s <em>ours</em> &mdash; genuinely novel relative to MaRC.</p>
+
+<h3>What Integrated Gradients (our current main method) does</h3>
+
+<div class="card">
+  <ol>
+    <li>Take the real input: <code>&ldquo;EPISCOPUS DALMATIAE SCRIBIT&rdquo;</code></li>
+    <li>Create a &ldquo;blank&rdquo; version where every token is replaced with <code>[UNK]</code> (unknown)</li>
+    <li>Slowly interpolate from the blank to the real input in small steps</li>
+    <li>At each step, measure the gradient: &ldquo;how much did the similarity change when I moved this token a little closer to its real value?&rdquo;</li>
+    <li>Add up all those gradient measurements &rarr; that&rsquo;s each token&rsquo;s attribution score</li>
+  </ol>
+  <p><strong>The problem Professor identified:</strong> replacing tokens with <code>[UNK]</code> isn&rsquo;t truly &ldquo;removing&rdquo; them. The model might still infer what the <code>[UNK]</code> was from context. So IG&rsquo;s baseline isn&rsquo;t really a clean removal &mdash; it&rsquo;s a noisy substitution.</p>
+</div>
+
+<h3>What MaRC does differently</h3>
+
+<div class="card">
+  <p>MaRC&rsquo;s core idea: instead of substituting <code>[UNK]</code>, <strong>learn a mask</strong> &mdash; a number between 0 and 1 for each token &mdash; that tells you how much of each token to &ldquo;keep.&rdquo;</p>
+  <ul>
+    <li>Mask value = 1.0 &rarr; keep the token fully</li>
+    <li>Mask value = 0.0 &rarr; replace it entirely with padding</li>
+    <li>Mask value = 0.6 &rarr; blend: 60% real token + 40% padding</li>
+  </ul>
+  <p>Then it optimizes this mask to answer two questions simultaneously:</p>
+  <ul>
+    <li><strong>Sufficiency:</strong> if I keep ONLY the high-mask tokens, does the model still make the same prediction? (If yes &rarr; those tokens are <em>sufficient</em>)</li>
+    <li><strong>Comprehensiveness:</strong> if I REMOVE the high-mask tokens and keep only the low-mask ones, does the prediction collapse? (If yes &rarr; those tokens were <em>necessary</em>)</li>
+  </ul>
+  <p>This is arguably more principled than IG because it directly tests &ldquo;what happens if these tokens are gone?&rdquo; rather than measuring gradients along an abstract interpolation path.</p>
+  <p><strong>The catch:</strong> MaRC is expensive. It runs a full optimization loop (hundreds of forward passes through the model) for every single example. ~2&ndash;3 minutes per example on BERT. That&rsquo;s fine for 80 curated pairs but not for 2,238 unlabelled queries.</p>
+</div>
+
+<h3>Why we want our own variant</h3>
+
+<p>Professor had independently thought of the learned-mask idea before discovering MaRC. Since MaRC already published the core idea (ACL 2023), we can&rsquo;t claim &ldquo;learned masks for attribution&rdquo; as novel. But we CAN build a variant that does something MaRC doesn&rsquo;t, specific to our Latin manuscript retrieval setting. Below are the four candidate hooks &mdash; each is a way our method could differ from MaRC. Think of them as four knobs we could turn.</p>
+
+<!-- ================================================================ -->
+<h3>Hook 1: Folio-position distance kernel</h3>
+
+<div class="card">
+  <p><strong>What MaRC does:</strong> MaRC assumes tokens that are <em>nearby in the text</em> should get similar importance scores. It uses a Gaussian kernel that smooths neighboring tokens together: if token 5 is important, tokens 4 and 6 probably are too.</p>
+
+  <p><strong>The problem for Latin manuscripts:</strong> &ldquo;nearby in the text&rdquo; doesn&rsquo;t always mean &ldquo;nearby on the physical page.&rdquo; Manuscript fragments are often reconstructed from scattered physical locations. Two consecutive tokens in the digital transcription might come from different folios entirely.</p>
+
+  <p><strong>Our variant:</strong> Replace MaRC&rsquo;s sequential distance <code>d(i, j) = |i &minus; j|</code> with <strong>actual physical position metadata</strong> from the manuscript (line number, folio position). The smoothness constraint would then reflect real document structure, not just tokenizer order.</p>
+
+  <div class="finding green">
+    <strong>Novelty:</strong> No one has done position-aware attribution masks before because most NLP tasks don&rsquo;t have physical-location metadata. Latin manuscripts do. This is a genuine linguistic difference for fragmentary inputs.
+  </div>
+</div>
+
+<h3>Hook 2: Retrieval-aligned fidelity loss</h3>
+
+<div class="card">
+  <p><strong>What MaRC does:</strong> MaRC was built for <em>classification</em> (&ldquo;is this a positive or negative movie review?&rdquo;). Its loss function asks: &ldquo;does the masked input still get classified correctly?&rdquo;</p>
+
+  <p><strong>Our task is fundamentally different:</strong> We&rsquo;re not classifying a single text &mdash; we&rsquo;re measuring <em>similarity between two texts</em>. The question isn&rsquo;t &ldquo;which tokens matter for classifying this fragment?&rdquo; but &ldquo;which tokens in Fragment A make the model think it&rsquo;s related to Fragment B?&rdquo;</p>
+
+  <p><strong>Our variant:</strong> Tie the fidelity loss to <code>cosine_similarity(ABTT_clean(masked_query), candidate)</code>. The sufficiency test becomes: &ldquo;if I mask out some tokens from Fragment A and re-compute its embedding, does it still look similar to Fragment B?&rdquo; The comprehensiveness test becomes: &ldquo;if I mask out the important tokens, does similarity to Fragment B collapse?&rdquo;</p>
+
+  <div class="finding green">
+    <strong>Novelty:</strong> MaRC explains a classifier. We&rsquo;d be explaining a pairwise retrieval decision. The loss function changes fundamentally &mdash; from classification log-likelihood to ABTT-cleaned cosine similarity against a specific candidate.
+  </div>
+</div>
+
+<h3>Hook 3: Amortized mask predictor</h3>
+
+<div class="card">
+  <p><strong>What MaRC does:</strong> For every single input, MaRC runs a full optimization loop: hundreds of Adam steps, each requiring a forward and backward pass through the frozen model. ~2&ndash;3 minutes per BERT-base example. For our 80 curated pairs this is feasible; for the full 2,238 unlabelled query set it would take days.</p>
+
+  <p><strong>Our variant:</strong> Train a small neural network that <strong>predicts the mask in one forward pass</strong>. The idea: run MaRC the slow way on 80 examples, use those optimized masks as training data, then teach a fast predictor to approximate MaRC&rsquo;s output instantly. This turns per-instance optimization into inference.</p>
+
+  <p>Think of it like this: MaRC is the &ldquo;correct but slow&rdquo; answer. The amortized predictor is the &ldquo;approximate but instant&rdquo; answer. If the approximation is good enough, we can explain every query in the corpus, not just a hand-picked set.</p>
+
+  <div class="finding green">
+    <strong>Novelty:</strong> Amortization is a known technique in other ML areas (variational autoencoders, amortized inference), but hasn&rsquo;t been applied to MaRC-style attribution masks. It&rsquo;s also a real methodological departure &mdash; MaRC is per-instance by design.
+  </div>
+</div>
+
+<h3>Hook 4: Cached-embedding shortcut (diagnostic baseline)</h3>
+
+<div class="card">
+  <p><strong>What MaRC needs:</strong> A live model to push masked inputs through. Every Adam step re-runs the forward pass. This is what makes MaRC expensive &mdash; the model must be loaded and running.</p>
+
+  <p><strong>What we already have:</strong> Saved embeddings in NPZ files for every token in every fragment &mdash; the per-token hidden states from the model&rsquo;s intermediate layers. These are the inputs to our similarity computation.</p>
+
+  <p><strong>The shortcut:</strong> Skip the model entirely. Instead of masking tokens and re-running the model, just <strong>learn weights over the saved token embeddings</strong> before pooling them into a single fragment vector. If we give token 3 a high weight and token 7 a low weight, then pool, we get a &ldquo;masked&rdquo; vector &mdash; and we can check whether it&rsquo;s still similar to the candidate. No model needed. Runs in seconds.</p>
+
+  <p><strong>Why this matters even though it&rsquo;s simple:</strong> This isn&rsquo;t really a novel method &mdash; it&rsquo;s a <em>diagnostic baseline</em>. But it answers a crucial question:</p>
+
+  <div class="cols2">
+    <div class="finding green">
+      <strong>If the cheap version works almost as well as the expensive version</strong> &rarr; the attribution signal lives in the embeddings themselves, and expensive per-instance optimization is overkill. The &ldquo;explanation&rdquo; is already captured by the token-level vectors.
+    </div>
+    <div class="finding amber">
+      <strong>If the cheap version fails</strong> &rarr; the model&rsquo;s computation graph (attention patterns, cross-token interactions) is essential. This justifies the cost of Hooks 1&ndash;3 and tells us the explanation can&rsquo;t be read off the embeddings alone.
+    </div>
+  </div>
+</div>
+
+<h3>Suggested research order</h3>
+
+<div class="card">
+  <p>The four hooks aren&rsquo;t mutually exclusive, but they pull in different directions resource-wise. The natural order would be:</p>
+  <ol>
+    <li><strong>Start with Hook 4</strong> (cached-embedding shortcut) because it costs nothing and immediately tells us whether the signal is in the embeddings or the computation graph.</li>
+    <li><strong>Then build Hook 2</strong> (retrieval-aligned loss) because this is the most fundamental departure from MaRC &mdash; it changes <em>what</em> we&rsquo;re explaining from a classification to a retrieval decision. Applies regardless of everything else.</li>
+    <li><strong>Layer Hook 1 on top of Hook 2</strong> (folio-position kernel) if we want the &ldquo;novel for Latin manuscripts&rdquo; angle that no other NLP attribution paper has.</li>
+    <li><strong>Hook 3</strong> (amortized predictor) is a separate path &mdash; useful for scaling, but orthogonal to novelty. Best pursued after we have a working per-instance method to amortize.</li>
+  </ol>
+</div>
 """)
 
     # ==== Section 8: What's next + 3 decisions ====
