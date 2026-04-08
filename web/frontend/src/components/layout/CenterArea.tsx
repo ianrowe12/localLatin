@@ -75,7 +75,6 @@ export default function CenterArea() {
   }, [queryDetail.data?.tokens, candidateTokens])
 
   const {
-    applyAutoHighlights,
     selectedMethod,
     selectedVariant,
     setAvailableMethods,
@@ -125,59 +124,10 @@ export default function CenterArea() {
     return swapped
   }, [tokenMapResult.data, selectedMethod, selectedVariant, wordMatchMap])
 
-  // Auto-highlights: prefer the attribution-method-specific top_highlights
-  // when available, otherwise fall back to the legacy auto_highlights payload.
-  const autoHighlightKey = tokenMapResult.data?.example_id
-  useEffect(() => {
-    const data = tokenMapResult.data
-    if (!data) return
-
-    const selectedTop =
-      selectedMethod && data.top_highlights
-        ? data.top_highlights[selectedMethod]?.[selectedVariant]
-        : undefined
-    const selectedMatrix =
-      selectedMethod && data.pair_matrices
-        ? data.pair_matrices[selectedMethod]?.[selectedVariant]
-        : undefined
-
-    if (selectedTop && selectedMatrix) {
-      const highlights = selectedTop.query.map((qi) => {
-        const row = selectedMatrix[qi] ?? []
-        const indexed = row
-          .map((s, ci) => ({ candidate_idx: ci, score: s }))
-          .sort((a, b) => b.score - a.score)
-          .slice(0, 2)
-        return {
-          queryIdx: qi,
-          matches: indexed.map((m, rank) => ({
-            candidateIdx: m.candidate_idx,
-            score: m.score,
-            rank: rank + 1,
-          })),
-        }
-      })
-      applyAutoHighlights(highlights)
-      return
-    }
-
-    if (!data.auto_highlights) return
-    const highlights = data.auto_highlights.map((ah) => ({
-      queryIdx: ah.query_idx,
-      matches: ah.matches.map((m, rank) => ({
-        candidateIdx: m.candidate_idx,
-        score: m.score,
-        rank: rank + 1,
-      })),
-    }))
-    applyAutoHighlights(highlights)
-  }, [
-    autoHighlightKey,
-    tokenMapResult.data,
-    selectedMethod,
-    selectedVariant,
-    applyAutoHighlights,
-  ])
+  // Note: we deliberately do NOT auto-pin top-attribution tokens on pair entry.
+  // Connection lines are drawn purely on hover (see useConnectionState). Token
+  // background shading already encodes the selected attribution matrix via
+  // DocumentPanel's row/col-max derivation from the swapped similarity_matrix.
 
   const handleDrag = useCallback((newPercent: number) => {
     setSplitPercent(newPercent)
