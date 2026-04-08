@@ -101,6 +101,11 @@ export default function CenterArea() {
   // in the token-map payload, swap similarity_matrix and recompute top_matches
   // so DocumentPanel highlights reflect the selection. Otherwise fall through
   // to the raw token map (or the word-match fallback if the map is absent).
+  //
+  // Different attribution methods have wildly different value ranges (IG ~±0.03,
+  // BERTScore [0,1], OT ~[0,0.07], attention ~[0,0.015], DLA baseline ~[0,0.9]),
+  // so we take |value| and divide by the matrix max to put every method on a
+  // common [0,1] scale. DocumentPanel's existing thresholding expects this.
   const effectiveTokenMap = useMemo(() => {
     const data = tokenMapResult.data
     if (!data) return wordMatchMap
@@ -109,9 +114,25 @@ export default function CenterArea() {
         ? data.pair_matrices[selectedMethod]?.[selectedVariant]
         : undefined
     if (!selected) return data
-    const topMatches: Record<string, TopMatch[]> = {}
+
+    // Per-pair |max| over all cells; abs+normalize to [0,1].
+    let absMax = 0
     for (let qi = 0; qi < selected.length; qi++) {
       const row = selected[qi]
+      if (!row) continue
+      for (let ci = 0; ci < row.length; ci++) {
+        const v = Math.abs(row[ci])
+        if (v > absMax) absMax = v
+      }
+    }
+    const denom = absMax > 1e-12 ? absMax : 1
+    const normalized: number[][] = selected.map((row) =>
+      row ? row.map((s) => Math.abs(s) / denom) : [],
+    )
+
+    const topMatches: Record<string, TopMatch[]> = {}
+    for (let qi = 0; qi < normalized.length; qi++) {
+      const row = normalized[qi]
       if (!row) continue
       const indexed: TopMatch[] = row.map((s, ci) => ({
         candidate_idx: ci,
@@ -122,7 +143,7 @@ export default function CenterArea() {
     }
     const swapped: TokenMapResponse = {
       ...data,
-      similarity_matrix: selected,
+      similarity_matrix: normalized,
       top_matches: topMatches,
     }
     return swapped
