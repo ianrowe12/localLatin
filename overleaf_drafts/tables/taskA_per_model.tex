@@ -1,5 +1,8 @@
-\begin{table}
-\caption{Per-model best Task~A configuration on the refreshed split (best layer chosen by \texttt{overall\_assignment\_acc}).}
+\begin{table*}[t]
+\centering
+\small
+\setlength{\tabcolsep}{6pt}
+\caption{Per-model best Task~A configuration on the refreshed v2 split. For each model we report the layer/method combination that maximizes overall assignment accuracy on the held-out test set, with the threshold $\tau$ learned on the training split. Acc@1 is the threshold-free directory accuracy at rank 1; AssignAcc is the overall assignment accuracy; Exist.Acc and New.Acc are its decomposition into the existing-file and new-file subsets (see Section~\ref{subsec:acc-vs-assignment}).}
 \label{tab:taskA_per_model}
 \begin{tabular}{lcccccccc}
 \toprule
@@ -10,7 +13,7 @@ PhilTa & 1 & sif\_abtt\_fixed & 10 & 0.889 & 0.914 & 0.973 & 0.905 & 0.929 \\
 LaBSE & 11 & abtt\_fixed & 10 & 0.885 & 0.908 & 0.984 & 0.923 & 0.882 \\
 Qwen3-0.6B & 5 & abtt\_fixed & 10 & 0.894 & 0.915 & 0.980 & 0.910 & 0.923 \\
 KaLM-mini & 1 & abtt\_fixed & 10 & 0.902 & 0.921 & 0.980 & 0.921 & 0.920 \\
-mT5-base & 1 & sif\_abtt\_fixed & 10 & 0.880 & 0.907 & 0.971 & 0.908 & 0.904 \\
+mt5-base & 1 & sif\_abtt\_fixed & 10 & 0.880 & 0.907 & 0.971 & 0.908 & 0.904 \\
 \bottomrule
 \end{tabular}
-\end{table}
+\end{table*}

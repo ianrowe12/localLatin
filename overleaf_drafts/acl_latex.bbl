@@ -1,0 +1,59 @@
+\begin{thebibliography}{11}
+\providecommand{\natexlab}[1]{#1}
+
+\bibitem[{Arora et~al.(2017)Arora, Liang, and Ma}]{arora2017sif}
+Sanjeev Arora, Yingyu Liang, and Tengyu Ma. 2017.
+\newblock \href {https://openreview.net/forum?id=SyK00v5xx} {A simple but tough-to-beat baseline for sentence embeddings}.
+\newblock In \emph{Proceedings of the 5th International Conference on Learning Representations ({ICLR})}.
+
+\bibitem[{Brinner and Zarrie{\ss}(2023)}]{brinnerzarriess2023marc}
+Marc Brinner and Sina Zarrie{\ss}. 2023.
+\newblock Model interpretability and rationale extraction by input mask optimization.
+\newblock In \emph{Findings of the Association for Computational Linguistics: ACL 2023}, pages 13722--13744. Association for Computational Linguistics.
+
+\bibitem[{Feng et~al.(2022)Feng, Yang, Cer, Arivazhagan, and Wang}]{feng2022labse}
+Fangxiaoyu Feng, Yinfei Yang, Daniel Cer, Naveen Arivazhagan, and Wei Wang. 2022.
+\newblock \href {https://doi.org/10.18653/v1/2022.acl-long.62} {Language-agnostic {BERT} sentence embedding}.
+\newblock In \emph{Proceedings of the 60th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)}, pages 878--891. Association for Computational Linguistics.
+
+\bibitem[{Huang et~al.(2021)Huang, Tang, Zhong, Lu, Shou, Gong, Jiang, and Duan}]{huang2021whiteningbert}
+Junjie Huang, Duyu Tang, Wanjun Zhong, Shuai Lu, Linjun Shou, Ming Gong, Daxin Jiang, and Nan Duan. 2021.
+\newblock \href {https://doi.org/10.18653/v1/2021.findings-emnlp.23} {{W}hitening{BERT}: An easy unsupervised sentence embedding approach}.
+\newblock In \emph{Findings of the Association for Computational Linguistics: {EMNLP} 2021}, pages 238--244. Association for Computational Linguistics.
+
+\bibitem[{Lu et~al.(2025)Lu, Maharramov et~al.}]{kalm2025embedding}
+Xinyu Lu, Nurlan Maharramov, and 1 others. 2025.
+\newblock \href {https://huggingface.co/KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5} {{KaLM}-embedding: Superior training data brings a stronger embedding model}.
+\newblock Accessed: 2025.
+
+\bibitem[{Mu and Viswanath(2018)}]{mu2018allbutthetop}
+Jiaqi Mu and Pramod Viswanath. 2018.
+\newblock \href {https://openreview.net/forum?id=HkuGJ3kCb} {All-but-the-top: Simple and effective postprocessing for word representations}.
+\newblock In \emph{Proceedings of the 6th International Conference on Learning Representations ({ICLR})}.
+
+\bibitem[{{Qwen Team}(2025)}]{qwen3embedding2025}
+{Qwen Team}. 2025.
+\newblock \href {https://huggingface.co/Qwen/Qwen3-Embedding-0.6B} {Qwen3-embedding: Advancing text embedding and reranking through foundation models}.
+\newblock Accessed: 2025.
+
+\bibitem[{Riemenschneider and Frank(2023)}]{riemenschneider2023lata}
+Frederick Riemenschneider and Anette Frank. 2023.
+\newblock \href {https://doi.org/10.18653/v1/2023.acl-long.846} {Exploring large language models for classical philology}.
+\newblock In \emph{Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)}, pages 15181--15199. Association for Computational Linguistics.
+
+\bibitem[{Su et~al.(2021)Su, Cao, Liu, and Ou}]{su2021whitening}
+Jianlin Su, Jiarun Cao, Weijie Liu, and Yangyiwen Ou. 2021.
+\newblock \href {https://arxiv.org/abs/2103.15316} {Whitening sentence representations for better semantics and faster retrieval}.
+\newblock In \emph{Proceedings of the 59th Annual Meeting of the Association for Computational Linguistics and the 11th International Joint Conference on Natural Language Processing (Volume 1: Long Papers)}. Association for Computational Linguistics.
+
+\bibitem[{Sundararajan et~al.(2017)Sundararajan, Taly, and Yan}]{sundararajan2017axiomatic}
+Mukund Sundararajan, Ankur Taly, and Qiqi Yan. 2017.
+\newblock Axiomatic attribution for deep networks.
+\newblock In \emph{Proceedings of the 34th International Conference on Machine Learning ({ICML})}, pages 3319--3328. PMLR.
+
+\bibitem[{Xue et~al.(2021)Xue, Constant, Roberts, Kale, Al-Rfou, Siddhant, Barua, and Raffel}]{xue2021mt5}
+Linting Xue, Noah Constant, Adam Roberts, Mihir Kale, Rami Al-Rfou, Aditya Siddhant, Aditya Barua, and Colin Raffel. 2021.
+\newblock \href {https://doi.org/10.18653/v1/2021.naacl-main.41} {m{T5}: A massively multilingual pre-trained text-to-text transformer}.
+\newblock In \emph{Proceedings of the 2021 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies}, pages 483--498. Association for Computational Linguistics.
+
+\end{thebibliography}
