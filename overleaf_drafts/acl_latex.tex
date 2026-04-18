@@ -163,9 +163,8 @@ This enables an inspectable, scholar-facing workflow in which retrieved matches 
 
 In summary, this paper makes the following contributions:
 (1) we introduce a new benchmark for strict semantic matching in Medieval Latin canon law, including both pairwise and open-set formulations;
-(2) we provide a layerwise analysis revealing a previously unreported mid-layer collapse in Latin-adapted T5 representations under standard pooling;
-(3) we show that a simple train-free geometric correction restores semantic separability and improves robustness across models and layers, and verify that the dip-and-repair pattern transfers qualitatively to a second, sparser Medieval Latin manuscript collection (decritals); and
-(4) we demonstrate that improved representation geometry leads to more reliable instance-level attribution, enabling an inspectable semantic matching pipeline for humanities scholars.
+(2) we provide a layerwise analysis revealing a previously unreported mid-layer collapse in Latin-adapted T5 representations under standard pooling; and
+(3) we show that a simple train-free geometric correction restores semantic separability across layers and models, and that the corrected representations yield sharper, more localized integrated-gradient attributions, supporting an inspectable semantic matching pipeline for humanities scholars.
 
 
 
@@ -285,6 +284,8 @@ The query-vs-directory variant (\texttt{qvd\_*} columns in \texttt{phase\_resubm
 
 \section{Results}
 
+\subsection{Task A: Duplicate Detection}
+
 \input{tables/taskA_per_model}
 
 Table~\ref{tab:taskA_per_model} reports the best per-model Task~A configuration on the refreshed split. All six models land within 2.2 points of each other on directory accuracy at rank~1 and within 1.4 points on overall assignment accuracy, with \texttt{sif\_abtt\_fixed} and \texttt{abtt\_fixed} sharing best-method status across the model set. The remainder of this section unpacks where these numbers come from layer by layer.
@@ -321,7 +322,7 @@ Figure~\ref{fig:density} shows the same pattern from another angle. It compares 
 
 The cosine-gap plots tell the same story in a more compact way. In LaTa and PhilTa, the baseline gap nearly disappears in the dip region. ABTT restores a clear positive gap across all layers.
 
-\subsection{Task B: Simulated Human Selection}
+\subsection{Task B: Simulated Human Selection Accuracy}
 
 We next return to the directory-assignment setting that motivates deployment. For each query, the system scores every directory by its best document match and then presents the top five options, along with the implicit \texttt{\_\_NEW\_\_} fallback. During evaluation, the ``human'' is simulated by selecting the labeled directory whenever it appears in the shortlist. Table~\ref{tab:taskb} reports cumulative top-$K$ accuracy: the fraction of queries whose labeled directory appears within the top $K$ options, for $K = 1, \ldots, 5$.
 
@@ -341,7 +342,7 @@ KaLM-mini  & 89.4 $\pm$ 0.5 & 95.1 $\pm$ 0.4 & 96.4 $\pm$ 0.2 & 96.9 $\pm$ 0.3 &
 mt5-base   & 89.8 $\pm$ 0.4 & 95.6 $\pm$ 0.5 & 96.6 $\pm$ 0.3 & 96.9 $\pm$ 0.2 & 97.2 $\pm$ 0.2 \\
 \bottomrule
 \end{tabular}
-\caption{Cumulative top-$K$ accuracy for Task B across the six models, reported as mean $\pm$ standard deviation over $M=5$ query/reference reseedings at a fixed v2 train/test split. Each cell gives the percentage of test queries whose labeled directory appears within the model's top~$K$ options at its best layer/method configuration. All models exceed 89\% by Top-1 and 95\% by Top-2.}
+\caption{Cumulative top-$K$ accuracy for Task B across the six models, reported as mean $\pm$ standard deviation over $M=5$ query/reference reseedings at a fixed v2 train/test split. Each cell gives the percentage of test queries whose labeled directory appears within the model's top~$K$ options at its best layer/method configuration. All models exceed 89\% by Top-1 and 95\% by Top-2. Only ABTT post-processing is reported in the main paper; SIF-only, PCA whitening, and SIF+ABTT are reported in the appendix.}
 \label{tab:taskb}
 \end{table*}
 
@@ -369,35 +370,6 @@ The pairwise heatmap carries most of the interpretive weight. It is meant to hel
 
 The attention map provides extra context around the same query and candidate pair. It is not the explanation itself, and it is not meant to make a before-and-after claim about ABTT.
 
-\subsection{Cross-Dataset Validation: Decritals}
-\label{subsec:decritals}
-
-To check that our findings are not an artifact of a single corpus, we re-ran the same six models, the same extraction pipeline, and the same v2 split protocol on \emph{decritals}, a second Medieval Latin manuscript collection. Decritals is sparser than canon: of 226 test files, only 191 have a same-directory partner in test, leaving 35 ``new'' files and a positive class that is small in absolute terms.
-
-\begin{table}[t]
-\centering
-\small
-\setlength{\tabcolsep}{4pt}
-\begin{tabular}{lccc}
-\toprule
-Model & Acc@1 & AssignAcc & TaskB Acc@1 \\
-\midrule
-LaTa       & 0.535 & 0.845 & 0.466 $\pm$ 0.022 \\
-PhilTa     & 0.544 & 0.845 & 0.471 $\pm$ 0.034 \\
-LaBSE      & 0.527 & 0.845 & 0.436 $\pm$ 0.039 \\
-Qwen3-0.6B & 0.531 & 0.845 & 0.435 $\pm$ 0.018 \\
-KaLM-mini  & 0.535 & \textbf{0.850} & 0.428 $\pm$ 0.028 \\
-mt5-base   & 0.500 & 0.845 & 0.406 $\pm$ 0.029 \\
-\bottomrule
-\end{tabular}
-\caption{Decritals cross-dataset results. Acc@1 is the threshold-free directory accuracy at rank 1 on Task~A. AssignAcc is the overall assignment accuracy at the best per-model layer. TaskB~Acc@1 reports the directory rank-1 accuracy from the M=5 query/reference reseeding (mean $\pm$ std).}
-\label{tab:decritals}
-\end{table}
-
-Two patterns are worth flagging in Table~\ref{tab:decritals}. First, five of six models converge to an overall assignment accuracy of exactly 0.845, with KaLM-mini one prediction beyond at 0.850. The 0.845 number is not a coincidence: $191/226 = 0.8451$ is the rate of the all-existing degenerate classifier on this test set. With only 35 ``new'' files in the test set, the F$_1$-optimal threshold $\tau$ collapses toward the lower end of the cosine range, and the assignment decision degenerates to ``always existing''. This is exactly the failure mode that Section~\ref{subsec:acc-vs-assignment} anticipated: when $\tau$ is poorly calibrated against a sparse positive set, assignment accuracy and rank-1 directory accuracy diverge sharply, and the threshold-free Acc@1 is the more informative metric.
-
-Second, threshold-free Acc@1 itself drops by 0.34--0.38 absolute from canon to decritals across all six models, with no model breaking out of the 0.500--0.544 band. The relative ordering shifts only mildly (PhilTa edges out the rest, mt5-base trails); the much larger movement is the collective drop in absolute retrieval quality. This says that the binding bottleneck on decritals is retrieval quality on a harder collection, not threshold calibration: even on the metric that is immune to $\tau$, every model loses roughly the same large fraction of its canon performance. The qualitative dip-and-repair pattern from canon does survive the transfer (best-layer choices for ABTT-cleaned representations still improve over baselines on a per-layer basis), but the absolute floor moves down enough that the canon-level deployment story does not extend to decritals without further work.
-
 \section{Discussion}
 
 PCA whitening has worked well for English sentence similarity \citep{su2021whitening, huang2021whiteningbert}, but it performs poorly here. A plausible reason is that whitening removes variance that still helps separate equivalent from non-equivalent Latin legal passages. In this corpus, the original variance structure seems to carry useful signal rather than just noise.
@@ -411,7 +383,7 @@ The explanation component is intentionally local. The derived pair matrix and th
 
 \section*{Limitations}
 
-Our study covers one domain, medieval canon law, and one language, Latin. The 1,705-fragment corpus is large for this field, but it is still small by current NLP standards. We test six models, and models outside this set may behave differently. ABTT also needs enough unlabeled documents to estimate principal components well, and we have not tested it in settings with only a few hundred texts or fewer. The explanation analysis is local and example-based, and the human-in-the-loop results are simulated from ground truth rather than validated through a live user study. As Section~\ref{subsec:decritals} shows, transferring the same protocol to a sparser collection (decritals) preserves the qualitative dip-and-repair behaviour but degrades absolute retrieval quality and collapses the F$_1$-tuned threshold to a degenerate all-existing baseline; the cross-collection generalization story is therefore qualified rather than complete.
+Our study covers one domain, medieval canon law, and one language, Latin. The 1,705-fragment corpus is large for this field, but it is still small by current NLP standards. We test six models, and models outside this set may behave differently. ABTT also needs enough unlabeled documents to estimate principal components well, and we have not tested it in settings with only a few hundred texts or fewer. The explanation analysis is local and example-based, and the human-in-the-loop evaluation is a simulation: we assume the labelled directory would be chosen whenever it appears in the model's shortlist, which captures ranking quality but not the judgment load of a working scholar.
 
 Our example-level attributions use vanilla integrated gradients, which produces a single token saliency vector per sequence and does not jointly reason about the query--candidate pair. Following recent learned-mask attribution work such as MaRC~\citep{brinnerzarriess2023marc}, we plan to jointly optimize soft masks on both passages against the ABTT-cleaned cosine similarity, tying the attribution objective directly to the same geometry the retrieval pipeline relies on. Empirical evaluation of this learned-mask variant is left to future work.
 
