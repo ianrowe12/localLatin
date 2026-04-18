@@ -48,7 +48,7 @@ def parse_args() -> argparse.Namespace:
         help="Representation type to extract.",
     )
     parser.add_argument("--layers", default="", help="Layer list, e.g. 0-12 or 0,6,12.")
-    parser.add_argument("--pooling", choices=["mean", "sif"], default="mean")
+    parser.add_argument("--pooling", choices=["mean", "lasttok", "sif"], default="mean")
     parser.add_argument(
         "--token_filter",
         choices=list(TOKEN_FILTER_CHOICES),
@@ -127,6 +127,18 @@ def pool_embeddings(
         mask = keep_mask.unsqueeze(-1)
         denom = keep_mask.sum(dim=1, keepdim=True).clamp(min=1.0)
         return (hidden * mask).sum(dim=1) / denom
+    elif pooling == "lasttok":
+        batch_idx = torch.arange(hidden.size(0), device=hidden.device)
+        seq_len = hidden.size(1)
+        positions = torch.arange(seq_len, device=hidden.device).unsqueeze(0).expand_as(keep_mask)
+        filtered_last = torch.where(
+            keep_mask > 0,
+            positions,
+            torch.full_like(positions, -1),
+        ).max(dim=1).values
+        fallback = attention_mask.sum(dim=1) - 1
+        lengths = torch.where(filtered_last >= 0, filtered_last, fallback).clamp(min=0)
+        return hidden[batch_idx, lengths]
     elif pooling == "sif":
         if special_ids is None:
             special_ids = set()
@@ -371,7 +383,12 @@ def main() -> None:
     meta.to_csv(run_dir / "meta.csv", index=False)
 
     repr_prefix = "hidden" if args.repr == "hidden" else "ffn_int"
-    suffix = "" if args.pooling == "mean" else "_sif"
+    if args.pooling == "mean":
+        suffix = ""
+    elif args.pooling == "lasttok":
+        suffix = "_lasttok"
+    else:
+        suffix = "_sif"
 
     for layer_num in layers:
         print(f"Extracting {args.repr} layer {layer_num} ({args.pooling})...")
