@@ -321,6 +321,24 @@ Figure~\ref{fig:density} shows the same pattern from another angle. It compares 
 
 The cosine-gap plots tell the same story in a more compact way. In LaTa and PhilTa, the baseline gap nearly disappears in the dip region. ABTT restores a clear positive gap across all layers.
 
+\subsection{Cluster Geometry}
+
+Cosine-gap and AUCROC curves summarize separability in aggregate. Two-dimensional projections make the geometric effect of ABTT visible directly. Figures~\ref{fig:tsne} and~\ref{fig:umap} show t-SNE~\citep{vandermaaten2008tsne} and UMAP~\citep{mcinnes2018umap} embeddings of the 1{,}705 labelled fragments at each model's best layer. To keep the visualization legible, we highlight the twelve most-populated directories with distinct colors; other winnable fragments appear in mid gray and singletons in light gray. Under whitening, highlighted fragments are scattered across the plane regardless of their directory; under baseline and SIF-only pooling, clusters form partially but colored points often split into separate sub-groups. Under SIF+ABTT, same-color points consistently sit together as tight, well-separated clusters. The pattern holds across both projection algorithms, indicating that the tightening reflects the post-processed embedding geometry rather than an artifact of either dimensionality-reduction method. Silhouette scores computed in the 2D projection space on winnable fragments corroborate this: SIF+ABTT yields the highest score for every (model, projection) combination, while whitening collapses to values near $-0.5$ across the board.
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=\textwidth]{fig_tsne_per_model.pdf}
+\caption{t-SNE projections of the 1{,}705 labelled fragments at each model's best layer (rows), for four post-processing methods (columns). The twelve most-populated directories are highlighted in distinct colors; other winnable fragments appear in mid gray and singleton fragments in light gray. SIF+ABTT produces visibly tighter same-color clusters than baseline, SIF-only, or whitening.}
+\label{fig:tsne}
+\end{figure*}
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=\textwidth]{fig_umap_per_model.pdf}
+\caption{UMAP projections, same configuration as Figure~\ref{fig:tsne}. The per-method separation pattern is reproduced under a different dimensionality-reduction algorithm, supporting that the cluster-tightening is a property of the embedding geometry rather than of the projection method.}
+\label{fig:umap}
+\end{figure*}
+
 \subsection{Task B: Simulated Human Selection}
 
 We next return to the directory-assignment setting that motivates deployment. For each query, the system scores every directory by its best document match and then presents the top five options, along with the implicit \texttt{\_\_NEW\_\_} fallback. During evaluation, the ``human'' is simulated by selecting the labeled directory whenever it appears in the shortlist. Table~\ref{tab:taskb} reports cumulative top-$K$ accuracy: the fraction of queries whose labeled directory appears within the top $K$ options, for $K = 1, \ldots, 5$.
