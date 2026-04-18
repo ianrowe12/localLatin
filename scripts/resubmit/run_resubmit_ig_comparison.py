@@ -128,9 +128,21 @@ def build_ig_pair_matrix(
     q_ig: np.ndarray,
     c_ig: np.ndarray,
 ) -> np.ndarray:
-    """cos(q_tok, c_tok) * sqrt(|IG_q| * |IG_c|) * sign(IG_q) * sign(IG_c)."""
+    """cos(q_tok, c_tok) * sqrt(|IG_q| * |IG_c|) * sign(IG_q) * sign(IG_c).
+
+    IG vectors are L1-normalized per sequence before the outer product so
+    that the pair matrix reflects the *pattern* of attribution rather than
+    its absolute magnitude. Without this, a single rogue-aligned token in
+    the raw (pre-ABTT) space can dominate |q_ig|, collapsing the baseline
+    panel to one hot cell while spreading the ABTT panel across many
+    moderate cells -- reversing the narrative visually.
+    """
     cos = cosine_matrix(q_hidden, c_hidden)
-    weight = np.sqrt(np.abs(q_ig)[:, None] * np.abs(c_ig)[None, :])
+    q_abs = np.abs(q_ig)
+    c_abs = np.abs(c_ig)
+    q_norm = q_abs / (q_abs.sum() + 1e-12)
+    c_norm = c_abs / (c_abs.sum() + 1e-12)
+    weight = np.sqrt(q_norm[:, None] * c_norm[None, :])
     sign = np.sign(q_ig)[:, None] * np.sign(c_ig)[None, :]
     return cos * weight * sign
 

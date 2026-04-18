@@ -85,10 +85,16 @@ def build_pair_matrix(
     query_ig: np.ndarray,
     candidate_ig: np.ndarray,
 ) -> np.ndarray:
+    # L1-normalize IG per sequence before the outer product so the matrix
+    # reflects attribution pattern rather than absolute magnitude. Without
+    # this, a single rogue-aligned token in raw space dominates |q_ig|
+    # and collapses the baseline panel to one hot cell.
     cos = cosine_matrix(query_hidden, candidate_hidden)
-    weight = np.sqrt(
-        np.abs(query_ig)[:, None] * np.abs(candidate_ig)[None, :]
-    )
+    q_abs = np.abs(query_ig)
+    c_abs = np.abs(candidate_ig)
+    q_norm = q_abs / (q_abs.sum() + 1e-12)
+    c_norm = c_abs / (c_abs.sum() + 1e-12)
+    weight = np.sqrt(q_norm[:, None] * c_norm[None, :])
     sign = np.sign(query_ig)[:, None] * np.sign(candidate_ig)[None, :]
     return cos * weight * sign
 
