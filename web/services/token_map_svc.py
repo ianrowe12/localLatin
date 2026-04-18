@@ -201,10 +201,21 @@ def load_token_map(store: DataStore, example_id: int) -> TokenMapResponse | None
     c_ig_base = data.get("candidate_ig_baseline", np.zeros(c_len))
     c_ig_abtt = data.get("candidate_ig_abtt", np.zeros(c_len))
 
-    # IG-weighted matrix (from visualization pipeline logic)
+    # IG-weighted matrix. Prefer the persisted pair_matrix_ig_abtt (already
+    # computed with ABTT-cleaned hidden states and L1-normalized IG weights
+    # by persist_attribution_methods.py) so this view stays consistent with
+    # the slide and paper figures. Fall back to an inline, L1-normalized
+    # computation if the persisted key is missing.
     ig_weighted = None
-    if "query_ig_abtt" in data and "candidate_ig_abtt" in data:
-        weight = np.sqrt(np.abs(q_ig_abtt[:q_len, None]) * np.abs(c_ig_abtt[None, :c_len]))
+    if "pair_matrix_ig_abtt" in data:
+        mat = np.asarray(data["pair_matrix_ig_abtt"], dtype=np.float32)[:q_len, :c_len]
+        ig_weighted = mat.tolist()
+    elif "query_ig_abtt" in data and "candidate_ig_abtt" in data:
+        q_abs = np.abs(q_ig_abtt[:q_len])
+        c_abs = np.abs(c_ig_abtt[:c_len])
+        q_norm = q_abs / (q_abs.sum() + 1e-12)
+        c_norm = c_abs / (c_abs.sum() + 1e-12)
+        weight = np.sqrt(q_norm[:, None] * c_norm[None, :])
         sign = np.sign(q_ig_abtt[:q_len, None]) * np.sign(c_ig_abtt[None, :c_len])
         cos = np.array(sim_matrix)
         ig_weighted = (cos * weight * sign).tolist()
