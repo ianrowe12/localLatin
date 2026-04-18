@@ -1,0 +1,25 @@
+\begin{table*}[t]
+\centering
+\small
+\setlength{\tabcolsep}{6pt}
+\caption{Mean vs.\ last-token pooling on the balanced split, restricted to ABTT post-processing. Best layer per (model, pooling) selected by Task A assignment accuracy. Task B metrics (Acc@1, cosine gap) reported at that same layer.}
+\label{tab:lasttok_comparison}
+\begin{tabular}{llccccc}
+\toprule
+Model & Pool & Layer & Method & Assign Acc & Acc@1 & Gap \\
+\midrule
+LaTa & Mean & 1 & ABTT (D=10) & 0.909 & 0.880 & 0.565 \\
+LaTa & LastTok & 12 & ABTT (D=10) & 0.676 & 0.425 & 0.276 \\
+PhilTa & Mean & 1 & ABTT (D=10) & 0.911 & 0.883 & 0.573 \\
+PhilTa & LastTok & 9 & ABTT (D=10) & 0.604 & 0.385 & 0.200 \\
+LaBSE & Mean & 11 & ABTT (D=10) & 0.908 & 0.885 & 0.610 \\
+LaBSE & LastTok & 12 & ABTT (D=10) & 0.895 & 0.871 & 0.586 \\
+Qwen3-0.6B & Mean & 5 & ABTT (D=10) & 0.915 & 0.894 & 0.545 \\
+Qwen3-0.6B & LastTok & 27 & ABTT (D=10) & 0.907 & 0.885 & 0.562 \\
+KaLM-mini & Mean & 1 & ABTT (D=10) & 0.921 & 0.902 & 0.568 \\
+KaLM-mini & LastTok & 24 & ABTT (D=10) & 0.875 & 0.847 & 0.483 \\
+Qwen3-8B & Mean & 1 & ABTT (D=10) & 0.924 & 0.897 & 0.543 \\
+Qwen3-8B & LastTok & 35 & ABTT (D=10) & 0.910 & 0.892 & 0.642 \\
+\bottomrule
+\end{tabular}
+\end{table*}

@@ -243,7 +243,7 @@ We evaluate six pre-trained models from three architecture families:
 
 \subsection{Embedding Extraction}
 
-We extract hidden-state representations from every transformer block, starting at layer 1 and ending at the final block, while skipping layer 0, the static embedding table. LaTa, PhilTa, LaBSE, and mt5-base each contribute 12 layers. Qwen3-0.6B contributes 28, and KaLM-mini contributes 24. Token representations at each layer are then pooled into a single sentence vector, either by plain mean pooling or by SIF weighting.
+We extract hidden-state representations from every transformer block, starting at layer 1 and ending at the final block, while skipping layer 0, the static embedding table. LaTa, PhilTa, LaBSE, and mt5-base each contribute 12 layers. Qwen3-0.6B contributes 28, and KaLM-mini contributes 24. Token representations at each layer are then pooled into a single sentence vector, either by plain mean pooling or by SIF weighting. For the decoder-only models, last-token pooling is another natural choice; we compare it against mean pooling under ABTT post-processing across all six models in Appendix~\ref{app:lasttok}.
 
 For the paper-facing pooling baseline, we remove only tokenizer artifacts with no lexical content, such as whitespace, padding, or tokenizer-prefix-only tokens. We keep punctuation and numerals in the pooled representations. In the explanation figures, though, we always show the original decoded tokens rather than filtered display tokens.
 
@@ -414,5 +414,14 @@ Our study covers one domain, medieval canon law, and one language, Latin. The 1,
 Our example-level attributions use vanilla integrated gradients, which produces a single token saliency vector per sequence and does not jointly reason about the query--candidate pair. Following recent learned-mask attribution work such as MaRC~\citep{brinnerzarriess2023marc}, we plan to jointly optimize soft masks on both passages against the ABTT-cleaned cosine similarity, tying the attribution objective directly to the same geometry the retrieval pipeline relies on. Empirical evaluation of this learned-mask variant is left to future work.
 
 \bibliography{custom}
+
+\appendix
+
+\section{Last-Token vs.\ Mean Pooling}
+\label{app:lasttok}
+
+A natural question for the decoder-only models (Qwen3-0.6B, KaLM-mini, Qwen3-8B) is whether last-token pooling, the canonical choice for this family, would change our picture. To answer it directly, we re-run the ABTT post-processing pipeline on all six models using last-token pooling in place of mean pooling, keeping every other hyperparameter and the same train/test split fixed. We restrict the comparison to the two ABTT variants (fixed $D{=}10$ and per-layer tuned $D$) that carry the main-text analysis; SIF weighting is not defined for single-token pooling and is therefore omitted. Table~\ref{tab:lasttok_comparison} reports, for each (model, pooling) pair, the layer that maximizes Task A assignment accuracy together with Task B directory accuracy at rank 1 and the cosine gap at that same layer. Mean pooling outperforms last-token pooling on assignment accuracy for every model; the gap is largest on the two Latin T5 encoders (LaTa and PhilTa, where last-token pooling loses roughly 23--31 accuracy points) and narrows to 1--5 points on LaBSE and the decoder-only models (Qwen3-0.6B, KaLM-mini, Qwen3-8B), confirming that mean pooling is the safer default for this retrieval pipeline even on the decoder-only architectures where last-token pooling is the more conventional choice.
+
+\input{tables/appendix_lasttok_comparison}
 
 \end{document}

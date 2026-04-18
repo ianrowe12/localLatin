@@ -62,8 +62,21 @@ def parse_args() -> argparse.Namespace:
         help="Subdirectory to use for hidden/sif embeddings.",
     )
     parser.add_argument(
+        "--hidden_lasttok_subdir",
+        default="hidden_lasttok",
+        help="Subdirectory to use for hidden/lasttok embeddings.",
+    )
+    parser.add_argument(
         "--D_values", default="1,2,3,5,7,10",
         help="Comma-separated D values for ABTT sweep.",
+    )
+    parser.add_argument(
+        "--poolings", default="mean,sif",
+        help="Comma-separated pooling variants to evaluate.",
+    )
+    parser.add_argument(
+        "--methods", default="",
+        help="Comma-separated method filter (empty=all). Intersects with pooling-specific method list.",
     )
     parser.add_argument("--sif_a", type=float, default=0.001)
     parser.add_argument(
@@ -77,6 +90,16 @@ def model_slug(name: str) -> str:
     return name.replace("/", "_")
 
 
+def _pooling_suffix(pooling: str) -> str:
+    if pooling == "mean":
+        return ""
+    if pooling == "lasttok":
+        return "_lasttok"
+    if pooling == "sif":
+        return "_sif"
+    raise ValueError(f"Unknown pooling: {pooling}")
+
+
 def find_embedding_file(
     runs_root: Path,
     slug: str,
@@ -86,7 +109,7 @@ def find_embedding_file(
     subdir_override: Optional[str] = None,
 ) -> Optional[Path]:
     """Locate the raw (un-normalized) embedding .npy file."""
-    suffix = "" if pooling == "mean" else "_sif"
+    suffix = _pooling_suffix(pooling)
     fname = f"{repr_name}_layer{layer}_embeddings{suffix}.npy"
     subdir = subdir_override or f"{repr_name}_{pooling}"
     candidate = runs_root / "phase9_bases" / slug / subdir / fname
@@ -106,7 +129,7 @@ def discover_layers(
     subdir_override: Optional[str] = None,
 ) -> List[int]:
     """Find which layers have embeddings extracted, excluding layer 0."""
-    suffix = "" if pooling == "mean" else "_sif"
+    suffix = _pooling_suffix(pooling)
     pattern = f"{repr_name}_layer*_embeddings{suffix}.npy"
     subdir = subdir_override or f"{repr_name}_{pooling}"
     base_dir = runs_root / "phase9_bases" / slug / subdir
@@ -458,6 +481,7 @@ def main() -> None:
     encoder_models = [m.strip() for m in args.encoder_models.split(",") if m.strip()]
     D_values = [int(d.strip()) for d in args.D_values.split(",")]
     requested_reprs = {r.strip() for r in args.reprs.split(",") if r.strip()}
+    poolings = [p.strip() for p in args.poolings.split(",") if p.strip()]
 
     results: List[Dict] = []
 
@@ -483,12 +507,15 @@ def main() -> None:
         print(f"{'='*60}")
 
         for repr_name in reprs:
-            for pooling in ["mean", "sif"]:
+            for pooling in poolings:
                 subdir_override = None
                 if repr_name == "hidden":
-                    subdir_override = (
-                        args.hidden_mean_subdir if pooling == "mean" else args.hidden_sif_subdir
-                    )
+                    if pooling == "mean":
+                        subdir_override = args.hidden_mean_subdir
+                    elif pooling == "sif":
+                        subdir_override = args.hidden_sif_subdir
+                    elif pooling == "lasttok":
+                        subdir_override = args.hidden_lasttok_subdir
                 layers = discover_layers(
                     runs_root,
                     slug,
@@ -534,10 +561,13 @@ def main() -> None:
                         dist_saved.add(model_name)
 
                     # Determine which methods to run based on pooling
-                    if pooling == "mean":
+                    if pooling in ("mean", "lasttok"):
                         methods = ["baseline", "abtt_fixed", "abtt_optimal", "whitening"]
                     else:
                         methods = ["sif_only", "sif_abtt_fixed", "sif_abtt_optimal"]
+                    if args.methods.strip():
+                        wanted = {m.strip() for m in args.methods.split(",") if m.strip()}
+                        methods = [m for m in methods if m in wanted]
 
                     for method in methods:
                         print(f"    Layer {layer}, {method}...", end=" ", flush=True)
