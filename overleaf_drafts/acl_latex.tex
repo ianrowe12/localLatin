@@ -9,6 +9,8 @@
 \usepackage{times}
 \usepackage{latexsym}
 \usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{makecell}
 \usepackage{multirow}
 \usepackage{amssymb} 
 \usepackage{amsmath} 
@@ -285,9 +287,13 @@ The query-vs-directory variant (\texttt{qvd\_*} columns in \texttt{phase\_resubm
 
 \section{Results}
 
-\input{tables/taskA_per_model}
+\subsection{Task A: Directory Assignment}
 
-Table~\ref{tab:taskA_per_model} reports the best per-model Task~A configuration on the refreshed split. All six models land within 2.2 points of each other on directory accuracy at rank~1 and within 1.4 points on overall assignment accuracy, with \texttt{sif\_abtt\_fixed} and \texttt{abtt\_fixed} sharing best-method status across the model set. The remainder of this section unpacks where these numbers come from layer by layer.
+\onecolumn
+\input{tables/taskA_per_model}
+\twocolumn
+
+Table~\ref{tab:taskA_per_layer} reports per-layer Task~A assignment metrics for each model, comparing the uncorrected \texttt{baseline} (mean pooling) against \texttt{sif\_abtt\_optimal} (SIF weighting plus ABTT with $D$ tuned per layer on the train split). Bolded rows mark each model's best layer by ABTT overall assignment accuracy. The two numbers drift apart sharply in the middle layers of the Latin T5 encoders (LaTa, PhilTa) and in \texttt{mt5-base}, and much less in LaBSE, Qwen3-0.6B, and KaLM-mini. The remainder of this section unpacks where these numbers come from layer by layer.
 
 \subsection{The Mid-Layer Dip}
 
@@ -323,7 +329,11 @@ The cosine-gap plots tell the same story in a more compact way. In LaTa and Phil
 
 \subsection{Task B: Simulated Human Selection}
 
-We next return to the directory-assignment setting that motivates deployment. For each query, the system scores every directory by its best document match and then presents the top five options, along with the implicit \texttt{\_\_NEW\_\_} fallback. During evaluation, the ``human'' is simulated by selecting the labeled directory whenever it appears in the shortlist. Table~\ref{tab:taskb} reports cumulative top-$K$ accuracy: the fraction of queries whose labeled directory appears within the top $K$ options, for $K = 1, \ldots, 5$.
+\onecolumn
+\input{tables/taskB_per_layer}
+\twocolumn
+
+We next return to the directory-assignment setting that motivates deployment. For each query, the system scores every directory by its best document match and then presents the top five options, along with the implicit \texttt{\_\_NEW\_\_} fallback. During evaluation, the ``human'' is simulated by selecting the labeled directory whenever it appears in the shortlist. Table~\ref{tab:taskB_per_layer} reports per-layer Acc@1 and the existing-vs-new decomposition, averaged over $M=5$ query/reference reseedings. Table~\ref{tab:taskb} then reports cumulative top-$K$ accuracy at each model's best layer: the fraction of queries whose labeled directory appears within the top $K$ options, for $K = 1, \ldots, 5$.
 
 \begin{table*}[t]
 \centering
