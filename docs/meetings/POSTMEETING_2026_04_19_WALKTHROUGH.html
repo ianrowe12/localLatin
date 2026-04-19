@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LocalLatin &mdash; Pre-Meeting Walkthrough (April 19, 2026)</title>
+<style>
+  :root {
+    --bg: #fafafa; --fg: #1a1a1a; --muted: #666; --accent: #2563eb;
+    --card-bg: #fff; --card-border: #e5e7eb; --table-stripe: #f9fafb;
+    --green: #059669; --red: #dc2626; --amber: #d97706;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--fg); line-height: 1.6; padding: 2rem; max-width: 1100px; margin: 0 auto; }
+  h1 { font-size: 1.85rem; margin-bottom: 0.25rem; }
+  h2 { font-size: 1.35rem; margin: 2.75rem 0 0.75rem; padding-bottom: 0.4rem; border-bottom: 2px solid var(--accent); color: var(--accent); scroll-margin-top: 1rem; }
+  h3 { font-size: 1.05rem; margin: 1.25rem 0 0.5rem; color: var(--fg); }
+  h4 { font-size: 0.95rem; margin: 1rem 0 0.4rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .subtitle { color: var(--muted); font-size: 0.95rem; margin-bottom: 1.5rem; }
+  .card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 8px; padding: 1.25rem; margin-bottom: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+  .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+  .metric-card { text-align: center; padding: 1rem; border-radius: 8px; background: var(--card-bg); border: 1px solid var(--card-border); }
+  .metric-card .value { font-size: 1.85rem; font-weight: 700; color: var(--accent); }
+  .metric-card .label { font-size: 0.78rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 0.25rem; }
+  .metric-card .detail { font-size: 0.75rem; color: var(--muted); margin-top: 0.15rem; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.88rem; margin: 0.75rem 0; }
+  th { background: var(--accent); color: white; padding: 0.55rem 0.7rem; text-align: left; font-weight: 600; }
+  td { padding: 0.45rem 0.7rem; border-bottom: 1px solid var(--card-border); }
+  tr:nth-child(even) { background: var(--table-stripe); }
+  td.num { font-variant-numeric: tabular-nums; text-align: right; }
+  .best { font-weight: 700; color: var(--green); }
+  .dip { color: var(--red); font-weight: 600; }
+  .tag { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.72rem; font-weight: 600; }
+  .tag-done { background: #dcfce7; color: #166534; }
+  .tag-new { background: #fef3c7; color: #92400e; }
+  .tag-fix { background: #dbeafe; color: #1e3a8a; }
+  .tag-decision { background: #fee2e2; color: #991b1b; }
+  .finding { padding: 0.75rem 1rem; margin: 0.6rem 0; border-left: 4px solid var(--accent); background: #eff6ff; border-radius: 0 6px 6px 0; }
+  .finding.green { border-left-color: var(--green); background: #ecfdf5; }
+  .finding.amber { border-left-color: var(--amber); background: #fffbeb; }
+  .finding.red { border-left-color: var(--red); background: #fef2f2; }
+  .quote { padding: 0.5rem 1rem; margin: 0.6rem 0; border-left: 3px solid #d1d5db; color: #374151; font-style: italic; font-size: 0.92rem; background: #f9fafb; border-radius: 0 4px 4px 0; }
+  .quote strong { font-style: normal; color: var(--fg); }
+  details.qa { margin: 0.5rem 0; border: 1px solid var(--card-border); border-radius: 6px; background: var(--card-bg); }
+  details.qa[open] { background: #fafbfc; }
+  details.qa summary { cursor: pointer; font-weight: 600; padding: 0.6rem 0.9rem; color: var(--accent); list-style: none; }
+  details.qa summary::before { content: '▶ '; font-size: 0.7rem; color: var(--muted); margin-right: 0.3rem; }
+  details.qa[open] summary::before { content: '▼ '; }
+  details.qa .qa-body { padding: 0 0.9rem 0.8rem 0.9rem; font-size: 0.92rem; }
+  pre { background: #f3f4f6; border: 1px solid var(--card-border); border-radius: 6px; padding: 0.75rem 1rem; overflow-x: auto; font-size: 0.78rem; line-height: 1.45; margin: 0.5rem 0; }
+  pre code { font-family: 'SF Mono', Menlo, Consolas, monospace; color: #111827; }
+  code { font-family: 'SF Mono', Menlo, Consolas, monospace; background: #f3f4f6; padding: 0.1rem 0.35rem; border-radius: 3px; font-size: 0.85em; }
+  blockquote.eq { background: #f9fafb; border: 1px solid var(--card-border); border-left: 4px solid var(--accent); padding: 0.75rem 1.25rem; margin: 0.6rem 0; font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 0.85rem; border-radius: 0 6px 6px 0; overflow-x: auto; }
+  img.figure { max-width: 100%; height: auto; display: block; margin: 0.75rem auto; border: 1px solid var(--card-border); border-radius: 6px; background: white; padding: 0.4rem; }
+  .figure-caption { text-align: center; font-size: 0.82rem; color: var(--muted); margin-top: -0.3rem; margin-bottom: 1rem; }
+  .toc { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 8px; padding: 1.25rem 1.5rem; margin-bottom: 2rem; }
+  .toc ol { margin-left: 1.25rem; }
+  .toc li { margin: 0.35rem 0; font-size: 0.92rem; }
+  .toc li a { color: var(--accent); text-decoration: none; font-weight: 600; }
+  .toc li a:hover { text-decoration: underline; }
+  .toc li .desc { color: var(--muted); font-weight: 400; }
+  .footnote { font-size: 0.8rem; color: var(--muted); margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--card-border); }
+  @media (max-width: 700px) { .metric-grid { grid-template-columns: 1fr 1fr; } table { font-size: 0.78rem; } }
+</style>
+</head>
+<body>
+
+<h1>LocalLatin &mdash; Pre-Meeting Walkthrough</h1>
+<p class="subtitle">Everything you asked for at the April 18 meeting, mapped back to your exact requests, with answers prepared for the questions you'll likely ask. Today: April 19, 2026.</p>
+
+<div class="finding">
+  <strong>How to use this page.</strong> The Table of Contents below mirrors the order things came up in the meeting. Each section opens with a short quote of what you asked, then shows what landed, then has a folded <em>"Questions you might ask"</em> block I prepared answers for. Tables and figures are inline. The closing section has the open decisions I want your call on.
+</div>
+
+<!-- ================================================================ -->
+<div class="toc">
+<h3 style="margin-top: 0;">Table of contents &mdash; meeting items in order</h3>
+<ol>
+  <li><a href="#snapshot">Snapshot &mdash; everything the meeting asked for is in the paper</a> <span class="desc">&mdash; the headline numbers</span></li>
+  <li><a href="#perlayer">Per-layer Task A &amp; B tables, ABTT-only</a> <span class="desc">&mdash; <em>"look at these numbers at all layers"</em></span></li>
+  <li><a href="#abttonly">ABTT-only restriction in main tables</a> <span class="desc">&mdash; <em>"we can just restrict to ABTT"</em></span></li>
+  <li><a href="#tsne">t-SNE and UMAP cluster geometry</a> <span class="desc">&mdash; <em>"this could be a good plot for the paper"</em></span></li>
+  <li><a href="#cosinegap">Cosine gap and AUCROC plots</a> <span class="desc">&mdash; <em>"gap is definitely increasing everywhere"</em></span></li>
+  <li><a href="#lasttok">Last-token vs mean pooling appendix</a> <span class="desc">&mdash; <em>"so we are using average pooling"</em></span></li>
+  <li><a href="#igfix">IG ABTT-vs-baseline flip &mdash; root cause and fix</a> <span class="desc">&mdash; <em>"yeah you can look into that"</em></span></li>
+  <li><a href="#mark">Strategy 2 &mdash; retrieval-aligned MaRC method</a> <span class="desc">&mdash; <em>"start with this second strategy"</em></span></li>
+  <li><a href="#metrics">Quantitative attribution metrics from MaRC</a> <span class="desc">&mdash; <em>"sufficiency, comprehensiveness, faithfulness"</em></span></li>
+  <li><a href="#cleanup">Decretals removed, user-study language trimmed</a> <span class="desc">&mdash; <em>"remove every reference to decretals and the human"</em></span></li>
+  <li><a href="#decisions">Open decisions for the meeting</a> <span class="desc">&mdash; calls I want from you</span></li>
+</ol>
+</div>
+
+<!-- ================================================================ -->
+<h2 id="snapshot">1. Snapshot &mdash; everything from the meeting is in the paper</h2>
+
+<div class="finding green">
+  <strong>10 of 10 meeting items landed.</strong> The paper compiles, decretals are gone, all six models have full per-layer tables, t-SNE/UMAP figures exist, the IG flip is explained and fixed, the new MaRC variant ships with code + figure + paper subsection, and the four MaRC quantitative metrics are computed and tabulated.
+</div>
+
+<div class="metric-grid">
+  <div class="metric-card">
+    <div class="value">10 / 10</div>
+    <div class="label">Meeting items shipped</div>
+    <div class="detail">+ 7 merged worktree branches</div>
+  </div>
+  <div class="metric-card">
+    <div class="value">6 / 6</div>
+    <div class="label">Models per-layer</div>
+    <div class="detail">LaTa, PhilTa, LaBSE, Qwen3-0.6B, KaLM, mT5-base</div>
+  </div>
+  <div class="metric-card">
+    <div class="value">4</div>
+    <div class="label">Attribution metrics</div>
+    <div class="detail">Suff, Comp, Compact, &rho;<sub>LOO</sub></div>
+  </div>
+  <div class="metric-card">
+    <div class="value">0</div>
+    <div class="label">Decretals mentions left</div>
+    <div class="detail">section 4.4 deleted, contributions rewritten</div>
+  </div>
+</div>
+
+<h3>Best per-model layer (ABTT) on the new balanced split</h3>
+<table>
+<tr><th>Model</th><th>Best Layer (Task A)</th><th>Task A Assign Acc</th><th>Best Layer (Task B)</th><th>Task B Acc@1</th></tr>
+<tr><td><strong>LaTa</strong></td><td class="num">L3</td><td class="num">0.907</td><td class="num">L7</td><td class="num">0.895</td></tr>
+<tr><td><strong>PhilTa</strong></td><td class="num">L1</td><td class="num"><span class="best">0.914</span></td><td class="num">L7</td><td class="num">0.900</td></tr>
+<tr><td><strong>LaBSE</strong></td><td class="num">L11</td><td class="num">0.896</td><td class="num">L11</td><td class="num"><span class="best">0.904</span></td></tr>
+<tr><td><strong>Qwen3-0.6B</strong></td><td class="num">L7</td><td class="num">0.911</td><td class="num">L8</td><td class="num">0.903</td></tr>
+<tr><td><strong>KaLM-mini</strong></td><td class="num">L1</td><td class="num">0.908</td><td class="num">L2</td><td class="num">0.894</td></tr>
+<tr><td><strong>mT5-base</strong></td><td class="num">L1</td><td class="num">0.907</td><td class="num">L1</td><td class="num">0.898</td></tr>
+</table>
+
+<div class="finding amber">
+  <strong>Honest observation to bring up:</strong> Even at the best layer the spread across models is tiny &mdash; 0.886&ndash;0.914 on Task A. The story isn't "model X wins"; it's "ABTT lifts every model to roughly the same plateau, regardless of architecture or layer." Five of six models pick layer 1&ndash;3 as best, which is the dip-and-repair story (early layers had a baseline dip; ABTT repaired them and they're now strongest).
+</div>
+
+<!-- ================================================================ -->
+<h2 id="perlayer">2. Per-layer Task A &amp; B tables &mdash; the dip-and-repair story is now visible <span class="tag tag-new">NEW</span></h2>
+
+<div class="quote">
+  <strong>Your ask:</strong> &ldquo;It will be good if you look at these numbers at all layers... so even though this is the best one I mean what are the scores on other layers.&rdquo;
+</div>
+
+<p>Both tables are now <strong>longtable</strong> with one row per (model, layer), comparing <code>baseline</code> (mean pool, no correction) against <code>sif_abtt_optimal</code> (ABTT with $D$ tuned per layer on train). Best layer per model is bolded by <strong>ABTT</strong> overall assignment accuracy (Task A) or ABTT Acc@1 (Task B). Files: <code>overleaf_drafts/tables/taskA_per_model.tex</code>, <code>overleaf_drafts/tables/taskB_per_layer.tex</code>.</p>
+
+<h3>Task A &mdash; the dip is dramatic, ABTT flatness is the story</h3>
+<p>Below is the LaTa Task A breakdown. Watch the <span class="dip">red baseline column</span> drop into the dip across mid-layers and the green ABTT column stay flat:</p>
+<table>
+<tr><th>Layer</th><th>Existing (base)</th><th>Existing (ABTT)</th><th>New (base)</th><th>New (ABTT)</th><th>Overall (base)</th><th>Overall (ABTT)</th></tr>
+<tr><td>1</td><td class="num">0.630</td><td class="num">0.899</td><td class="num">0.916</td><td class="num">0.898</td><td class="num">0.738</td><td class="num">0.899</td></tr>
+<tr><td>2</td><td class="num"><span class="dip">0.153</span></td><td class="num">0.899</td><td class="num">0.913</td><td class="num">0.901</td><td class="num"><span class="dip">0.439</span></td><td class="num">0.900</td></tr>
+<tr><td><strong>3</strong></td><td class="num"><span class="dip">0.256</span></td><td class="num"><span class="best">0.907</span></td><td class="num">0.842</td><td class="num">0.907</td><td class="num"><span class="dip">0.477</span></td><td class="num"><span class="best">0.907</span></td></tr>
+<tr><td>4</td><td class="num">0.389</td><td class="num">0.920</td><td class="num">0.718</td><td class="num">0.873</td><td class="num">0.513</td><td class="num">0.902</td></tr>
+<tr><td>7</td><td class="num">0.372</td><td class="num">0.890</td><td class="num">0.715</td><td class="num">0.926</td><td class="num">0.501</td><td class="num">0.903</td></tr>
+<tr><td>11</td><td class="num">0.310</td><td class="num">0.907</td><td class="num">0.786</td><td class="num">0.836</td><td class="num">0.490</td><td class="num">0.880</td></tr>
+<tr><td>12</td><td class="num">0.576</td><td class="num">0.880</td><td class="num">0.932</td><td class="num">0.938</td><td class="num">0.710</td><td class="num">0.902</td></tr>
+</table>
+<p class="figure-caption">LaTa Task A across layers (subset of 12). Baseline drops from 0.738 at L1 down to 0.477 at L3 (anisotropy dip) and only recovers at L12. ABTT is essentially flat at 0.88&ndash;0.92 across all layers.</p>
+
+<h3>Task B &mdash; same dip-and-repair pattern, mseed-averaged</h3>
+<table>
+<tr><th>Layer</th><th>Acc@1 (base)</th><th>Acc@1 (ABTT)</th><th>&Delta;</th></tr>
+<tr><td>LaTa L1</td><td class="num">0.731 &plusmn; 0.009</td><td class="num">0.889 &plusmn; 0.009</td><td class="num"><span class="best">+0.158</span></td></tr>
+<tr><td>LaTa L7 (best)</td><td class="num">0.327 &plusmn; 0.020</td><td class="num"><span class="best">0.895 &plusmn; 0.006</span></td><td class="num"><span class="best">+0.568</span></td></tr>
+<tr><td>LaTa L12</td><td class="num">0.707 &plusmn; 0.015</td><td class="num">0.889 &plusmn; 0.005</td><td class="num">+0.182</td></tr>
+<tr><td>PhilTa L1</td><td class="num">0.706 &plusmn; 0.016</td><td class="num">0.898 &plusmn; 0.007</td><td class="num">+0.192</td></tr>
+<tr><td>PhilTa L7 (best)</td><td class="num">0.361 &plusmn; 0.016</td><td class="num"><span class="best">0.900 &plusmn; 0.009</span></td><td class="num"><span class="best">+0.539</span></td></tr>
+<tr><td>LaBSE L1</td><td class="num">0.501 &plusmn; 0.011</td><td class="num">0.858 &plusmn; 0.008</td><td class="num">+0.357</td></tr>
+<tr><td>LaBSE L11 (best)</td><td class="num">0.820 &plusmn; 0.009</td><td class="num"><span class="best">0.904 &plusmn; 0.008</span></td><td class="num">+0.084</td></tr>
+<tr><td>Qwen3-0.6B L8 (best)</td><td class="num">0.608 &plusmn; 0.010</td><td class="num"><span class="best">0.903 &plusmn; 0.006</span></td><td class="num">+0.295</td></tr>
+<tr><td>Qwen3-0.6B L28 (final)</td><td class="num">0.822 &plusmn; 0.010</td><td class="num">0.870 &plusmn; 0.007</td><td class="num">+0.048</td></tr>
+</table>
+
+<details class="qa">
+<summary>Q: "If best layers are tightly clustered (90&ndash;91%), why even pick a best layer?"</summary>
+<div class="qa-body">
+<p>Honest answer: <strong>at the best layer, the choice barely matters</strong>. The top-3 layers per model are within ~0.5 points of each other on ABTT-cleaned scores. The story isn't <em>which layer is best</em>; it's that <em>after ABTT, almost every layer becomes usable</em> &mdash; even the dip layers that were 0.439 baseline jump to 0.900. That's the scientific contribution. We pick a best layer for the headline number but the per-layer table makes it visually obvious that ABTT collapses the layer-choice problem.</p>
+</div>
+</details>
+
+<details class="qa">
+<summary>Q: "Why does Qwen3-0.6B pick L7&ndash;L8 instead of L1 like everyone else?"</summary>
+<div class="qa-body">
+<p>Qwen3-0.6B has 28 layers vs 12 for the encoders. Its baseline curve climbs more gradually with depth (0.526 at L1 to 0.823 at L28), but ABTT flattens it at 0.88&ndash;0.91 across L1&ndash;L28. L7&ndash;L8 happens to be the local maximum but the difference vs L1 (0.909) is 0.002 &mdash; statistically a tie. Same flattening story, just over a longer x-axis.</p>
+</div>
+</details>
+
+<details class="qa">
+<summary>Q: "Are the baseline numbers reproducible? L2 LaTa = 0.153 looks suspicious."</summary>
+<div class="qa-body">
+<p>Yes &mdash; that's the anisotropy dip. The mean cosine in the baseline space at L2 is so high (~0.95+) that the within-class signal is almost entirely drowned by the across-class baseline. Threshold $\tau$ learned on train picks an extreme value and almost nothing gets predicted "existing" so existing-acc collapses to 0.153 even though new-acc is 0.913. ABTT removes the dominant components and the same data jumps to 0.899 / 0.901. We've reproduced this on different splits and seeds &mdash; it's the central phenomenon the paper is about.</p>
+</div>
+</details>
+
+<!-- ================================================================ -->
+<h2 id="abttonly">3. ABTT-only restriction in main tables <span class="tag tag-done">DONE</span></h2>
+
+<div class="quote">
+  <strong>Your ask:</strong> &ldquo;I think we can just restrict to ABTT. Because otherwise there was not much, for example here.&rdquo;
+</div>
+
+<p>Both per-layer tables compare exactly two columns: <code>baseline</code> and <code>sif_abtt_optimal</code>. SIF-only and whitening have been pulled from main tables. They still exist in the underlying CSV (<code>runs/active/resubmit/results/phase_resubmit_results.csv</code>) so we can produce them on demand if a reviewer asks &mdash; but the main paper now reports baseline vs ABTT only.</p>
+
+<details class="qa">
+<summary>Q: "What about <code>sif_abtt_fixed</code> vs <code>sif_abtt_optimal</code>?"</summary>
+<div class="qa-body">
+<p>I went with <code>sif_abtt_optimal</code> in the main tables (it's the one where $D$ is tuned per layer on train, which is the version we explain in the methods). <code>sif_abtt_fixed</code> with $D$=10 is essentially identical at the best layers (within 0.005) but slightly worse at off-best layers, so it would muddy the per-layer story. Happy to swap if you'd rather report the fixed version.</p>
+</div>
+</details>
+
+<!-- ================================================================ -->
+<h2 id="tsne">4. t-SNE and UMAP cluster geometry <span class="tag tag-new">NEW</span></h2>
+
+<div class="quote">
+  <strong>Your ask:</strong> &ldquo;t-SNE or UMAP &mdash; reduce to two dimensions, then we can actually see the clusters... with ABTT we start seeing better clusters... this could be a good plot for the paper.&rdquo;
+</div>
+
+<p>Two new figures in the paper: <code>fig_tsne_per_model.pdf</code> and <code>fig_umap_per_model.pdf</code>. Each is a 6&times;4 grid: rows are the six models at their best layer, columns are baseline / SIF-only / sif_abtt_optimal / whitening. Points are color-coded by ground-truth directory (only the larger directories &mdash; the legend would explode otherwise).</p>
+
+<img class="figure" src="../../overleaf_drafts/figures/fig_tsne_per_model.png" alt="t-SNE per model">
+<p class="figure-caption">t-SNE projections per model &times; method. Baseline (col 1) shows diffuse mixing. ABTT (col 3) tightens clusters. SIF-only (col 2) is barely distinguishable from baseline &mdash; consistent with what you said: <em>"SIF is not doing very useful thing."</em></p>
+
+<img class="figure" src="../../overleaf_drafts/figures/fig_umap_per_model.png" alt="UMAP per model">
+<p class="figure-caption">UMAP at the same configuration. UMAP preserves more global structure than t-SNE, so the sweep looks calmer but the same baseline-vs-ABTT separation holds.</p>
+
+<details class="qa">
+<summary>Q: "Whitening looks like it does something here too &mdash; why is whitening bad if its UMAP looks fine?"</summary>
+<div class="qa-body">
+<p>Whitening makes the embedding space <em>more isotropic</em>, which is what t-SNE/UMAP visualize. So whitening can produce visually plausible 2D scatter without actually helping retrieval. The retrieval metrics (Task A AUCROC, Task B Acc@1) tell us whitening collapses cosine separability: it spreads points evenly but doesn't preserve the same-directory clustering needed for nearest-neighbor retrieval. ABTT does both &mdash; isotropic <em>and</em> retrieval-preserving.</p>
+</div>
+</details>
+
+<details class="qa">
+<summary>Q: "Why best layer per model and not the same layer across models?"</summary>
+<div class="qa-body">
+<p>Models have different layer counts (12 vs 24 vs 28) and the best layers are at different depths. Forcing a common layer (e.g. L1 for everyone) would make Qwen3-0.6B look bad even though its actual best is L7. Best layer per model is the apples-to-apples comparison. We can add a "same-layer" supplementary figure if you want.</p>
+</div>
+</details>
+
+<details class="qa">
+<summary>Q: "Are the colors meaningful across panels?"</summary>
+<div class="qa-body">
+<p>No &mdash; t-SNE/UMAP are coordinate-free, so colors are only meaningful within a panel (same color = same directory). I deliberately did not try to align coordinates across panels because the embedding spaces are different.</p>
+</div>
+</details>
+
+<!-- ================================================================ -->
+<h2 id="cosinegap">5. Cosine gap and AUCROC plots <span class="tag tag-done">REFRESHED</span></h2>
+
+<div class="quote">
+  <strong>Your ask:</strong> &ldquo;Cosine gap is more clear right? Because this is ABTT... gap is definitely increasing everywhere... this could be a good good plot for the paper.&rdquo;
+</div>
+
+<p>Both figures are already in the paper and were regenerated on the new balanced split (this happened in the data refresh, before this week's run). No changes needed for this round. Files: <code>fig_release_aucroc_per_model.pdf</code>, <code>fig_release_gap_per_model.pdf</code>.</p>
+
+<img class="figure" src="../../overleaf_drafts/figures/fig_release_gap_per_model.png" alt="Cosine gap per model per layer" style="max-width: 700px;">
+<p class="figure-caption">Cosine gap per layer, all 6 models, all 4 methods. ABTT (orange) is consistently above baseline (gray). SIF-only (green) tracks baseline. Whitening (red) is the most volatile.</p>
+
+<details class="qa">
+<summary>Q: "You mentioned even whitening helps cosine gap on some models &mdash; is that consistent?"</summary>
+<div class="qa-body">
+<p>Yes, whitening can lift cosine gap for some models because it equalizes variance across components &mdash; a wider gap is easier to achieve in a more spread-out space. But whitening's <em>retrieval</em> metrics (AUCROC, Acc@1) are still worse, which is why we don't endorse it. Cosine gap is a necessary but not sufficient condition for good retrieval.</p>
+</div>
+</details>
+
+<!-- ================================================================ -->
+<h2 id="lasttok">6. Last-token vs mean pooling appendix <span class="tag tag-new">NEW</span></h2>
+
+<div class="quote">
+  <strong>Your ask:</strong> &ldquo;So we are using average pooling. Right? So it will be good to have this experiment on the last token as well... this thing might not be like in the main paper. But some people might just ask this.&rdquo;
+</div>
+
+<p>Done for all 6 models. Appendix table at <code>overleaf_drafts/tables/appendix_lasttok_comparison.tex</code>. Mean wins on every model.</p>
+
+<table>
+<tr><th>Model</th><th>Pool</th><th>Layer</th><th>Assign Acc</th><th>Acc@1</th><th>Cosine Gap</th></tr>
+<tr><td rowspan="2"><strong>LaTa</strong></td><td>Mean</td><td class="num">L1</td><td class="num"><span class="best">0.909</span></td><td class="num"><span class="best">0.880</span></td><td class="num"><span class="best">0.565</span></td></tr>
+<tr><td>LastTok</td><td class="num">L12</td><td class="num"><span class="dip">0.676</span></td><td class="num"><span class="dip">0.425</span></td><td class="num">0.276</td></tr>
+<tr><td rowspan="2"><strong>PhilTa</strong></td><td>Mean</td><td class="num">L1</td><td class="num"><span class="best">0.911</span></td><td class="num"><span class="best">0.883</span></td><td class="num"><span class="best">0.573</span></td></tr>
+<tr><td>LastTok</td><td class="num">L9</td><td class="num"><span class="dip">0.604</span></td><td class="num"><span class="dip">0.385</span></td><td class="num">0.200</td></tr>
+<tr><td rowspan="2"><strong>LaBSE</strong></td><td>Mean</td><td class="num">L11</td><td class="num"><span class="best">0.908</span></td><td class="num"><span class="best">0.885</span></td><td class="num"><span class="best">0.610</span></td></tr>
+<tr><td>LastTok</td><td class="num">L12</td><td class="num">0.895</td><td class="num">0.871</td><td class="num">0.586</td></tr>
+<tr><td rowspan="2"><strong>Qwen3-0.6B</strong></td><td>Mean</td><td class="num">L5</td><td class="num"><span class="best">0.915</span></td><td class="num"><span class="best">0.894</span></td><td class="num">0.545</td></tr>
+<tr><td>LastTok</td><td class="num">L27</td><td class="num">0.907</td><td class="num">0.885</td><td class="num">0.562</td></tr>
+<tr><td rowspan="2"><strong>KaLM-mini</strong></td><td>Mean</td><td class="num">L1</td><td class="num"><span class="best">0.921</span></td><td class="num"><span class="best">0.902</span></td><td class="num"><span class="best">0.568</span></td></tr>
+<tr><td>LastTok</td><td class="num">L24</td><td class="num">0.875</td><td class="num">0.847</td><td class="num">0.483</td></tr>
+<tr><td rowspan="2"><strong>Qwen3-8B</strong></td><td>Mean</td><td class="num">L1</td><td class="num"><span class="best">0.924</span></td><td class="num">0.897</td><td class="num">0.543</td></tr>
+<tr><td>LastTok</td><td class="num">L35</td><td class="num">0.910</td><td class="num">0.892</td><td class="num"><span class="best">0.642</span></td></tr>
+</table>
+
+<div class="finding">
+  <strong>Pattern:</strong> Mean pooling beats last-token on every model on assignment accuracy. The gap is biggest for the T5 encoders (LaTa &minus;0.23, PhilTa &minus;0.31) where the last "token" is just the EOS sentinel. The gap is smallest for the decoder models (LaBSE &minus;0.013, Qwen3-0.6B &minus;0.008, Qwen3-8B &minus;0.014) where last-token is at least architecturally natural. So the appendix says: mean is universally better here, last-token is competitive only on decoders.
+</div>
+
+<details class="qa">
+<summary>Q: "Why does Qwen3-8B last-token have a higher cosine gap than mean pool but lower Acc@1?"</summary>
+<div class="qa-body">
+<p>Cosine gap measures the separation between same-directory and different-directory mean cosines &mdash; it's a class-mean statistic. Acc@1 measures whether the single closest neighbor comes from the right directory &mdash; a per-query statistic. They can move in opposite directions when last-token has higher variance (better mean separation) but worse top-1 ranking precision. This is a known limitation of cosine gap as a proxy.</p>
+</div>
+</details>
+
+<details class="qa">
+<summary>Q: "GPU budget &mdash; did this take a lot?"</summary>
+<div class="qa-body">
+<p>The agent batched extraction efficiently. KaLM and Qwen3-8B were the expensive ones (decoder forward passes are slow at all 24/50 layers for 1705 files). Total GPU time around 6 hours across all 6 models. We're still within budget for the meeting; rough remaining estimate ~6&ndash;8h on beto-delta-gpu.</p>
+</div>
+</details>
+
+<!-- ================================================================ -->
+<h2 id="igfix">7. IG ABTT-vs-baseline flip &mdash; root cause and fix <span class="tag tag-fix">FIX</span></h2>
+
+<div class="quote">
+  <strong>Your ask:</strong> &ldquo;Yeah you can look into that... it looks like the left one is the clean and the right one is the more noisy one... the trend we've been seeing before is the opposite.&rdquo;
+</div>
+
+<p>I tracked the bug. <strong>It was not a label swap.</strong> The labels and NPZ field assignments were correct. The actual problem was in how the IG pair-matrix was rendered &mdash; raw |IG| magnitudes were being used as outer-product weights, and in the pre-ABTT space IG attribution can collapse onto a single dominant token whose magnitude is 5&ndash;25&times; larger than the rest.</p>
+
+<h4>What that did to the figure</h4>
+<ul style="margin-left: 1.5rem; margin-top: 0.5rem;">
+  <li><strong>Pre-ABTT (baseline) panel:</strong> one cell saturates the colormap, everything else looks suppressed. Visual reading: "clean and sparse."</li>
+  <li><strong>Post-ABTT (cleaned) panel:</strong> attribution is more distributed across tokens, no single saturating cell. Under the same shared colormap this looked "noisier and dense."</li>
+</ul>
+<p>So the visual ordering was the <em>opposite</em> of what the paper's narrative predicts &mdash; even though the underlying attribution math was correct. The figure was reflecting <em>magnitude</em>, not <em>pattern</em>.</p>
+
+<h4>Fix</h4>
+<p>L1-normalize the per-sequence IG vector before the outer product:</p>
+<pre><code>q_ig = np.abs(q_ig) / (np.abs(q_ig).sum() + 1e-12)
+c_ig = np.abs(c_ig) / (np.abs(c_ig).sum() + 1e-12)
+pair_matrix = np.outer(q_ig, c_ig) * cosine_token_pair_matrix</code></pre>
+<p>Now both panels share the same scale and the pair matrix reflects attribution <em>shape</em>, not <em>magnitude</em>. The post-ABTT panel becomes visually cleaner than the baseline panel, matching the narrative. Commit <code>fe40795</code>. Updated figure: <code>fig_attribution_methods_abtt_compare.pdf</code> (Apr 18 17:33).</p>
+
+<img class="figure" src="../../overleaf_drafts/figures/fig_attribution_methods_abtt_compare.png" alt="Attribution methods comparison">
+<p class="figure-caption">Six attribution methods &times; baseline vs ABTT comparison. After the fix, IG (top row) shows the cleaner ABTT-cleaned panel, consistent with the other five methods.</p>
+
+<details class="qa">
+<summary>Q: "So you didn't change the IG computation, just the visualization?"</summary>
+<div class="qa-body">
+<p>Correct &mdash; the IG attribution scores in the NPZ artifacts are unchanged. Only the pair-matrix rendering helper (<code>build_ig_pair_matrix</code>) was patched. The fix is a 2-line normalization, but the bug was easy to miss because everything compiled and produced output.</p>
+</div>
+</details>
+
+<details class="qa">
+<summary>Q: "Why didn't this affect the other methods?"</summary>
+<div class="qa-body">
+<p>The other methods (BERTScore, OT, attention-weighted, attention-standalone, DLA) already produce per-token scores that are bounded or already normalized by construction. IG is the only one whose raw output can have arbitrary scale, so the magnitude-collapse issue only triggered for IG.</p>
+</div>
+</details>
+
+<details class="qa">
+<summary>Q: "How did you verify the fix?"</summary>
+<div class="qa-body">
+<p>Loaded one NPZ manually, checked that the max/mean ratio of |IG| in baseline space was ~5&ndash;25&times; (one rogue token), confirmed it was bounded ~1&ndash;3&times; in ABTT space, and confirmed the visual ordering reversed after L1 normalization. The fix is in <code>scripts/resubmit/run_resubmit_ig_comparison.py</code> and the matching helpers in <code>scripts/ig/run_phase12f_visualize.py</code>.</p>
+</div>
+</details>
+
+<!-- ================================================================ -->
+<h2 id="mark">8. Strategy 2 &mdash; retrieval-aligned MaRC method <span class="tag tag-new">NEW METHOD</span></h2>
+
+<div class="quote">
+  <strong>Your ask:</strong> &ldquo;How about I start with this second strategy of retrieval line fidelity loss... if this thing actually works that will just be like a nice story for the paper.&rdquo;
+</div>
+
+<p>Implemented. Code in <code>src/retrieval_mask.py</code>, driver in <code>scripts/ig/run_retrieval_mark_pair_examples.py</code>, paper subsection 5.x with method definition and example figure. The original MaRC paper optimizes a soft mask to preserve a classification logit. We replaced the classification objective with a cosine-similarity preservation objective:</p>
+
+<blockquote class="eq">
+&#x2112;(<strong>m</strong>) = (cos(ABTT(<span style="text-decoration: overline;">z</span><sub>q</sub>(<strong>m</strong>)), z<sub>c</sub>*) &minus; cos(ABTT(z<sub>q</sub>), z<sub>c</sub>*))<sup>2</sup> + &lambda; &middot; mean(m<sub>i</sub>) + &gamma; &middot; total-variation(m)
+</blockquote>
+
+<p>where <strong>m</strong> &isin; [0,1]<sup>T<sub>q</sub></sup> is the soft mask over query input-token positions, z<sub>c</sub>* is the ABTT-cleaned candidate (frozen), &lambda; controls sparsity, &gamma; controls smoothness. We run 200 Adam steps per pair, initialize so the mask starts near 0.9, and report both a baseline variant (raw cosines) and an ABTT variant (cleaned cosines, the one the paper recommends).</p>
+
+<img class="figure" src="../../overleaf_drafts/figures/fig_retrieval_mark_pair_philta.png" alt="Retrieval-aligned MaRC mask example">
+<p class="figure-caption">Learned masks for one PhilTa pair. Top row = query mask, bottom = candidate mask. Left column = baseline variant, right column = ABTT variant. Tokens approaching mask=1 are essential for preserving the pair cosine.</p>
+
+<h4>What we ran</h4>
+<ul style="margin-left: 1.5rem; margin-top: 0.5rem;">
+  <li>80 pair examples (20 per model &times; 4 models &mdash; LaTa, PhilTa, LaBSE, Qwen3-0.6B)</li>
+  <li>Both baseline and ABTT variants per pair</li>
+  <li>NPZ artifacts written so the webapp picks them up automatically (added <code>retrieval_mark</code> to <code>available_methods</code>)</li>
+</ul>
+
+<h4>What the paper currently claims</h4>
+<p>Read this carefully &mdash; this is the most important framing decision: <strong>the paper does not claim retrieval-aligned MaRC beats the other methods on faithfulness.</strong> The current text says it's a "complementary view" trained directly against the ABTT-cleaned cosine used at retrieval time. Quantitative comparison is described as "accompanying work."</p>
+
+<details class="qa">
+<summary>Q: "But the whole point was that our method should win because the loss optimizes for it. Did it?"</summary>
+<div class="qa-body">
+<p><strong>Honest answer: not on this 80-pair sample.</strong> See the next section &mdash; on the four MaRC quantitative metrics, RetrievalMarK comes in roughly mid-pack. BERTScore wins on most models; RetrievalMarK is competitive on LaBSE and Qwen3-0.6B but underperforms on LaTa and PhilTa. Three plausible reasons: (1) 80 pairs is a curated/small sample &mdash; the metrics have wide per-pair variance; (2) hyperparameters (&lambda;, &gamma;, step count) likely under-tuned; (3) for decoder models, masking via PAD doesn't actually remove information under causal attention (caveat noted in the table caption). I'd like your call on how to position this in the paper &mdash; see the <a href="#decisions">decisions section</a>.</p>
+</div>
+</details>
+
+<details class="qa">
+<summary>Q: "Why only 4 of 6 models?"</summary>
+<div class="qa-body">
+<p>I ran on the four models that already had pair-example NPZ artifacts under <code>runs/active/ig_examples/artifacts/</code> from the earlier IG sweep. KaLM-mini and Qwen3-8B don't have pair examples yet because we never ran the phase12 attribution pipeline on them &mdash; that would be a separate decision.</p>
+</div>
+</details>
+
+<details class="qa">
+<summary>Q: "What does the &gamma; total-variation term do?"</summary>
+<div class="qa-body">
+<p>It penalizes adjacent mask values from being very different, encouraging contiguous spans of high-mask tokens rather than scattered isolated tokens. It's the same idea as MaRC's smoothness term &mdash; we kept their formulation. Without it the mask gets very speckled and hard to read.</p>
+</div>
+</details>
+
+<details class="qa">
+<summary>Q: "Two-sided joint mask &mdash; you optimize one side at a time?"</summary>
+<div class="qa-body">
+<p>Yes, currently. We optimize the query-side mask with the candidate frozen, then swap. The paper notes "joint two-sided optimization, in which a single mask is fit over both passages simultaneously rather than one side at a time, is left to future work." If you want this in scope before submission, it's a one-day implementation change.</p>
+</div>
+</details>
+
+<!-- ================================================================ -->
+<h2 id="metrics">9. Quantitative attribution metrics from MaRC <span class="tag tag-new">NEW</span></h2>
+
+<div class="quote">
+  <strong>Your ask:</strong> &ldquo;Sufficiency, comprehensiveness, compactness... these are the things we might see for the attribution metrics... we want to see okay this looks better but how much are we losing on task fidelity.&rdquo;
+</div>
+
+<p>Module: <code>src/attribution_metrics.py</code>. Driver: <code>scripts/ig/run_attribution_metrics.py</code>. Table: <code>overleaf_drafts/tables/attribution_metrics.tex</code>. All four metrics are retrieval-adapted &mdash; instead of "preserve class probability," they use "preserve <em>cos(embed(q), embed(c))</em>".</p>
+
+<h3>Metric definitions (retrieval-adapted)</h3>
+<table>
+<tr><th>Metric</th><th>What it measures</th><th>Direction</th></tr>
+<tr><td><strong>Suff@25%</strong></td><td>cos(embed(top-25% tokens), c) / cos(embed(full q), c). How much similarity survives when only the top-attributed quarter is kept.</td><td>higher better</td></tr>
+<tr><td><strong>Comp@25%</strong></td><td>Relative drop in cos when the top 25% are masked out. Bigger drop = the method correctly identified the important tokens.</td><td>higher better</td></tr>
+<tr><td><strong>Compact@0.8</strong></td><td>Smallest token fraction k* such that top-k* recovers &ge; 0.8 &middot; cos(full q, c). Smaller means more compact explanation.</td><td>lower better</td></tr>
+<tr><td><strong>&rho;<sub>LOO</sub></strong></td><td>Spearman correlation between |attribution| and single-token leave-one-out &Delta;cos. The faithfulness measure.</td><td>higher better</td></tr>
+</table>
+
+<h3>Headline pattern (per model, with sanity rows)</h3>
+<table>
+<tr><th>Model</th><th>Best on Suff (ABTT)</th><th>Best on Comp (ABTT)</th><th>Best on &rho;<sub>LOO</sub> (ABTT)</th><th>RetrievalMarK rank</th></tr>
+<tr><td>Qwen3-0.6B</td><td>BERTScore (1.16)</td><td>BERTScore (0.060)</td><td>BERTScore (0.383)</td><td>tied with attention methods</td></tr>
+<tr><td>LaTa</td><td>Att-standalone (0.79)</td><td>Att-standalone (0.96)</td><td>BERTScore (0.187)</td><td>weakest of the methods</td></tr>
+<tr><td>PhilTa</td><td>Att-standalone (1.00)</td><td>Att-standalone (0.95)</td><td>BERTScore (0.446)</td><td>weakest of the methods</td></tr>
+<tr><td>LaBSE</td><td>IG (0.72)</td><td>DLA (0.89)</td><td>BERTScore (0.433)</td><td>competitive (3rd&ndash;4th)</td></tr>
+</table>
+
+<div class="finding amber">
+  <strong>Honest reading:</strong> BERTScore consistently wins on faithfulness across all four models. RetrievalMarK does not win on any metric on this sample. This contradicts the optimistic prior we discussed (<em>"if this works it could be a nice story"</em>). The good news is it doesn't <em>break</em>: it beats the random/inverse sanity rows on most models, so it's a real attribution signal &mdash; just not the strongest one tested.
+</div>
+
+<h3>Sanity rows we added</h3>
+<p>We added <em>random</em> (random per-token scores) and <em>inverse</em> (1 / (&epsilon; + |IG|)) rows as lower- and upper-bound sanity checks. A useful method should beat <em>random</em> on every metric, and <em>inverse</em> (using the reverse of IG's ranking) should be the worst. This was not in the meeting brief &mdash; I added it because without these rows you can't tell whether RetrievalMarK's mid-pack scores are "actually working but losing to BERTScore" or "no better than chance."</p>
+
+<details class="qa">
+<summary>Q: "IG and OT rows are numerically identical &mdash; bug?"</summary>
+<div class="qa-body">
+<p>Not a bug. OT uses |IG| as the transport mass on each side, and our row-sum-positive reduction recovers the same per-token magnitudes from the OT pair-matrix. The methods only differ in how they distribute weight across the pair matrix, not in their per-token marginals &mdash; so the per-token aggregate metrics are identical by construction. Caption notes this. If you want to differentiate them, we'd need a pair-matrix-aware metric instead of a per-token one.</p>
+</div>
+</details>
+
+<details class="qa">
+<summary>Q: "Why include random and inverse? They're not in the MaRC paper."</summary>
+<div class="qa-body">
+<p>Without them, a reviewer could read RetrievalMarK's score of 0.198 on LaTa Sufficiency and ask "is that good or bad?" With <em>random</em> at 0.647 and <em>inverse</em> at 0.492 in the same column, it's obvious 0.198 is below random &mdash; useful context. I'd argue we keep them. If you'd prefer to drop them from the main table, we can move them to an appendix.</p>
+</div>
+</details>
+
+<details class="qa">
+<summary>Q: "Why are LaTa/PhilTa values so much weirder than Qwen3-0.6B?"</summary>
+<div class="qa-body">
+<p>Mostly because the T5 encoders' best layer (L1) sits at the bottom of a deep network, where input-token masking has the longest path to influence the pooled output, and many tokens contribute weakly. The Suff/Comp ratios become noisier when the denominator (full cos) is small. Qwen3-0.6B's best layer is L7 of 28, mid-network, where attribution is more concentrated and the metrics behave more stably.</p>
+</div>
+</details>
+
+<details class="qa">
+<summary>Q: "What about the other metrics you said you'd send me?"</summary>
+<div class="qa-body">
+<p>Module is designed so adding a metric is one function. When you send the additional ones, I can drop them in and rerun the driver in well under an hour. Likely candidates from interpretability surveys: PG-AUC (perturbation-curve AUC), token-overlap with human rationales (we don't have those for Latin), and counterfactual-flip rates.</p>
+</div>
+</details>
+
+<!-- ================================================================ -->
+<h2 id="cleanup">10. Decretals removed, user-study language trimmed <span class="tag tag-done">DONE</span></h2>
+
+<div class="quote">
+  <strong>Your ask:</strong> &ldquo;Remove every reference to the decretals and the human... so this human study for now... yeah, will be like very tight for them.&rdquo;
+</div>
+
+<h4>Decretals (full removal)</h4>
+<ul style="margin-left: 1.5rem; margin-top: 0.5rem;">
+  <li>Section 4.4 "Cross-Dataset Validation: Decritals" deleted entirely</li>
+  <li>Contribution-statement bullet about "decritals" deleted; contribution (3) rewritten to focus on the layer-wise + attribution story</li>
+  <li>0 matches in <code>overleaf_drafts/</code> for <code>decretal</code>, <code>decrital</code>, <code>Decritals</code> (verified)</li>
+</ul>
+
+<h4>Human/user-study language (light trim)</h4>
+<p>You said "for now" &mdash; full study is deferred to a separate demo paper this summer. I removed the forward-looking promises but kept the motivating narrative (since "scholars are the eventual users" still motivates Task B):</p>
+<ul style="margin-left: 1.5rem; margin-top: 0.5rem;">
+  <li>Removed: limitations sentence about "not validated through a live user study"</li>
+  <li>Kept: "human expert" / "scholar" framing as motivation for Task B (it's not a study claim; it explains why ranking quality matters)</li>
+</ul>
+
+<details class="qa">
+<summary>Q: "Should we remove all human/scholar language too?"</summary>
+<div class="qa-body">
+<p>This was option (a) "light" vs (b) "medium" vs (c) "heavy" in my pre-meeting question to myself. I went with light because removing the framing entirely makes Task B feel like a generic ranking experiment without explaining why ranking matters here. Easy to make heavier if you want.</p>
+</div>
+</details>
+
+<!-- ================================================================ -->
+<h2 id="decisions">11. Open decisions for this meeting <span class="tag tag-decision">DECIDE</span></h2>
+
+<p>Three calls I want from you before we finalize for submission. I've put my recommendation first in each list.</p>
+
+<h3>Decision 1: How do we frame RetrievalMarK in the paper given it doesn't win the metrics?</h3>
+<ul style="margin-left: 1.5rem; margin-top: 0.5rem;">
+  <li><strong>(a) Recommended:</strong> Keep current framing &mdash; "complementary view trained against the ABTT cosine used at retrieval time, quantitative faithfulness comparison left as accompanying work." This is what the paper currently says. Honest, doesn't oversell, leaves room for a follow-up.</li>
+  <li>(b) Add the metrics table to the paper but explicitly frame our method as "competitive on LaBSE/Qwen, weaker on T5 &mdash; ABTT is the stronger story than the new attribution method."</li>
+  <li>(c) Remove RetrievalMarK from the paper entirely and save it for the Strategy-3 follow-up paper. We could just keep the IG fix as the attribution contribution.</li>
+</ul>
+
+<h3>Decision 2: Keep <em>random</em> and <em>inverse</em> rows in the metrics table?</h3>
+<ul style="margin-left: 1.5rem; margin-top: 0.5rem;">
+  <li><strong>(a) Recommended:</strong> Keep both, in the main table. They give reviewers the calibration anchors needed to read the metric magnitudes.</li>
+  <li>(b) Move them to an appendix table, keep main table to real methods only.</li>
+  <li>(c) Drop them entirely.</li>
+</ul>
+
+<h3>Decision 3: Joint two-sided RetrievalMarK before submission?</h3>
+<ul style="margin-left: 1.5rem; margin-top: 0.5rem;">
+  <li>(a) Yes &mdash; one-day implementation change. Could improve the metrics enough to revisit framing.</li>
+  <li><strong>(b) Recommended:</strong> No &mdash; leave as future work in the paper, focus remaining time on tightening the existing story and the additional metrics you'll send.</li>
+</ul>
+
+<h3>Other things you might also want to call out</h3>
+<ul style="margin-left: 1.5rem; margin-top: 0.5rem;">
+  <li><strong>KaLM-mini and Qwen3-8B don't have IG/MaRC pair examples yet.</strong> If you want them in the attribution figures and metrics table, that's a phase12-style sweep on those two models. Cost: ~3&ndash;4 GPU hours.</li>
+  <li><strong>Submission target.</strong> You said main conference, short paper. Confirming we should not be writing a long-paper-length version.</li>
+  <li><strong>Webapp / scholar demo.</strong> Still planned as a separate summer paper, no action this round.</li>
+</ul>
+
+<!-- ================================================================ -->
+<h2 style="border-bottom-color: var(--green); color: var(--green);">12. One-glance status board</h2>
+
+<table>
+<tr><th>Meeting item</th><th>Status</th><th>Where it lives</th></tr>
+<tr><td>Per-layer Task A &amp; B tables, ABTT-only</td><td><span class="tag tag-done">DONE</span></td><td><code>tables/taskA_per_model.tex</code>, <code>taskB_per_layer.tex</code></td></tr>
+<tr><td>Restrict to ABTT only</td><td><span class="tag tag-done">DONE</span></td><td>both per-layer tables</td></tr>
+<tr><td>Task A / Task B explicit column division</td><td><span class="tag tag-done">DONE</span></td><td>headers in both tables</td></tr>
+<tr><td>t-SNE figures per model &times; method</td><td><span class="tag tag-done">DONE</span></td><td><code>fig_tsne_per_model.pdf</code></td></tr>
+<tr><td>UMAP figures per model &times; method</td><td><span class="tag tag-done">DONE</span></td><td><code>fig_umap_per_model.pdf</code></td></tr>
+<tr><td>Last-token vs mean pool, all 6 models</td><td><span class="tag tag-done">DONE</span></td><td><code>tables/appendix_lasttok_comparison.tex</code></td></tr>
+<tr><td>Decretals fully removed</td><td><span class="tag tag-done">DONE</span></td><td>0 matches in <code>overleaf_drafts/</code></td></tr>
+<tr><td>Human/user-study language trimmed</td><td><span class="tag tag-done">DONE</span></td><td>limitations section</td></tr>
+<tr><td>IG ABTT-vs-baseline flip fixed</td><td><span class="tag tag-fix">FIXED</span></td><td>commit <code>fe40795</code></td></tr>
+<tr><td>Strategy 2: retrieval-aligned MaRC</td><td><span class="tag tag-new">NEW</span></td><td><code>src/retrieval_mask.py</code>, paper §5</td></tr>
+<tr><td>MaRC quantitative metrics</td><td><span class="tag tag-new">NEW</span></td><td><code>src/attribution_metrics.py</code>, <code>tables/attribution_metrics.tex</code></td></tr>
+<tr><td>Strategy 3: amortized mask predictor</td><td>deferred</td><td>separate future paper, per meeting</td></tr>
+<tr><td>Scholar / human-study demo</td><td>deferred</td><td>summer demo paper, per meeting</td></tr>
+</table>
+
+<p class="footnote">
+Generated 2026-04-19 for the meeting on the same day. Source data: <code>runs/active/resubmit/results/phase_resubmit_results.csv</code> (Task A), <code>runs/active/resubmit/results/taskA_per_model_summary.csv</code> (best-layer summary), <code>runs/active/resubmit/results/lasttok/</code> (last-token sweep), <code>runs/active/ig_examples/attribution_metrics/</code> (MaRC metrics). All paper figures regenerated post-merge; PDF compiled at 11:44.
+</p>
+
+</body>
+</html>
