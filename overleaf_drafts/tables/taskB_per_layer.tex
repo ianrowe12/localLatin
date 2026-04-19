@@ -2,16 +2,16 @@
 \small
 \setlength{\tabcolsep}{4pt}
 \begin{longtable}{llcccccc}
-\caption{Per-layer Task~B accuracy for each model, averaged over $M=5$ query/reference reseedings of the v2 train/test split (mean $\pm$ std). \texttt{baseline} is mean pooling without correction; \texttt{sif\_abtt\_optimal} applies SIF weighting plus ABTT with $D$ tuned per layer on the train split. Overall assignment accuracy coincides with Acc@1 in the Task~B mseed pipeline (assignment = top-1 pick), so we instead report the existing vs.\ new decomposition. Rows in bold mark the best layer per model, selected by ABTT Acc@1.}
+\caption{Per-layer Task~B accuracy for each model, averaged over $M=5$ query/reference reseedings of the v2 train/test split (mean $\pm$ std). \texttt{baseline} is mean pooling without correction; \texttt{sif\_abtt\_optimal} applies SIF weighting plus ABTT with $D$ tuned per layer on the train split. Overall assignment accuracy coincides with Acc@1 in the Task~B mseed pipeline (assignment = top-1 pick), so we instead report the existing vs.\ new decomposition. Rows in bold mark the best layer per model, selected by ABTT Acc@1. See Table~\ref{tab:taskB_routing_per_layer} for the complementary autonomous-routing view.}
 \label{tab:taskB_per_layer} \\
 \toprule
-\multicolumn{2}{c}{} & \multicolumn{6}{c}{\textbf{Task B: Simulated Human Selection}} \\
+\multicolumn{2}{c}{} & \multicolumn{6}{c}{\textbf{Task B: Top-K Ranking (5-seed mean $\pm$ std)}} \\
 \cmidrule(lr){3-8}
 \textbf{Model} & \textbf{Layer} & \makecell{Acc@1\\(base)} & \makecell{Acc@1\\(ABTT)} & \makecell{Existing\\(base)} & \makecell{Existing\\(ABTT)} & \makecell{New\\(base)} & \makecell{New\\(ABTT)} \\
 \midrule
 \endfirsthead
 \toprule
-\multicolumn{2}{c}{} & \multicolumn{6}{c}{\textbf{Task B: Simulated Human Selection}} \\
+\multicolumn{2}{c}{} & \multicolumn{6}{c}{\textbf{Task B: Top-K Ranking (5-seed mean $\pm$ std)}} \\
 \cmidrule(lr){3-8}
 \textbf{Model} & \textbf{Layer} & \makecell{Acc@1\\(base)} & \makecell{Acc@1\\(ABTT)} & \makecell{Existing\\(base)} & \makecell{Existing\\(ABTT)} & \makecell{New\\(base)} & \makecell{New\\(ABTT)} \\
 \midrule

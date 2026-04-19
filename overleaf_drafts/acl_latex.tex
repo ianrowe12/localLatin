@@ -184,7 +184,7 @@ In summary, this paper makes the following contributions:
 
 We study two related tasks.
 
-\paragraph{Task A.} Let $p_1$ and $p_2$ be two passages and let $\equiv$ denote semantic equivalence, so that $p_1 \equiv p_2$ holds exactly when the two passages express the same meaning. Given an input pair $(p_1, p_2)$, the task is to predict
+\paragraph{Task A: pairwise duplicate detection.} Let $p_1$ and $p_2$ be two passages and let $\equiv$ denote semantic equivalence, so that $p_1 \equiv p_2$ holds exactly when the two passages express the same meaning. Given an input pair $(p_1, p_2)$, the task is to predict
 \[
 y =
 \begin{cases}
@@ -192,9 +192,9 @@ y =
 0 & \text{otherwise.}
 \end{cases}
 \]
-We score pairs by cosine similarity and classify with a learned threshold $\tau$.
+The model produces $\cos(e_{p_1}, e_{p_2})$ from its pooled embeddings, with no access to directory structure or any threshold. Task A is evaluated only at the pairwise level on the test n$\times$n cosine matrix.
 
-\paragraph{Task B.} Given a query passage $q$, the system scores each directory by the maximum cosine similarity between $q$ and any document already assigned to that directory. We also add a pseudo-option \texttt{\_\_NEW\_\_} with score $\tau$ for cases where the query should open a new directory. The model then presents the top-$k$ options to a human expert, along with token-level explanations for individual candidate pairs. During evaluation, we simulate that expert by assuming the labeled directory would be selected whenever it appears in the shortlist. We report cumulative top-$K$ accuracy: for each $K$ from 1 to 5, the fraction of queries whose labeled directory appears among the top $K$ options.
+\paragraph{Task B: directory routing.} Task B operationalizes the same embeddings into the deployment workflow, which does require directory knowledge. Given a query passage $q$ and the existing labelled directories, the system either routes $q$ to one of those directories or flags it as new. We evaluate two variants of this routing decision. (i) \emph{Autonomous routing.} For each query we compute the maximum cosine to any other test file and compare it to a learned threshold $\tau$ (fit on the training split via the $F_1$-optimal cut on same-directory vs.\ different-directory pairs). If the score is above $\tau$ the query is routed to its top-1 neighbour's directory; otherwise it is flagged as new. (ii) \emph{Top-$k$ ranking.} The system scores each directory by the maximum cosine similarity between $q$ and any document already assigned to that directory, adds a pseudo-option \texttt{\_\_NEW\_\_} with score $\tau$, and presents the top-$k$ options to a human expert; we simulate that expert by assuming the labeled directory would be selected whenever it appears in the shortlist.
 
 \subsection{Dataset Construction}
 
@@ -268,40 +268,19 @@ where $\tilde{\mathbf{z}}_q(\mathbf{m}) = \mathrm{pool}(E_{>0}(\mathrm{diag}(\ma
 
 \subsection{Evaluation Metrics}
 
-For Task A, the main measure is \textbf{AUCROC}, computed over pairwise cosine similarities, with same-directory pairs treated as positive. We also report \textbf{cosine gap}, the difference between the mean same-directory and mean different-directory cosine similarity, as a direct measure of class separation.
+\paragraph{Task A.} Both Task~A metrics are properties of the test n$\times$n pairwise cosine matrix. \textbf{AUROC} treats every same-directory test pair as a positive and every different-directory pair as a negative, summarising how well cosine similarity ranks positives above negatives. \textbf{Cosine gap} is the difference between the mean same-directory and mean different-directory cosine, a direct measure of class separation. Neither uses a threshold and neither requires the model to know anything about directories.
 
-For Task B, we report \textbf{cumulative top-$K$ accuracy}. For each $K$ from 1 to 5, the metric gives the fraction of test queries whose labeled directory appears among the model's top $K$ options. This directly answers the deployment question: if the expert inspects the top $K$ candidates, how likely are they to find the correct directory? We still use training-set directory accuracy at rank 1 as the model-selection signal for ABTT's $D$.
-
-\subsection{Directory Accuracy vs.\ Assignment Accuracy}
-\label{subsec:acc-vs-assignment}
-
-Two closely related Task~A numbers appear throughout our results and answer genuinely different questions. We state the distinction explicitly because the two are easy to conflate.
-
-\paragraph{Directory accuracy at rank~1 (Acc@1).} For each test file that has at least one same-directory partner elsewhere in the test set, we rank every other test file by cosine similarity and score the query correct if the top-ranked neighbour comes from the same directory. Every such query is forced to produce an answer; there is no ``I don't know'' option and the threshold $\tau$ plays no role. Acc@1 answers a single question: \emph{did we rank the correct item at the top?}
-
-\paragraph{Assignment accuracy.} Assignment accuracy adds the complementary question: \emph{did we make the right decision, including knowing when to say ``this is new''?} For every test file $i$ we compute $s_i = \max_{j \neq i} \cos(\mathbf{e}_i, \mathbf{e}_j)$ against the rest of the test set and compare it to the threshold $\tau$, which is learned on the training split by sweeping the $F_1$-optimal cut on same-directory versus different-directory pairs (no test data is used to fit $\tau$). The decision is binary first,
-\[
-\hat{y}_i =
-\begin{cases}
-\text{``existing''} & \text{if } s_i \geq \tau, \\
-\text{``new''}      & \text{if } s_i < \tau,
-\end{cases}
-\]
-and a file is scored correct iff this binary prediction matches ground truth (i.e.\ whether the file actually has a same-directory partner in the test set). Only on files that we predict as ``existing'' do we additionally look at the top-1 neighbour to recover the predicted directory. We report the overall rate as \textbf{overall assignment accuracy} and decompose it into \textbf{existing accuracy}, restricted to files whose true partner is in the test set, and \textbf{new accuracy}, restricted to files that should have been flagged as novel.
-
-In short, Acc@1 asks ``did we rank it correctly'', while assignment accuracy asks ``did we make the right decision, including abstaining when appropriate'': the two numbers can diverge sharply whenever $\tau$ is poorly calibrated or the novel-file subset is large.
-
-The query-vs-directory variant (\texttt{qvd\_*} columns in \texttt{phase\_resubmit\_results.csv}) applies exactly the same threshold rule after max-pooling similarities at the directory level instead of the file level, matching the deployment setting of Task~B.
+\paragraph{Task B.} Task~B has two sets of metrics, one for each variant. For \emph{autonomous routing}, we report \textbf{overall assignment accuracy}: the rate at which the binary existing-vs-new decision matches ground truth, plus a correct directory match on files predicted existing. We decompose it into \textbf{existing accuracy} (restricted to files that have a same-directory partner in the test set) and \textbf{new accuracy} (restricted to files that should have been flagged as novel). For \emph{top-$k$ ranking}, we report \textbf{cumulative top-$K$ accuracy}: for each $K$ from 1 to 5, the fraction of test queries whose labeled directory appears among the model's top $K$ options. We also report \textbf{Acc@1} averaged over $M=5$ query/reference reseedings as a stable per-layer ranking signal. Training-set directory accuracy at rank~1 is the model-selection signal for ABTT's $D$.
 
 \section{Results}
 
-\subsection{Task A: Duplicate Detection}
+\subsection{Task A: Pairwise Duplicate Detection}
 
 \onecolumn
 \input{tables/taskA_per_model}
 \twocolumn
 
-Table~\ref{tab:taskA_per_layer} reports per-layer Task~A assignment metrics for each model, comparing the uncorrected \texttt{baseline} (mean pooling) against \texttt{sif\_abtt\_optimal} (SIF weighting plus ABTT with $D$ tuned per layer on the train split). Bolded rows mark each model's best layer by ABTT overall assignment accuracy. The two numbers drift apart sharply in the middle layers of the Latin T5 encoders (LaTa, PhilTa) and in \texttt{mt5-base}, and much less in LaBSE, Qwen3-0.6B, and KaLM-mini. The remainder of this section unpacks where these numbers come from layer by layer.
+Table~\ref{tab:taskA_per_layer} reports per-layer Task~A pairwise metrics for each model, comparing the uncorrected \texttt{baseline} (mean pooling) against \texttt{sif\_abtt\_optimal} (SIF weighting plus ABTT with $D$ tuned per layer on the train split). Both AUROC and cosine gap are read off the test n$\times$n cosine matrix without any threshold. Bolded rows mark each model's best layer by ABTT AUROC. The two columns drift apart sharply in the middle layers of the Latin T5 encoders (LaTa, PhilTa) and in \texttt{mt5-base}, and much less in LaBSE, Qwen3-0.6B, and KaLM-mini. The remainder of this section unpacks where these numbers come from layer by layer.
 
 \subsection{The Mid-Layer Dip}
 
@@ -353,13 +332,14 @@ Cosine-gap and AUCROC curves summarize separability in aggregate. Two-dimensiona
 \label{fig:umap}
 \end{figure*}
 
-\subsection{Task B: Simulated Human Selection Accuracy}
+\subsection{Task B: Directory Routing}
 
 \onecolumn
+\input{tables/taskB_routing_per_layer}
 \input{tables/taskB_per_layer}
 \twocolumn
 
-We next return to the directory-assignment setting that motivates deployment. For each query, the system scores every directory by its best document match and then presents the top five options, along with the implicit \texttt{\_\_NEW\_\_} fallback. During evaluation, the ``human'' is simulated by selecting the labeled directory whenever it appears in the shortlist. Table~\ref{tab:taskB_per_layer} reports per-layer Acc@1 and the existing-vs-new decomposition, averaged over $M=5$ query/reference reseedings. Table~\ref{tab:taskb} then reports cumulative top-$K$ accuracy at each model's best layer: the fraction of queries whose labeled directory appears within the top $K$ options, for $K = 1, \ldots, 5$.
+Task~B operationalises the same embeddings into the deployment workflow, which now requires directory knowledge. We report both routing variants per layer. Table~\ref{tab:taskB_routing_per_layer} reports the autonomous-routing view: for every test file we compute $s_i = \max_{j \neq i} \cos(e_i, e_j)$ against the rest of the test set and compare to the learned threshold $\tau$, scoring a file correct iff the binary existing-vs-new prediction matches ground truth. Table~\ref{tab:taskB_per_layer} reports the top-$k$ ranking view in which the system scores each directory by its best document match and presents the top-five options plus the implicit \texttt{\_\_NEW\_\_} fallback; the ``human'' is simulated by selecting the labeled directory whenever it appears in the shortlist, averaged over $M=5$ query/reference reseedings. Table~\ref{tab:taskb} then reports cumulative top-$K$ accuracy at each model's best layer for $K = 1, \ldots, 5$.
 
 \begin{table*}[t]
 \centering
@@ -443,7 +423,7 @@ Our example-level attributions use integrated gradients, with a retrieval-aligne
 \section{Last-Token vs.\ Mean Pooling}
 \label{app:lasttok}
 
-A natural question for the decoder-only models (Qwen3-0.6B, KaLM-mini, Qwen3-8B) is whether last-token pooling, the canonical choice for this family, would change our picture. To answer it directly, we re-run the ABTT post-processing pipeline on all six models using last-token pooling in place of mean pooling, keeping every other hyperparameter and the same train/test split fixed. We restrict the comparison to the two ABTT variants (fixed $D{=}10$ and per-layer tuned $D$) that carry the main-text analysis; SIF weighting is not defined for single-token pooling and is therefore omitted. Table~\ref{tab:lasttok_comparison} reports, for each (model, pooling) pair, the layer that maximizes Task A assignment accuracy together with Task B directory accuracy at rank 1 and the cosine gap at that same layer. Mean pooling outperforms last-token pooling on assignment accuracy for every model; the gap is largest on the two Latin T5 encoders (LaTa and PhilTa, where last-token pooling loses roughly 23--31 accuracy points) and narrows to 1--5 points on LaBSE and the decoder-only models (Qwen3-0.6B, KaLM-mini, Qwen3-8B), confirming that mean pooling is the safer default for this retrieval pipeline even on the decoder-only architectures where last-token pooling is the more conventional choice.
+A natural question for the decoder-only models (Qwen3-0.6B, KaLM-mini, Qwen3-8B) is whether last-token pooling, the canonical choice for this family, would change our picture. To answer it directly, we re-run the ABTT post-processing pipeline on all six models using last-token pooling in place of mean pooling, keeping every other hyperparameter and the same train/test split fixed. We restrict the comparison to the two ABTT variants (fixed $D{=}10$ and per-layer tuned $D$) that carry the main-text analysis; SIF weighting is not defined for single-token pooling and is therefore omitted. Table~\ref{tab:lasttok_comparison} reports, for each (model, pooling) pair, the layer that maximizes Task~B autonomous-routing assignment accuracy together with Task B directory accuracy at rank 1 and the cosine gap at that same layer. Mean pooling outperforms last-token pooling on assignment accuracy for every model; the gap is largest on the two Latin T5 encoders (LaTa and PhilTa, where last-token pooling loses roughly 23--31 accuracy points) and narrows to 1--5 points on LaBSE and the decoder-only models (Qwen3-0.6B, KaLM-mini, Qwen3-8B), confirming that mean pooling is the safer default for this retrieval pipeline even on the decoder-only architectures where last-token pooling is the more conventional choice.
 
 \input{tables/appendix_lasttok_comparison}
 

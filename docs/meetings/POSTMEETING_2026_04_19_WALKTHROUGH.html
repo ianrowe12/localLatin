@@ -121,189 +121,233 @@
 </div>
 
 <h3>Best per-model layer (ABTT) on the new balanced split</h3>
+<p>Task A is now <strong>pure pairwise</strong> (AUROC over the test n&times;n cosine matrix, no directory knowledge). The threshold-and-routing metrics moved to Task B per your call this morning &mdash; see Section 2 below for the full reframing.</p>
 <table>
-<tr><th>Model</th><th>Best Layer (Task A)</th><th>Task A Assign Acc</th><th>Best Layer (Task B)</th><th>Task B Acc@1</th></tr>
-<tr><td><strong>LaTa</strong></td><td class="num">L3</td><td class="num">0.907</td><td class="num">L7</td><td class="num">0.895</td></tr>
-<tr><td><strong>PhilTa</strong></td><td class="num">L1</td><td class="num"><span class="best">0.914</span></td><td class="num">L7</td><td class="num">0.900</td></tr>
-<tr><td><strong>LaBSE</strong></td><td class="num">L11</td><td class="num">0.896</td><td class="num">L11</td><td class="num"><span class="best">0.904</span></td></tr>
-<tr><td><strong>Qwen3-0.6B</strong></td><td class="num">L7</td><td class="num">0.911</td><td class="num">L8</td><td class="num">0.903</td></tr>
-<tr><td><strong>KaLM-mini</strong></td><td class="num">L1</td><td class="num">0.908</td><td class="num">L2</td><td class="num">0.894</td></tr>
-<tr><td><strong>mT5-base</strong></td><td class="num">L1</td><td class="num">0.907</td><td class="num">L1</td><td class="num">0.898</td></tr>
+<tr><th>Model</th><th>Best Layer<br>(Task A AUROC)</th><th>Task A AUROC</th><th>Best Layer<br>(Task B routing)</th><th>Task B Assign Acc</th></tr>
+<tr><td><strong>LaTa</strong></td><td class="num">L1</td><td class="num">0.974</td><td class="num">L3</td><td class="num">0.907</td></tr>
+<tr><td><strong>PhilTa</strong></td><td class="num">L8</td><td class="num">0.981</td><td class="num">L1</td><td class="num"><span class="best">0.914</span></td></tr>
+<tr><td><strong>LaBSE</strong></td><td class="num">L12</td><td class="num"><span class="best">0.982</span></td><td class="num">L11</td><td class="num">0.896</td></tr>
+<tr><td><strong>Qwen3-0.6B</strong></td><td class="num">L1</td><td class="num">0.980</td><td class="num">L7</td><td class="num">0.911</td></tr>
+<tr><td><strong>KaLM-mini</strong></td><td class="num">L23</td><td class="num"><span class="best">0.984</span></td><td class="num">L1</td><td class="num">0.908</td></tr>
+<tr><td><strong>mT5-base</strong></td><td class="num">L5</td><td class="num">0.972</td><td class="num">L1</td><td class="num">0.907</td></tr>
 </table>
 
 <div class="finding amber">
-  <strong>Honest observation to bring up:</strong> Even at the best layer the spread across models is tiny &mdash; 0.886&ndash;0.914 on Task A. The story isn't "model X wins"; it's "ABTT lifts every model to roughly the same plateau, regardless of architecture or layer." Five of six models pick layer 1&ndash;3 as best, which is the dip-and-repair story (early layers had a baseline dip; ABTT repaired them and they're now strongest).
+  <strong>Honest observation to bring up:</strong> On Task A AUROC the spread is tiny &mdash; 0.972&ndash;0.984 across all 6 models. The story isn't "model X wins"; it's "ABTT lifts every model to roughly the same pairwise plateau, regardless of architecture or layer." On Task B routing, the spread widens slightly (0.896&ndash;0.914) because the routing decision adds a threshold-calibration error term on top of the underlying pairwise quality.
 </div>
 
 <!-- ================================================================ -->
-<h2 id="perlayer">2. Per-layer Task A &amp; B tables &mdash; the dip-and-repair story is now visible <span class="tag tag-new">NEW</span></h2>
+<h2 id="perlayer">2. Per-layer Task A &amp; B tables &mdash; reframed: Task A is now pure pairwise <span class="tag tag-fix">REFRAMED</span></h2>
 
 <div class="quote">
   <strong>Your ask:</strong> &ldquo;It will be good if you look at these numbers at all layers... so even though this is the best one I mean what are the scores on other layers.&rdquo;
+  <br><strong>Plus today:</strong> &ldquo;Task A should be purely about comparing one file against another from the n&times;n matrix. There should be no knowledge about any directories.&rdquo;
 </div>
 
-<p>Both tables are now <strong>longtable</strong> with one row per (model, layer), comparing <code>baseline</code> (mean pool, no correction) against <code>sif_abtt_optimal</code> (ABTT with $D$ tuned per layer on train). Best layer per model is bolded by <strong>ABTT</strong> overall assignment accuracy (Task A) or ABTT Acc@1 (Task B). Files: <code>overleaf_drafts/tables/taskA_per_model.tex</code>, <code>overleaf_drafts/tables/taskB_per_layer.tex</code>.</p>
+<div class="finding green">
+  <strong>What changed since the morning push:</strong> per your principled definition, Task A is now strictly the pairwise n&times;n cosine question. Its only metrics are <strong>AUROC</strong> and <strong>cosine gap</strong>. Threshold-based routing (existing/new/overall assignment accuracy) and top-$k$ ranking moved into <strong>Task B</strong>, where directory knowledge is allowed. The "Directory Accuracy vs Assignment Accuracy" subsection in the paper has been deleted &mdash; it only existed to paper over the conflation we just removed. Three tables now ship: Task A pairwise (new), Task B routing per layer (new), Task B top-K ranking (existing). Zero re-extraction or re-evaluation needed &mdash; the source CSV already had every column. Paper compiles.
+</div>
 
-<h3>Task A &mdash; the dip is dramatic, ABTT flatness is the story</h3>
-<p>LaTa shown in full below. Other 5 models are folded into dropdowns &mdash; click any to expand. In every table, watch the <span class="dip">red baseline overall column</span> drop into the mid-layer dip and the <span class="best">green ABTT column</span> stay flat. <strong>Bold row</strong> = best layer per model by ABTT overall.</p>
+<p>Three tables, all per-layer longtable with one row per (model, layer), all comparing <code>baseline</code> (mean pool, no correction) against <code>sif_abtt_optimal</code> (ABTT with $D$ tuned per layer on train):</p>
+<ul style="margin-left: 1.5rem; margin-top: 0.4rem;">
+  <li><code>overleaf_drafts/tables/taskA_per_model.tex</code> &mdash; Task A pairwise: AUROC + cosine gap. Best layer bolded by ABTT AUROC.</li>
+  <li><code>overleaf_drafts/tables/taskB_routing_per_layer.tex</code> &mdash; Task B autonomous routing: existing/new/overall assignment accuracy. Best layer bolded by ABTT overall assignment accuracy.</li>
+  <li><code>overleaf_drafts/tables/taskB_per_layer.tex</code> &mdash; Task B top-K ranking: mseed Acc@1 + existing/new decomposition (5-seed mean &plusmn; std).</li>
+</ul>
 
-<h4 style="margin-top: 1rem;">LaTa &mdash; 12 layers, best at L3 (ABTT overall = 0.907)</h4>
+<h3>Task A &mdash; pure pairwise: AUROC + cosine gap, no directory knowledge, no threshold</h3>
+<p>LaTa shown in full below. Other 5 models fold into dropdowns &mdash; click any to expand. <span class="dip">Red baseline cells</span> mark where the metric collapses (AUROC&nbsp;&lt;&nbsp;0.60 or cosine gap&nbsp;&lt;&nbsp;0.05). <span class="best">Green ABTT cells</span> mark each model's best layer (selected by ABTT AUROC).</p>
+
+<h4 style="margin-top: 1rem;">LaTa &mdash; 12 layers, best at L1 (ABTT AUROC = 0.974)</h4>
+
 <table>
-<tr><th>Layer</th><th>Existing (base)</th><th>Existing (ABTT)</th><th>New (base)</th><th>New (ABTT)</th><th>Overall (base)</th><th>Overall (ABTT)</th></tr>
-<tr><td>1</td><td class="num">0.630</td><td class="num">0.899</td><td class="num">0.916</td><td class="num">0.898</td><td class="num">0.738</td><td class="num">0.899</td></tr>
-<tr><td>2</td><td class="num"><span class="dip">0.153</span></td><td class="num">0.899</td><td class="num">0.913</td><td class="num">0.901</td><td class="num"><span class="dip">0.439</span></td><td class="num">0.900</td></tr>
-<tr><td><strong>3</strong></td><td class="num"><span class="dip">0.256</span></td><td class="num"><span class="best">0.907</span></td><td class="num">0.842</td><td class="num">0.907</td><td class="num"><span class="dip">0.477</span></td><td class="num"><span class="best">0.907</span></td></tr>
-<tr><td>4</td><td class="num">0.389</td><td class="num">0.920</td><td class="num">0.718</td><td class="num">0.873</td><td class="num">0.513</td><td class="num">0.902</td></tr>
-<tr><td>5</td><td class="num">0.374</td><td class="num">0.914</td><td class="num">0.715</td><td class="num">0.892</td><td class="num">0.502</td><td class="num">0.906</td></tr>
-<tr><td>6</td><td class="num">0.378</td><td class="num">0.910</td><td class="num">0.712</td><td class="num">0.870</td><td class="num">0.503</td><td class="num">0.895</td></tr>
-<tr><td>7</td><td class="num">0.372</td><td class="num">0.890</td><td class="num">0.715</td><td class="num">0.926</td><td class="num">0.501</td><td class="num">0.903</td></tr>
-<tr><td>8</td><td class="num">0.379</td><td class="num">0.877</td><td class="num">0.706</td><td class="num">0.916</td><td class="num">0.502</td><td class="num">0.892</td></tr>
-<tr><td>9</td><td class="num">0.366</td><td class="num">0.888</td><td class="num">0.724</td><td class="num">0.892</td><td class="num">0.501</td><td class="num">0.889</td></tr>
-<tr><td>10</td><td class="num">0.344</td><td class="num">0.884</td><td class="num">0.752</td><td class="num">0.901</td><td class="num">0.498</td><td class="num">0.890</td></tr>
-<tr><td>11</td><td class="num">0.310</td><td class="num">0.907</td><td class="num">0.786</td><td class="num">0.836</td><td class="num">0.490</td><td class="num">0.880</td></tr>
-<tr><td>12</td><td class="num">0.576</td><td class="num">0.880</td><td class="num">0.932</td><td class="num">0.938</td><td class="num">0.710</td><td class="num">0.902</td></tr>
+<tr><th>Layer</th><th>AUROC (base)</th><th>AUROC (ABTT)</th><th>Cos gap (base)</th><th>Cos gap (ABTT)</th></tr>
+<tr><td><strong>1</strong></td><td class="num"><strong>0.933</strong></td><td class="num"><span class="best">0.974</span></td><td class="num"><strong>0.286</strong></td><td class="num"><span class="best">0.590</span></td></tr>
+<tr><td>2</td><td class="num"><span class="dip">0.565</span></td><td class="num">0.970</td><td class="num"><span class="dip">0.020</span></td><td class="num">0.580</td></tr>
+<tr><td>3</td><td class="num"><span class="dip">0.515</span></td><td class="num">0.964</td><td class="num"><span class="dip">-0.046</span></td><td class="num">0.580</td></tr>
+<tr><td>4</td><td class="num"><span class="dip">0.502</span></td><td class="num">0.968</td><td class="num"><span class="dip">-0.065</span></td><td class="num">0.586</td></tr>
+<tr><td>5</td><td class="num"><span class="dip">0.498</span></td><td class="num">0.969</td><td class="num"><span class="dip">-0.068</span></td><td class="num">0.584</td></tr>
+<tr><td>6</td><td class="num"><span class="dip">0.497</span></td><td class="num">0.964</td><td class="num"><span class="dip">-0.067</span></td><td class="num">0.580</td></tr>
+<tr><td>7</td><td class="num"><span class="dip">0.499</span></td><td class="num">0.965</td><td class="num"><span class="dip">-0.070</span></td><td class="num">0.579</td></tr>
+<tr><td>8</td><td class="num"><span class="dip">0.504</span></td><td class="num">0.964</td><td class="num"><span class="dip">-0.073</span></td><td class="num">0.576</td></tr>
+<tr><td>9</td><td class="num"><span class="dip">0.504</span></td><td class="num">0.964</td><td class="num"><span class="dip">-0.071</span></td><td class="num">0.579</td></tr>
+<tr><td>10</td><td class="num"><span class="dip">0.507</span></td><td class="num">0.965</td><td class="num"><span class="dip">-0.070</span></td><td class="num">0.576</td></tr>
+<tr><td>11</td><td class="num"><span class="dip">0.510</span></td><td class="num">0.965</td><td class="num"><span class="dip">-0.065</span></td><td class="num">0.579</td></tr>
+<tr><td>12</td><td class="num">0.938</td><td class="num">0.963</td><td class="num">0.238</td><td class="num">0.561</td></tr>
 </table>
-<p class="figure-caption">LaTa Task A, all 12 layers. Baseline overall drops from 0.738 at L1 down to 0.439&ndash;0.513 across L2&ndash;L11 (the anisotropy dip) and only recovers at L12 (0.710). ABTT stays flat at 0.880&ndash;0.907 across every layer.</p>
+
+<p class="figure-caption">LaTa Task A pairwise. Baseline AUROC drops from 0.933 at L1 down to 0.50&ndash;0.51 across L3&ndash;L11 (the anisotropy dip &mdash; chance), then recovers at L12 (0.938). ABTT stays at 0.96&ndash;0.97 across every layer. Cosine gap goes <em>negative</em> in the dip (L4&ndash;L11) under baseline, ABTT keeps it at 0.56&ndash;0.59.</p>
 
 <details class="qa">
-<summary>PhilTa &mdash; 12 layers, best at L1 (ABTT overall = 0.914)</summary>
+
+<summary>PhilTa &mdash; 12 layers, best at L8 (ABTT AUROC = 0.981)</summary>
+
 <div class="qa-body">
+
 <table>
-<tr><th>Layer</th><th>Existing (base)</th><th>Existing (ABTT)</th><th>New (base)</th><th>New (ABTT)</th><th>Overall (base)</th><th>Overall (ABTT)</th></tr>
-<tr><td><strong>1</strong></td><td class="num">0.591</td><td class="num"><span class="best">0.905</span></td><td class="num">0.904</td><td class="num"><span class="best">0.929</span></td><td class="num">0.709</td><td class="num"><span class="best">0.914</span></td></tr>
-<tr><td>2</td><td class="num">0.479</td><td class="num">0.921</td><td class="num">0.867</td><td class="num">0.842</td><td class="num">0.625</td><td class="num">0.892</td></tr>
-<tr><td>3</td><td class="num"><span class="dip">0.193</span></td><td class="num">0.899</td><td class="num">0.889</td><td class="num">0.879</td><td class="num"><span class="dip">0.455</span></td><td class="num">0.892</td></tr>
-<tr><td>4</td><td class="num"><span class="dip">0.148</span></td><td class="num">0.903</td><td class="num">0.923</td><td class="num">0.858</td><td class="num"><span class="dip">0.439</span></td><td class="num">0.886</td></tr>
-<tr><td>5</td><td class="num">0.252</td><td class="num">0.905</td><td class="num">0.796</td><td class="num">0.885</td><td class="num"><span class="dip">0.457</span></td><td class="num">0.897</td></tr>
-<tr><td>6</td><td class="num">0.338</td><td class="num">0.908</td><td class="num">0.700</td><td class="num">0.901</td><td class="num"><span class="dip">0.474</span></td><td class="num">0.906</td></tr>
-<tr><td>7</td><td class="num">0.301</td><td class="num">0.903</td><td class="num">0.746</td><td class="num">0.910</td><td class="num"><span class="dip">0.469</span></td><td class="num">0.906</td></tr>
-<tr><td>8</td><td class="num">0.262</td><td class="num">0.897</td><td class="num">0.808</td><td class="num">0.867</td><td class="num"><span class="dip">0.467</span></td><td class="num">0.886</td></tr>
-<tr><td>9</td><td class="num">0.303</td><td class="num">0.905</td><td class="num">0.762</td><td class="num">0.879</td><td class="num"><span class="dip">0.476</span></td><td class="num">0.895</td></tr>
-<tr><td>10</td><td class="num">0.299</td><td class="num">0.899</td><td class="num">0.780</td><td class="num">0.870</td><td class="num"><span class="dip">0.480</span></td><td class="num">0.888</td></tr>
-<tr><td>11</td><td class="num">0.256</td><td class="num">0.897</td><td class="num">0.824</td><td class="num">0.867</td><td class="num"><span class="dip">0.470</span></td><td class="num">0.886</td></tr>
-<tr><td>12</td><td class="num">0.338</td><td class="num">0.908</td><td class="num">0.898</td><td class="num">0.882</td><td class="num">0.549</td><td class="num">0.899</td></tr>
+<tr><th>Layer</th><th>AUROC (base)</th><th>AUROC (ABTT)</th><th>Cos gap (base)</th><th>Cos gap (ABTT)</th></tr>
+<tr><td>1</td><td class="num">0.939</td><td class="num">0.973</td><td class="num">0.231</td><td class="num">0.572</td></tr>
+<tr><td>2</td><td class="num">0.911</td><td class="num">0.970</td><td class="num">0.161</td><td class="num">0.565</td></tr>
+<tr><td>3</td><td class="num">0.601</td><td class="num">0.966</td><td class="num">0.085</td><td class="num">0.558</td></tr>
+<tr><td>4</td><td class="num"><span class="dip">0.551</span></td><td class="num">0.970</td><td class="num">0.064</td><td class="num">0.563</td></tr>
+<tr><td>5</td><td class="num"><span class="dip">0.543</span></td><td class="num">0.976</td><td class="num">0.054</td><td class="num">0.574</td></tr>
+<tr><td>6</td><td class="num"><span class="dip">0.541</span></td><td class="num">0.980</td><td class="num"><span class="dip">0.048</span></td><td class="num">0.567</td></tr>
+<tr><td>7</td><td class="num"><span class="dip">0.542</span></td><td class="num">0.980</td><td class="num"><span class="dip">0.047</span></td><td class="num">0.570</td></tr>
+<tr><td><strong>8</strong></td><td class="num"><strong><span class="dip">0.543</span></strong></td><td class="num"><span class="best">0.981</span></td><td class="num"><strong><span class="dip">0.047</span></strong></td><td class="num"><span class="best">0.573</span></td></tr>
+<tr><td>9</td><td class="num"><span class="dip">0.539</span></td><td class="num">0.977</td><td class="num"><span class="dip">0.042</span></td><td class="num">0.563</td></tr>
+<tr><td>10</td><td class="num"><span class="dip">0.539</span></td><td class="num">0.977</td><td class="num"><span class="dip">0.040</span></td><td class="num">0.556</td></tr>
+<tr><td>11</td><td class="num"><span class="dip">0.540</span></td><td class="num">0.978</td><td class="num"><span class="dip">0.041</span></td><td class="num">0.542</td></tr>
+<tr><td>12</td><td class="num">0.911</td><td class="num">0.968</td><td class="num">0.181</td><td class="num">0.517</td></tr>
 </table>
-<p class="figure-caption">PhilTa Task A, all 12 layers. PhilTa picks L1 because the dip happens immediately after &mdash; baseline drops from 0.709 at L1 to 0.439 at L4 and stays in the 0.45&ndash;0.48 range until L12. ABTT recovers everywhere to 0.886&ndash;0.914.</p>
+
+<p class="figure-caption">PhilTa Task A pairwise. Baseline drops from 0.939 at L1 to 0.54&ndash;0.60 across L3&ndash;L11 then recovers at L12. ABTT lifts every layer to 0.97+ AUROC. Best layer is L8 by AUROC (0.981) but L1&ndash;L12 are all within 0.012.</p>
+
 </div>
+
 </details>
 
 <details class="qa">
-<summary>LaBSE &mdash; 12 layers, best at L11 (ABTT overall = 0.896)</summary>
+
+<summary>LaBSE &mdash; 12 layers, best at L12 (ABTT AUROC = 0.982)</summary>
+
 <div class="qa-body">
+
 <table>
-<tr><th>Layer</th><th>Existing (base)</th><th>Existing (ABTT)</th><th>New (base)</th><th>New (ABTT)</th><th>Overall (base)</th><th>Overall (ABTT)</th></tr>
-<tr><td>1</td><td class="num">0.222</td><td class="num">0.897</td><td class="num">0.898</td><td class="num">0.867</td><td class="num"><span class="dip">0.477</span></td><td class="num">0.886</td></tr>
-<tr><td>2</td><td class="num">0.381</td><td class="num">0.880</td><td class="num">0.811</td><td class="num">0.867</td><td class="num">0.543</td><td class="num">0.875</td></tr>
-<tr><td>3</td><td class="num">0.277</td><td class="num">0.912</td><td class="num">0.907</td><td class="num">0.774</td><td class="num"><span class="dip">0.514</span></td><td class="num">0.860</td></tr>
-<tr><td>4</td><td class="num">0.372</td><td class="num">0.907</td><td class="num">0.885</td><td class="num">0.808</td><td class="num">0.565</td><td class="num">0.869</td></tr>
-<tr><td>5</td><td class="num">0.327</td><td class="num">0.854</td><td class="num">0.901</td><td class="num">0.861</td><td class="num">0.543</td><td class="num">0.857</td></tr>
-<tr><td>6</td><td class="num">0.548</td><td class="num">0.875</td><td class="num">0.882</td><td class="num">0.867</td><td class="num">0.674</td><td class="num">0.872</td></tr>
-<tr><td>7</td><td class="num">0.398</td><td class="num">0.869</td><td class="num">0.892</td><td class="num">0.839</td><td class="num">0.584</td><td class="num">0.858</td></tr>
-<tr><td>8</td><td class="num">0.385</td><td class="num">0.865</td><td class="num">0.870</td><td class="num">0.836</td><td class="num">0.568</td><td class="num">0.854</td></tr>
-<tr><td>9</td><td class="num">0.421</td><td class="num">0.886</td><td class="num">0.929</td><td class="num">0.814</td><td class="num">0.612</td><td class="num">0.859</td></tr>
-<tr><td>10</td><td class="num">0.606</td><td class="num">0.884</td><td class="num">0.892</td><td class="num">0.830</td><td class="num">0.713</td><td class="num">0.864</td></tr>
-<tr><td><strong>11</strong></td><td class="num">0.785</td><td class="num"><span class="best">0.929</span></td><td class="num">0.913</td><td class="num">0.842</td><td class="num">0.833</td><td class="num"><span class="best">0.896</span></td></tr>
-<tr><td>12</td><td class="num">0.729</td><td class="num">0.895</td><td class="num">0.938</td><td class="num">0.854</td><td class="num">0.808</td><td class="num">0.880</td></tr>
+<tr><th>Layer</th><th>AUROC (base)</th><th>AUROC (ABTT)</th><th>Cos gap (base)</th><th>Cos gap (ABTT)</th></tr>
+<tr><td>1</td><td class="num">0.807</td><td class="num">0.974</td><td class="num">0.060</td><td class="num">0.495</td></tr>
+<tr><td>2</td><td class="num">0.835</td><td class="num">0.974</td><td class="num"><span class="dip">0.038</span></td><td class="num">0.514</td></tr>
+<tr><td>3</td><td class="num">0.855</td><td class="num">0.968</td><td class="num">0.063</td><td class="num">0.517</td></tr>
+<tr><td>4</td><td class="num">0.864</td><td class="num">0.966</td><td class="num">0.074</td><td class="num">0.511</td></tr>
+<tr><td>5</td><td class="num">0.866</td><td class="num">0.963</td><td class="num">0.066</td><td class="num">0.500</td></tr>
+<tr><td>6</td><td class="num">0.895</td><td class="num">0.964</td><td class="num">0.078</td><td class="num">0.525</td></tr>
+<tr><td>7</td><td class="num">0.889</td><td class="num">0.961</td><td class="num">0.089</td><td class="num">0.516</td></tr>
+<tr><td>8</td><td class="num">0.881</td><td class="num">0.966</td><td class="num">0.080</td><td class="num">0.521</td></tr>
+<tr><td>9</td><td class="num">0.918</td><td class="num">0.971</td><td class="num">0.091</td><td class="num">0.558</td></tr>
+<tr><td>10</td><td class="num">0.936</td><td class="num">0.974</td><td class="num">0.103</td><td class="num">0.579</td></tr>
+<tr><td>11</td><td class="num">0.961</td><td class="num">0.980</td><td class="num">0.061</td><td class="num">0.609</td></tr>
+<tr><td><strong>12</strong></td><td class="num"><strong>0.957</strong></td><td class="num"><span class="best">0.982</span></td><td class="num"><strong>0.183</strong></td><td class="num"><span class="best">0.595</span></td></tr>
 </table>
-<p class="figure-caption">LaBSE Task A, all 12 layers. Different from the T5 encoders: LaBSE's baseline curve <em>climbs</em> with depth (0.477 at L1 to 0.833 at L11), so its best layer is late. ABTT still helps but the gap is smaller (0.063 at L11) than in early layers (0.409 at L1). The encoder was already pretty isotropic by L11.</p>
+
+<p class="figure-caption">LaBSE Task A pairwise. Different from the T5 encoders: baseline AUROC <em>climbs</em> with depth (0.807 at L1 to 0.961 at L11), so its best layer is late. ABTT still helps but the gap is smaller. The cosine gap baseline stays low (0.04&ndash;0.10) until ABTT brings it to 0.50&ndash;0.61.</p>
+
 </div>
+
 </details>
 
 <details class="qa">
-<summary>Qwen3-0.6B &mdash; 28 layers, best at L7 (ABTT overall = 0.911)</summary>
+
+<summary>Qwen3-0.6B &mdash; 28 layers, best at L1 (ABTT AUROC = 0.980)</summary>
+
 <div class="qa-body">
+
 <table>
-<tr><th>Layer</th><th>Existing (base)</th><th>Existing (ABTT)</th><th>New (base)</th><th>New (ABTT)</th><th>Overall (base)</th><th>Overall (ABTT)</th></tr>
-<tr><td>1</td><td class="num">0.264</td><td class="num">0.890</td><td class="num">0.960</td><td class="num">0.941</td><td class="num">0.526</td><td class="num">0.909</td></tr>
-<tr><td>2</td><td class="num">0.437</td><td class="num">0.880</td><td class="num">0.814</td><td class="num">0.916</td><td class="num">0.579</td><td class="num">0.894</td></tr>
-<tr><td>3</td><td class="num">0.250</td><td class="num">0.884</td><td class="num">0.947</td><td class="num">0.929</td><td class="num"><span class="dip">0.513</span></td><td class="num">0.901</td></tr>
-<tr><td>4</td><td class="num">0.411</td><td class="num">0.903</td><td class="num">0.848</td><td class="num">0.907</td><td class="num">0.576</td><td class="num">0.904</td></tr>
-<tr><td>5</td><td class="num">0.181</td><td class="num">0.892</td><td class="num">0.932</td><td class="num">0.935</td><td class="num"><span class="dip">0.464</span></td><td class="num">0.908</td></tr>
-<tr><td>6</td><td class="num">0.422</td><td class="num">0.907</td><td class="num">0.830</td><td class="num">0.904</td><td class="num">0.576</td><td class="num">0.906</td></tr>
-<tr><td><strong>7</strong></td><td class="num">0.250</td><td class="num"><span class="best">0.910</span></td><td class="num">0.947</td><td class="num">0.913</td><td class="num"><span class="dip">0.513</span></td><td class="num"><span class="best">0.911</span></td></tr>
-<tr><td>8</td><td class="num">0.409</td><td class="num">0.910</td><td class="num">0.895</td><td class="num">0.913</td><td class="num">0.592</td><td class="num">0.911</td></tr>
-<tr><td>9</td><td class="num">0.460</td><td class="num">0.925</td><td class="num">0.851</td><td class="num">0.885</td><td class="num">0.607</td><td class="num">0.910</td></tr>
-<tr><td>10</td><td class="num">0.533</td><td class="num">0.899</td><td class="num">0.836</td><td class="num">0.901</td><td class="num">0.647</td><td class="num">0.900</td></tr>
-<tr><td>11</td><td class="num">0.293</td><td class="num">0.897</td><td class="num">0.978</td><td class="num">0.885</td><td class="num">0.551</td><td class="num">0.893</td></tr>
-<tr><td>12</td><td class="num">0.407</td><td class="num">0.897</td><td class="num">0.938</td><td class="num">0.904</td><td class="num">0.607</td><td class="num">0.900</td></tr>
-<tr><td>13</td><td class="num">0.432</td><td class="num">0.908</td><td class="num">0.944</td><td class="num">0.879</td><td class="num">0.625</td><td class="num">0.897</td></tr>
-<tr><td>14</td><td class="num">0.456</td><td class="num">0.910</td><td class="num">0.926</td><td class="num">0.864</td><td class="num">0.633</td><td class="num">0.893</td></tr>
-<tr><td>15</td><td class="num">0.469</td><td class="num">0.910</td><td class="num">0.920</td><td class="num">0.864</td><td class="num">0.639</td><td class="num">0.893</td></tr>
-<tr><td>16</td><td class="num">0.639</td><td class="num">0.899</td><td class="num">0.830</td><td class="num">0.848</td><td class="num">0.711</td><td class="num">0.880</td></tr>
-<tr><td>17</td><td class="num">0.480</td><td class="num">0.867</td><td class="num">0.935</td><td class="num">0.892</td><td class="num">0.652</td><td class="num">0.876</td></tr>
-<tr><td>18</td><td class="num">0.553</td><td class="num">0.892</td><td class="num">0.944</td><td class="num">0.867</td><td class="num">0.700</td><td class="num">0.882</td></tr>
-<tr><td>19</td><td class="num">0.514</td><td class="num">0.821</td><td class="num">0.966</td><td class="num">0.898</td><td class="num">0.684</td><td class="num">0.850</td></tr>
-<tr><td>20</td><td class="num">0.654</td><td class="num">0.912</td><td class="num">0.898</td><td class="num">0.833</td><td class="num">0.746</td><td class="num">0.882</td></tr>
-<tr><td>21</td><td class="num">0.647</td><td class="num">0.890</td><td class="num">0.950</td><td class="num">0.895</td><td class="num">0.761</td><td class="num">0.892</td></tr>
-<tr><td>22</td><td class="num">0.731</td><td class="num">0.914</td><td class="num">0.938</td><td class="num">0.858</td><td class="num">0.809</td><td class="num">0.893</td></tr>
-<tr><td>23</td><td class="num">0.622</td><td class="num">0.908</td><td class="num">0.966</td><td class="num">0.867</td><td class="num">0.752</td><td class="num">0.893</td></tr>
-<tr><td>24</td><td class="num">0.748</td><td class="num">0.908</td><td class="num">0.935</td><td class="num">0.882</td><td class="num">0.818</td><td class="num">0.899</td></tr>
-<tr><td>25</td><td class="num">0.574</td><td class="num">0.910</td><td class="num">0.975</td><td class="num">0.864</td><td class="num">0.725</td><td class="num">0.893</td></tr>
-<tr><td>26</td><td class="num">0.613</td><td class="num">0.901</td><td class="num">0.975</td><td class="num">0.907</td><td class="num">0.749</td><td class="num">0.903</td></tr>
-<tr><td>27</td><td class="num">0.793</td><td class="num">0.864</td><td class="num">0.833</td><td class="num">0.957</td><td class="num">0.808</td><td class="num">0.899</td></tr>
-<tr><td>28</td><td class="num">0.796</td><td class="num">0.884</td><td class="num">0.867</td><td class="num">0.901</td><td class="num">0.823</td><td class="num">0.890</td></tr>
+<tr><th>Layer</th><th>AUROC (base)</th><th>AUROC (ABTT)</th><th>Cos gap (base)</th><th>Cos gap (ABTT)</th></tr>
+<tr><td><strong>1</strong></td><td class="num"><strong>0.859</strong></td><td class="num"><span class="best">0.980</span></td><td class="num"><strong><span class="dip">0.033</span></strong></td><td class="num"><span class="best">0.552</span></td></tr>
+<tr><td>2</td><td class="num">0.864</td><td class="num">0.972</td><td class="num"><span class="dip">0.024</span></td><td class="num">0.540</td></tr>
+<tr><td>3</td><td class="num">0.864</td><td class="num">0.975</td><td class="num"><span class="dip">0.037</span></td><td class="num">0.549</td></tr>
+<tr><td>4</td><td class="num">0.861</td><td class="num">0.977</td><td class="num"><span class="dip">0.036</span></td><td class="num">0.543</td></tr>
+<tr><td>5</td><td class="num">0.862</td><td class="num">0.971</td><td class="num"><span class="dip">0.030</span></td><td class="num">0.528</td></tr>
+<tr><td>6</td><td class="num">0.868</td><td class="num">0.974</td><td class="num"><span class="dip">0.035</span></td><td class="num">0.537</td></tr>
+<tr><td>7</td><td class="num">0.877</td><td class="num">0.971</td><td class="num"><span class="dip">0.033</span></td><td class="num">0.538</td></tr>
+<tr><td>8</td><td class="num">0.884</td><td class="num">0.969</td><td class="num"><span class="dip">0.037</span></td><td class="num">0.531</td></tr>
+<tr><td>9</td><td class="num">0.882</td><td class="num">0.968</td><td class="num"><span class="dip">0.034</span></td><td class="num">0.528</td></tr>
+<tr><td>10</td><td class="num">0.888</td><td class="num">0.966</td><td class="num"><span class="dip">0.031</span></td><td class="num">0.521</td></tr>
+<tr><td>11</td><td class="num">0.896</td><td class="num">0.964</td><td class="num"><span class="dip">0.030</span></td><td class="num">0.516</td></tr>
+<tr><td>12</td><td class="num">0.903</td><td class="num">0.967</td><td class="num"><span class="dip">0.027</span></td><td class="num">0.528</td></tr>
+<tr><td>13</td><td class="num">0.908</td><td class="num">0.967</td><td class="num"><span class="dip">0.026</span></td><td class="num">0.524</td></tr>
+<tr><td>14</td><td class="num">0.906</td><td class="num">0.966</td><td class="num"><span class="dip">0.024</span></td><td class="num">0.516</td></tr>
+<tr><td>15</td><td class="num">0.902</td><td class="num">0.967</td><td class="num"><span class="dip">0.022</span></td><td class="num">0.513</td></tr>
+<tr><td>16</td><td class="num">0.911</td><td class="num">0.965</td><td class="num"><span class="dip">0.026</span></td><td class="num">0.508</td></tr>
+<tr><td>17</td><td class="num">0.917</td><td class="num">0.974</td><td class="num"><span class="dip">0.032</span></td><td class="num">0.519</td></tr>
+<tr><td>18</td><td class="num">0.934</td><td class="num">0.972</td><td class="num"><span class="dip">0.032</span></td><td class="num">0.526</td></tr>
+<tr><td>19</td><td class="num">0.937</td><td class="num">0.976</td><td class="num"><span class="dip">0.035</span></td><td class="num">0.530</td></tr>
+<tr><td>20</td><td class="num">0.943</td><td class="num">0.971</td><td class="num"><span class="dip">0.041</span></td><td class="num">0.544</td></tr>
+<tr><td>21</td><td class="num">0.953</td><td class="num">0.971</td><td class="num"><span class="dip">0.047</span></td><td class="num">0.548</td></tr>
+<tr><td>22</td><td class="num">0.963</td><td class="num">0.973</td><td class="num"><span class="dip">0.044</span></td><td class="num">0.559</td></tr>
+<tr><td>23</td><td class="num">0.960</td><td class="num">0.973</td><td class="num"><span class="dip">0.038</span></td><td class="num">0.557</td></tr>
+<tr><td>24</td><td class="num">0.962</td><td class="num">0.973</td><td class="num"><span class="dip">0.032</span></td><td class="num">0.564</td></tr>
+<tr><td>25</td><td class="num">0.960</td><td class="num">0.974</td><td class="num"><span class="dip">0.027</span></td><td class="num">0.563</td></tr>
+<tr><td>26</td><td class="num">0.965</td><td class="num">0.979</td><td class="num"><span class="dip">0.024</span></td><td class="num">0.560</td></tr>
+<tr><td>27</td><td class="num">0.966</td><td class="num">0.977</td><td class="num"><span class="dip">0.017</span></td><td class="num">0.554</td></tr>
+<tr><td>28</td><td class="num">0.958</td><td class="num">0.967</td><td class="num">0.098</td><td class="num">0.550</td></tr>
 </table>
-<p class="figure-caption">Qwen3-0.6B Task A, all 28 layers. Baseline climbs gradually from 0.526 at L1 to 0.823 at L28 with mid-network dips (0.464 at L5, 0.513 at L7). ABTT stays in 0.850&ndash;0.911 across the entire stack &mdash; 28 layers and the spread is 0.061 with ABTT vs 0.297 baseline. L7 wins by 0.001 over L1; effectively a tie.</p>
+
+<p class="figure-caption">Qwen3-0.6B Task A pairwise, all 28 layers. Baseline climbs gradually from 0.859 at L1 to 0.966 at L27. ABTT stays in 0.964&ndash;0.980 across the entire stack. L1 wins on ABTT AUROC (0.980); L7&ndash;L28 are within 0.016.</p>
+
 </div>
+
 </details>
 
 <details class="qa">
-<summary>KaLM-mini &mdash; 24 layers, best at L1 (ABTT overall = 0.908)</summary>
+
+<summary>KaLM-mini &mdash; 24 layers, best at L23 (ABTT AUROC = 0.984)</summary>
+
 <div class="qa-body">
+
 <table>
-<tr><th>Layer</th><th>Existing (base)</th><th>Existing (ABTT)</th><th>New (base)</th><th>New (ABTT)</th><th>Overall (base)</th><th>Overall (ABTT)</th></tr>
-<tr><td><strong>1</strong></td><td class="num">0.391</td><td class="num"><span class="best">0.907</span></td><td class="num">0.907</td><td class="num"><span class="best">0.910</span></td><td class="num">0.585</td><td class="num"><span class="best">0.908</span></td></tr>
-<tr><td>2</td><td class="num">0.493</td><td class="num">0.903</td><td class="num">0.848</td><td class="num">0.916</td><td class="num">0.627</td><td class="num">0.908</td></tr>
-<tr><td>3</td><td class="num">0.443</td><td class="num">0.899</td><td class="num">0.870</td><td class="num">0.920</td><td class="num">0.604</td><td class="num">0.907</td></tr>
-<tr><td>4</td><td class="num">0.308</td><td class="num">0.897</td><td class="num">0.935</td><td class="num">0.907</td><td class="num"><span class="dip">0.544</span></td><td class="num">0.901</td></tr>
-<tr><td>5</td><td class="num">0.338</td><td class="num">0.892</td><td class="num">0.882</td><td class="num">0.907</td><td class="num"><span class="dip">0.543</span></td><td class="num">0.897</td></tr>
-<tr><td>6</td><td class="num">0.256</td><td class="num">0.905</td><td class="num">0.910</td><td class="num">0.892</td><td class="num"><span class="dip">0.502</span></td><td class="num">0.900</td></tr>
-<tr><td>7</td><td class="num">0.475</td><td class="num">0.895</td><td class="num">0.854</td><td class="num">0.910</td><td class="num">0.618</td><td class="num">0.901</td></tr>
-<tr><td>8</td><td class="num">0.467</td><td class="num">0.862</td><td class="num">0.870</td><td class="num">0.904</td><td class="num">0.619</td><td class="num">0.878</td></tr>
-<tr><td>9</td><td class="num">0.469</td><td class="num">0.873</td><td class="num">0.885</td><td class="num">0.882</td><td class="num">0.626</td><td class="num">0.876</td></tr>
-<tr><td>10</td><td class="num">0.449</td><td class="num">0.828</td><td class="num">0.885</td><td class="num">0.929</td><td class="num">0.613</td><td class="num">0.866</td></tr>
-<tr><td>11</td><td class="num">0.458</td><td class="num">0.849</td><td class="num">0.885</td><td class="num">0.916</td><td class="num">0.619</td><td class="num">0.874</td></tr>
-<tr><td>12</td><td class="num">0.507</td><td class="num">0.854</td><td class="num">0.895</td><td class="num">0.907</td><td class="num">0.653</td><td class="num">0.874</td></tr>
-<tr><td>13</td><td class="num">0.540</td><td class="num">0.843</td><td class="num">0.895</td><td class="num">0.898</td><td class="num">0.674</td><td class="num">0.864</td></tr>
-<tr><td>14</td><td class="num">0.593</td><td class="num">0.852</td><td class="num">0.845</td><td class="num">0.876</td><td class="num">0.688</td><td class="num">0.861</td></tr>
-<tr><td>15</td><td class="num">0.566</td><td class="num">0.864</td><td class="num">0.898</td><td class="num">0.870</td><td class="num">0.691</td><td class="num">0.866</td></tr>
-<tr><td>16</td><td class="num">0.550</td><td class="num">0.871</td><td class="num">0.935</td><td class="num">0.839</td><td class="num">0.695</td><td class="num">0.859</td></tr>
-<tr><td>17</td><td class="num">0.675</td><td class="num">0.888</td><td class="num">0.920</td><td class="num">0.873</td><td class="num">0.767</td><td class="num">0.882</td></tr>
-<tr><td>18</td><td class="num">0.697</td><td class="num">0.880</td><td class="num">0.960</td><td class="num">0.876</td><td class="num">0.796</td><td class="num">0.879</td></tr>
-<tr><td>19</td><td class="num">0.721</td><td class="num">0.877</td><td class="num">0.966</td><td class="num">0.879</td><td class="num">0.814</td><td class="num">0.878</td></tr>
-<tr><td>20</td><td class="num">0.705</td><td class="num">0.873</td><td class="num">0.966</td><td class="num">0.882</td><td class="num">0.803</td><td class="num">0.876</td></tr>
-<tr><td>21</td><td class="num">0.727</td><td class="num">0.852</td><td class="num">0.966</td><td class="num">0.916</td><td class="num">0.817</td><td class="num">0.876</td></tr>
-<tr><td>22</td><td class="num">0.850</td><td class="num">0.852</td><td class="num">0.916</td><td class="num">0.916</td><td class="num">0.875</td><td class="num">0.876</td></tr>
-<tr><td>23</td><td class="num">0.849</td><td class="num">0.873</td><td class="num">0.920</td><td class="num">0.895</td><td class="num">0.875</td><td class="num">0.881</td></tr>
-<tr><td>24</td><td class="num">0.787</td><td class="num">0.871</td><td class="num">0.944</td><td class="num">0.867</td><td class="num">0.846</td><td class="num">0.869</td></tr>
+<tr><th>Layer</th><th>AUROC (base)</th><th>AUROC (ABTT)</th><th>Cos gap (base)</th><th>Cos gap (ABTT)</th></tr>
+<tr><td>1</td><td class="num">0.888</td><td class="num">0.979</td><td class="num">0.064</td><td class="num">0.544</td></tr>
+<tr><td>2</td><td class="num">0.908</td><td class="num">0.981</td><td class="num"><span class="dip">0.044</span></td><td class="num">0.535</td></tr>
+<tr><td>3</td><td class="num">0.882</td><td class="num">0.977</td><td class="num">0.062</td><td class="num">0.536</td></tr>
+<tr><td>4</td><td class="num">0.872</td><td class="num">0.974</td><td class="num">0.060</td><td class="num">0.535</td></tr>
+<tr><td>5</td><td class="num">0.862</td><td class="num">0.971</td><td class="num">0.062</td><td class="num">0.527</td></tr>
+<tr><td>6</td><td class="num">0.873</td><td class="num">0.966</td><td class="num">0.062</td><td class="num">0.518</td></tr>
+<tr><td>7</td><td class="num">0.889</td><td class="num">0.971</td><td class="num">0.072</td><td class="num">0.522</td></tr>
+<tr><td>8</td><td class="num">0.891</td><td class="num">0.975</td><td class="num">0.072</td><td class="num">0.525</td></tr>
+<tr><td>9</td><td class="num">0.893</td><td class="num">0.966</td><td class="num">0.066</td><td class="num">0.505</td></tr>
+<tr><td>10</td><td class="num">0.893</td><td class="num">0.963</td><td class="num">0.067</td><td class="num">0.496</td></tr>
+<tr><td>11</td><td class="num">0.895</td><td class="num">0.968</td><td class="num">0.061</td><td class="num">0.483</td></tr>
+<tr><td>12</td><td class="num">0.905</td><td class="num">0.965</td><td class="num">0.071</td><td class="num">0.487</td></tr>
+<tr><td>13</td><td class="num">0.901</td><td class="num">0.963</td><td class="num">0.066</td><td class="num">0.476</td></tr>
+<tr><td>14</td><td class="num">0.904</td><td class="num">0.968</td><td class="num">0.063</td><td class="num">0.477</td></tr>
+<tr><td>15</td><td class="num">0.907</td><td class="num">0.968</td><td class="num">0.067</td><td class="num">0.480</td></tr>
+<tr><td>16</td><td class="num">0.917</td><td class="num">0.966</td><td class="num">0.071</td><td class="num">0.492</td></tr>
+<tr><td>17</td><td class="num">0.926</td><td class="num">0.968</td><td class="num">0.075</td><td class="num">0.514</td></tr>
+<tr><td>18</td><td class="num">0.944</td><td class="num">0.976</td><td class="num">0.060</td><td class="num">0.530</td></tr>
+<tr><td>19</td><td class="num">0.955</td><td class="num">0.978</td><td class="num">0.061</td><td class="num">0.538</td></tr>
+<tr><td>20</td><td class="num">0.959</td><td class="num">0.978</td><td class="num">0.054</td><td class="num">0.542</td></tr>
+<tr><td>21</td><td class="num">0.961</td><td class="num">0.982</td><td class="num"><span class="dip">0.043</span></td><td class="num">0.562</td></tr>
+<tr><td>22</td><td class="num">0.969</td><td class="num">0.982</td><td class="num">0.050</td><td class="num">0.583</td></tr>
+<tr><td><strong>23</strong></td><td class="num"><strong>0.970</strong></td><td class="num"><span class="best">0.984</span></td><td class="num"><strong>0.056</strong></td><td class="num"><span class="best">0.579</span></td></tr>
+<tr><td>24</td><td class="num">0.954</td><td class="num">0.975</td><td class="num">0.243</td><td class="num">0.521</td></tr>
 </table>
-<p class="figure-caption">KaLM-mini Task A, all 24 layers. Baseline climbs from 0.585 at L1 to 0.875 at L22, with a mid-stack dip (L4&ndash;L6 at 0.502&ndash;0.544). ABTT helps less at the late layers because the baseline already worked there (L22&ndash;L24: ABTT &asymp; baseline). L1 wins because ABTT lifts it (+0.323) more than ABTT lifts L22 (+0.001).</p>
+
+<p class="figure-caption">KaLM-mini Task A pairwise, all 24 layers. Baseline climbs from 0.888 at L1 to 0.970 at L23, with mid-stack stability. ABTT lifts to 0.97+ across the stack. L23 wins on ABTT AUROC (0.984).</p>
+
 </div>
+
 </details>
 
 <details class="qa">
-<summary>mT5-base &mdash; 12 layers, best at L1 (ABTT overall = 0.907)</summary>
+
+<summary>mT5-base &mdash; 12 layers, best at L5 (ABTT AUROC = 0.972)</summary>
+
 <div class="qa-body">
+
 <table>
-<tr><th>Layer</th><th>Existing (base)</th><th>Existing (ABTT)</th><th>New (base)</th><th>New (ABTT)</th><th>Overall (base)</th><th>Overall (ABTT)</th></tr>
-<tr><td><strong>1</strong></td><td class="num"><span class="dip">0.135</span></td><td class="num"><span class="best">0.908</span></td><td class="num">0.981</td><td class="num">0.904</td><td class="num"><span class="dip">0.453</span></td><td class="num"><span class="best">0.907</span></td></tr>
-<tr><td>2</td><td class="num"><span class="dip">0.110</span></td><td class="num">0.908</td><td class="num">0.975</td><td class="num">0.895</td><td class="num"><span class="dip">0.436</span></td><td class="num">0.903</td></tr>
-<tr><td>3</td><td class="num">0.161</td><td class="num">0.892</td><td class="num">0.926</td><td class="num">0.885</td><td class="num"><span class="dip">0.449</span></td><td class="num">0.889</td></tr>
-<tr><td>4</td><td class="num">0.269</td><td class="num">0.824</td><td class="num">0.858</td><td class="num">0.910</td><td class="num">0.491</td><td class="num">0.857</td></tr>
-<tr><td>5</td><td class="num">0.422</td><td class="num">0.770</td><td class="num">0.659</td><td class="num">0.920</td><td class="num">0.512</td><td class="num">0.826</td></tr>
-<tr><td>6</td><td class="num">0.636</td><td class="num">0.832</td><td class="num">0.489</td><td class="num">0.793</td><td class="num">0.580</td><td class="num">0.817</td></tr>
-<tr><td>7</td><td class="num">0.594</td><td class="num">0.819</td><td class="num">0.517</td><td class="num">0.854</td><td class="num">0.565</td><td class="num">0.832</td></tr>
-<tr><td>8</td><td class="num">0.557</td><td class="num">0.843</td><td class="num">0.560</td><td class="num">0.820</td><td class="num">0.558</td><td class="num">0.834</td></tr>
-<tr><td>9</td><td class="num">0.364</td><td class="num">0.845</td><td class="num">0.746</td><td class="num">0.845</td><td class="num">0.508</td><td class="num">0.845</td></tr>
-<tr><td>10</td><td class="num">0.314</td><td class="num">0.832</td><td class="num">0.783</td><td class="num">0.833</td><td class="num">0.491</td><td class="num">0.832</td></tr>
-<tr><td>11</td><td class="num">0.297</td><td class="num">0.791</td><td class="num">0.780</td><td class="num">0.858</td><td class="num"><span class="dip">0.479</span></td><td class="num">0.816</td></tr>
-<tr><td>12</td><td class="num">0.198</td><td class="num">0.841</td><td class="num">0.926</td><td class="num">0.885</td><td class="num"><span class="dip">0.472</span></td><td class="num">0.858</td></tr>
+<tr><th>Layer</th><th>AUROC (base)</th><th>AUROC (ABTT)</th><th>Cos gap (base)</th><th>Cos gap (ABTT)</th></tr>
+<tr><td>1</td><td class="num">0.823</td><td class="num">0.971</td><td class="num"><span class="dip">0.027</span></td><td class="num">0.519</td></tr>
+<tr><td>2</td><td class="num">0.823</td><td class="num">0.964</td><td class="num"><span class="dip">0.026</span></td><td class="num">0.511</td></tr>
+<tr><td>3</td><td class="num">0.805</td><td class="num">0.956</td><td class="num"><span class="dip">0.025</span></td><td class="num">0.506</td></tr>
+<tr><td>4</td><td class="num">0.800</td><td class="num">0.966</td><td class="num"><span class="dip">0.040</span></td><td class="num">0.505</td></tr>
+<tr><td><strong>5</strong></td><td class="num"><strong>0.654</strong></td><td class="num"><span class="best">0.972</span></td><td class="num"><strong>0.218</strong></td><td class="num"><span class="best">0.484</span></td></tr>
+<tr><td>6</td><td class="num">0.657</td><td class="num">0.970</td><td class="num">0.238</td><td class="num">0.486</td></tr>
+<tr><td>7</td><td class="num">0.657</td><td class="num">0.966</td><td class="num">0.243</td><td class="num">0.480</td></tr>
+<tr><td>8</td><td class="num">0.656</td><td class="num">0.967</td><td class="num">0.248</td><td class="num">0.466</td></tr>
+<tr><td>9</td><td class="num">0.660</td><td class="num">0.966</td><td class="num">0.235</td><td class="num">0.469</td></tr>
+<tr><td>10</td><td class="num">0.659</td><td class="num">0.964</td><td class="num">0.225</td><td class="num">0.455</td></tr>
+<tr><td>11</td><td class="num">0.660</td><td class="num">0.964</td><td class="num">0.213</td><td class="num">0.448</td></tr>
+<tr><td>12</td><td class="num">0.839</td><td class="num">0.968</td><td class="num">0.082</td><td class="num">0.446</td></tr>
 </table>
-<p class="figure-caption">mT5-base Task A, all 12 layers. Most dramatic dip in the lineup: existing-acc bottoms out at 0.110 (L2), 0.135 (L1), 0.161 (L3) &mdash; the model is essentially blind without ABTT in early layers. ABTT recovers L1 to 0.908. ABTT is also slightly weaker on mid-layers here (L5&ndash;L8 at 0.817&ndash;0.857) because mT5's residual stream gets noisier mid-stack.</p>
+
+<p class="figure-caption">mT5-base Task A pairwise. Baseline collapses dramatically in the mid-layers: AUROC drops from 0.823 at L1 to 0.654 at L5, recovers to 0.839 at L12. ABTT pulls every layer to 0.96+ AUROC. Best layer is L5 (the dip layer) on ABTT AUROC, by a tiny margin (0.972 vs 0.971 at L1).</p>
+
 </div>
+
 </details>
 
-<h3>Task B &mdash; same dip-and-repair pattern, mseed-averaged</h3>
+<h3>Task B (top-K ranking, mseed) &mdash; same dip-and-repair pattern at the directory level</h3>
+<p>This is the existing mseed Acc@1 view (5-seed mean &plusmn; std). The full per-layer table is in <code>tables/taskB_per_layer.tex</code>; sample below shows the dip-and-repair contrast at three layers per model. The Task B routing table (assignment accuracy with $\tau$ threshold) lives separately at <code>tables/taskB_routing_per_layer.tex</code> and shows the same flat-after-ABTT pattern with overall assignment accuracy 0.86&ndash;0.91 across layers.</p>
 <table>
 <tr><th>Layer</th><th>Acc@1 (base)</th><th>Acc@1 (ABTT)</th><th>&Delta;</th></tr>
 <tr><td>LaTa L1</td><td class="num">0.731 &plusmn; 0.009</td><td class="num">0.889 &plusmn; 0.009</td><td class="num"><span class="best">+0.158</span></td></tr>
@@ -318,49 +362,40 @@
 </table>
 
 <details class="qa">
-<summary>Q: "Why are we reporting <em>assignment accuracy</em> for Task A? Task A is the binary task between two files &mdash; that should be AUROC, not accuracy."</summary>
+<summary>Q: "Wait &mdash; what changed about Task A since the last version you sent me?"</summary>
 <div class="qa-body">
-<p>You're right that Task A starts as the pairwise/binary question, and AUROC + cosine gap are its <em>representation-level</em> metrics &mdash; those are the numbers in the cosine-gap and AUCROC plots (Section 5 below). Assignment accuracy is the <em>deployment-level</em> view of the <strong>same</strong> Task A question, which we report separately because it answers something AUROC can't: <em>given a learned threshold &tau;, does the system actually route files correctly?</em></p>
-<p>The two are different aspects of the same task:</p>
-<ul style="margin-left: 1.5rem; margin-top: 0.4rem;">
-  <li><strong>AUROC</strong>: at the hidden-representation level, do same-directory pairs get higher cosine similarity than different-directory pairs? Pure pairwise/binary, no threshold, no decision &mdash; it's a <em>quality of representation</em> number.</li>
-  <li><strong>Assignment accuracy</strong>: given a single query file and the learned threshold &tau;, does the system (a) correctly say "this is new" if no good neighbor exists, or (b) correctly route it to its true directory? It's the actual product metric. Decomposed into existing-acc / new-acc / overall.</li>
-</ul>
-<p>This is exactly the distinction the paper draws in <em>"Directory Accuracy vs. Assignment Accuracy"</em> (Section 3.x in <code>acl_latex.tex</code>). We chose to put assignment accuracy in the per-layer table because the dip-and-repair story is starkest there &mdash; AUROC degrades modestly in the dip but assignment accuracy collapses (existing-acc drops to 0.110&ndash;0.256 because &tau; gets misplaced when the cosine distribution shifts). AUROC + cosine gap show up in the per-layer figures instead.</p>
-<p>If you'd prefer assignment accuracy <em>not</em> live under "Task A" framing &mdash; we could rename the section to "Autonomous routing (Task A)" vs "Human-assisted ranking (Task B)" so the binary AUROC framing isn't misleading. Quick decision to make.</p>
+<p>You called this out at the meeting after I'd already pushed: "Task A should be purely about comparing one file against another from the n&times;n matrix. There should be no knowledge about any directories." You were right &mdash; the previous version had the Task A per-layer table reporting <em>existing/new/overall assignment accuracy</em>, which requires a learned threshold $\tau$ <em>and</em> directory routing. That conflates the pairwise representation question with the deployment-routing question.</p>
+<p>The fix: Task A is now AUROC + cosine gap only (both are properties of the test n&times;n cosine matrix &mdash; no threshold, no directory). Existing/new/overall assignment accuracy moved to a new <strong>Task B autonomous routing</strong> table. The mseed top-K ranking table stays as the second Task B view. Three tables instead of two; clean separation.</p>
+<p>No experiments re-ran &mdash; the source CSV (<code>phase_resubmit_results.csv</code>) already had AUROC, cosine gap, existing/new/overall as separate columns per layer. We just changed which columns each table renders.</p>
 </div>
 </details>
 
 <details class="qa">
-<summary>Q: "But assignment accuracy involves ranking and threshold logic &mdash; isn't that more like Task B?"</summary>
+<summary>Q: "If the dip is the central phenomenon, is it sharper in AUROC or in the old assignment accuracy?"</summary>
 <div class="qa-body">
-<p>No: Task B explicitly assumes a human picks among the top-k candidates. Task A is fully autonomous &mdash; just the threshold-based decision &ldquo;new vs which existing directory&rdquo; with no human. Same query file, two completely different deployment scenarios:</p>
-<ul style="margin-left: 1.5rem; margin-top: 0.4rem;">
-  <li><strong>Task A (autonomous):</strong> system makes the call. Metric = assignment accuracy.</li>
-  <li><strong>Task B (human-assisted):</strong> system proposes top-k, human picks. Metric = top-k accuracy / Acc@1 conditional on human picking from shortlist.</li>
-</ul>
-<p>Both involve ranking, both use cosine similarity, both depend on threshold &tau; for the "new" detection &mdash; but the user model is different.</p>
+<p><strong>Sharper in AUROC.</strong> LaTa baseline AUROC drops from 0.933 at L1 to 0.497&ndash;0.510 across L3&ndash;L11 &mdash; that's <em>chance</em>. PhilTa baseline drops from 0.939 to 0.541&ndash;0.601. mT5-base drops from 0.823 to 0.654 in the dip. ABTT pulls every model's every layer to 0.96&ndash;0.98 AUROC. So the new Task A table tells the story even more cleanly than the old assignment-accuracy version (where the existing/new decomposition could be confusing).</p>
+<p>The cosine gap goes <em>negative</em> in the dip for LaTa (L4&ndash;L11 baseline gap is -0.07 to -0.06), meaning same-directory pairs are slightly <em>further apart</em> than different-directory pairs in baseline space. That's a striking framing for the paper.</p>
 </div>
 </details>
 
 <details class="qa">
-<summary>Q: "If best layers are tightly clustered (90&ndash;91%), why even pick a best layer?"</summary>
+<summary>Q: "Why don't the best layers match between Task A AUROC and Task B routing?"</summary>
 <div class="qa-body">
-<p>Honest answer: <strong>at the best layer, the choice barely matters</strong>. The top-3 layers per model are within ~0.5 points of each other on ABTT-cleaned scores. The story isn't <em>which layer is best</em>; it's that <em>after ABTT, almost every layer becomes usable</em> &mdash; even the dip layers that were 0.439 baseline jump to 0.900. That's the scientific contribution. We pick a best layer for the headline number but the per-layer table makes it visually obvious that ABTT collapses the layer-choice problem.</p>
+<p>They're answering different questions. Task A AUROC asks: at this layer, how well does cosine separate same-dir from different-dir pairs? Task B routing asks: at this layer, given the learned threshold $\tau$, how often do we make the right autonomous decision? Some layers have very tight cosine separation (high AUROC) but at a value of cosine where $\tau$ is hard to calibrate &mdash; the threshold can land in a high-density region and produce many flips. Hence small disagreements (LaTa A=L1, B=L3; PhilTa A=L8, B=L1; etc.). The disagreements are within ~0.01 across layers in both metrics, so it's not a stability problem &mdash; it's a different objective.</p>
 </div>
 </details>
 
 <details class="qa">
-<summary>Q: "Why does Qwen3-0.6B pick L7&ndash;L8 instead of L1 like everyone else?"</summary>
+<summary>Q: "If best layers are tightly clustered, why even pick a best layer?"</summary>
 <div class="qa-body">
-<p>Qwen3-0.6B has 28 layers vs 12 for the encoders. Its baseline curve climbs more gradually with depth (0.526 at L1 to 0.823 at L28), but ABTT flattens it at 0.88&ndash;0.91 across L1&ndash;L28. L7&ndash;L8 happens to be the local maximum but the difference vs L1 (0.909) is 0.002 &mdash; statistically a tie. Same flattening story, just over a longer x-axis.</p>
+<p>Honest answer: <strong>at the best layer, the choice barely matters</strong>. On Task A AUROC the spread within each model across layers post-ABTT is ~0.01&ndash;0.02. On Task B routing, the top-3 layers per model are within ~0.5 points. The story isn't <em>which layer is best</em>; it's that <em>after ABTT, almost every layer becomes usable</em> &mdash; even the chance-level dip layers in baseline jump to 0.96+ AUROC. We pick a best layer for the headline number but the per-layer tables make it visually obvious that ABTT collapses the layer-choice problem.</p>
 </div>
 </details>
 
 <details class="qa">
-<summary>Q: "Are the baseline numbers reproducible? L2 LaTa = 0.153 looks suspicious."</summary>
+<summary>Q: "Are the baseline numbers reproducible? LaTa baseline AUROC = 0.497 looks like literal chance."</summary>
 <div class="qa-body">
-<p>Yes &mdash; that's the anisotropy dip. The mean cosine in the baseline space at L2 is so high (~0.95+) that the within-class signal is almost entirely drowned by the across-class baseline. Threshold $\tau$ learned on train picks an extreme value and almost nothing gets predicted "existing" so existing-acc collapses to 0.153 even though new-acc is 0.913. ABTT removes the dominant components and the same data jumps to 0.899 / 0.901. We've reproduced this on different splits and seeds &mdash; it's the central phenomenon the paper is about.</p>
+<p>Yes &mdash; literal chance is precisely what's happening. In the dip layers, the mean cosine on this corpus sits very high (~0.95+) and the variance is dominated by directions that have nothing to do with same-directory vs different-directory structure. Same-pair and different-pair cosines overlap almost completely, so AUROC sits at chance. The cosine gap is mildly <em>negative</em> in those layers (-0.07 to -0.06 for LaTa). ABTT removes the dominant principal directions and the same hidden states jump to 0.96+ AUROC and gap of 0.55+. Reproducible on different splits and seeds &mdash; central phenomenon of the paper.</p>
 </div>
 </details>
 
