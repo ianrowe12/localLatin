@@ -25,8 +25,12 @@ echo "Host: $(hostname)"
 nvidia-smi || true
 
 echo ""
+echo "=== Pre-flight: CUDA availability check ==="
+conda run --no-capture-output -n localLatin python -c "import torch; assert torch.cuda.is_available(), 'CUDA not available in localLatin env on this node'; print(f'cuda={torch.cuda.is_available()} dev0={torch.cuda.get_device_name(0)}')"
+
+echo ""
 echo "=== Phase 1: mask optimization sweep (GPU) ==="
-conda run -n localLatin python scripts/ig/run_retrieval_mark_pair_examples.py \
+conda run --no-capture-output -n localLatin python -u scripts/ig/run_retrieval_mark_pair_examples.py \
     --examples_csv      runs/active/ig_examples/phase12f_examples.csv \
     --artifacts_in_dir  runs/active/ig_examples/artifacts \
     --artifacts_out_dir runs/active/ig_examples/retrieval_mark/artifacts \
@@ -41,11 +45,12 @@ conda run -n localLatin python scripts/ig/run_retrieval_mark_pair_examples.py \
     --max_length 256 \
     --seed 0 \
     --trust_remote_code \
+    --require_cuda \
     --skip_existing
 
 echo ""
 echo "=== Phase 2: merge sidecars into canonical NPZs (CPU, seconds) ==="
-conda run -n localLatin python scripts/ig/merge_retrieval_mark_into_canonical.py \
+conda run --no-capture-output -n localLatin python -u scripts/ig/merge_retrieval_mark_into_canonical.py \
     --examples_csv    runs/active/ig_examples/phase12f_examples.csv \
     --canonical_dir   runs/active/ig_examples/artifacts \
     --sidecar_dir     runs/active/ig_examples/retrieval_mark/artifacts \

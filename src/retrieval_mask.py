@@ -432,16 +432,20 @@ def compute_pair_masks(
     # The last cos_m of a converged run approximates cos_orig well, but to
     # avoid conflating with the optimized value we expose the fixed partner
     # dot against the unmasked query.
-    q_pool_base = q_hidden_t.mean(axis=0)
-    c_partner_base = candidate_raw_partner.detach().cpu().numpy().astype(np.float32)
+    q_pool_base = np.asarray(q_hidden_t.mean(axis=0)).reshape(-1)
+    c_partner_base = (
+        candidate_raw_partner.detach().cpu().numpy().astype(np.float32).reshape(-1)
+    )
     q_norm = q_pool_base / (np.linalg.norm(q_pool_base) + 1e-12)
     p_norm = c_partner_base / (np.linalg.norm(c_partner_base) + 1e-12)
     out["cos_orig_baseline"] = np.asarray(
         float(q_norm @ p_norm), dtype=np.float32
     )
 
-    q_pool_abtt_mean = q_hidden_abtt.mean(axis=0)
-    c_partner_abtt = candidate_abtt_partner.detach().cpu().numpy().astype(np.float32)
+    q_pool_abtt_mean = np.asarray(q_hidden_abtt.mean(axis=0)).reshape(-1)
+    c_partner_abtt = (
+        candidate_abtt_partner.detach().cpu().numpy().astype(np.float32).reshape(-1)
+    )
     qa_norm = q_pool_abtt_mean / (np.linalg.norm(q_pool_abtt_mean) + 1e-12)
     pa_norm = c_partner_abtt / (np.linalg.norm(c_partner_abtt) + 1e-12)
     out["cos_orig_abtt"] = np.asarray(float(qa_norm @ pa_norm), dtype=np.float32)

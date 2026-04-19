@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 import traceback
@@ -94,6 +95,11 @@ def parse_args() -> argparse.Namespace:
         "--skip_existing",
         action="store_true",
         help="Skip examples whose sidecar NPZ already exists.",
+    )
+    parser.add_argument(
+        "--require_cuda",
+        action="store_true",
+        help="Fail hard if CUDA is not available (for GPU sbatch runs).",
     )
     return parser.parse_args()
 
@@ -174,7 +180,7 @@ def compute_partners(
     # hidden: (seq, dim); attention_mask: (1, seq); input_ids: (1, seq)
     pool_mask = numpy_token_keep_mask(input_ids, attention_mask, token_keep_lookup)
     # Use the same mean_pool helper shape convention: (batch, seq, dim).
-    pooled = mean_pool(hidden[np.newaxis, ...], pool_mask)[0]  # (dim,)
+    pooled = np.asarray(mean_pool(hidden[np.newaxis, ...], pool_mask)).reshape(-1)  # (dim,)
     abtt = abtt_clean_np(pooled, pcs, mean_vec)
     return pooled.astype(np.float32), abtt.astype(np.float32)
 
@@ -190,7 +196,21 @@ def main() -> None:
     if args.max_examples and args.max_examples > 0:
         examples = examples.head(args.max_examples).reset_index(drop=True)
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    cuda_avail = torch.cuda.is_available()
+    device_count = torch.cuda.device_count() if cuda_avail else 0
+    device_name = torch.cuda.get_device_name(0) if cuda_avail and device_count > 0 else "none"
+    print(
+        f"[env] torch={torch.__version__} cuda_available={cuda_avail} "
+        f"device_count={device_count} device_name={device_name} "
+        f"CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES', '<unset>')}",
+        flush=True,
+    )
+    if args.require_cuda and not cuda_avail:
+        raise SystemExit(
+            "CUDA required but not available. Check GPU allocation and torch install."
+        )
+    device = "cuda" if cuda_avail else "cpu"
+    print(f"[env] using device={device}", flush=True)
     cfg = MaskOptimConfig(
         lr=args.lr,
         steps=args.steps,
