@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 ATTRIBUTION_METHODS = (
     "ig", "bertscore", "ot",
     "attention_weighted", "dla", "attention_standalone",
+    "retrieval_mark",
 )
 ATTRIBUTION_VARIANTS = ("baseline", "abtt")
 BUCKET_ORDER = ["correct_similar", "correct_not_similar", "wrong_similar", "wrong_not_similar"]

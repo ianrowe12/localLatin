@@ -257,6 +257,15 @@ We also compare against two simpler alternatives. One is SIF-weighted pooling \c
 
 For the explanation figures, we use integrated gradients \citep{sundararajan2017axiomatic} as a local attribution method. Given a query passage and one candidate partner passage, we compute per-sequence token attributions toward pair cosine similarity. The displayed axes always use the original decoded tokens rather than filtered display tokens, even when a token's attribution is close to zero. The heatmap in Figure~\ref{fig:pairmatrix} is therefore a derived pairwise view: token-token cosine similarity is combined with the marginal integrated-gradient scores of the two sequences. We show that view before and after ABTT on the same example. We also render companion self-attention maps for the same pair as supporting context only, since ABTT is applied after encoding and does not change the model's internal attention weights.
 
+We complement integrated gradients with a retrieval-aligned learned-mask attribution adapted from MaRC \citep{brinnerzarriess2023marc}. MaRC was proposed for classification: a soft mask $\mathbf{m} \in [0,1]^{T_q}$ over input tokens is optimized so that the masked forward preserves the target class logit. We adapt the same construction to retrieval, asking the mask to preserve the pair's cosine similarity instead.
+
+Let $\mathbf{E}(\mathbf{x}_q) \in \mathbb{R}^{T_q \times d_{\text{emb}}}$ denote the input-embedding lookup, $E_{>0}$ the encoder with the lookup removed, and $\mathbf{z}_c^{\star}$ the ABTT-cleaned mean-pooled candidate, held fixed throughout optimization. We parameterize $\mathbf{m} = \sigma(\boldsymbol{\zeta})$ with free logits $\boldsymbol{\zeta} \in \mathbb{R}^{T_q}$ and write $\mathcal{I}$ for the content-token positions (attention-active, not tokenizer artifacts). The objective is
+\begin{equation}
+\mathcal{L}(\mathbf{m}) = \bigl(\cos(\mathrm{ABTT}(\tilde{\mathbf{z}}_q(\mathbf{m})), \mathbf{z}_c^{\star}) - \cos(\mathrm{ABTT}(\mathbf{z}_q), \mathbf{z}_c^{\star})\bigr)^2 + \lambda \!\!\sum_{i\in\mathcal{I}}\!\! \frac{m_i}{|\mathcal{I}|} + \gamma\!\! \sum_{i,i+1\in\mathcal{I}} \!\! \frac{|m_{i+1}-m_i|}{|\mathcal{I}|-1},
+\label{eq:retrieval_mark}
+\end{equation}
+where $\tilde{\mathbf{z}}_q(\mathbf{m}) = \mathrm{pool}(E_{>0}(\mathrm{diag}(\mathbf{m})\,\mathbf{E}(\mathbf{x}_q)), \mathbf{a}_q)$ is the masked pooled query, $(\lambda, \gamma)$ control sparsity and total-variation smoothness, and logits outside $\mathcal{I}$ are frozen at $-\infty$. We run 200 Adam steps per pair, initialize $\boldsymbol{\zeta}_0 = \log 9$ so that $\mathbf{m} \approx 0.9$ at the start, and report both a baseline variant that uses raw cosines in place of the ABTT-cleaned cosines in Equation~\ref{eq:retrieval_mark} and the ABTT variant stated above. The candidate-side mask is obtained by swapping the roles of query and candidate. We use this method alongside integrated gradients in the example-level analysis; quantitative faithfulness comparisons against other attribution methods are left as accompanying work.
+
 \subsection{Evaluation Metrics}
 
 For Task A, the main measure is \textbf{AUCROC}, computed over pairwise cosine similarities, with same-directory pairs treated as positive. We also report \textbf{cosine gap}, the difference between the mean same-directory and mean different-directory cosine similarity, as a direct measure of class separation.
@@ -396,6 +405,20 @@ The pairwise heatmap carries most of the interpretive weight. It is meant to hel
 
 The attention map provides extra context around the same query and candidate pair. It is not the explanation itself, and it is not meant to make a before-and-after claim about ABTT.
 
+\subsection{Retrieval-Aligned Mask Attributions}
+\label{subsec:retrieval-mark}
+
+Figure~\ref{fig:retrieval_mark} shows the learned masks on the same PhilTa pair as Figures~\ref{fig:pairmatrix} and~\ref{fig:attention}. Each row masks one side of the pair (query on top, candidate on bottom), and the two columns compare the baseline and ABTT variants of Equation~\ref{eq:retrieval_mark}. Mask values approach one where the optimizer finds the token essential for preserving the pair cosine, and approach zero where the token contributes little. Padding and tokenizer-artifact positions are frozen at zero by construction.
+
+Baseline and ABTT variants differ in which content positions retain non-trivial mask weight. Because the loss in Equation~\ref{eq:retrieval_mark} is trained against the ABTT-cleaned cosine used at retrieval time, the ABTT variant matches the scoring function used in Task~A and Task~B; we make no empirical claim of superior faithfulness here. Quantitative comparisons against the other attribution methods are reported as accompanying work.
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=\textwidth]{fig_retrieval_mark_pair_philta.pdf}
+\caption{Retrieval-aligned mask attributions for the same PhilTa pair as Figure~\ref{fig:pairmatrix}. Top row: mask on the query with the candidate held fixed. Bottom row: mask on the candidate with the query held fixed. Left column: baseline cosine target. Right column: ABTT-cleaned cosine target. Token labels are the original decoded tokens; frozen non-content positions are shown in gray.}
+\label{fig:retrieval_mark}
+\end{figure*}
+
 \section{Discussion}
 
 PCA whitening has worked well for English sentence similarity \citep{su2021whitening, huang2021whiteningbert}, but it performs poorly here. A plausible reason is that whitening removes variance that still helps separate equivalent from non-equivalent Latin legal passages. In this corpus, the original variance structure seems to carry useful signal rather than just noise.
@@ -411,7 +434,7 @@ The explanation component is intentionally local. The derived pair matrix and th
 
 Our study covers one domain, medieval canon law, and one language, Latin. The 1,705-fragment corpus is large for this field, but it is still small by current NLP standards. We test six models, and models outside this set may behave differently. ABTT also needs enough unlabeled documents to estimate principal components well, and we have not tested it in settings with only a few hundred texts or fewer. The explanation analysis is local and example-based, and the human-in-the-loop evaluation is a simulation: we assume the labelled directory would be chosen whenever it appears in the model's shortlist, which captures ranking quality but not the judgment load of a working scholar.
 
-Our example-level attributions use vanilla integrated gradients, which produces a single token saliency vector per sequence and does not jointly reason about the query--candidate pair. Following recent learned-mask attribution work such as MaRC~\citep{brinnerzarriess2023marc}, we plan to jointly optimize soft masks on both passages against the ABTT-cleaned cosine similarity, tying the attribution objective directly to the same geometry the retrieval pipeline relies on. Empirical evaluation of this learned-mask variant is left to future work.
+Our example-level attributions use integrated gradients, with a retrieval-aligned learned-mask variant adapted from MaRC~\citep{brinnerzarriess2023marc} trained directly against the ABTT-cleaned cosine used for ranking as a complementary view. Both remain local explanations and do not summarize model behaviour globally, and both still depend on the choice of layer at which the hidden state is read. The joint two-sided optimization, in which a single mask is fit over both passages simultaneously rather than one side at a time, is left to future work, as is the quantitative faithfulness evaluation across attribution methods.
 
 \bibliography{custom}
 
