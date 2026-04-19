@@ -12,6 +12,7 @@ const METHODS: { key: AttributionMethod; label: string }[] = [
   { key: 'attention_weighted', label: 'Attn-W' },
   { key: 'dla', label: 'DLA' },
   { key: 'attention_standalone', label: 'Attn-S' },
+  { key: 'retrieval_mark', label: 'MarK' },
 ]
 
 const VARIANTS: { key: AttributionVariant; label: string }[] = [

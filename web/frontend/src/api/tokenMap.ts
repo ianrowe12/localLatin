@@ -29,6 +29,7 @@ export type AttributionMethod =
   | 'attention_weighted'
   | 'dla'
   | 'attention_standalone'
+  | 'retrieval_mark'
 
 export type AttributionVariant = 'baseline' | 'abtt'
 
