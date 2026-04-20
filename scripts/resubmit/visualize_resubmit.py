@@ -97,9 +97,24 @@ def save(fig: plt.Figure, out_dir: Path, stem: str) -> None:
     plt.close(fig)
 
 
-def plot_metric(results: pd.DataFrame, metric: str, ylabel: str, out_dir: Path, stem: str) -> None:
-    model_order = list(SHORT.keys())
-    fig, axes = plt.subplots(2, 3, figsize=(15.5, 8.8), sharex=False, sharey=(metric == "aucroc"))
+def plot_metric(
+    results: pd.DataFrame,
+    metric: str,
+    ylabel: str,
+    out_dir: Path,
+    stem: str,
+    models: list[str],
+    methods: list[str],
+) -> None:
+    n_models = len(models)
+    fig, axes = plt.subplots(
+        1,
+        n_models,
+        figsize=(4.3 * n_models, 4.4),
+        sharex=False,
+        sharey=(metric == "aucroc"),
+        squeeze=False,
+    )
     axes = axes.ravel()
 
     if metric == "gap":
@@ -113,9 +128,9 @@ def plot_metric(results: pd.DataFrame, metric: str, ylabel: str, out_dir: Path, 
 
     handles = []
     labels = []
-    for ax, model_name in zip(axes, model_order):
+    for ax, model_name in zip(axes, models):
         model_rows = results[results["model"] == model_name].copy()
-        for method in METHOD_ORDER:
+        for method in methods:
             method_rows = model_rows[model_rows["method"] == method].sort_values("layer")
             if method_rows.empty:
                 continue
@@ -146,12 +161,12 @@ def plot_metric(results: pd.DataFrame, metric: str, ylabel: str, out_dir: Path, 
         handles,
         labels,
         loc="lower center",
-        ncol=4,
+        ncol=max(1, len(labels)),
         frameon=False,
         fontsize=12,
-        bbox_to_anchor=(0.5, -0.01),
+        bbox_to_anchor=(0.5, -0.02),
     )
-    fig.tight_layout(rect=(0, 0.06, 1, 1))
+    fig.tight_layout(rect=(0, 0.1, 1, 1))
     save(fig, out_dir, stem)
 
 
@@ -287,12 +302,30 @@ def main() -> None:
     if release_rows.empty:
         raise SystemExit("No release rows matched the requested representation.")
 
+    main_models = ["bowphs/LaTa", "bowphs/PhilTa", "google/mt5-base"]
+    appendix_models = [
+        "sentence-transformers/LaBSE",
+        "Qwen/Qwen3-Embedding-0.6B",
+        "KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5",
+    ]
+
     plot_metric(
         release_rows,
         metric="aucroc",
         ylabel="AUCROC",
         out_dir=out_dir,
         stem="fig_release_aucroc_per_model",
+        models=main_models,
+        methods=["baseline", "abtt_optimal"],
+    )
+    plot_metric(
+        release_rows,
+        metric="aucroc",
+        ylabel="AUCROC",
+        out_dir=out_dir,
+        stem="fig_appendix_aucroc_per_model",
+        models=appendix_models,
+        methods=["baseline", "abtt_optimal"],
     )
     plot_metric(
         release_rows,
@@ -300,6 +333,17 @@ def main() -> None:
         ylabel="Cosine Gap",
         out_dir=out_dir,
         stem="fig_release_gap_per_model",
+        models=main_models,
+        methods=["baseline", "abtt_optimal", "whitening"],
+    )
+    plot_metric(
+        release_rows,
+        metric="gap",
+        ylabel="Cosine Gap",
+        out_dir=out_dir,
+        stem="fig_appendix_gap_per_model",
+        models=appendix_models,
+        methods=["baseline", "abtt_optimal", "whitening", "sif_only"],
     )
 
     dist_dir = Path(args.dist_dir)
