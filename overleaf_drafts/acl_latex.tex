@@ -277,10 +277,10 @@ where $\tilde{\mathbf{z}}_q(\mathbf{m}) = \mathrm{pool}(E_{>0}(\mathrm{diag}(\ma
 \subsection{Task A: Pairwise Duplicate Detection}
 
 \onecolumn
-\input{tables/taskA_per_model}
+\input{tables/taskA_main}
 \twocolumn
 
-Table~\ref{tab:taskA_per_layer} reports per-layer Task~A pairwise metrics for each model, comparing the uncorrected \texttt{baseline} (mean pooling) against \texttt{sif\_abtt\_optimal} (SIF weighting plus ABTT with $D$ tuned per layer on the train split). Both AUROC and cosine gap are read off the test n$\times$n cosine matrix without any threshold. Bolded rows mark each model's best layer by ABTT AUROC. The two columns drift apart sharply in the middle layers of the Latin T5 encoders (LaTa, PhilTa) and in \texttt{mt5-base}, and much less in LaBSE, Qwen3-0.6B, and KaLM-mini. The remainder of this section unpacks where these numbers come from layer by layer.
+Table~\ref{tab:taskA_main} reports per-layer Task~A pairwise metrics for the three headline models (LaTa, PhilTa, mT5-base), comparing the uncorrected \texttt{baseline} (mean pooling) against \texttt{abtt\_optimal} (ABTT with $D$ tuned per layer on the train split, no SIF weighting). Both AUROC and cosine gap are read off the test n$\times$n cosine matrix without any threshold. Bolded rows mark each model's best layer by ABTT AUROC. The two columns drift apart sharply in the middle layers of the Latin T5 encoders (LaTa, PhilTa) and in \texttt{mt5-base}, and much less in LaBSE, Qwen3-0.6B, and KaLM-mini (Appendix~\ref{app:per_layer_extra}, Table~\ref{tab:taskA_appendix}). SIF-conditioned alternatives (\texttt{sif\_only}, \texttt{sif\_abtt\_fixed}, \texttt{sif\_abtt\_optimal}) are reported in Appendix~\ref{app:sif_variants}. The remainder of this section unpacks where these numbers come from layer by layer.
 
 \subsection{The Mid-Layer Dip}
 
@@ -335,11 +335,11 @@ Cosine-gap and AUCROC curves summarize separability in aggregate. Two-dimensiona
 \subsection{Task B: Directory Routing}
 
 \onecolumn
-\input{tables/taskB_routing_per_layer}
-\input{tables/taskB_per_layer}
+\input{tables/taskB_routing_main}
+\input{tables/taskB_ranking_main}
 \twocolumn
 
-Task~B operationalises the same embeddings into the deployment workflow, which now requires directory knowledge. We report both routing variants per layer. Table~\ref{tab:taskB_routing_per_layer} reports the autonomous-routing view: for every test file we compute $s_i = \max_{j \neq i} \cos(e_i, e_j)$ against the rest of the test set and compare to the learned threshold $\tau$, scoring a file correct iff the binary existing-vs-new prediction matches ground truth. Table~\ref{tab:taskB_per_layer} reports the top-$k$ ranking view in which the system scores each directory by its best document match and presents the top-five options plus the implicit \texttt{\_\_NEW\_\_} fallback; the ``human'' is simulated by selecting the labeled directory whenever it appears in the shortlist, averaged over $M=5$ query/reference reseedings. Table~\ref{tab:taskb} then reports cumulative top-$K$ accuracy at each model's best layer for $K = 1, \ldots, 5$.
+Task~B operationalises the same embeddings into the deployment workflow, which now requires directory knowledge. We report both routing variants per layer for the three headline models (LaTa, PhilTa, mT5-base); the remaining three models (LaBSE, Qwen3-0.6B, KaLM-mini) appear in Appendix~\ref{app:per_layer_extra}. Table~\ref{tab:taskB_routing_main} reports the autonomous-routing view: for every test file we compute $s_i = \max_{j \neq i} \cos(e_i, e_j)$ against the rest of the test set and compare to the learned threshold $\tau$, scoring a file correct iff the binary existing-vs-new prediction matches ground truth. Table~\ref{tab:taskB_ranking_main} reports the top-$k$ ranking view in which the system scores each directory by its best document match and presents the top-five options plus the implicit \texttt{\_\_NEW\_\_} fallback; the ``human'' is simulated by selecting the labeled directory whenever it appears in the shortlist. The ranking table is shown on the single-seed v2 split, since the multi-seed sweep was run only for SIF-conditioned variants (Table~\ref{tab:taskB_ranking_appendix_mseed} in the appendix gives that 5-seed view). Table~\ref{tab:taskb} then reports cumulative top-$K$ accuracy at each model's best layer for $K = 1, \ldots, 5$, averaged over $M=5$ reseedings.
 
 \begin{table*}[t]
 \centering
@@ -426,5 +426,31 @@ Our example-level attributions use integrated gradients, with a retrieval-aligne
 A natural question for the decoder-only models (Qwen3-0.6B, KaLM-mini, Qwen3-8B) is whether last-token pooling, the canonical choice for this family, would change our picture. To answer it directly, we re-run the ABTT post-processing pipeline on all six models using last-token pooling in place of mean pooling, keeping every other hyperparameter and the same train/test split fixed. We restrict the comparison to the two ABTT variants (fixed $D{=}10$ and per-layer tuned $D$) that carry the main-text analysis; SIF weighting is not defined for single-token pooling and is therefore omitted. Table~\ref{tab:lasttok_comparison} reports, for each (model, pooling) pair, the layer that maximizes Task~B autonomous-routing assignment accuracy together with Task B directory accuracy at rank 1 and the cosine gap at that same layer. Mean pooling outperforms last-token pooling on assignment accuracy for every model; the gap is largest on the two Latin T5 encoders (LaTa and PhilTa, where last-token pooling loses roughly 23--31 accuracy points) and narrows to 1--5 points on LaBSE and the decoder-only models (Qwen3-0.6B, KaLM-mini, Qwen3-8B), confirming that mean pooling is the safer default for this retrieval pipeline even on the decoder-only architectures where last-token pooling is the more conventional choice.
 
 \input{tables/appendix_lasttok_comparison}
+
+\section{Per-Layer Results for Remaining Models}
+\label{app:per_layer_extra}
+
+The main paper focuses on three models (LaTa, PhilTa, mT5-base). This appendix gives the same per-layer view for the remaining three models (LaBSE, Qwen3-0.6B, KaLM-mini) under the identical two-method comparison: uncorrected \texttt{baseline} mean pooling versus \texttt{abtt\_optimal} (pure ABTT with $D$ tuned per layer on the train split, no SIF weighting). Layer numbering follows each model's native depth (12 layers for LaBSE, 28 for Qwen3-0.6B, 24 for KaLM-mini).
+
+Table~\ref{tab:taskA_appendix} gives the Task~A pairwise view (AUROC and cosine gap on the test n$\times$n cosine matrix). Table~\ref{tab:taskB_routing_appendix} gives the Task~B autonomous-routing view (existing/new/overall assignment accuracy at the learned threshold $\tau$). Table~\ref{tab:taskB_ranking_appendix} gives the Task~B top-$k$ ranking view from the single-seed v2 split.
+
+\onecolumn
+\input{tables/taskA_appendix}
+\input{tables/taskB_routing_appendix}
+\input{tables/taskB_ranking_appendix}
+\twocolumn
+
+\section{SIF-Variant Post-Processing Sweeps}
+\label{app:sif_variants}
+
+The main paper restricts attention to pure ABTT ($D$-tuned). Here we report the complementary SIF-conditioned suite: \texttt{sif\_only} (SIF-weighted pooling with no ABTT), \texttt{sif\_abtt\_fixed} (SIF plus ABTT with fixed $D{=}10$), and \texttt{sif\_abtt\_optimal} (SIF plus ABTT with $D$ tuned per layer). Tables are kept to a single primary metric per task (AUROC for Task~A, overall assignment accuracy for Task~B routing) so that the four-method grid remains legible across all six models.
+
+Table~\ref{tab:taskA_appendix_sif} gives the SIF-suite AUROC for Task~A. Table~\ref{tab:taskB_routing_appendix_sif} gives the corresponding overall assignment accuracy for Task~B routing. Table~\ref{tab:taskB_ranking_appendix_mseed} reports the multi-seed ranking view for \texttt{baseline} vs.\ \texttt{sif\_abtt\_optimal} (the one method for which the mseed sweep was run on all six models), with mean $\pm$ standard deviation over $M=5$ query/reference reseedings.
+
+\onecolumn
+\input{tables/taskA_appendix_sif}
+\input{tables/taskB_routing_appendix_sif}
+\input{tables/taskB_ranking_appendix_mseed}
+\twocolumn
 
 \end{document}

@@ -1,0 +1,63 @@
+\begingroup
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{longtable}{llcccccc}
+\caption{Per-layer Task~B autonomous routing accuracy for the three headline models. \texttt{baseline} is mean pooling without correction; \texttt{abtt\_optimal} applies ABTT (no SIF weighting) with $D$ tuned per layer on the train split. For every test file we compute $s_i = \max_{j \neq i} \cos(e_i, e_j)$ against the rest of the test set and compare to the learned threshold $\tau$ (fit on train via $F_1$-optimal cut on same-directory vs.\ different-directory pairs). The decision is binary first (existing if $s_i \geq \tau$, else new); only files predicted existing are then routed to their top-1 neighbour's directory. We report \textbf{existing accuracy} (restricted to files whose true partner is in the test set), \textbf{new accuracy} (files that should be flagged as novel), and \textbf{overall assignment accuracy}. Rows in bold mark the best layer per model, selected by ABTT overall assignment accuracy.}
+\label{tab:taskB_routing_main} \\
+\toprule
+\multicolumn{2}{c}{} & \multicolumn{6}{c}{\textbf{Task B: Autonomous Routing (main, file-level, $\tau$-thresholded)}} \\
+\cmidrule(lr){3-8}
+\textbf{Model} & \textbf{Layer} & \makecell{Existing\\(base)} & \makecell{Existing\\(ABTT)} & \makecell{New\\(base)} & \makecell{New\\(ABTT)} & \makecell{Overall\\(base)} & \makecell{Overall\\(ABTT)} \\
+\midrule
+\endfirsthead
+\toprule
+\multicolumn{2}{c}{} & \multicolumn{6}{c}{\textbf{Task B: Autonomous Routing (main, file-level, $\tau$-thresholded)}} \\
+\cmidrule(lr){3-8}
+\textbf{Model} & \textbf{Layer} & \makecell{Existing\\(base)} & \makecell{Existing\\(ABTT)} & \makecell{New\\(base)} & \makecell{New\\(ABTT)} & \makecell{Overall\\(base)} & \makecell{Overall\\(ABTT)} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{8}{r}{\textit{(continued on next page)}} \\
+\endfoot
+\bottomrule
+\endlastfoot
+LaTa & \textbf{1} & \textbf{0.630} & \textbf{0.910} & \textbf{0.916} & \textbf{0.907} & \textbf{0.738} & \textbf{0.909} \\
+ & 2 & 0.153 & 0.905 & 0.913 & 0.892 & 0.439 & 0.900 \\
+ & 3 & 0.256 & 0.882 & 0.842 & 0.950 & 0.477 & 0.908 \\
+ & 4 & 0.389 & 0.893 & 0.718 & 0.920 & 0.513 & 0.903 \\
+ & 5 & 0.374 & 0.892 & 0.715 & 0.913 & 0.502 & 0.900 \\
+ & 6 & 0.378 & 0.884 & 0.712 & 0.913 & 0.503 & 0.895 \\
+ & 7 & 0.372 & 0.875 & 0.715 & 0.916 & 0.501 & 0.890 \\
+ & 8 & 0.379 & 0.884 & 0.706 & 0.885 & 0.502 & 0.885 \\
+ & 9 & 0.366 & 0.886 & 0.724 & 0.873 & 0.501 & 0.881 \\
+ & 10 & 0.344 & 0.873 & 0.752 & 0.882 & 0.498 & 0.876 \\
+ & 11 & 0.310 & 0.867 & 0.786 & 0.901 & 0.490 & 0.880 \\
+ & 12 & 0.576 & 0.890 & 0.932 & 0.833 & 0.710 & 0.868 \\
+\midrule
+PhilTa & \textbf{1} & \textbf{0.591} & \textbf{0.918} & \textbf{0.904} & \textbf{0.901} & \textbf{0.709} & \textbf{0.911} \\
+ & 2 & 0.479 & 0.895 & 0.867 & 0.885 & 0.625 & 0.892 \\
+ & 3 & 0.193 & 0.897 & 0.889 & 0.879 & 0.455 & 0.890 \\
+ & 4 & 0.148 & 0.886 & 0.923 & 0.873 & 0.439 & 0.881 \\
+ & 5 & 0.252 & 0.879 & 0.796 & 0.873 & 0.457 & 0.876 \\
+ & 6 & 0.338 & 0.905 & 0.700 & 0.817 & 0.474 & 0.872 \\
+ & 7 & 0.301 & 0.901 & 0.746 & 0.830 & 0.469 & 0.874 \\
+ & 8 & 0.262 & 0.875 & 0.808 & 0.885 & 0.467 & 0.879 \\
+ & 9 & 0.303 & 0.890 & 0.762 & 0.870 & 0.476 & 0.882 \\
+ & 10 & 0.299 & 0.908 & 0.780 & 0.793 & 0.480 & 0.865 \\
+ & 11 & 0.256 & 0.869 & 0.824 & 0.836 & 0.470 & 0.857 \\
+ & 12 & 0.338 & 0.880 & 0.898 & 0.876 & 0.549 & 0.879 \\
+\midrule
+mT5-base & \textbf{1} & \textbf{0.135} & \textbf{0.877} & \textbf{0.981} & \textbf{0.947} & \textbf{0.453} & \textbf{0.903} \\
+ & 2 & 0.110 & 0.890 & 0.975 & 0.910 & 0.436 & 0.897 \\
+ & 3 & 0.161 & 0.794 & 0.926 & 0.941 & 0.449 & 0.850 \\
+ & 4 & 0.269 & 0.787 & 0.858 & 0.882 & 0.491 & 0.823 \\
+ & 5 & 0.422 & 0.746 & 0.659 & 0.864 & 0.512 & 0.790 \\
+ & 6 & 0.636 & 0.755 & 0.489 & 0.836 & 0.580 & 0.786 \\
+ & 7 & 0.594 & 0.793 & 0.517 & 0.851 & 0.565 & 0.815 \\
+ & 8 & 0.557 & 0.809 & 0.560 & 0.842 & 0.558 & 0.822 \\
+ & 9 & 0.364 & 0.841 & 0.746 & 0.814 & 0.508 & 0.831 \\
+ & 10 & 0.314 & 0.794 & 0.783 & 0.876 & 0.491 & 0.825 \\
+ & 11 & 0.297 & 0.763 & 0.780 & 0.854 & 0.479 & 0.797 \\
+ & 12 & 0.198 & 0.834 & 0.926 & 0.799 & 0.472 & 0.821 \\
+\end{longtable}
+\endgroup
