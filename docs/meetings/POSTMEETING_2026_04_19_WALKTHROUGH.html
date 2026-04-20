@@ -39,8 +39,8 @@
   .finding.green { border-left-color: var(--green); background: #ecfdf5; }
   .finding.amber { border-left-color: var(--amber); background: #fffbeb; }
   .finding.red { border-left-color: var(--red); background: #fef2f2; }
-  .quote { padding: 0.5rem 1rem; margin: 0.6rem 0; border-left: 3px solid #d1d5db; color: #374151; font-style: italic; font-size: 0.92rem; background: #f9fafb; border-radius: 0 4px 4px 0; }
-  .quote strong { font-style: normal; color: var(--fg); }
+  .quote { padding: 0.5rem 1rem; margin: 0.6rem 0; border-left: 3px solid #d1d5db; color: #374151; font-size: 0.92rem; background: #f9fafb; border-radius: 0 4px 4px 0; }
+  .quote strong { color: var(--fg); }
   details.qa { margin: 0.5rem 0; border: 1px solid var(--card-border); border-radius: 6px; background: var(--card-bg); }
   details.qa[open] { background: #fafbfc; }
   details.qa summary { cursor: pointer; font-weight: 600; padding: 0.6rem 0.9rem; color: var(--accent); list-style: none; }
@@ -140,8 +140,7 @@
 <h2 id="perlayer">2. Per-layer Task A &amp; B tables &mdash; reframed: Task A is now pure pairwise <span class="tag tag-fix">REFRAMED</span></h2>
 
 <div class="quote">
-  <strong>Your ask:</strong> &ldquo;It will be good if you look at these numbers at all layers... so even though this is the best one I mean what are the scores on other layers.&rdquo;
-  <br><strong>Plus today:</strong> &ldquo;Task A should be purely about comparing one file against another from the n&times;n matrix. There should be no knowledge about any directories.&rdquo;
+  <strong>What you asked for:</strong> the per-model best-layer rows weren't enough &mdash; you wanted the full per-layer breakdown for every model so we can see whether the bolded best is meaningfully ahead of its neighbours or basically a tie. Then this morning you flagged a deeper issue: Task A should be the pure pairwise n&times;n cosine question, with no directory knowledge and no threshold. Anything that uses $\tau$ or routes a file to a directory belongs under Task B, not Task A.
 </div>
 
 <div class="finding green">
@@ -403,7 +402,7 @@
 <h2 id="abttonly">3. ABTT-only restriction in main tables <span class="tag tag-done">DONE</span></h2>
 
 <div class="quote">
-  <strong>Your ask:</strong> &ldquo;I think we can just restrict to ABTT. Because otherwise there was not much, for example here.&rdquo;
+  <strong>What you asked for:</strong> drop SIF-only and SIF+ABTT-fixed from the main results. Across most models neither was meaningfully different from baseline (SIF-only) or from the per-layer-tuned ABTT (SIF+ABTT-fixed), so reporting them just clutters the comparison without adding signal. Main tables should show baseline vs ABTT only.
 </div>
 
 <p>Both per-layer tables compare exactly two columns: <code>baseline</code> and <code>sif_abtt_optimal</code>. SIF-only and whitening have been pulled from main tables. They still exist in the underlying CSV (<code>runs/active/resubmit/results/phase_resubmit_results.csv</code>) so we can produce them on demand if a reviewer asks &mdash; but the main paper now reports baseline vs ABTT only.</p>
@@ -419,7 +418,7 @@
 <h2 id="tsne">4. t-SNE and UMAP cluster geometry <span class="tag tag-new">NEW</span></h2>
 
 <div class="quote">
-  <strong>Your ask:</strong> &ldquo;t-SNE or UMAP &mdash; reduce to two dimensions, then we can actually see the clusters... with ABTT we start seeing better clusters... this could be a good plot for the paper.&rdquo;
+  <strong>What you asked for:</strong> add a 2D projection of the embeddings (t-SNE or UMAP, your call) so the geometric effect of ABTT is visible directly &mdash; tighter same-color clusters under ABTT, more diffuse mixing under baseline/SIF/whitening. You called it a candidate paper figure since it complements the cosine-gap plots with an intuitive visual.
 </div>
 
 <p>Two new figures in the paper: <code>fig_tsne_per_model.pdf</code> and <code>fig_umap_per_model.pdf</code>. Each is a 6&times;4 grid: rows are the six models at their best layer, columns are baseline / SIF-only / sif_abtt_optimal / whitening. Points are color-coded by ground-truth directory (only the larger directories &mdash; the legend would explode otherwise).</p>
@@ -455,7 +454,7 @@
 <h2 id="cosinegap">5. Cosine gap and AUCROC plots <span class="tag tag-done">REFRESHED</span></h2>
 
 <div class="quote">
-  <strong>Your ask:</strong> &ldquo;Cosine gap is more clear right? Because this is ABTT... gap is definitely increasing everywhere... this could be a good good plot for the paper.&rdquo;
+  <strong>What you asked for:</strong> keep the cosine-gap and AUCROC layerwise plots in the paper &mdash; cosine gap is the cleanest single visual that shows ABTT lifting same-vs-different separation across every layer, and the per-model overlay makes the dip in the T5 encoders unmissable.
 </div>
 
 <p>Both figures are already in the paper and were regenerated on the new balanced split (this happened in the data refresh, before this week's run). No changes needed for this round. Files: <code>fig_release_aucroc_per_model.pdf</code>, <code>fig_release_gap_per_model.pdf</code>.</p>
@@ -474,7 +473,7 @@
 <h2 id="lasttok">6. Last-token vs mean pooling appendix <span class="tag tag-new">NEW</span></h2>
 
 <div class="quote">
-  <strong>Your ask:</strong> &ldquo;So we are using average pooling. Right? So it will be good to have this experiment on the last token as well... this thing might not be like in the main paper. But some people might just ask this.&rdquo;
+  <strong>What you asked for:</strong> redo the last-token-vs-mean-pooling comparison on the new balanced split. Probably not in the main paper, but a likely reviewer question (especially for the decoder-only models, where last-token is the conventional choice), so an appendix table preempts it.
 </div>
 
 <p>Done for all 6 models. Appendix table at <code>overleaf_drafts/tables/appendix_lasttok_comparison.tex</code>. Mean wins on every model.</p>
@@ -517,7 +516,7 @@
 <h2 id="igfix">7. IG ABTT-vs-baseline flip &mdash; root cause and fix <span class="tag tag-fix">FIX</span></h2>
 
 <div class="quote">
-  <strong>Your ask:</strong> &ldquo;Yeah you can look into that... it looks like the left one is the clean and the right one is the more noisy one... the trend we've been seeing before is the opposite.&rdquo;
+  <strong>What you asked for:</strong> investigate the IG pair-matrix figure where the ABTT-cleaned panel looked noisier than the baseline panel, opposite of the trend the other five attribution methods showed. Either a label swap or something deeper in how the matrix was constructed.
 </div>
 
 <p>I tracked the bug. <strong>It was not a label swap.</strong> The labels and NPZ field assignments were correct. The actual problem was in how the IG pair-matrix was rendered &mdash; raw |IG| magnitudes were being used as outer-product weights, and in the pre-ABTT space IG attribution can collapse onto a single dominant token whose magnitude is 5&ndash;25&times; larger than the rest.</p>
@@ -564,7 +563,7 @@ pair_matrix = np.outer(q_ig, c_ig) * cosine_token_pair_matrix</code></pre>
 <h2 id="mark">8. Strategy 2 &mdash; retrieval-aligned MaRC method <span class="tag tag-new">NEW METHOD</span></h2>
 
 <div class="quote">
-  <strong>Your ask:</strong> &ldquo;How about I start with this second strategy of retrieval line fidelity loss... if this thing actually works that will just be like a nice story for the paper.&rdquo;
+  <strong>What you asked for:</strong> start with Strategy 2 from my pre-meeting research note &mdash; the retrieval-aligned fidelity-loss MaRC variant. Strategy 3 (amortized mask predictor) is deferred to a separate paper since it would be a much bigger contribution. Strategy 2 is the right scope for this submission and would round out the attribution story alongside the existing IG/BERTScore/OT/DLA methods.
 </div>
 
 <p>Implemented. Code in <code>src/retrieval_mask.py</code>, driver in <code>scripts/ig/run_retrieval_mark_pair_examples.py</code>, paper subsection 5.x with method definition and example figure. The original MaRC paper optimizes a soft mask to preserve a classification logit. We replaced the classification objective with a cosine-similarity preservation objective:</p>
@@ -620,7 +619,7 @@ pair_matrix = np.outer(q_ig, c_ig) * cosine_token_pair_matrix</code></pre>
 <h2 id="metrics">9. Quantitative attribution metrics from MaRC <span class="tag tag-new">NEW</span></h2>
 
 <div class="quote">
-  <strong>Your ask:</strong> &ldquo;Sufficiency, comprehensiveness, compactness... these are the things we might see for the attribution metrics... we want to see okay this looks better but how much are we losing on task fidelity.&rdquo;
+  <strong>What you asked for:</strong> add quantitative attribution metrics from the MaRC paper (sufficiency, comprehensiveness, compactness, plus a faithfulness measure) so the heatmaps aren't the only evidence. The right question is &ldquo;this attribution method looks cleaner under ABTT, but is it actually preserving model fidelity, and by how much?&rdquo; You expected to send more metrics later; the module is set up so adding one is a single function.
 </div>
 
 <p>Module: <code>src/attribution_metrics.py</code>. Driver: <code>scripts/ig/run_attribution_metrics.py</code>. Table: <code>overleaf_drafts/tables/attribution_metrics.tex</code>. All four metrics are retrieval-adapted &mdash; instead of "preserve class probability," they use "preserve <em>cos(embed(q), embed(c))</em>".</p>
@@ -682,7 +681,7 @@ pair_matrix = np.outer(q_ig, c_ig) * cosine_token_pair_matrix</code></pre>
 <h2 id="cleanup">10. Decretals removed, user-study language trimmed <span class="tag tag-done">DONE</span></h2>
 
 <div class="quote">
-  <strong>Your ask:</strong> &ldquo;Remove every reference to the decretals and the human... so this human study for now... yeah, will be like very tight for them.&rdquo;
+  <strong>What you asked for:</strong> drop the decretals cross-dataset experiment entirely &mdash; the dataset's pairing structure isn't right for our metric definition (folder members aren't all pairwise similar) and you don't want to spend more time fixing it before submission. Also pull forward-looking language about the human/scholar user study, which is being deferred to a separate demo paper this summer rather than completed in time for this submission.
 </div>
 
 <h4>Decretals (full removal)</h4>
