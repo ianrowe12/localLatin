@@ -59,6 +59,8 @@ METHOD_DISPLAY = {
     "baseline": "Baseline",
     "sif_only": "SIF",
     "sif_abtt_optimal": "SIF+ABTT",
+    "abtt_fixed": "ABTT (D=10)",
+    "abtt_optimal": "ABTT",
     "whitening": "Whitening",
 }
 
@@ -108,6 +110,42 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Skip computation; assume caches exist and just render figures.",
     )
+    parser.add_argument(
+        "--highlight_dirs",
+        nargs="+",
+        default=None,
+        help="Explicit list of folder_id strings to highlight (overrides top-K).",
+    )
+    parser.add_argument(
+        "--top_k",
+        type=int,
+        default=HIGHLIGHT_K,
+        help="Number of largest winnable folders to highlight when --highlight_dirs is not set.",
+    )
+    parser.add_argument(
+        "--drop_non_highlighted",
+        action="store_true",
+        help="Plot only highlighted folders; suppress gray background + singletons.",
+    )
+    parser.add_argument(
+        "--output_stem",
+        default=None,
+        help=(
+            "Figure filename template. Use '{proj}' as placeholder for tsne/umap."
+            " Default: 'fig_{proj}_per_model'."
+        ),
+    )
+    parser.add_argument(
+        "--silhouette_csv_suffix",
+        default="",
+        help="Suffix appended to cluster_silhouette.csv filename (avoids overwriting across runs).",
+    )
+    parser.add_argument(
+        "--abtt_fixed_D",
+        type=int,
+        default=10,
+        help="Fixed number of principal components to remove for --methods abtt_fixed.",
+    )
     return parser.parse_args()
 
 
@@ -128,6 +166,7 @@ def embedding_file(
 def method_pooling(method: str) -> str:
     if method in {"sif_only", "sif_abtt_optimal"}:
         return "sif"
+    # baseline, whitening, abtt_fixed, abtt_optimal all use mean-pooled embeddings.
     return "mean"
 
 
@@ -137,6 +176,7 @@ def apply_method(
     train_folder_ids: np.ndarray,
     method: str,
     D_values: List[int],
+    abtt_fixed_D: int = 10,
 ) -> Tuple[np.ndarray, Optional[int]]:
     """Return post-processed embeddings (all rows) and actual_D if applicable."""
     if method == "baseline" or method == "sif_only":
@@ -144,11 +184,16 @@ def apply_method(
 
     train_emb = emb_all[train_mask]
 
-    if method == "sif_abtt_optimal":
+    if method == "sif_abtt_optimal" or method == "abtt_optimal":
         best_D, _ = find_optimal_D(train_emb, train_folder_ids, D_values)
         cleaner = EmbeddingCleaner(num_components=int(best_D), center=True)
         cleaner.fit(train_emb)
         return cleaner.transform(emb_all).astype(np.float32, copy=False), int(best_D)
+
+    if method == "abtt_fixed":
+        cleaner = EmbeddingCleaner(num_components=int(abtt_fixed_D), center=True)
+        cleaner.fit(train_emb)
+        return cleaner.transform(emb_all).astype(np.float32, copy=False), int(abtt_fixed_D)
 
     if method == "whitening":
         from sklearn.decomposition import PCA
@@ -215,35 +260,42 @@ HIGHLIGHT_K = 12  # top-K most-populated winnable folders receive distinct color
 
 
 def build_folder_color_map(
-    folder_ids: np.ndarray, is_winnable: np.ndarray, top_k: int = HIGHLIGHT_K
-) -> np.ndarray:
+    folder_ids: np.ndarray,
+    is_winnable: np.ndarray,
+    top_k: int = HIGHLIGHT_K,
+    highlight_dirs: Optional[List[str]] = None,
+) -> Tuple[np.ndarray, List[str]]:
     """Assign a color bucket to each row.
 
     - Non-winnable (singleton) rows: bucket -2 (very light gray, background)
-    - Winnable rows not in top-K largest folders: bucket -1 (mid gray)
-    - Winnable rows in the top-K largest folders: bucket 0..top_k-1 (distinct)
+    - Winnable rows not in highlighted set: bucket -1 (mid gray)
+    - Winnable rows in the highlighted set: bucket 0..len(selected)-1 (distinct)
 
-    Restricting the colored set to the K largest folders gives a cleaner visual
-    signal: if ABTT really pulls related fragments together, the handful of
-    distinctly-colored clusters should be compact and separated, while baseline
-    and whitening should scatter them across the plane.
+    If ``highlight_dirs`` is given, those folder_ids are used in the order
+    provided (so colors are deterministic and reproducible across runs).
+    Otherwise we fall back to the top-K-by-size heuristic.
     """
     n = len(folder_ids)
     color_idx = np.full(n, -2, dtype=np.int32)
     winnable_mask = is_winnable.astype(bool)
     if not winnable_mask.any():
-        return color_idx
+        return color_idx, []
     color_idx[winnable_mask] = -1
 
-    winnable_df = pd.DataFrame({"folder_id": folder_ids[winnable_mask]})
-    sizes = winnable_df.groupby("folder_id").size().sort_values(ascending=False)
-    top_folders = sizes.index[:top_k].tolist()
-    rank_map = {fid: i for i, fid in enumerate(top_folders)}
+    if highlight_dirs:
+        # Keep only folder_ids that actually appear in the winnable set.
+        winnable_folder_set = set(folder_ids[winnable_mask].tolist())
+        selected = [fid for fid in highlight_dirs if fid in winnable_folder_set]
+    else:
+        winnable_df = pd.DataFrame({"folder_id": folder_ids[winnable_mask]})
+        sizes = winnable_df.groupby("folder_id").size().sort_values(ascending=False)
+        selected = sizes.index[:top_k].tolist()
 
+    rank_map = {fid: i for i, fid in enumerate(selected)}
     for i, fid in enumerate(folder_ids):
         if fid in rank_map:
             color_idx[i] = rank_map[fid]
-    return color_idx
+    return color_idx, selected
 
 
 def render_grid(
@@ -256,6 +308,8 @@ def render_grid(
     is_winnable: np.ndarray,
     figures_dir: Path,
     stem: str,
+    drop_non_highlighted: bool = False,
+    highlight_labels: Optional[List[str]] = None,
 ) -> None:
     n_rows = len(model_order)
     n_cols = len(methods)
@@ -263,19 +317,22 @@ def render_grid(
         n_rows, n_cols, figsize=(3.2 * n_cols, 3.0 * n_rows), squeeze=False
     )
 
-    # High-contrast palette for the top-K highlighted folders.
-    palette = np.array(
+    # High-contrast palette for the highlighted folders. Extend up to 12 slots;
+    # we pick as many as there are selected directories.
+    palette_full = np.array(
         [
             "#e41a1c", "#377eb8", "#4daf4a", "#984ea3",
             "#ff7f00", "#e7298a", "#17becf", "#8c564b",
             "#bcbd22", "#2ca02c", "#d62728", "#1f77b4",
         ]
-    )[:HIGHLIGHT_K]
+    )
+    n_highlight = int(color_idx.max()) + 1 if (color_idx >= 0).any() else 0
+    palette = palette_full[:max(n_highlight, 1)]
 
     background_mask = color_idx == -2  # singletons
-    mid_mask = color_idx == -1  # winnable but not in top-K
-    highlight_mask = color_idx >= 0  # top-K colored
-    highlight_colors = palette[color_idx[highlight_mask]]
+    mid_mask = color_idx == -1  # winnable but not in highlighted set
+    highlight_mask = color_idx >= 0  # highlighted
+    highlight_colors = palette[color_idx[highlight_mask]] if n_highlight else np.array([])
 
     for r, model_name in enumerate(model_order):
         for c, method in enumerate(methods):
@@ -287,35 +344,37 @@ def render_grid(
                     0.5, 0.5, "n/a", ha="center", va="center", transform=ax.transAxes
                 )
             else:
-                # Background: singletons, very faint.
-                ax.scatter(
-                    coords[background_mask, 0],
-                    coords[background_mask, 1],
-                    s=3,
-                    c="#d9d9d9",
-                    alpha=0.35,
-                    linewidths=0,
-                )
-                # Mid-layer: winnable points not in the top-K focus set.
-                ax.scatter(
-                    coords[mid_mask, 0],
-                    coords[mid_mask, 1],
-                    s=6,
-                    c="#9e9e9e",
-                    alpha=0.45,
-                    linewidths=0,
-                )
-                # Foreground: top-K folders, large + opaque + black edge for
-                # contrast against the gray background.
-                ax.scatter(
-                    coords[highlight_mask, 0],
-                    coords[highlight_mask, 1],
-                    s=40,
-                    c=highlight_colors,
-                    alpha=0.95,
-                    linewidths=0.4,
-                    edgecolors="black",
-                )
+                if not drop_non_highlighted:
+                    # Background: singletons, very faint.
+                    ax.scatter(
+                        coords[background_mask, 0],
+                        coords[background_mask, 1],
+                        s=3,
+                        c="#d9d9d9",
+                        alpha=0.35,
+                        linewidths=0,
+                    )
+                    # Mid-layer: winnable points not in the focus set.
+                    ax.scatter(
+                        coords[mid_mask, 0],
+                        coords[mid_mask, 1],
+                        s=6,
+                        c="#9e9e9e",
+                        alpha=0.45,
+                        linewidths=0,
+                    )
+                # Foreground: highlighted folders, large + opaque + black edge
+                # for contrast.
+                if n_highlight:
+                    ax.scatter(
+                        coords[highlight_mask, 0],
+                        coords[highlight_mask, 1],
+                        s=60 if drop_non_highlighted else 40,
+                        c=highlight_colors,
+                        alpha=0.95,
+                        linewidths=0.5,
+                        edgecolors="black",
+                    )
 
             ax.set_xticks([])
             ax.set_yticks([])
@@ -352,7 +411,31 @@ def render_grid(
         fontsize=14,
         y=0.995,
     )
-    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.98))
+
+    # Legend for highlighted directories (placed at bottom center).
+    if n_highlight and highlight_labels:
+        from matplotlib.lines import Line2D
+
+        handles = [
+            Line2D(
+                [0], [0], marker="o", color="w",
+                markerfacecolor=palette[i], markeredgecolor="black",
+                markeredgewidth=0.5, markersize=9,
+                label=highlight_labels[i],
+            )
+            for i in range(min(n_highlight, len(highlight_labels)))
+        ]
+        fig.legend(
+            handles=handles,
+            loc="lower center",
+            ncol=min(n_highlight, 6),
+            bbox_to_anchor=(0.5, -0.015),
+            frameon=False,
+            fontsize=10,
+        )
+        fig.tight_layout(rect=(0.0, 0.04, 1.0, 0.98))
+    else:
+        fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.98))
 
     figures_dir.mkdir(parents=True, exist_ok=True)
     fig.savefig(figures_dir / f"{stem}.png", dpi=180, bbox_inches="tight")
@@ -452,7 +535,13 @@ def main() -> None:
 
     model_order = [m[0] for m in active_models]
 
-    color_idx = build_folder_color_map(folder_ids, is_winnable)
+    color_idx, highlight_labels = build_folder_color_map(
+        folder_ids,
+        is_winnable,
+        top_k=int(args.top_k),
+        highlight_dirs=list(args.highlight_dirs) if args.highlight_dirs else None,
+    )
+    print(f"[colors] highlighting {len(highlight_labels)} directories: {highlight_labels}")
 
     proj_caches: Dict[str, Dict[Tuple[str, str], np.ndarray]] = {
         p: {} for p in args.projections
@@ -498,7 +587,8 @@ def main() -> None:
                     continue
 
                 post, actual_D = apply_method(
-                    emb, train_mask, train_folder_ids, method, D_values
+                    emb, train_mask, train_folder_ids, method, D_values,
+                    abtt_fixed_D=int(args.abtt_fixed_D),
                 )
                 post_norm = l2_normalize(post)
                 coords = compute_or_load_projection(
@@ -509,9 +599,17 @@ def main() -> None:
                 print(f"[ok] {display} | {method}{suffix} | {proj}: {coords.shape}")
 
     # Render and write silhouette CSV per projection.
-    silhouette_csv = intermediate_dir / "cluster_silhouette.csv"
+    suffix = args.silhouette_csv_suffix.strip()
+    sil_name = (
+        f"cluster_silhouette{('_' + suffix) if suffix else ''}.csv"
+    )
+    silhouette_csv = intermediate_dir / sil_name
+    stem_template = args.output_stem or "fig_{proj}_per_model"
     for proj in args.projections:
-        stem = f"fig_{proj}_per_model"
+        if "{proj}" in stem_template:
+            stem = stem_template.format(proj=proj)
+        else:
+            stem = f"{stem_template}_{proj}"
         render_grid(
             proj_name=proj,
             model_order=model_order,
@@ -522,6 +620,8 @@ def main() -> None:
             is_winnable=is_winnable,
             figures_dir=figures_dir,
             stem=stem,
+            drop_non_highlighted=bool(args.drop_non_highlighted),
+            highlight_labels=highlight_labels,
         )
         print(f"[render] {figures_dir / stem}.pdf")
 
