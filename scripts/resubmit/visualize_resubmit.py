@@ -112,7 +112,7 @@ def plot_metric(
         n_models,
         figsize=(4.3 * n_models, 4.4),
         sharex=False,
-        sharey=(metric == "aucroc"),
+        sharey=(metric in ("aucroc", "overall_assignment_acc")),
         squeeze=False,
     )
     axes = axes.ravel()
@@ -420,6 +420,24 @@ def main() -> None:
         ylabel="AUCROC",
         out_dir=out_dir,
         stem="fig_appendix_aucroc_per_model",
+        models=appendix_models,
+        methods=["baseline", "abtt_optimal"],
+    )
+    plot_metric(
+        release_rows,
+        metric="overall_assignment_acc",
+        ylabel="Assignment Accuracy",
+        out_dir=out_dir,
+        stem="fig_release_taskb_per_model",
+        models=main_models,
+        methods=["baseline", "abtt_optimal"],
+    )
+    plot_metric(
+        release_rows,
+        metric="overall_assignment_acc",
+        ylabel="Assignment Accuracy",
+        out_dir=out_dir,
+        stem="fig_appendix_taskb_per_model",
         models=appendix_models,
         methods=["baseline", "abtt_optimal"],
     )
