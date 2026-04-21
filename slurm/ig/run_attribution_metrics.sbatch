@@ -12,7 +12,7 @@
 #SBATCH --error=slurm/logs/attr_metrics_%j.err
 
 set -euo pipefail
-cd /projects/beto/irowerojas/worktrees/run-1-agent-4
+cd /projects/beto/irowerojas/localLatin
 
 mkdir -p slurm/logs runs/active/ig_examples/attribution_metrics
 
