@@ -1,0 +1,63 @@
+\begingroup
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{longtable}{llcccccc}
+\caption{Per-layer Task~B top-$k$ ranking metrics for the three headline models. \texttt{baseline} is mean pooling without correction; \texttt{abtt\_optimal} applies ABTT (no SIF weighting) with $D$ tuned per layer on the train split. This table is computed on the single-seed v2 split (no $M$-seed averaging, since the mseed sweep was run only for SIF-conditioned variants; see Table~\ref{tab:taskB_ranking_appendix_mseed} for the multi-seed SIF+ABTT view). \textbf{Acc@1} is directory accuracy at rank~1, with an existing/new decomposition. Rows in bold mark the best layer per model, selected by ABTT Acc@1.}
+\label{tab:taskB_ranking_main} \\
+\toprule
+\multicolumn{2}{c}{} & \multicolumn{6}{c}{\textbf{Task B: Top-K Ranking (main, single-seed v2)}} \\
+\cmidrule(lr){3-8}
+\textbf{Model} & \textbf{Layer} & \makecell{Acc@1\\(base)} & \makecell{Acc@1\\(ABTT)} & \makecell{Existing\\(base)} & \makecell{Existing\\(ABTT)} & \makecell{New\\(base)} & \makecell{New\\(ABTT)} \\
+\midrule
+\endfirsthead
+\toprule
+\multicolumn{2}{c}{} & \multicolumn{6}{c}{\textbf{Task B: Top-K Ranking (main, single-seed v2)}} \\
+\cmidrule(lr){3-8}
+\textbf{Model} & \textbf{Layer} & \makecell{Acc@1\\(base)} & \makecell{Acc@1\\(ABTT)} & \makecell{Existing\\(base)} & \makecell{Existing\\(ABTT)} & \makecell{New\\(base)} & \makecell{New\\(ABTT)} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{8}{r}{\textit{(continued on next page)}} \\
+\endfoot
+\bottomrule
+\endlastfoot
+LaTa & 1 & 0.721 & 0.880 & 0.630 & 0.910 & 0.916 & 0.907 \\
+ & 2 & 0.383 & 0.869 & 0.153 & 0.905 & 0.913 & 0.892 \\
+ & \textbf{3} & \textbf{0.350} & \textbf{0.882} & \textbf{0.256} & \textbf{0.882} & \textbf{0.842} & \textbf{0.950} \\
+ & 4 & 0.303 & 0.881 & 0.389 & 0.893 & 0.718 & 0.920 \\
+ & 5 & 0.297 & 0.875 & 0.374 & 0.892 & 0.715 & 0.913 \\
+ & 6 & 0.297 & 0.874 & 0.378 & 0.884 & 0.712 & 0.913 \\
+ & 7 & 0.302 & 0.868 & 0.372 & 0.875 & 0.715 & 0.916 \\
+ & 8 & 0.302 & 0.861 & 0.379 & 0.884 & 0.706 & 0.885 \\
+ & 9 & 0.309 & 0.858 & 0.366 & 0.886 & 0.724 & 0.873 \\
+ & 10 & 0.317 & 0.852 & 0.344 & 0.873 & 0.752 & 0.882 \\
+ & 11 & 0.331 & 0.857 & 0.310 & 0.867 & 0.786 & 0.901 \\
+ & 12 & 0.689 & 0.841 & 0.576 & 0.890 & 0.932 & 0.833 \\
+\midrule
+PhilTa & \textbf{1} & \textbf{0.693} & \textbf{0.883} & \textbf{0.591} & \textbf{0.918} & \textbf{0.904} & \textbf{0.901} \\
+ & 2 & 0.603 & 0.869 & 0.479 & 0.895 & 0.867 & 0.885 \\
+ & 3 & 0.389 & 0.865 & 0.193 & 0.897 & 0.889 & 0.879 \\
+ & 4 & 0.369 & 0.859 & 0.148 & 0.886 & 0.923 & 0.873 \\
+ & 5 & 0.334 & 0.854 & 0.252 & 0.879 & 0.796 & 0.873 \\
+ & 6 & 0.310 & 0.845 & 0.338 & 0.905 & 0.700 & 0.817 \\
+ & 7 & 0.325 & 0.847 & 0.301 & 0.901 & 0.746 & 0.830 \\
+ & 8 & 0.350 & 0.857 & 0.262 & 0.875 & 0.808 & 0.885 \\
+ & 9 & 0.337 & 0.857 & 0.303 & 0.890 & 0.762 & 0.870 \\
+ & 10 & 0.344 & 0.833 & 0.299 & 0.908 & 0.780 & 0.793 \\
+ & 11 & 0.355 & 0.829 & 0.256 & 0.869 & 0.824 & 0.836 \\
+ & 12 & 0.528 & 0.854 & 0.338 & 0.880 & 0.898 & 0.876 \\
+\midrule
+mT5-base & \textbf{1} & \textbf{0.451} & \textbf{0.885} & \textbf{0.135} & \textbf{0.877} & \textbf{0.981} & \textbf{0.947} \\
+ & 2 & 0.435 & 0.874 & 0.110 & 0.890 & 0.975 & 0.910 \\
+ & 3 & 0.445 & 0.830 & 0.161 & 0.794 & 0.926 & 0.941 \\
+ & 4 & 0.467 & 0.798 & 0.269 & 0.787 & 0.858 & 0.882 \\
+ & 5 & 0.352 & 0.756 & 0.422 & 0.746 & 0.659 & 0.864 \\
+ & 6 & 0.346 & 0.746 & 0.636 & 0.755 & 0.489 & 0.836 \\
+ & 7 & 0.352 & 0.775 & 0.594 & 0.793 & 0.517 & 0.851 \\
+ & 8 & 0.366 & 0.784 & 0.557 & 0.809 & 0.560 & 0.842 \\
+ & 9 & 0.394 & 0.787 & 0.364 & 0.841 & 0.746 & 0.814 \\
+ & 10 & 0.387 & 0.788 & 0.314 & 0.794 & 0.783 & 0.876 \\
+ & 11 & 0.378 & 0.765 & 0.297 & 0.763 & 0.780 & 0.854 \\
+ & 12 & 0.466 & 0.779 & 0.198 & 0.834 & 0.926 & 0.799 \\
+\end{longtable}
+\endgroup
