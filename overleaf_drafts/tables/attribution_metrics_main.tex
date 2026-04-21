@@ -1,0 +1,30 @@
+% Trimmed main-text attribution-metrics view: 2 models (LaTa, PhilTa) x
+% 2 methods (IG, RetrievalMarK) x 2 variants (baseline, ABTT) x 4 metrics.
+% Numbers are a direct copy from attribution_metrics.tex (auto-generated
+% by scripts/ig/run_attribution_metrics.py); if you regenerate, resync.
+% Bolding convention here differs from the appendix: within each
+% (method, metric) cell the better variant is bolded, so ABTT-vs-baseline
+% direction is the at-a-glance story. See Table~\ref{tab:attribution_metrics_appendix}
+% for the full 4-model x 9-method sweep.
+\begin{table}[t]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{lrrrrrrrr}
+\toprule
+Method & \multicolumn{2}{c}{Suff@25\%~$\uparrow$} & \multicolumn{2}{c}{Comp@25\%~$\uparrow$} & \multicolumn{2}{c}{Cmpct@0.8~$\downarrow$} & \multicolumn{2}{c}{$\rho_{\text{LOO}}$~$\uparrow$} \\
+\cmidrule(lr){2-3} \cmidrule(lr){4-5} \cmidrule(lr){6-7} \cmidrule(lr){8-9}
+ & base & abtt & base & abtt & base & abtt & base & abtt \\
+\midrule
+\multicolumn{9}{l}{\textit{LaTa}} \\
+IG            & \textbf{0.677} & 0.202 & \textbf{0.158} & 0.038  & \textbf{0.302} & 0.383 & -0.118 & \textbf{-0.007} \\
+RetrievalMarK & \textbf{0.198} & 0.014 & \textbf{0.066} & -0.061 & \textbf{0.855} & 0.935 & -0.095 & \textbf{-0.080} \\
+\midrule
+\multicolumn{9}{l}{\textit{PhilTa}} \\
+IG            & \textbf{0.763} & 0.562           & \textbf{0.226}  & 0.091           & \textbf{0.144} & 0.252 & -0.017 & \textbf{0.116} \\
+RetrievalMarK & -0.269         & \textbf{0.026}  & -0.011          & \textbf{0.009}  & \textbf{0.676} & 0.940 & 0.023  & \textbf{0.058} \\
+\bottomrule
+\end{tabular}
+\caption{\textbf{Attribution-quality metrics for the two T5 models and the two attribution methods featured in the main text.} \textsc{IG} is a standard per-token gradient attribution; \textsc{RetrievalMarK} is the retrieval-adapted pair-matrix method we introduce (\S\ref{sec:marc}). Metrics: \textbf{Suff@25\%} ($\uparrow$), \textbf{Comp@25\%} ($\uparrow$), \textbf{Cmpct@0.8} ($\downarrow$), $\rho_{\text{LOO}}$ ($\uparrow$); see Table~\ref{tab:attribution_metrics_appendix} for metric definitions and all nine methods across four encoders. Within each (method, metric) cell we \textbf{bold} the better of \{baseline, ABTT\}. On this 40-pair T5 subset, $\rho_{\text{LOO}}$ improves under ABTT across the board, but the picture on the other three metrics is mixed: for \textsc{IG} the baseline is better on three of four metrics on both LaTa and PhilTa, while for \textsc{RetrievalMarK} ABTT wins three of four on PhilTa (suff, comp, $\rho_{\text{LOO}}$) but loses three of four on LaTa. We therefore do \emph{not} read this as evidence that ABTT uniformly improves attribution quality on T5; the full sweep (appendix) shows ABTT helping \textsc{IG} on Qwen3-0.6B (3/4 metrics) and helping \textsc{BERTScore} / \textsc{DLA} more consistently, so the effect is method- and encoder-dependent. Cross-variant deltas conflate two effects (ABTT changes both the attribution scores and the cosine being explained) and should be read as descriptive shifts on this curated set rather than fidelity loss caused by ABTT alone. Numbers are a verbatim copy of the corresponding rows in Table~\ref{tab:attribution_metrics_appendix}.}
+\label{tab:attribution_metrics_main}
+\end{table}
