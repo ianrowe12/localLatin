@@ -170,66 +170,119 @@ def plot_metric(
     save(fig, out_dir, stem)
 
 
-def plot_density_2x2(feature_model: str, dist_dir: Path, out_dir: Path) -> None:
+def compute_dip_layer(
+    results: pd.DataFrame, model: str, max_layer: int
+) -> tuple[int, int]:
+    """Return (last_layer, dip_layer) using the same rule as run_resubmit_distributions.py:
+    last = max layer with a baseline row; dip = baseline layer with the highest AUCROC
+    in the 30-70% depth band. Falls back to (max_layer, max_layer // 2) if no rows match.
+    """
+    base = results[
+        (results["model"] == model)
+        & (results["method"] == "baseline")
+        & (results["repr"] == "hidden")
+        & (results["pooling"] == "mean")
+    ].copy()
+    if base.empty:
+        return max_layer, max_layer // 2
+    last_layer = int(base["layer"].max())
+    base["pct"] = base["layer"] / max_layer * 100
+    middle = base[(base["pct"] >= 30) & (base["pct"] <= 70)]
+    if middle.empty:
+        return last_layer, max_layer // 2
+    dip_layer = int(middle.loc[middle["aucroc"].idxmax(), "layer"])
+    return last_layer, dip_layer
+
+
+def _draw_density_panel(
+    ax: plt.Axes,
+    npz_path: Path,
+    title: str,
+    bins: np.ndarray,
+) -> float:
+    """Draw a single same-vs-different cosine-similarity histogram. Returns the
+    panel's top y-limit so callers can equalize per row.
+    """
+    if not npz_path.exists():
+        ax.axis("off")
+        ax.text(0.5, 0.5, f"Missing {npz_path.name}", ha="center", va="center")
+        return 0.0
+
+    data = np.load(npz_path)
+    same = data["same_sims"]
+    diff = data["diff_sims"]
+    ax.hist(
+        diff,
+        bins=bins,
+        alpha=0.55,
+        color="#c0392b",
+        density=True,
+        edgecolor="#7f241a",
+        linewidth=0.6,
+        label="Different",
+    )
+    ax.hist(
+        same,
+        bins=bins,
+        alpha=0.55,
+        color="#2471a3",
+        density=True,
+        edgecolor="#17436b",
+        linewidth=0.6,
+        label="Same",
+    )
+    same_mean = float(np.mean(same))
+    diff_mean = float(np.mean(diff))
+    ax.axvline(same_mean, color="#2471a3", linestyle="--", linewidth=1.3)
+    ax.axvline(diff_mean, color="#c0392b", linestyle="--", linewidth=1.3)
+    ax.set_title(title, fontsize=12, fontweight="bold")
+    ax.tick_params(axis="both", labelsize=10)
+    ax.text(
+        0.98,
+        0.95,
+        f"gap={same_mean - diff_mean:.2f}",
+        transform=ax.transAxes,
+        ha="right",
+        va="top",
+        fontsize=9,
+        bbox={"facecolor": "white", "alpha": 0.75, "edgecolor": "none"},
+    )
+    return float(ax.get_ylim()[1])
+
+
+def plot_density_2x2(
+    feature_model: str,
+    dist_dir: Path,
+    out_dir: Path,
+    results: pd.DataFrame | None = None,
+) -> None:
+    """PhilTa-style 2x2: rows = {Last layer, Dip layer}, cols = {Baseline, ABTT}.
+    Uses pure `abtt_optimal` distributions (mean-pooled + ABTT), not SIF+ABTT.
+    """
     slug = feature_model.replace("/", "_")
+    max_layer = MAX_LAYERS.get(feature_model, 12)
+    if results is not None:
+        last_layer, dip_layer = compute_dip_layer(results, feature_model, max_layer)
+    else:
+        last_layer, dip_layer = max_layer, max_layer // 2
+
     conds = [
-        ("baseline_last", "Baseline - Last Layer"),
-        ("baseline_middle", "Baseline - Dip Layer"),
-        ("abtt_last", "ABTT - Last Layer"),
-        ("abtt_middle", "ABTT - Dip Layer"),
+        ("baseline_last", f"Baseline · Last layer (L{last_layer})"),
+        ("baseline_middle", f"Baseline · Dip layer (L{dip_layer})"),
+        ("abtt_last", f"ABTT · Last layer (L{last_layer})"),
+        ("abtt_middle", f"ABTT · Dip layer (L{dip_layer})"),
     ]
     fig, axes = plt.subplots(2, 2, figsize=(10.5, 7.2), sharex=True)
     axes = axes.ravel()
-    bins = np.linspace(-0.2, 1.0, 80)
+    bins = np.linspace(-0.2, 1.0, 48)
     row_ymax = [0.0, 0.0]
 
     for idx, (suffix, title) in enumerate(conds):
-        ax = axes[idx]
-        npz_path = dist_dir / f"{slug}_{suffix}.npz"
-        if not npz_path.exists():
-            ax.axis("off")
-            ax.text(0.5, 0.5, f"Missing {npz_path.name}", ha="center", va="center")
-            continue
-
-        data = np.load(npz_path)
-        same = data["same_sims"]
-        diff = data["diff_sims"]
-        ax.hist(
-            diff,
-            bins=bins,
-            alpha=0.5,
-            color="#c0392b",
-            density=True,
-            edgecolor="none",
-            label="Different",
-        )
-        ax.hist(
-            same,
-            bins=bins,
-            alpha=0.5,
-            color="#2471a3",
-            density=True,
-            edgecolor="none",
-            label="Same",
-        )
-        same_mean = float(np.mean(same))
-        diff_mean = float(np.mean(diff))
-        ax.axvline(same_mean, color="#2471a3", linestyle="--", linewidth=1.3)
-        ax.axvline(diff_mean, color="#c0392b", linestyle="--", linewidth=1.3)
-        ax.set_title(title, fontsize=12, fontweight="bold")
-        ax.tick_params(axis="both", labelsize=10)
-        ax.text(
-            0.98,
-            0.95,
-            f"gap={same_mean - diff_mean:.2f}",
-            transform=ax.transAxes,
-            ha="right",
-            va="top",
-            fontsize=9,
-            bbox={"facecolor": "white", "alpha": 0.75, "edgecolor": "none"},
+        ymax = _draw_density_panel(
+            axes[idx], dist_dir / f"{slug}_{suffix}.npz", title, bins
         )
         row = idx // 2
-        row_ymax[row] = max(row_ymax[row], ax.get_ylim()[1])
+        row_ymax[row] = max(row_ymax[row], ymax)
 
     for row in range(2):
         ymax = row_ymax[row] * 1.05 if row_ymax[row] > 0 else 1.0
@@ -243,6 +296,49 @@ def plot_density_2x2(feature_model: str, dist_dir: Path, out_dir: Path) -> None:
     axes[1].legend(loc="upper left", fontsize=9, framealpha=0.85)
     fig.tight_layout()
     save(fig, out_dir, "paper_fig_density_2x2")
+
+
+def plot_density_2x2_models(
+    feature_models: list[str],
+    dist_dir: Path,
+    out_dir: Path,
+    results: pd.DataFrame,
+) -> None:
+    """2x2 variant focused on the dip-layer repair: rows = models, cols = {Baseline, ABTT}
+    at each model's dip layer. Sharpens the "ABTT rescues the anisotropy dip" story across
+    two models instead of four panels of one model. Uses pure `abtt_optimal` distributions.
+    """
+    fig, axes = plt.subplots(2, 2, figsize=(10.5, 7.2), sharex=True)
+    bins = np.linspace(-0.2, 1.0, 48)
+
+    for row_idx, model in enumerate(feature_models[:2]):
+        slug = model.replace("/", "_")
+        max_layer = MAX_LAYERS.get(model, 12)
+        _, dip_layer = compute_dip_layer(results, model, max_layer)
+        short = SHORT.get(model, model)
+        panels = [
+            ("baseline_middle", f"{short} · Baseline (L{dip_layer})"),
+            ("abtt_middle", f"{short} · ABTT (L{dip_layer})"),
+        ]
+        row_ymax = 0.0
+        for col_idx, (suffix, title) in enumerate(panels):
+            ymax = _draw_density_panel(
+                axes[row_idx, col_idx],
+                dist_dir / f"{slug}_{suffix}.npz",
+                title,
+                bins,
+            )
+            row_ymax = max(row_ymax, ymax)
+        scaled = row_ymax * 1.05 if row_ymax > 0 else 1.0
+        for col_idx in range(2):
+            axes[row_idx, col_idx].set_ylim(0, scaled)
+        axes[row_idx, 0].set_ylabel("Density", fontsize=12)
+
+    axes[1, 0].set_xlabel("Cosine Similarity", fontsize=12)
+    axes[1, 1].set_xlabel("Cosine Similarity", fontsize=12)
+    axes[0, 1].legend(loc="upper left", fontsize=9, framealpha=0.85)
+    fig.tight_layout()
+    save(fig, out_dir, "paper_fig_density_2x2_2models")
 
 
 def plot_taskb_mseed_bar(csv_path: Path, out_dir: Path) -> None:
@@ -348,8 +444,15 @@ def main() -> None:
 
     dist_dir = Path(args.dist_dir)
     if dist_dir.exists():
-        plot_density_2x2(args.feature_model, dist_dir, out_dir)
+        plot_density_2x2(args.feature_model, dist_dir, out_dir, results=results)
         print(f"Saved density 2x2 to {out_dir}")
+        plot_density_2x2_models(
+            ["bowphs/LaTa", "bowphs/PhilTa"],
+            dist_dir,
+            out_dir,
+            results=results,
+        )
+        print(f"Saved density 2x2 (2-model variant) to {out_dir}")
     else:
         print(f"Warning: dist_dir {dist_dir} not found, skipping density figure.")
 
