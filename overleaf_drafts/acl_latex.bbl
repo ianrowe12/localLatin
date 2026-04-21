@@ -1,4 +1,4 @@
-\begin{thebibliography}{11}
+\begin{thebibliography}{13}
 \providecommand{\natexlab}[1]{#1}
 
 \bibitem[{Arora et~al.(2017)Arora, Liang, and Ma}]{arora2017sif}
@@ -26,6 +26,11 @@ Xinyu Lu, Nurlan Maharramov, and 1 others. 2025.
 \newblock \href {https://huggingface.co/KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5} {{KaLM}-embedding: Superior training data brings a stronger embedding model}.
 \newblock Accessed: 2025.
 
+\bibitem[{McInnes et~al.(2018)McInnes, Healy, and Melville}]{mcinnes2018umap}
+Leland McInnes, John Healy, and James Melville. 2018.
+\newblock {UMAP}: Uniform manifold approximation and projection for dimension reduction.
+\newblock \emph{arXiv preprint arXiv:1802.03426}.
+
 \bibitem[{Mu and Viswanath(2018)}]{mu2018allbutthetop}
 Jiaqi Mu and Pramod Viswanath. 2018.
 \newblock \href {https://openreview.net/forum?id=HkuGJ3kCb} {All-but-the-top: Simple and effective postprocessing for word representations}.
@@ -50,6 +55,11 @@ Jianlin Su, Jiarun Cao, Weijie Liu, and Yangyiwen Ou. 2021.
 Mukund Sundararajan, Ankur Taly, and Qiqi Yan. 2017.
 \newblock Axiomatic attribution for deep networks.
 \newblock In \emph{Proceedings of the 34th International Conference on Machine Learning ({ICML})}, pages 3319--3328. PMLR.
+
+\bibitem[{van~der Maaten and Hinton(2008)}]{vandermaaten2008tsne}
+Laurens van~der Maaten and Geoffrey Hinton. 2008.
+\newblock Visualizing data using {t-SNE}.
+\newblock \emph{Journal of Machine Learning Research}, 9:2579--2605.
 
 \bibitem[{Xue et~al.(2021)Xue, Constant, Roberts, Kale, Al-Rfou, Siddhant, Barua, and Raffel}]{xue2021mt5}
 Linting Xue, Noah Constant, Adam Roberts, Mihir Kale, Rami Al-Rfou, Aditya Siddhant, Aditya Barua, and Colin Raffel. 2021.

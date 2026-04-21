@@ -316,18 +316,18 @@ The cosine-gap plots tell the same story in a more compact way. In LaTa and Phil
 
 \subsection{Cluster Geometry}
 
-Cosine-gap and AUCROC curves summarize separability in aggregate. Two-dimensional projections make the geometric effect of ABTT visible directly. Figures~\ref{fig:tsne} and~\ref{fig:umap} show t-SNE~\citep{vandermaaten2008tsne} and UMAP~\citep{mcinnes2018umap} embeddings of the 1{,}705 labelled fragments at each model's best layer. To keep the visualization legible, we highlight the twelve most-populated directories with distinct colors; other winnable fragments appear in mid gray and singletons in light gray. Under whitening, highlighted fragments are scattered across the plane regardless of their directory; under baseline and SIF-only pooling, clusters form partially but colored points often split into separate sub-groups. Under SIF+ABTT, same-color points consistently sit together as tight, well-separated clusters. The pattern holds across both projection algorithms, indicating that the tightening reflects the post-processed embedding geometry rather than an artifact of either dimensionality-reduction method. Silhouette scores computed in the 2D projection space on winnable fragments corroborate this: SIF+ABTT yields the highest score for every (model, projection) combination, while whitening collapses to values near $-0.5$ across the board.
+Cosine-gap and AUCROC curves summarize separability in aggregate. Two-dimensional projections make the geometric effect of ABTT visible directly. Figures~\ref{fig:tsne} and~\ref{fig:umap} show t-SNE~\citep{vandermaaten2008tsne} and UMAP~\citep{mcinnes2018umap} embeddings of the 1{,}705 labelled fragments at each of three representative models' best layer, comparing mean-pooled \texttt{baseline} to pure \texttt{ABTT} (no SIF, $D{=}10$). To isolate the geometric signal, we plot only the six most-populated directories (sizes 8--10); the remaining winnable fragments and singletons are suppressed. Under baseline, colored points from different directories often bleed into one another. Under ABTT, same-color fragments consistently collapse onto tight, well-separated clusters; the effect is strongest on \texttt{mt5-base}, where baseline silhouette is negative on both projections and ABTT brings it above $0.2$. The pattern holds across both projection algorithms, indicating that the tightening reflects the post-processed embedding geometry rather than an artifact of either dimensionality-reduction method. The remaining three models (LaBSE, Qwen3-0.6B, KaLM-mini) show the same pattern and are reported in Appendix~\ref{app:cluster_geometry}.
 
 \begin{figure*}[!t]
 \centering
-\includegraphics[width=\textwidth]{fig_tsne_per_model.pdf}
-\caption{t-SNE projections of the 1{,}705 labelled fragments at each model's best layer (rows), for four post-processing methods (columns). The twelve most-populated directories are highlighted in distinct colors; other winnable fragments appear in mid gray and singleton fragments in light gray. SIF+ABTT produces visibly tighter same-color clusters than baseline, SIF-only, or whitening.}
+\includegraphics[width=\textwidth]{fig_tsne_main.pdf}
+\caption{t-SNE projections of the 1{,}705 labelled fragments at each model's best layer (rows: LaTa, PhilTa, mT5-base), for mean-pooled \texttt{baseline} and pure \texttt{ABTT} ($D{=}10$) columns. Colors mark the six most-populated directories (\texttt{CNEO.315.13}, \texttt{CNIC.325.16}, \texttt{CANC.314.4}, \texttt{CANC.314.20}, \texttt{CNIC.325.6}, \texttt{CNIC.325.4}; sizes 8--10); all other fragments are suppressed. ABTT produces visibly tighter same-color clusters than the baseline, with winnable-fragment silhouette scores rising by 0.09--0.75 on every model.}
 \label{fig:tsne}
 \end{figure*}
 
 \begin{figure*}[!t]
 \centering
-\includegraphics[width=\textwidth]{fig_umap_per_model.pdf}
+\includegraphics[width=\textwidth]{fig_umap_main.pdf}
 \caption{UMAP projections, same configuration as Figure~\ref{fig:tsne}. The per-method separation pattern is reproduced under a different dimensionality-reduction algorithm, supporting that the cluster-tightening is a property of the embedding geometry rather than of the projection method.}
 \label{fig:umap}
 \end{figure*}
@@ -426,5 +426,24 @@ Our example-level attributions use integrated gradients, with a retrieval-aligne
 A natural question for the decoder-only models (Qwen3-0.6B, KaLM-mini, Qwen3-8B) is whether last-token pooling, the canonical choice for this family, would change our picture. To answer it directly, we re-run the ABTT post-processing pipeline on all six models using last-token pooling in place of mean pooling, keeping every other hyperparameter and the same train/test split fixed. We restrict the comparison to the two ABTT variants (fixed $D{=}10$ and per-layer tuned $D$) that carry the main-text analysis; SIF weighting is not defined for single-token pooling and is therefore omitted. Table~\ref{tab:lasttok_comparison} reports, for each (model, pooling) pair, the layer that maximizes Task~B autonomous-routing assignment accuracy together with Task B directory accuracy at rank 1 and the cosine gap at that same layer. Mean pooling outperforms last-token pooling on assignment accuracy for every model; the gap is largest on the two Latin T5 encoders (LaTa and PhilTa, where last-token pooling loses roughly 23--31 accuracy points) and narrows to 1--5 points on LaBSE and the decoder-only models (Qwen3-0.6B, KaLM-mini, Qwen3-8B), confirming that mean pooling is the safer default for this retrieval pipeline even on the decoder-only architectures where last-token pooling is the more conventional choice.
 
 \input{tables/appendix_lasttok_comparison}
+
+\section{Cluster Geometry: Additional Models}
+\label{app:cluster_geometry}
+
+Figures~\ref{fig:tsne_appendix} and~\ref{fig:umap_appendix} extend the cluster-geometry panels of Figures~\ref{fig:tsne} and~\ref{fig:umap} to the remaining three models (LaBSE, Qwen3-0.6B, KaLM-mini), using the same six hand-picked directories and the same \texttt{baseline} vs.\ pure \texttt{ABTT} ($D{=}10$) comparison. The pattern observed in the main paper persists: under ABTT, winnable-fragment silhouette rises by 0.13, 0.66, and 0.42 on t-SNE for the three models respectively (0.16, 0.56, 0.37 on UMAP), and colored points collapse into tighter per-directory groups. The largest effect is on Qwen3-0.6B, whose baseline silhouette is negative on both projections and becomes strongly positive after ABTT.
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=\textwidth]{fig_tsne_appendix.pdf}
+\caption{t-SNE projections of the six most-populated directories at each model's best layer for LaBSE, Qwen3-0.6B, and KaLM-mini. Same directory palette as Figure~\ref{fig:tsne}; baseline (left) vs.\ pure \texttt{ABTT} ($D{=}10$) (right). ABTT tightens same-color clusters for every model.}
+\label{fig:tsne_appendix}
+\end{figure*}
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=\textwidth]{fig_umap_appendix.pdf}
+\caption{UMAP projections matching Figure~\ref{fig:tsne_appendix}. The cluster-tightening is reproduced under a different projection algorithm.}
+\label{fig:umap_appendix}
+\end{figure*}
 
 \end{document}
