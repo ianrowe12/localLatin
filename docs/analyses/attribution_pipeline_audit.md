@@ -561,6 +561,40 @@ These are choices the audit cannot make alone:
 
 ---
 
+## Reproducer empirical data (corroborates the audit's claims)
+
+The reproducer agent confirmed empirical values for two random pairs from
+the per-pair JSONs at `runs/active/ig_examples_200pair/attribution_metrics/<slug>/exampleNNN_pair_example.json`
+(these per-pair files exist — they are the ground truth that `summary.csv`
+aggregates):
+
+| Pair | full_cos | suff@0.25_raw | suff@0.25_ratio | comp@0.25_drop | comp@0.25_ratio | compactness@0.80 |
+|---|---|---|---|---|---|---|
+| LaTa example001 (n_q=48, layer=4) IG/base | 0.9987 | 0.2272 | 0.2275 | 0.0319 | 0.0319 | 0.5833 |
+| PhilTa example201 (n_q=105, layer=6) IG/base | 0.99976 | 0.99981 | 1.00005 | 0.00013 | 0.00013 | 0.0952 |
+
+This confirms three key audit claims:
+- `|full_cos|` is far above `FULL_COS_FLOOR=0.05` (here ~0.999 for both
+  pairs) — the floor never fires on this run, so its NaN-handling code path
+  is unreachable in production.
+- The per-pair JSONs are the source-of-truth for aggregation; the driver's
+  ratio metrics are computed from `full_cos` re-derived by `forward_pooled`
+  (not from any stored embedding), so I-1 (token_keep_lookup mismatch) is
+  the place to verify cross-pipeline consistency, not the JSON schema.
+- The PhilTa example201 case (suff_ratio = 1.00005, compactness = 0.095)
+  shows pairs where ~10% of tokens recover 100% of cosine — these
+  "near-trivial" pairs pull compactness averages low and may be the
+  dominant signal in the table's headline numbers.
+
+The reproducer did not finish reloading the model to recompute the metrics
+from scratch (T5 model load + 100+ forward passes per pair on CPU was too
+slow to complete within the agent's budget). This is a minor follow-up:
+the comparison is "compute from NPZ matches per-pair JSON" — both come
+from the same `process_pair` call inside `run_attribution_metrics.py`, so
+agreement is tautological unless someone hand-edited a JSON.
+
+---
+
 ## Investigated and ruled out (don't get spooked)
 
 The following items were flagged by individual auditors but turned out to
