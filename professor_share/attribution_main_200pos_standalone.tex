@@ -1,0 +1,70 @@
+\documentclass[11pt]{article}
+\usepackage[margin=0.7in]{geometry}
+\usepackage{booktabs}
+\usepackage{amsmath,amssymb}
+\usepackage{caption}
+\captionsetup{font=small,labelfont=bf}
+\usepackage[hidelinks]{hyperref}
+\pagestyle{empty}
+
+\begin{document}
+
+\begin{center}
+{\large\bfseries Attribution-quality metrics: MaRC and IG, baseline vs ABTT}\\[2pt]
+{\small \textbf{200 POSITIVE test pairs per model} (same-folder pairs only; harder/more meaningful slice than the 200-random set); LaTa + PhilTa.\\
+Generated 2026-04-26.}
+\end{center}
+
+\vspace{0.4em}
+
+\begin{table}[h]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{lrrrrrrrr}
+\toprule
+Method & \multicolumn{2}{c}{Suff@25\%~$\uparrow$} & \multicolumn{2}{c}{Comp@25\%~$\uparrow$} & \multicolumn{2}{c}{Cmpct@0.8~$\downarrow$} & \multicolumn{2}{c}{$\rho_{\text{LOO}}$~$\uparrow$} \\
+\cmidrule(lr){2-3} \cmidrule(lr){4-5} \cmidrule(lr){6-7} \cmidrule(lr){8-9}
+ & base & abtt & base & abtt & base & abtt & base & abtt \\
+\midrule
+\multicolumn{9}{l}{\textit{LaTa}} \\
+IG   & 0.521          & \textbf{0.735} & 0.036          & \textbf{0.613} & \textbf{0.359} & 0.363          & -0.055         & \textbf{0.460} \\
+MaRC & 0.039          & \textbf{0.740} & -0.019         & \textbf{0.564} & 0.905          & \textbf{0.393} & -0.124         & \textbf{0.455} \\
+\midrule
+\multicolumn{9}{l}{\textit{PhilTa}} \\
+IG   & \textbf{0.807} & 0.512          & 0.176          & \textbf{0.416} & \textbf{0.132} & 0.501          & 0.058          & \textbf{0.245} \\
+MaRC & -0.350         & \textbf{0.424} & -0.002         & \textbf{0.430} & 0.648          & \textbf{0.618} & -0.080         & \textbf{0.295} \\
+\bottomrule
+\end{tabular}
+\caption*{Within each (method, metric) cell, the better of \{baseline, ABTT\} is \textbf{bolded}. Group means over 200 positive (same-folder) test pairs per model. \textbf{Cosine note:} ABTT \texttt{full\_cos\_mean} is now \emph{below} baseline (0.564 vs 0.934 for LaTa; 0.574 vs 0.954 for PhilTa), reversing the direction-of-cleaning bug from the 200-random run (where ABTT was 0.985 $>$ baseline 0.926); per the cosine-inflation investigation, values remain elevated above the D=10 refit demo range ($\sim 0.30$), so this is a partial fix.}
+\end{table}
+
+\vspace{0.4em}
+
+\noindent\textbf{Per-cell ABTT-wins count (out of 4 metrics):}
+\begin{itemize}
+\itemsep0em
+\item LaTa $\times$ IG: \textbf{3/4} (suff + comp + rho; cmpct essentially tied at $0.359$ vs $0.363$)
+\item LaTa $\times$ MaRC: \textbf{4/4} (clean sweep; cmpct collapses from $0.905$ to $0.393$)
+\item PhilTa $\times$ IG: \textbf{2/4} (comp + rho; baseline already strong on suff and cmpct)
+\item PhilTa $\times$ MaRC: \textbf{4/4} (clean sweep)
+\end{itemize}
+
+\noindent\textbf{Reading guide.}
+\textbf{Suff@25\%} ($\uparrow$): similarity retained with only the top 25\% attributed tokens.
+\textbf{Comp@25\%} ($\uparrow$): similarity drop when those tokens are removed.
+\textbf{Cmpct@0.8} ($\downarrow$): token fraction to recover 80\% of full-pair cosine.
+$\boldsymbol{\rho_{\text{LOO}}}$ ($\uparrow$): rank correlation between attribution magnitude and true leave-one-out $\Delta\cos$.
+
+\vspace{0.4em}
+
+\noindent\textbf{Bottom line at 200 \emph{positive} pairs/model.}
+\begin{itemize}
+\itemsep0em
+\item The ``$\geq 3/4$ metrics for both MaRC and IG on at least one T5 model'' threshold is now \textbf{cleared on 3 of 4 cells} (LaTa$\times$IG 3/4, LaTa$\times$MaRC 4/4, PhilTa$\times$MaRC 4/4). On the 200-random set it cleared on 0/4. The positive-pair slice tells a substantially stronger story.
+\item $\rho_{\text{LOO}}$ now improves on \textbf{all 4} T5 cells (range $+0.19$ to $+0.58$). The ``ABTT universally lifts $\rho_{\text{LOO}}$'' claim from the original 20-pair snapshot \emph{is} supported on this slice; the regression seen at PhilTa$\times$MaRC on the random set ($-0.036 \to -0.120$) does not appear here ($-0.080 \to +0.295$).
+\item The holdout is PhilTa$\times$IG: ABTT loses Suff@25\% ($0.807 \to 0.512$) and Cmpct@0.8 ($0.132 \to 0.501$). The PhilTa baseline already retains 81\% of the cosine with only the top quartile of tokens, and recovers 80\% of full-pair cosine using only 13\% of tokens --- a hard ceiling for ABTT to clear.
+\item Caveat unchanged: cross-variant deltas conflate two effects (ABTT changes both the attribution scores \emph{and} the cosine being explained, and the cosine is now meaningfully lower under ABTT --- $0.56$--$0.57$ vs $0.93$--$0.95$), so these are descriptive shifts on different fidelity targets rather than apples-to-apples.
+\end{itemize}
+
+\end{document}
