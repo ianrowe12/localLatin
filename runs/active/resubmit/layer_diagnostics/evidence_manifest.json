@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "created_at_utc": "2026-04-29T19:15:38.277843+00:00",
+  "script": "scripts/resubmit/build_layer_geometry_evidence.py",
+  "diagnostics_csv": "runs/active/resubmit/layer_diagnostics/geometry_per_layer.csv",
+  "retrieval_csv": "/projects/beto/irowerojas/localLatin/runs/active/resubmit/results/phase_resubmit_results.csv",
+  "taskb_csv": "/projects/beto/irowerojas/localLatin/runs/active/resubmit/taskb_mseed/aggregated_results.csv",
+  "tolerance_pp": 0.5,
+  "n_joined_rows": 100,
+  "outputs": {
+    "geometry_retrieval_join_all": "runs/active/resubmit/layer_diagnostics/geometry_retrieval_join_all.csv",
+    "geometry_retrieval_join_main": "runs/active/resubmit/layer_diagnostics/geometry_retrieval_join_main.csv",
+    "geometry_retrieval_join_appendix": "runs/active/resubmit/layer_diagnostics/geometry_retrieval_join_appendix.csv",
+    "geometry_correlation_summary": "runs/active/resubmit/layer_diagnostics/geometry_correlation_summary.csv",
+    "layer_rule_candidates": "runs/active/resubmit/layer_diagnostics/layer_rule_candidates.csv"
+  },
+  "claim_guardrail": "Correlation rows validate associations only. They are not layer selectors; layer rules use train-only retrieval when available."
+}
