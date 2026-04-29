@@ -10,6 +10,8 @@ Generated: 2026-04-29
 
 Important preflight before launching any agent: this repository currently has uncommitted work. Worktrees created from a branch will not inherit uncommitted edits in the main checkout. Before running this orchestra, make a deliberate checkpoint commit or otherwise ensure the base branch contains the professor-share organization, current 200-positive attribution work, and cosine-fix changes that should be part of the starting point.
 
+Every agent should read `PRD-layer-attribution.md` before beginning its task. The PRD contains the shared project context, success criteria, scope boundaries, and wording guardrails behind these prompts.
+
 ## Dependency Graph
 
 ```text
