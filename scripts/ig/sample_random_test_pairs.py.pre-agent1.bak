@@ -1,38 +1,35 @@
-"""Sample N gold-similar (positive) test pairs per model for the attribution rerun.
+"""Sample N random query/candidate pairs from the phase9 test split per model.
 
-Sibling of ``scripts/ig/sample_random_test_pairs.py`` but draws **only**
-positive (same-folder, both winnable) pairs. The 100 positive + 100 negative
-mix produced by the random sampler hides per-bucket attribution behavior; this
-script gives a clean 200-positive sample so attribution-quality metrics are
-computed exclusively on the regime where attribution should be most informative.
+This is the pair-list generator for the larger-sample attribution metrics rerun
+the professor asked for (~200 pairs/model instead of the curated 20/model used
+in phase12f).
 
-Default models are scoped to LaTa + PhilTa, matching Run 1 of the resubmit
-pipeline. ``FEATURED_MODELS`` (layer / D / tau / baseline_tau / abtt_tau) is
-copied verbatim from ``sample_random_test_pairs.py`` so the two scripts stay in
-lockstep; if Agent 1.1's cosine investigation prescribes a different layer,
-update both files in the same commit.
+Strategy: balanced random. For each featured model, draw N/2 random
+gold-similar pairs (same folder, both winnable test files) and N/2 random
+gold-dissimilar pairs (different folders, both in winnable test split). No
+bucket stratification (that relied on a pre-scored pair frame we no longer
+reproduce). The downstream NPZ generator, MaRC driver and metrics script all
+work off this CSV schema.
 
-Output schema mirrors ``runs/active/ig_examples_200pair/random200_examples.csv``
-exactly so the downstream pipeline (IG NPZ generation, MaRC, persist methods,
-attribution metrics) reads it without changes. Every row has
-``gold_similar=1`` and ``bucket="rand_similar"``.
+Output schema mirrors phase12f_examples.csv closely enough for downstream
+scripts. Score/bucket columns are left NaN because we don't need them for
+NPZ generation — they would require re-running the similarity matrix.
 """
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
+from pathlib import Path  # noqa: F401 - used below via Path(p).exists()
 
 import numpy as np
 import pandas as pd
 
 
-# Copied verbatim from scripts/ig/sample_random_test_pairs.py. Keep in sync.
 FEATURED_MODELS = {
     "bowphs/LaTa": {
         "model_short": "LaTa",
         "model_type": "t5",
         "layer": 4,
-        "D": 10,
+        "D": 2,
         # tau/baseline_tau/abtt_tau from runs/active/ig_examples/phase12f_examples.csv
         "tau": 0.5628140703517588,
         "baseline_tau": 0.9296482412060302,
@@ -51,7 +48,7 @@ FEATURED_MODELS = {
         "model_short": "LaBSE",
         "model_type": "bert",
         "layer": 12,
-        "D": 10,
+        "D": 1,
         "tau": 0.5829145728643216,
         "baseline_tau": 0.9195979899497488,
         "abtt_tau": 0.5829145728643216,
@@ -60,7 +57,7 @@ FEATURED_MODELS = {
         "model_short": "Qwen3-0.6B",
         "model_type": "decoder",
         "layer": 23,
-        "D": 10,
+        "D": 3,
         "tau": 0.5226130653266332,
         "baseline_tau": 0.984924623115578,
         "abtt_tau": 0.5226130653266332,
@@ -68,15 +65,23 @@ FEATURED_MODELS = {
 }
 
 
-DEFAULT_MODELS = ["bowphs/LaTa", "bowphs/PhilTa"]
+def sample_pairs_for_model(
+    test_meta: pd.DataFrame,
+    n_positive: int,
+    n_negative: int,
+    rng: np.random.Generator,
+) -> pd.DataFrame:
+    """Return a dataframe with n_positive gold-similar + n_negative gold-dissimilar
+    pairs, each row a query/candidate draw."""
+    positives = _sample_positive(test_meta, n_positive, rng)
+    negatives = _sample_negative(test_meta, n_negative, rng)
+    pairs = pd.concat([positives, negatives], ignore_index=True)
+    return pairs.sample(frac=1.0, random_state=rng.integers(0, 2**31)).reset_index(drop=True)
 
 
 def _sample_positive(test_meta: pd.DataFrame, n: int, rng: np.random.Generator) -> pd.DataFrame:
-    """Draw n unique gold-similar (same-folder) pairs from the test pool."""
     groups = test_meta.groupby("folder_id")
     eligible_folders = [fid for fid, g in groups if len(g) >= 2]
-    if not eligible_folders:
-        raise SystemExit("No folders with >=2 winnable test files; nothing to sample")
     rows = []
     seen: set[tuple[int, int]] = set()
     attempts = 0
@@ -94,10 +99,32 @@ def _sample_positive(test_meta: pd.DataFrame, n: int, rng: np.random.Generator) 
         rows.append((q, c))
     if len(rows) < n:
         raise SystemExit(f"Could not sample {n} positives; got {len(rows)} after {attempts} tries")
-    return _rows_to_frame(rows)
+    return _rows_to_frame(rows, gold_similar=1)
 
 
-def _rows_to_frame(rows) -> pd.DataFrame:
+def _sample_negative(test_meta: pd.DataFrame, n: int, rng: np.random.Generator) -> pd.DataFrame:
+    rows = []
+    seen: set[tuple[int, int]] = set()
+    attempts = 0
+    m = len(test_meta)
+    while len(rows) < n and attempts < n * 50:
+        attempts += 1
+        i, j = rng.choice(m, size=2, replace=False)
+        q = test_meta.iloc[int(i)]
+        c = test_meta.iloc[int(j)]
+        if q["folder_id"] == c["folder_id"]:
+            continue
+        key = (int(q["file_id"]), int(c["file_id"]))
+        if key in seen or key[::-1] in seen:
+            continue
+        seen.add(key)
+        rows.append((q, c))
+    if len(rows) < n:
+        raise SystemExit(f"Could not sample {n} negatives; got {len(rows)} after {attempts} tries")
+    return _rows_to_frame(rows, gold_similar=0)
+
+
+def _rows_to_frame(rows, gold_similar: int) -> pd.DataFrame:
     records = []
     for q, c in rows:
         records.append({
@@ -107,7 +134,7 @@ def _rows_to_frame(rows) -> pd.DataFrame:
             "candidate_path": str(c["path"]),
             "query_folder_id": str(q["folder_id"]),
             "candidate_folder_id": str(c["folder_id"]),
-            "gold_similar": 1,
+            "gold_similar": gold_similar,
         })
     return pd.DataFrame(records)
 
@@ -117,18 +144,21 @@ def main() -> None:
     ap.add_argument("--split_csv", default="runs/phase9/phase9_split.csv")
     ap.add_argument(
         "--out_csv",
-        default="runs/active/ig_examples_200pos/positive200_examples.csv",
+        default="runs/active/ig_examples_200pair/random200_examples.csv",
     )
     ap.add_argument("--n_per_model", type=int, default=200)
-    ap.add_argument("--seed", type=int, default=20260426)
+    ap.add_argument("--seed", type=int, default=20260420)
     ap.add_argument(
-        "--models", nargs="*", default=DEFAULT_MODELS,
-        help="Subset of FEATURED_MODELS to sample for. Default: LaTa + PhilTa.",
+        "--models", nargs="*", default=["bowphs/LaTa", "bowphs/PhilTa"],
+        help="Subset of FEATURED_MODELS to sample for.",
     )
     args = ap.parse_args()
 
     split = pd.read_csv(args.split_csv)
     test = split[(split["split"] == "test") & split["is_winnable"]].reset_index(drop=True)
+    # Rewrite legacy /u/irowerojas/localLatin/canon/ paths to the current
+    # /projects/beto/irowerojas/localLatin/data/canon/ layout. The phase9 split
+    # still records the old paths but the files themselves moved under data/.
     test["path"] = test["path"].str.replace(
         "/u/irowerojas/localLatin/canon/",
         "/projects/beto/irowerojas/localLatin/data/canon/",
@@ -147,9 +177,12 @@ def main() -> None:
         if model_name not in FEATURED_MODELS:
             raise SystemExit(f"Unknown model: {model_name}")
         cfg = FEATURED_MODELS[model_name]
-        pairs = _sample_positive(test, args.n_per_model, rng)
-        # Deterministic shuffle so artifact filenames don't preserve the sample order.
-        pairs = pairs.sample(frac=1.0, random_state=int(rng.integers(0, 2**31))).reset_index(drop=True)
+        pairs = sample_pairs_for_model(
+            test,
+            n_positive=args.n_per_model // 2,
+            n_negative=args.n_per_model - args.n_per_model // 2,
+            rng=rng,
+        )
         pairs["model_name"] = model_name
         pairs["model_short"] = cfg["model_short"]
         pairs["model_type"] = cfg["model_type"]
@@ -163,19 +196,21 @@ def main() -> None:
         pairs["abtt_tau"] = cfg["abtt_tau"]
         pairs["candidate_label"] = pairs["candidate_folder_id"]
         pairs["candidate_role"] = "pair_example"
+        # Filler columns for schema compatibility with downstream scripts
         for col in [
             "query_index", "candidate_index", "baseline_score", "abtt_score",
             "baseline_pred", "abtt_pred", "baseline_disagrees", "baseline_margin",
             "abtt_margin", "baseline_margin_abs", "abtt_margin_abs", "bucket_slot",
         ]:
             pairs[col] = np.nan
-        pairs["bucket"] = "rand_similar"
+        pairs["bucket"] = np.where(pairs["gold_similar"] == 1, "rand_similar", "rand_not_similar")
         pairs["methods_available"] = "ig,bertscore,ot,attention_weighted,dla,attention_standalone,retrieval_mark"
         pairs.insert(0, "example_id", np.arange(1, len(pairs) + 1) + example_id_offset)
         example_id_offset += len(pairs)
         frames.append(pairs)
 
     out = pd.concat(frames, ignore_index=True)
+    # Reorder columns to match phase12f_examples.csv ordering as closely as reasonable
     preferred_order = [
         "example_id", "model_name", "model_short", "model_type", "layer",
         "method", "repr", "pooling", "D", "tau", "baseline_tau", "abtt_tau",

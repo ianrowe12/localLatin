@@ -70,13 +70,13 @@
 \@LN{58}{0}
 \@LN{59}{0}
 \@LN{60}{0}
+\@LN{61}{0}
+\@LN{62}{0}
+\@LN{63}{0}
+\@LN{64}{0}
+\@LN{65}{0}
 \citation{mu2018allbutthetop}
 \def\@LN@column{1}
-\@LN{61}{1}
-\@LN{62}{1}
-\@LN{63}{1}
-\@LN{64}{1}
-\@LN{65}{1}
 \@LN{66}{1}
 \@LN{67}{1}
 \@LN{68}{1}
@@ -124,12 +124,12 @@
 \@LN{110}{1}
 \@LN{111}{1}
 \@LN{112}{1}
-\def\@LN@column{2}
 \@LN{113}{1}
 \@LN{114}{1}
 \@LN{115}{1}
 \@LN{116}{1}
 \@LN{117}{1}
+\def\@LN@column{2}
 \@LN{118}{1}
 \@LN{119}{1}
 \@LN{120}{1}
@@ -177,10 +177,10 @@
 \@LN{162}{1}
 \@LN{163}{1}
 \@LN{164}{1}
+\@LN{165}{1}
+\@LN{166}{1}
 \citation{riemenschneider2023lata}
 \def\@LN@column{1}
-\@LN{165}{2}
-\@LN{166}{2}
 \@LN{167}{2}
 \@writefile{toc}{\contentsline {section}{\numberline {2}Task and Dataset}{3}{section.2}\protected@file@percent }
 \@LN{168}{2}
@@ -427,101 +427,434 @@
 \@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Task A: Pairwise Duplicate Detection}{5}{subsection.4.1}\protected@file@percent }
 \def\@LN@column{2}
 \gdef \LT@i {\LT@entry 
+    {5}{43.99065pt}\LT@entry 
+    {1}{30.90483pt}\LT@entry 
+    {1}{38.64494pt}\LT@entry 
+    {1}{38.64494pt}\LT@entry 
+    {1}{48.2027pt}\LT@entry 
+    {1}{53.31654pt}}
+\def\@LN@column{1}
+\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Per-layer Task~A pairwise duplicate-detection metrics for the three headline models (LaTa, PhilTa, mT5-base). \texttt  {baseline} is mean pooling without correction; \texttt  {abtt\_optimal} applies ABTT (no SIF weighting) with $D$ tuned per layer on the train split. Both AUROC and cosine gap are computed over the test n$\times $n cosine matrix with no threshold and no directory routing: AUROC treats same-directory test pairs as positives, and cosine gap is the difference between mean same-directory and mean different-directory cosine. Rows in bold mark the best layer per model, selected by ABTT AUROC.}}{6}{table.2}\protected@file@percent }
+\newlabel{tab:taskA_main}{{2}{6}{Per-layer Task~A pairwise duplicate-detection metrics for the three headline models (LaTa, PhilTa, mT5-base). \texttt {baseline} is mean pooling without correction; \texttt {abtt\_optimal} applies ABTT (no SIF weighting) with $D$ tuned per layer on the train split. Both AUROC and cosine gap are computed over the test n$\times $n cosine matrix with no threshold and no directory routing: AUROC treats same-directory test pairs as positives, and cosine gap is the difference between mean same-directory and mean different-directory cosine. Rows in bold mark the best layer per model, selected by ABTT AUROC}{table.2}{}}
+\citation{vandermaaten2008tsne}
+\citation{mcinnes2018umap}
+\def\@LN@column{1}
+\@LN{378}{6}
+\@LN{379}{6}
+\@LN{380}{6}
+\@LN{381}{6}
+\@LN{382}{6}
+\@LN{383}{6}
+\@LN{384}{6}
+\@LN{385}{6}
+\@LN{386}{6}
+\@LN{387}{6}
+\@LN{388}{6}
+\@LN{389}{6}
+\@LN{390}{6}
+\@LN{391}{6}
+\@LN{392}{6}
+\@LN{393}{6}
+\@LN{394}{6}
+\@LN{395}{6}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}The Mid-Layer Dip}{7}{subsection.4.2}\protected@file@percent }
+\@LN{396}{6}
+\@LN{397}{6}
+\@LN{398}{6}
+\@LN{399}{6}
+\@LN{400}{6}
+\@LN{401}{6}
+\@LN{402}{6}
+\@LN{403}{6}
+\@LN{404}{6}
+\@LN{405}{6}
+\@LN{406}{6}
+\@LN{407}{6}
+\@LN{408}{6}
+\@LN{409}{6}
+\@LN{410}{6}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.3}Similarity Distributions}{7}{subsection.4.3}\protected@file@percent }
+\@LN{411}{6}
+\@LN{412}{6}
+\@LN{413}{6}
+\@LN{414}{6}
+\@LN{415}{6}
+\@LN{416}{6}
+\@LN{417}{6}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.4}Cosine Gap Analysis}{7}{subsection.4.4}\protected@file@percent }
+\@LN{418}{6}
+\@LN{419}{6}
+\@LN{420}{6}
+\@LN{421}{6}
+\@LN{422}{6}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.5}Cluster Geometry}{7}{subsection.4.5}\protected@file@percent }
+\@LN{423}{6}
+\@LN{424}{6}
+\@LN{425}{6}
+\def\@LN@column{2}
+\@LN{426}{6}
+\@LN{427}{6}
+\@LN{428}{6}
+\@LN{429}{6}
+\@LN{430}{6}
+\@LN{431}{6}
+\@LN{432}{6}
+\@LN{433}{6}
+\@LN{434}{6}
+\@LN{435}{6}
+\@LN{436}{6}
+\@LN{437}{6}
+\@LN{438}{6}
+\@LN{439}{6}
+\@LN{440}{6}
+\@LN{441}{6}
+\@LN{442}{6}
+\@LN{443}{6}
+\@LN{444}{6}
+\@LN{445}{6}
+\@LN{446}{6}
+\@LN{447}{6}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.6}Task B: Directory Routing}{7}{subsection.4.6}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces AUCROC across normalized layer depth for the six models. LaTa and PhilTa show the clearest mid-layer dip before post-processing. ABTT flattens those curves much more than SIF or whitening.}}{8}{figure.caption.7}\protected@file@percent }
+\newlabel{fig:dip}{{2}{8}{AUCROC across normalized layer depth for the six models. LaTa and PhilTa show the clearest mid-layer dip before post-processing. ABTT flattens those curves much more than SIF or whitening}{figure.caption.7}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces Cosine gap across normalized layer depth for the six models. In the Latin T5 models, the baseline gap nearly vanishes in the middle layers. ABTT restores a positive gap across depth more reliably than the alternative baselines.}}{8}{figure.caption.8}\protected@file@percent }
+\newlabel{fig:gap}{{3}{8}{Cosine gap across normalized layer depth for the six models. In the Latin T5 models, the baseline gap nearly vanishes in the middle layers. ABTT restores a positive gap across depth more reliably than the alternative baselines}{figure.caption.8}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces t-SNE projections of the 1{,}705 labelled fragments at each model's best layer (rows: LaTa, PhilTa, mT5-base), for mean-pooled \texttt  {baseline} and pure \texttt  {ABTT} ($D{=}10$) columns. Colors mark the six most-populated directories (\texttt  {CNEO.315.13}, \texttt  {CNIC.325.16}, \texttt  {CANC.314.4}, \texttt  {CANC.314.20}, \texttt  {CNIC.325.6}, \texttt  {CNIC.325.4}; sizes 8--10); all other fragments are suppressed. ABTT produces visibly tighter same-color clusters than the baseline, with winnable-fragment silhouette scores rising by 0.09--0.75 on every model.}}{9}{figure.caption.9}\protected@file@percent }
+\newlabel{fig:tsne}{{4}{9}{t-SNE projections of the 1{,}705 labelled fragments at each model's best layer (rows: LaTa, PhilTa, mT5-base), for mean-pooled \texttt {baseline} and pure \texttt {ABTT} ($D{=}10$) columns. Colors mark the six most-populated directories (\texttt {CNEO.315.13}, \texttt {CNIC.325.16}, \texttt {CANC.314.4}, \texttt {CANC.314.20}, \texttt {CNIC.325.6}, \texttt {CNIC.325.4}; sizes 8--10); all other fragments are suppressed. ABTT produces visibly tighter same-color clusters than the baseline, with winnable-fragment silhouette scores rising by 0.09--0.75 on every model}{figure.caption.9}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {5}{\ignorespaces UMAP projections, same configuration as Figure~\ref {fig:tsne}. The per-method separation pattern is reproduced under a different dimensionality-reduction algorithm, supporting that the cluster-tightening is a property of the embedding geometry rather than of the projection method.}}{10}{figure.caption.10}\protected@file@percent }
+\newlabel{fig:umap}{{5}{10}{UMAP projections, same configuration as Figure~\ref {fig:tsne}. The per-method separation pattern is reproduced under a different dimensionality-reduction algorithm, supporting that the cluster-tightening is a property of the embedding geometry rather than of the projection method}{figure.caption.10}{}}
+\gdef \LT@ii {\LT@entry 
+    {5}{43.99065pt}\LT@entry 
+    {1}{30.90483pt}\LT@entry 
+    {1}{38.00563pt}\LT@entry 
+    {1}{38.00563pt}\LT@entry 
+    {1}{29.98674pt}\LT@entry 
+    {1}{37.49281pt}\LT@entry 
+    {1}{34.85574pt}\LT@entry 
+    {1}{65.10019pt}}
+\def\@LN@column{1}
+\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces Per-layer Task~B autonomous routing accuracy for the three headline models. \texttt  {baseline} is mean pooling without correction; \texttt  {abtt\_optimal} applies ABTT (no SIF weighting) with $D$ tuned per layer on the train split. For every test file we compute $s_i = \max _{j \neq  i} \cos (e_i, e_j)$ against the rest of the test set and compare to the learned threshold $\tau $ (fit on train via $F_1$-optimal cut on same-directory vs.\ different-directory pairs). The decision is binary first (existing if $s_i \geq \tau $, else new); only files predicted existing are then routed to their top-1 neighbour's directory. We report \textbf  {existing accuracy} (restricted to files whose true partner is in the test set), \textbf  {new accuracy} (files that should be flagged as novel), and \textbf  {overall assignment accuracy}. Rows in bold mark the best layer per model, selected by ABTT overall assignment accuracy.}}{11}{table.3}\protected@file@percent }
+\newlabel{tab:taskB_routing_main}{{3}{11}{Per-layer Task~B autonomous routing accuracy for the three headline models. \texttt {baseline} is mean pooling without correction; \texttt {abtt\_optimal} applies ABTT (no SIF weighting) with $D$ tuned per layer on the train split. For every test file we compute $s_i = \max _{j \neq i} \cos (e_i, e_j)$ against the rest of the test set and compare to the learned threshold $\tau $ (fit on train via $F_1$-optimal cut on same-directory vs.\ different-directory pairs). The decision is binary first (existing if $s_i \geq \tau $, else new); only files predicted existing are then routed to their top-1 neighbour's directory. We report \textbf {existing accuracy} (restricted to files whose true partner is in the test set), \textbf {new accuracy} (files that should be flagged as novel), and \textbf {overall assignment accuracy}. Rows in bold mark the best layer per model, selected by ABTT overall assignment accuracy}{table.3}{}}
+\gdef \LT@iii {\LT@entry 
+    {5}{43.99065pt}\LT@entry 
+    {1}{30.90483pt}\LT@entry 
+    {1}{35.27884pt}\LT@entry 
+    {1}{37.49281pt}\LT@entry 
+    {1}{38.00563pt}\LT@entry 
+    {1}{38.00563pt}\LT@entry 
+    {1}{29.98674pt}\LT@entry 
+    {1}{37.49281pt}}
+\def\@LN@column{1}
+\@writefile{lot}{\contentsline {table}{\numberline {4}{\ignorespaces Per-layer Task~B top-$k$ ranking metrics for the three headline models. \texttt  {baseline} is mean pooling without correction; \texttt  {abtt\_optimal} applies ABTT (no SIF weighting) with $D$ tuned per layer on the train split. This table is computed on the single-seed v2 split (no $M$-seed averaging, since the mseed sweep was run only for SIF-conditioned variants; see Table~\ref {tab:taskB_ranking_appendix_mseed} for the multi-seed SIF+ABTT view). \textbf  {Acc@1} is directory accuracy at rank~1, with an existing/new decomposition. Rows in bold mark the best layer per model, selected by ABTT Acc@1.}}{12}{table.4}\protected@file@percent }
+\newlabel{tab:taskB_ranking_main}{{4}{12}{Per-layer Task~B top-$k$ ranking metrics for the three headline models. \texttt {baseline} is mean pooling without correction; \texttt {abtt\_optimal} applies ABTT (no SIF weighting) with $D$ tuned per layer on the train split. This table is computed on the single-seed v2 split (no $M$-seed averaging, since the mseed sweep was run only for SIF-conditioned variants; see Table~\ref {tab:taskB_ranking_appendix_mseed} for the multi-seed SIF+ABTT view). \textbf {Acc@1} is directory accuracy at rank~1, with an existing/new decomposition. Rows in bold mark the best layer per model, selected by ABTT Acc@1}{table.4}{}}
+\def\@LN@column{1}
+\citation{su2021whitening,huang2021whiteningbert}
+\def\@LN@column{1}
+\@LN{448}{13}
+\@LN{449}{13}
+\@LN{450}{13}
+\@LN{451}{13}
+\@LN{452}{13}
+\@LN{453}{13}
+\@LN{454}{13}
+\@LN{455}{13}
+\@LN{456}{13}
+\@LN{457}{13}
+\@LN{458}{13}
+\@LN{459}{13}
+\@LN{460}{13}
+\@LN{461}{13}
+\@LN{462}{13}
+\@LN{463}{13}
+\@LN{464}{13}
+\@LN{465}{13}
+\@LN{466}{13}
+\@LN{467}{13}
+\@LN{468}{13}
+\@LN{469}{13}
+\@LN{470}{13}
+\@LN{471}{13}
+\@LN{472}{13}
+\@LN{473}{13}
+\@LN{474}{13}
+\@LN{475}{13}
+\@LN{476}{13}
+\@LN{477}{13}
+\@LN{478}{13}
+\@LN{479}{13}
+\@LN{480}{13}
+\@LN{481}{13}
+\@LN{482}{13}
+\@LN{483}{13}
+\@LN{484}{13}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.7}Example-Level Explanations}{14}{subsection.4.7}\protected@file@percent }
+\@LN{485}{13}
+\@LN{486}{13}
+\@LN{487}{13}
+\@LN{488}{13}
+\@LN{489}{13}
+\@LN{490}{13}
+\@LN{491}{13}
+\@LN{492}{13}
+\@LN{493}{13}
+\@LN{494}{13}
+\@LN{495}{13}
+\@LN{496}{13}
+\@LN{497}{13}
+\@LN{498}{13}
+\def\@LN@column{2}
+\@LN{499}{13}
+\@LN{500}{13}
+\@LN{501}{13}
+\@LN{502}{13}
+\@LN{503}{13}
+\@LN{504}{13}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.8}Retrieval-Aligned Mask Attributions}{14}{subsection.4.8}\protected@file@percent }
+\newlabel{subsec:retrieval-mark}{{4.8}{14}{Retrieval-Aligned Mask Attributions}{subsection.4.8}{}}
+\@LN{505}{13}
+\@LN{506}{13}
+\@LN{507}{13}
+\@LN{508}{13}
+\@LN{509}{13}
+\@LN{510}{13}
+\@LN{511}{13}
+\@LN{512}{13}
+\@LN{513}{13}
+\@LN{514}{13}
+\@LN{515}{13}
+\@LN{516}{13}
+\@LN{517}{13}
+\@LN{518}{13}
+\@LN{519}{13}
+\@LN{520}{13}
+\@LN{521}{13}
+\@LN{522}{13}
+\@LN{523}{13}
+\@LN{524}{13}
+\@writefile{toc}{\contentsline {section}{\numberline {5}Discussion}{14}{section.5}\protected@file@percent }
+\@LN{525}{13}
+\@LN{526}{13}
+\@LN{527}{13}
+\@LN{528}{13}
+\@LN{529}{13}
+\@LN{530}{13}
+\@LN{531}{13}
+\@LN{532}{13}
+\@LN{533}{13}
+\@LN{534}{13}
+\@LN{535}{13}
+\@LN{536}{13}
+\@LN{537}{13}
+\@LN{538}{13}
+\@LN{539}{13}
+\@LN{540}{13}
+\@LN{541}{13}
+\@LN{542}{13}
+\@LN{543}{13}
+\@LN{544}{13}
+\@LN{545}{13}
+\@LN{546}{13}
+\@LN{547}{13}
+\@writefile{lot}{\contentsline {table}{\numberline {5}{\ignorespaces Cumulative top-$K$ accuracy for Task B across the six models, reported as mean $\pm $ standard deviation over $M=5$ query/reference reseedings at a fixed v2 train/test split. Each cell gives the percentage of test queries whose labeled directory appears within the model's top~$K$ options at its best layer/method configuration. All models exceed 89\% by Top-1 and 95\% by Top-2. Only ABTT post-processing is reported in the main paper; SIF-only, PCA whitening, and SIF+ABTT are reported in the appendix.}}{15}{table.caption.11}\protected@file@percent }
+\newlabel{tab:taskb}{{5}{15}{Cumulative top-$K$ accuracy for Task B across the six models, reported as mean $\pm $ standard deviation over $M=5$ query/reference reseedings at a fixed v2 train/test split. Each cell gives the percentage of test queries whose labeled directory appears within the model's top~$K$ options at its best layer/method configuration. All models exceed 89\% by Top-1 and 95\% by Top-2. Only ABTT post-processing is reported in the main paper; SIF-only, PCA whitening, and SIF+ABTT are reported in the appendix}{table.caption.11}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {6}{\ignorespaces Derived pairwise heatmap for one PhilTa retrieval case. The left panel shows the baseline representation and the right panel shows the same example after ABTT. Both axes use original decoded tokens, and the cell values combine token-token cosine similarity with single-sequence integrated-gradient scores.}}{15}{figure.caption.12}\protected@file@percent }
+\newlabel{fig:pairmatrix}{{6}{15}{Derived pairwise heatmap for one PhilTa retrieval case. The left panel shows the baseline representation and the right panel shows the same example after ABTT. Both axes use original decoded tokens, and the cell values combine token-token cosine similarity with single-sequence integrated-gradient scores}{figure.caption.12}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {7}{\ignorespaces Companion self-attention maps for the same PhilTa example. Because ABTT is applied after encoding, attention is included only as supporting context, not as a before-and-after comparison.}}{15}{figure.caption.13}\protected@file@percent }
+\newlabel{fig:attention}{{7}{15}{Companion self-attention maps for the same PhilTa example. Because ABTT is applied after encoding, attention is included only as supporting context, not as a before-and-after comparison}{figure.caption.13}{}}
+\def\@LN@column{1}
+\@LN{548}{14}
+\@LN{549}{14}
+\@LN{550}{14}
+\@LN{551}{14}
+\def\@LN@column{2}
+\@LN{552}{14}
+\@LN{553}{14}
+\@LN{554}{14}
+\@LN{555}{14}
+\citation{brinnerzarriess2023marc}
+\bibdata{custom}
+\bibcite{arora2017sif}{{1}{2017}{{Arora et~al.}}{{Arora, Liang, and Ma}}}
+\bibcite{brinnerzarriess2023marc}{{2}{2023}{{Brinner and Zarrie{\ss }}}{{}}}
+\bibcite{feng2022labse}{{3}{2022}{{Feng et~al.}}{{Feng, Yang, Cer, Arivazhagan, and Wang}}}
+\bibcite{huang2021whiteningbert}{{4}{2021}{{Huang et~al.}}{{Huang, Tang, Zhong, Lu, Shou, Gong, Jiang, and Duan}}}
+\bibcite{kalm2025embedding}{{5}{2025}{{Lu et~al.}}{{Lu, Maharramov et~al.}}}
+\bibcite{mcinnes2018umap}{{6}{2018}{{McInnes et~al.}}{{McInnes, Healy, and Melville}}}
+\bibcite{mu2018allbutthetop}{{7}{2018}{{Mu and Viswanath}}{{}}}
+\@writefile{lof}{\contentsline {figure}{\numberline {8}{\ignorespaces Retrieval-aligned mask attributions for the same PhilTa pair as Figure~\ref {fig:pairmatrix}. Top row: mask on the query with the candidate held fixed. Bottom row: mask on the candidate with the query held fixed. Left column: baseline cosine target. Right column: ABTT-cleaned cosine target. Token labels are the original decoded tokens; frozen non-content positions are shown in gray.}}{16}{figure.caption.14}\protected@file@percent }
+\newlabel{fig:retrieval_mark}{{8}{16}{Retrieval-aligned mask attributions for the same PhilTa pair as Figure~\ref {fig:pairmatrix}. Top row: mask on the query with the candidate held fixed. Bottom row: mask on the candidate with the query held fixed. Left column: baseline cosine target. Right column: ABTT-cleaned cosine target. Token labels are the original decoded tokens; frozen non-content positions are shown in gray}{figure.caption.14}{}}
+\def\@LN@column{1}
+\@LN{556}{15}
+\@LN{557}{15}
+\@LN{558}{15}
+\@LN{559}{15}
+\@LN{560}{15}
+\@LN{561}{15}
+\@LN{562}{15}
+\@LN{563}{15}
+\@LN{564}{15}
+\@LN{565}{15}
+\@LN{566}{15}
+\@LN{567}{15}
+\@LN{568}{15}
+\@LN{569}{15}
+\@LN{570}{15}
+\@LN{571}{15}
+\@LN{572}{15}
+\@LN{573}{15}
+\@LN{574}{15}
+\@LN{575}{15}
+\@LN{576}{15}
+\@LN{577}{15}
+\@LN{578}{15}
+\@LN{579}{15}
+\@LN{580}{15}
+\@LN{581}{15}
+\@LN{582}{15}
+\@LN{583}{15}
+\@LN{584}{15}
+\@LN{585}{15}
+\@LN{586}{15}
+\@LN{587}{15}
+\def\@LN@column{2}
+\@LN{588}{15}
+\@LN{589}{15}
+\@LN{590}{15}
+\@LN{591}{15}
+\@LN{592}{15}
+\@LN{593}{15}
+\@LN{594}{15}
+\@LN{595}{15}
+\@LN{596}{15}
+\@LN{597}{15}
+\@LN{598}{15}
+\@LN{599}{15}
+\@LN{600}{15}
+\@LN{601}{15}
+\@LN{602}{15}
+\@LN{603}{15}
+\@LN{604}{15}
+\@LN{605}{15}
+\@LN{606}{15}
+\@LN{607}{15}
+\@LN{608}{15}
+\@LN{609}{15}
+\@LN{610}{15}
+\@LN{611}{15}
+\@LN{612}{15}
+\@LN{613}{15}
+\@LN{614}{15}
+\@LN{615}{15}
+\@LN{616}{15}
+\@LN{617}{15}
+\@LN{618}{15}
+\@LN{619}{15}
+\bibcite{qwen3embedding2025}{{8}{2025}{{Qwen Team}}{{}}}
+\bibcite{riemenschneider2023lata}{{9}{2023}{{Riemenschneider and Frank}}{{}}}
+\bibcite{su2021whitening}{{10}{2021}{{Su et~al.}}{{Su, Cao, Liu, and Ou}}}
+\bibcite{sundararajan2017axiomatic}{{11}{2017}{{Sundararajan et~al.}}{{Sundararajan, Taly, and Yan}}}
+\bibcite{vandermaaten2008tsne}{{12}{2008}{{van~der Maaten and Hinton}}{{}}}
+\bibcite{xue2021mt5}{{13}{2021}{{Xue et~al.}}{{Xue, Constant, Roberts, Kale, Al-Rfou, Siddhant, Barua, and Raffel}}}
+\def\@LN@column{1}
+\@LN{620}{16}
+\@LN{621}{16}
+\@LN{622}{16}
+\@LN{623}{16}
+\@LN{624}{16}
+\@LN{625}{16}
+\@LN{626}{16}
+\@LN{627}{16}
+\@LN{628}{16}
+\@LN{629}{16}
+\@LN{630}{16}
+\@LN{631}{16}
+\@LN{632}{16}
+\@LN{633}{16}
+\@LN{634}{16}
+\@LN{635}{16}
+\@LN{636}{16}
+\@LN{637}{16}
+\@LN{638}{16}
+\@LN{639}{16}
+\@LN{640}{16}
+\@LN{641}{16}
+\@LN{642}{16}
+\@LN{643}{16}
+\@LN{644}{16}
+\@LN{645}{16}
+\@LN{646}{16}
+\@LN{647}{16}
+\@LN{648}{16}
+\@LN{649}{16}
+\@LN{650}{16}
+\@LN{651}{16}
+\@LN{652}{16}
+\@LN{653}{16}
+\@LN{654}{16}
+\@LN{655}{16}
+\@LN{656}{16}
+\@writefile{toc}{\contentsline {section}{\numberline {A}Last-Token vs.\ Mean Pooling}{17}{appendix.A}\protected@file@percent }
+\newlabel{app:lasttok}{{A}{17}{Last-Token vs.\ Mean Pooling}{appendix.A}{}}
+\@LN{657}{16}
+\@LN{658}{16}
+\@LN{659}{16}
+\@LN{660}{16}
+\@LN{661}{16}
+\@LN{662}{16}
+\@LN{663}{16}
+\@LN{664}{16}
+\@LN{665}{16}
+\@LN{666}{16}
+\@LN{667}{16}
+\@LN{668}{16}
+\@LN{669}{16}
+\@LN{670}{16}
+\@LN{671}{16}
+\@LN{672}{16}
+\def\@LN@column{2}
+\@LN{673}{16}
+\@LN{674}{16}
+\@LN{675}{16}
+\@LN{676}{16}
+\@LN{677}{16}
+\@LN{678}{16}
+\@LN{679}{16}
+\@LN{680}{16}
+\@LN{681}{16}
+\@LN{682}{16}
+\@LN{683}{16}
+\@LN{684}{16}
+\@LN{685}{16}
+\@writefile{toc}{\contentsline {section}{\numberline {B}Per-Layer Results for Remaining Models}{17}{appendix.B}\protected@file@percent }
+\newlabel{app:per_layer_extra}{{B}{17}{Per-Layer Results for Remaining Models}{appendix.B}{}}
+\@LN{686}{16}
+\@LN{687}{16}
+\@LN{688}{16}
+\@LN{689}{16}
+\@LN{690}{16}
+\@LN{691}{16}
+\@LN{692}{16}
+\@LN{693}{16}
+\@LN{694}{16}
+\@LN{695}{16}
+\@LN{696}{16}
+\@LN{697}{16}
+\@LN{698}{16}
+\@LN{699}{16}
+\@LN{700}{16}
+\@LN{701}{16}
+\@writefile{lot}{\contentsline {table}{\numberline {6}{\ignorespaces Mean vs.\ last-token pooling on the balanced split, restricted to ABTT post-processing. Best layer per (model, pooling) selected by Task A assignment accuracy. Task B metrics (Acc@1, cosine gap) reported at that same layer.}}{18}{table.caption.17}\protected@file@percent }
+\newlabel{tab:lasttok_comparison}{{6}{18}{Mean vs.\ last-token pooling on the balanced split, restricted to ABTT post-processing. Best layer per (model, pooling) selected by Task A assignment accuracy. Task B metrics (Acc@1, cosine gap) reported at that same layer}{table.caption.17}{}}
+\gdef \LT@iv {\LT@entry 
     {5}{54.24179pt}\LT@entry 
     {1}{30.90483pt}\LT@entry 
     {1}{38.64494pt}\LT@entry 
     {1}{38.64494pt}\LT@entry 
     {1}{48.2027pt}\LT@entry 
-    {1}{48.2027pt}}
+    {1}{98.57698pt}}
 \def\@LN@column{1}
-\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Per-layer Task~A pairwise duplicate-detection metrics for each model, comparing \texttt  {baseline} (mean pooling, no correction) against \texttt  {sif\_abtt\_optimal} (SIF weighting plus ABTT with $D$ tuned per layer on the train split). Both metrics are computed over the test n$\times $n cosine matrix with no threshold and no directory routing: AUROC treats same-directory test pairs as positives, and cosine gap is the difference between mean same-directory and mean different-directory cosine. Rows in bold mark the best layer per model, selected by ABTT AUROC.}}{6}{table.2}\protected@file@percent }
-\newlabel{tab:taskA_per_layer}{{2}{6}{Per-layer Task~A pairwise duplicate-detection metrics for each model, comparing \texttt {baseline} (mean pooling, no correction) against \texttt {sif\_abtt\_optimal} (SIF weighting plus ABTT with $D$ tuned per layer on the train split). Both metrics are computed over the test n$\times $n cosine matrix with no threshold and no directory routing: AUROC treats same-directory test pairs as positives, and cosine gap is the difference between mean same-directory and mean different-directory cosine. Rows in bold mark the best layer per model, selected by ABTT AUROC}{table.2}{}}
-\def\@LN@column{1}
-\citation{vandermaaten2008tsne}
-\citation{mcinnes2018umap}
-\def\@LN@column{1}
-\@LN{378}{7}
-\@LN{379}{7}
-\@LN{380}{7}
-\@LN{381}{7}
-\@LN{382}{7}
-\@LN{383}{7}
-\@LN{384}{7}
-\@LN{385}{7}
-\@LN{386}{7}
-\@LN{387}{7}
-\@LN{388}{7}
-\@LN{389}{7}
-\@LN{390}{7}
-\@LN{391}{7}
-\@LN{392}{7}
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}The Mid-Layer Dip}{8}{subsection.4.2}\protected@file@percent }
-\@LN{393}{7}
-\@LN{394}{7}
-\@LN{395}{7}
-\@LN{396}{7}
-\@LN{397}{7}
-\@LN{398}{7}
-\@LN{399}{7}
-\@LN{400}{7}
-\@LN{401}{7}
-\@LN{402}{7}
-\@LN{403}{7}
-\@LN{404}{7}
-\@LN{405}{7}
-\@LN{406}{7}
-\@LN{407}{7}
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.3}Similarity Distributions}{8}{subsection.4.3}\protected@file@percent }
-\@LN{408}{7}
-\@LN{409}{7}
-\@LN{410}{7}
-\@LN{411}{7}
-\@LN{412}{7}
-\@LN{413}{7}
-\@LN{414}{7}
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.4}Cosine Gap Analysis}{8}{subsection.4.4}\protected@file@percent }
-\@LN{415}{7}
-\@LN{416}{7}
-\@LN{417}{7}
-\@LN{418}{7}
-\@LN{419}{7}
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.5}Cluster Geometry}{8}{subsection.4.5}\protected@file@percent }
-\@LN{420}{7}
-\@LN{421}{7}
-\@LN{422}{7}
-\@LN{423}{7}
-\@LN{424}{7}
-\@LN{425}{7}
-\def\@LN@column{2}
-\@LN{426}{7}
-\@LN{427}{7}
-\@LN{428}{7}
-\@LN{429}{7}
-\@LN{430}{7}
-\@LN{431}{7}
-\@LN{432}{7}
-\@LN{433}{7}
-\@LN{434}{7}
-\@LN{435}{7}
-\@LN{436}{7}
-\@LN{437}{7}
-\@LN{438}{7}
-\@LN{439}{7}
-\@LN{440}{7}
-\@LN{441}{7}
-\@LN{442}{7}
-\@LN{443}{7}
-\@LN{444}{7}
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.6}Task B: Directory Routing}{8}{subsection.4.6}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces AUCROC across normalized layer depth for the six models. LaTa and PhilTa show the clearest mid-layer dip before post-processing. ABTT flattens those curves much more than SIF or whitening.}}{9}{figure.caption.7}\protected@file@percent }
-\newlabel{fig:dip}{{2}{9}{AUCROC across normalized layer depth for the six models. LaTa and PhilTa show the clearest mid-layer dip before post-processing. ABTT flattens those curves much more than SIF or whitening}{figure.caption.7}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces Cosine gap across normalized layer depth for the six models. In the Latin T5 models, the baseline gap nearly vanishes in the middle layers. ABTT restores a positive gap across depth more reliably than the alternative baselines.}}{10}{figure.caption.8}\protected@file@percent }
-\newlabel{fig:gap}{{3}{10}{Cosine gap across normalized layer depth for the six models. In the Latin T5 models, the baseline gap nearly vanishes in the middle layers. ABTT restores a positive gap across depth more reliably than the alternative baselines}{figure.caption.8}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces t-SNE projections of the 1{,}705 labelled fragments at each model's best layer (rows: LaTa, PhilTa, mT5-base), for mean-pooled \texttt  {baseline} and pure \texttt  {ABTT} ($D{=}10$) columns. Colors mark the six most-populated directories (\texttt  {CNEO.315.13}, \texttt  {CNIC.325.16}, \texttt  {CANC.314.4}, \texttt  {CANC.314.20}, \texttt  {CNIC.325.6}, \texttt  {CNIC.325.4}; sizes 8--10); all other fragments are suppressed. ABTT produces visibly tighter same-color clusters than the baseline, with winnable-fragment silhouette scores rising by 0.09--0.75 on every model.}}{11}{figure.caption.9}\protected@file@percent }
-\newlabel{fig:tsne}{{4}{11}{t-SNE projections of the 1{,}705 labelled fragments at each model's best layer (rows: LaTa, PhilTa, mT5-base), for mean-pooled \texttt {baseline} and pure \texttt {ABTT} ($D{=}10$) columns. Colors mark the six most-populated directories (\texttt {CNEO.315.13}, \texttt {CNIC.325.16}, \texttt {CANC.314.4}, \texttt {CANC.314.20}, \texttt {CNIC.325.6}, \texttt {CNIC.325.4}; sizes 8--10); all other fragments are suppressed. ABTT produces visibly tighter same-color clusters than the baseline, with winnable-fragment silhouette scores rising by 0.09--0.75 on every model}{figure.caption.9}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {5}{\ignorespaces UMAP projections, same configuration as Figure~\ref {fig:tsne}. The per-method separation pattern is reproduced under a different dimensionality-reduction algorithm, supporting that the cluster-tightening is a property of the embedding geometry rather than of the projection method.}}{12}{figure.caption.10}\protected@file@percent }
-\newlabel{fig:umap}{{5}{12}{UMAP projections, same configuration as Figure~\ref {fig:tsne}. The per-method separation pattern is reproduced under a different dimensionality-reduction algorithm, supporting that the cluster-tightening is a property of the embedding geometry rather than of the projection method}{figure.caption.10}{}}
-\gdef \LT@ii {\LT@entry 
+\@writefile{lot}{\contentsline {table}{\numberline {7}{\ignorespaces Per-layer Task~A pairwise metrics for the remaining three models (LaBSE, Qwen3-0.6B, KaLM-mini), under the same two-method comparison as the main paper. \texttt  {baseline} is mean pooling without correction; \texttt  {abtt\_optimal} applies ABTT (no SIF weighting) with $D$ tuned per layer on the train split. Both AUROC and cosine gap are computed over the test n$\times $n cosine matrix with no threshold and no directory routing: AUROC treats same-directory test pairs as positives, and cosine gap is the difference between mean same-directory and mean different-directory cosine. Rows in bold mark the best layer per model, selected by ABTT AUROC.}}{19}{table.7}\protected@file@percent }
+\newlabel{tab:taskA_appendix}{{7}{19}{Per-layer Task~A pairwise metrics for the remaining three models (LaBSE, Qwen3-0.6B, KaLM-mini), under the same two-method comparison as the main paper. \texttt {baseline} is mean pooling without correction; \texttt {abtt\_optimal} applies ABTT (no SIF weighting) with $D$ tuned per layer on the train split. Both AUROC and cosine gap are computed over the test n$\times $n cosine matrix with no threshold and no directory routing: AUROC treats same-directory test pairs as positives, and cosine gap is the difference between mean same-directory and mean different-directory cosine. Rows in bold mark the best layer per model, selected by ABTT AUROC}{table.7}{}}
+\gdef \LT@v {\LT@entry 
     {5}{54.24179pt}\LT@entry 
     {1}{30.90483pt}\LT@entry 
     {1}{38.00563pt}\LT@entry 
@@ -529,12 +862,68 @@
     {1}{29.98674pt}\LT@entry 
     {1}{37.49281pt}\LT@entry 
     {1}{34.85574pt}\LT@entry 
-    {1}{41.09738pt}}
+    {1}{37.49281pt}}
 \def\@LN@column{1}
-\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces Per-layer Task~B autonomous routing accuracy for each model. For every test file we compute $s_i = \max _{j \neq  i} \cos (e_i, e_j)$ against the rest of the test set and compare to the learned threshold $\tau $ (fit on train via $F_1$-optimal cut on same-directory vs.\ different-directory pairs). The decision is binary first (existing if $s_i \geq \tau $, else new); only files predicted existing are then routed to their top-1 neighbour's directory. We report \textbf  {existing accuracy} (restricted to files whose true partner is in the test set), \textbf  {new accuracy} (files that should be flagged as novel), and \textbf  {overall assignment accuracy}. Rows in bold mark the best layer per model, selected by ABTT overall assignment accuracy.}}{13}{table.3}\protected@file@percent }
-\newlabel{tab:taskB_routing_per_layer}{{3}{13}{Per-layer Task~B autonomous routing accuracy for each model. For every test file we compute $s_i = \max _{j \neq i} \cos (e_i, e_j)$ against the rest of the test set and compare to the learned threshold $\tau $ (fit on train via $F_1$-optimal cut on same-directory vs.\ different-directory pairs). The decision is binary first (existing if $s_i \geq \tau $, else new); only files predicted existing are then routed to their top-1 neighbour's directory. We report \textbf {existing accuracy} (restricted to files whose true partner is in the test set), \textbf {new accuracy} (files that should be flagged as novel), and \textbf {overall assignment accuracy}. Rows in bold mark the best layer per model, selected by ABTT overall assignment accuracy}{table.3}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {8}{\ignorespaces Per-layer Task~B autonomous routing accuracy for the remaining three models. \texttt  {baseline} is mean pooling without correction; \texttt  {abtt\_optimal} applies ABTT (no SIF weighting) with $D$ tuned per layer on the train split. For every test file we compute $s_i = \max _{j \neq  i} \cos (e_i, e_j)$ against the rest of the test set and compare to the learned threshold $\tau $ (fit on train via $F_1$-optimal cut on same-directory vs.\ different-directory pairs). The decision is binary first (existing if $s_i \geq \tau $, else new); only files predicted existing are then routed to their top-1 neighbour's directory. We report \textbf  {existing accuracy} (restricted to files whose true partner is in the test set), \textbf  {new accuracy} (files that should be flagged as novel), and \textbf  {overall assignment accuracy}. Rows in bold mark the best layer per model, selected by ABTT overall assignment accuracy.}}{20}{table.8}\protected@file@percent }
+\newlabel{tab:taskB_routing_appendix}{{8}{20}{Per-layer Task~B autonomous routing accuracy for the remaining three models. \texttt {baseline} is mean pooling without correction; \texttt {abtt\_optimal} applies ABTT (no SIF weighting) with $D$ tuned per layer on the train split. For every test file we compute $s_i = \max _{j \neq i} \cos (e_i, e_j)$ against the rest of the test set and compare to the learned threshold $\tau $ (fit on train via $F_1$-optimal cut on same-directory vs.\ different-directory pairs). The decision is binary first (existing if $s_i \geq \tau $, else new); only files predicted existing are then routed to their top-1 neighbour's directory. We report \textbf {existing accuracy} (restricted to files whose true partner is in the test set), \textbf {new accuracy} (files that should be flagged as novel), and \textbf {overall assignment accuracy}. Rows in bold mark the best layer per model, selected by ABTT overall assignment accuracy}{table.8}{}}
+\gdef \LT@vi {\LT@entry 
+    {5}{54.24179pt}\LT@entry 
+    {1}{30.90483pt}\LT@entry 
+    {1}{35.27884pt}\LT@entry 
+    {1}{37.49281pt}\LT@entry 
+    {1}{38.00563pt}\LT@entry 
+    {1}{38.00563pt}\LT@entry 
+    {1}{29.98674pt}\LT@entry 
+    {1}{39.85501pt}}
 \def\@LN@column{1}
-\gdef \LT@iii {\LT@entry 
+\@writefile{lot}{\contentsline {table}{\numberline {9}{\ignorespaces Per-layer Task~B top-$k$ ranking metrics for the remaining three models. \texttt  {baseline} is mean pooling without correction; \texttt  {abtt\_optimal} applies ABTT (no SIF weighting) with $D$ tuned per layer on the train split. This table is computed on the single-seed v2 split (no $M$-seed averaging, since the mseed sweep was run only for SIF-conditioned variants; see Table~\ref {tab:taskB_ranking_appendix_mseed} for the multi-seed SIF+ABTT view). \textbf  {Acc@1} is directory accuracy at rank~1, with an existing/new decomposition. Rows in bold mark the best layer per model, selected by ABTT Acc@1.}}{21}{table.9}\protected@file@percent }
+\newlabel{tab:taskB_ranking_appendix}{{9}{21}{Per-layer Task~B top-$k$ ranking metrics for the remaining three models. \texttt {baseline} is mean pooling without correction; \texttt {abtt\_optimal} applies ABTT (no SIF weighting) with $D$ tuned per layer on the train split. This table is computed on the single-seed v2 split (no $M$-seed averaging, since the mseed sweep was run only for SIF-conditioned variants; see Table~\ref {tab:taskB_ranking_appendix_mseed} for the multi-seed SIF+ABTT view). \textbf {Acc@1} is directory accuracy at rank~1, with an existing/new decomposition. Rows in bold mark the best layer per model, selected by ABTT Acc@1}{table.9}{}}
+\def\@LN@column{1}
+\def\@LN@column{1}
+\@LN{702}{22}
+\@writefile{toc}{\contentsline {section}{\numberline {C}SIF-Variant Post-Processing Sweeps}{23}{appendix.C}\protected@file@percent }
+\newlabel{app:sif_variants}{{C}{23}{SIF-Variant Post-Processing Sweeps}{appendix.C}{}}
+\@LN{703}{22}
+\@LN{704}{22}
+\@LN{705}{22}
+\@LN{706}{22}
+\@LN{707}{22}
+\@LN{708}{22}
+\@LN{709}{22}
+\@LN{710}{22}
+\@LN{711}{22}
+\@LN{712}{22}
+\@LN{713}{22}
+\@LN{714}{22}
+\@LN{715}{22}
+\@LN{716}{22}
+\@LN{717}{22}
+\@LN{718}{22}
+\@LN{719}{22}
+\@LN{720}{22}
+\def\@LN@column{2}
+\gdef \LT@vii {\LT@entry 
+    {5}{54.24179pt}\LT@entry 
+    {1}{30.90483pt}\LT@entry 
+    {1}{38.64494pt}\LT@entry 
+    {1}{38.64494pt}\LT@entry 
+    {1}{63.40677pt}\LT@entry 
+    {1}{55.57355pt}}
+\def\@LN@column{1}
+\@writefile{lot}{\contentsline {table}{\numberline {10}{\ignorespaces Per-layer Task~A AUROC across the SIF-conditioned post-processing suite for all six models. \texttt  {sif\_only} replaces mean pooling with SIF-weighted pooling; \texttt  {sif\_abtt\_fixed} adds ABTT with fixed $D{=}10$; \texttt  {sif\_abtt\_optimal} tunes $D$ per layer on the train split. Gap is omitted to keep the table narrow; the pure-ABTT comparison (not SIF-conditioned) is in Tables~\ref {tab:taskA_main} and~\ref {tab:taskA_appendix}. Rows in bold mark the best layer per model, selected by SIF+ABTT (D-tuned) AUROC.}}{24}{table.10}\protected@file@percent }
+\newlabel{tab:taskA_appendix_sif}{{10}{24}{Per-layer Task~A AUROC across the SIF-conditioned post-processing suite for all six models. \texttt {sif\_only} replaces mean pooling with SIF-weighted pooling; \texttt {sif\_abtt\_fixed} adds ABTT with fixed $D{=}10$; \texttt {sif\_abtt\_optimal} tunes $D$ per layer on the train split. Gap is omitted to keep the table narrow; the pure-ABTT comparison (not SIF-conditioned) is in Tables~\ref {tab:taskA_main} and~\ref {tab:taskA_appendix}. Rows in bold mark the best layer per model, selected by SIF+ABTT (D-tuned) AUROC}{table.10}{}}
+\gdef \LT@viii {\LT@entry 
+    {5}{54.24179pt}\LT@entry 
+    {1}{30.90483pt}\LT@entry 
+    {1}{34.85574pt}\LT@entry 
+    {1}{34.85574pt}\LT@entry 
+    {1}{63.40677pt}\LT@entry 
+    {1}{55.57355pt}}
+\def\@LN@column{1}
+\@writefile{lot}{\contentsline {table}{\numberline {11}{\ignorespaces Per-layer Task~B overall assignment accuracy across the SIF-conditioned suite for all six models. Restricted to overall routing accuracy (existing/new decomposition omitted) to keep the table compact; see Tables~\ref {tab:taskB_routing_main} and~\ref {tab:taskB_routing_appendix} for the pure-ABTT pairwise comparison with existing/new broken out. Rows in bold mark the best layer per model, selected by SIF+ABTT (D-tuned) overall assignment accuracy.}}{25}{table.11}\protected@file@percent }
+\newlabel{tab:taskB_routing_appendix_sif}{{11}{25}{Per-layer Task~B overall assignment accuracy across the SIF-conditioned suite for all six models. Restricted to overall routing accuracy (existing/new decomposition omitted) to keep the table compact; see Tables~\ref {tab:taskB_routing_main} and~\ref {tab:taskB_routing_appendix} for the pure-ABTT pairwise comparison with existing/new broken out. Rows in bold mark the best layer per model, selected by SIF+ABTT (D-tuned) overall assignment accuracy}{table.11}{}}
+\def\@LN@column{1}
+\gdef \LT@ix {\LT@entry 
     {5}{54.24179pt}\LT@entry 
     {1}{30.90483pt}\LT@entry 
     {5}{60.19441pt}\LT@entry 
@@ -544,299 +933,30 @@
     {5}{60.19441pt}\LT@entry 
     {5}{60.19441pt}}
 \def\@LN@column{1}
-\@writefile{lot}{\contentsline {table}{\numberline {4}{\ignorespaces Per-layer Task~B accuracy for each model, averaged over $M=5$ query/reference reseedings of the v2 train/test split (mean $\pm $ std). \texttt  {baseline} is mean pooling without correction; \texttt  {sif\_abtt\_optimal} applies SIF weighting plus ABTT with $D$ tuned per layer on the train split. Overall assignment accuracy coincides with Acc@1 in the Task~B mseed pipeline (assignment = top-1 pick), so we instead report the existing vs.\ new decomposition. Rows in bold mark the best layer per model, selected by ABTT Acc@1. See Table~\ref {tab:taskB_routing_per_layer} for the complementary autonomous-routing view.}}{15}{table.4}\protected@file@percent }
-\newlabel{tab:taskB_per_layer}{{4}{15}{Per-layer Task~B accuracy for each model, averaged over $M=5$ query/reference reseedings of the v2 train/test split (mean $\pm $ std). \texttt {baseline} is mean pooling without correction; \texttt {sif\_abtt\_optimal} applies SIF weighting plus ABTT with $D$ tuned per layer on the train split. Overall assignment accuracy coincides with Acc@1 in the Task~B mseed pipeline (assignment = top-1 pick), so we instead report the existing vs.\ new decomposition. Rows in bold mark the best layer per model, selected by ABTT Acc@1. See Table~\ref {tab:taskB_routing_per_layer} for the complementary autonomous-routing view}{table.4}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {12}{\ignorespaces Per-layer Task~B top-$k$ ranking accuracy across all six models, averaged over $M=5$ query/reference reseedings of the v2 train/test split (mean $\pm $ std). \texttt  {sif\_abtt\_optimal} applies SIF weighting plus ABTT with $D$ tuned per layer on the train split; the mseed sweep was not run for the pure \texttt  {abtt\_optimal} variant reported in the main paper, so we include this table to give a variance-aware view of the SIF-conditioned best variant. Overall assignment accuracy coincides with Acc@1 in the mseed pipeline, so we report the existing/new decomposition instead. Rows in bold mark the best layer per model, selected by SIF+ABTT Acc@1.}}{27}{table.12}\protected@file@percent }
+\newlabel{tab:taskB_ranking_appendix_mseed}{{12}{27}{Per-layer Task~B top-$k$ ranking accuracy across all six models, averaged over $M=5$ query/reference reseedings of the v2 train/test split (mean $\pm $ std). \texttt {sif\_abtt\_optimal} applies SIF weighting plus ABTT with $D$ tuned per layer on the train split; the mseed sweep was not run for the pure \texttt {abtt\_optimal} variant reported in the main paper, so we include this table to give a variance-aware view of the SIF-conditioned best variant. Overall assignment accuracy coincides with Acc@1 in the mseed pipeline, so we report the existing/new decomposition instead. Rows in bold mark the best layer per model, selected by SIF+ABTT Acc@1}{table.12}{}}
 \def\@LN@column{1}
 \def\@LN@column{1}
-\citation{su2021whitening,huang2021whiteningbert}
 \def\@LN@column{1}
-\@LN{445}{17}
-\@LN{446}{17}
-\@LN{447}{17}
-\@LN{448}{17}
-\@LN{449}{17}
-\@LN{450}{17}
-\@LN{451}{17}
-\@LN{452}{17}
-\@LN{453}{17}
-\@LN{454}{17}
-\@LN{455}{17}
-\@LN{456}{17}
-\@LN{457}{17}
-\@LN{458}{17}
-\@LN{459}{17}
-\@LN{460}{17}
-\@LN{461}{17}
-\@LN{462}{17}
-\@LN{463}{17}
-\@LN{464}{17}
-\@LN{465}{17}
-\@LN{466}{17}
-\@LN{467}{17}
-\@LN{468}{17}
-\@LN{469}{17}
-\@LN{470}{17}
-\@LN{471}{17}
-\@LN{472}{17}
-\@LN{473}{17}
-\@LN{474}{17}
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.7}Example-Level Explanations}{18}{subsection.4.7}\protected@file@percent }
-\@LN{475}{17}
-\@LN{476}{17}
-\@LN{477}{17}
-\@LN{478}{17}
-\@LN{479}{17}
-\@LN{480}{17}
-\@LN{481}{17}
-\@LN{482}{17}
-\@LN{483}{17}
-\@LN{484}{17}
-\@LN{485}{17}
-\@LN{486}{17}
-\@LN{487}{17}
-\@LN{488}{17}
-\@LN{489}{17}
-\@LN{490}{17}
-\@LN{491}{17}
-\@LN{492}{17}
-\@LN{493}{17}
+\@LN{721}{29}
+\@writefile{toc}{\contentsline {section}{\numberline {D}Cluster Geometry: Additional Models}{30}{appendix.D}\protected@file@percent }
+\newlabel{app:cluster_geometry}{{D}{30}{Cluster Geometry: Additional Models}{appendix.D}{}}
+\@LN{722}{29}
+\@LN{723}{29}
+\@LN{724}{29}
+\@LN{725}{29}
+\@LN{726}{29}
+\@LN{727}{29}
+\@LN{728}{29}
+\@LN{729}{29}
+\@LN{730}{29}
+\@LN{731}{29}
+\@LN{732}{29}
+\@LN{733}{29}
+\@LN{734}{29}
 \def\@LN@column{2}
-\@LN{494}{17}
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.8}Retrieval-Aligned Mask Attributions}{18}{subsection.4.8}\protected@file@percent }
-\newlabel{subsec:retrieval-mark}{{4.8}{18}{Retrieval-Aligned Mask Attributions}{subsection.4.8}{}}
-\@LN{495}{17}
-\@LN{496}{17}
-\@LN{497}{17}
-\@LN{498}{17}
-\@LN{499}{17}
-\@LN{500}{17}
-\@LN{501}{17}
-\@LN{502}{17}
-\@LN{503}{17}
-\@LN{504}{17}
-\@LN{505}{17}
-\@LN{506}{17}
-\@LN{507}{17}
-\@LN{508}{17}
-\@LN{509}{17}
-\@LN{510}{17}
-\@LN{511}{17}
-\@LN{512}{17}
-\@LN{513}{17}
-\@LN{514}{17}
-\@writefile{toc}{\contentsline {section}{\numberline {5}Discussion}{18}{section.5}\protected@file@percent }
-\@LN{515}{17}
-\@LN{516}{17}
-\@LN{517}{17}
-\@LN{518}{17}
-\@LN{519}{17}
-\@LN{520}{17}
-\@LN{521}{17}
-\@LN{522}{17}
-\@LN{523}{17}
-\@LN{524}{17}
-\@LN{525}{17}
-\@LN{526}{17}
-\@LN{527}{17}
-\@LN{528}{17}
-\@LN{529}{17}
-\@LN{530}{17}
-\@LN{531}{17}
-\@LN{532}{17}
-\@LN{533}{17}
-\@LN{534}{17}
-\@LN{535}{17}
-\@LN{536}{17}
-\@LN{537}{17}
-\@LN{538}{17}
-\@LN{539}{17}
-\@LN{540}{17}
-\@LN{541}{17}
-\@LN{542}{17}
-\@LN{543}{17}
-\@writefile{lot}{\contentsline {table}{\numberline {5}{\ignorespaces Cumulative top-$K$ accuracy for Task B across the six models, reported as mean $\pm $ standard deviation over $M=5$ query/reference reseedings at a fixed v2 train/test split. Each cell gives the percentage of test queries whose labeled directory appears within the model's top~$K$ options at its best layer/method configuration. All models exceed 89\% by Top-1 and 95\% by Top-2. Only ABTT post-processing is reported in the main paper; SIF-only, PCA whitening, and SIF+ABTT are reported in the appendix.}}{19}{table.caption.11}\protected@file@percent }
-\newlabel{tab:taskb}{{5}{19}{Cumulative top-$K$ accuracy for Task B across the six models, reported as mean $\pm $ standard deviation over $M=5$ query/reference reseedings at a fixed v2 train/test split. Each cell gives the percentage of test queries whose labeled directory appears within the model's top~$K$ options at its best layer/method configuration. All models exceed 89\% by Top-1 and 95\% by Top-2. Only ABTT post-processing is reported in the main paper; SIF-only, PCA whitening, and SIF+ABTT are reported in the appendix}{table.caption.11}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {6}{\ignorespaces Derived pairwise heatmap for one PhilTa retrieval case. The left panel shows the baseline representation and the right panel shows the same example after ABTT. Both axes use original decoded tokens, and the cell values combine token-token cosine similarity with single-sequence integrated-gradient scores.}}{19}{figure.caption.12}\protected@file@percent }
-\newlabel{fig:pairmatrix}{{6}{19}{Derived pairwise heatmap for one PhilTa retrieval case. The left panel shows the baseline representation and the right panel shows the same example after ABTT. Both axes use original decoded tokens, and the cell values combine token-token cosine similarity with single-sequence integrated-gradient scores}{figure.caption.12}{}}
-\def\@LN@column{1}
-\def\@LN@column{2}
-\citation{brinnerzarriess2023marc}
-\@writefile{lof}{\contentsline {figure}{\numberline {7}{\ignorespaces Companion self-attention maps for the same PhilTa example. Because ABTT is applied after encoding, attention is included only as supporting context, not as a before-and-after comparison.}}{20}{figure.caption.13}\protected@file@percent }
-\newlabel{fig:attention}{{7}{20}{Companion self-attention maps for the same PhilTa example. Because ABTT is applied after encoding, attention is included only as supporting context, not as a before-and-after comparison}{figure.caption.13}{}}
-\def\@LN@column{1}
-\@LN{544}{19}
-\@LN{545}{19}
-\@LN{546}{19}
-\@LN{547}{19}
-\@LN{548}{19}
-\@LN{549}{19}
-\@LN{550}{19}
-\@LN{551}{19}
-\@LN{552}{19}
-\@LN{553}{19}
-\@LN{554}{19}
-\@LN{555}{19}
-\@LN{556}{19}
-\def\@LN@column{2}
-\@LN{557}{19}
-\@LN{558}{19}
-\@LN{559}{19}
-\@LN{560}{19}
-\@LN{561}{19}
-\@LN{562}{19}
-\@LN{563}{19}
-\@LN{564}{19}
-\@LN{565}{19}
-\@LN{566}{19}
-\@LN{567}{19}
-\@LN{568}{19}
-\@LN{569}{19}
-\@LN{570}{19}
-\bibdata{custom}
-\bibcite{arora2017sif}{{1}{2017}{{Arora et~al.}}{{Arora, Liang, and Ma}}}
-\bibcite{brinnerzarriess2023marc}{{2}{2023}{{Brinner and Zarrie{\ss }}}{{}}}
-\bibcite{feng2022labse}{{3}{2022}{{Feng et~al.}}{{Feng, Yang, Cer, Arivazhagan, and Wang}}}
-\@writefile{lof}{\contentsline {figure}{\numberline {8}{\ignorespaces Retrieval-aligned mask attributions for the same PhilTa pair as Figure~\ref {fig:pairmatrix}. Top row: mask on the query with the candidate held fixed. Bottom row: mask on the candidate with the query held fixed. Left column: baseline cosine target. Right column: ABTT-cleaned cosine target. Token labels are the original decoded tokens; frozen non-content positions are shown in gray.}}{21}{figure.caption.14}\protected@file@percent }
-\newlabel{fig:retrieval_mark}{{8}{21}{Retrieval-aligned mask attributions for the same PhilTa pair as Figure~\ref {fig:pairmatrix}. Top row: mask on the query with the candidate held fixed. Bottom row: mask on the candidate with the query held fixed. Left column: baseline cosine target. Right column: ABTT-cleaned cosine target. Token labels are the original decoded tokens; frozen non-content positions are shown in gray}{figure.caption.14}{}}
-\def\@LN@column{1}
-\@LN{571}{20}
-\@LN{572}{20}
-\@LN{573}{20}
-\@LN{574}{20}
-\@LN{575}{20}
-\@LN{576}{20}
-\@LN{577}{20}
-\@LN{578}{20}
-\@LN{579}{20}
-\def\@LN@column{2}
-\@LN{580}{20}
-\@LN{581}{20}
-\@LN{582}{20}
-\@LN{583}{20}
-\@LN{584}{20}
-\@LN{585}{20}
-\@LN{586}{20}
-\@LN{587}{20}
-\@LN{588}{20}
-\@LN{589}{20}
-\@LN{590}{20}
-\@LN{591}{20}
-\@LN{592}{20}
-\bibcite{huang2021whiteningbert}{{4}{2021}{{Huang et~al.}}{{Huang, Tang, Zhong, Lu, Shou, Gong, Jiang, and Duan}}}
-\bibcite{kalm2025embedding}{{5}{2025}{{Lu et~al.}}{{Lu, Maharramov et~al.}}}
-\bibcite{mcinnes2018umap}{{6}{2018}{{McInnes et~al.}}{{McInnes, Healy, and Melville}}}
-\bibcite{mu2018allbutthetop}{{7}{2018}{{Mu and Viswanath}}{{}}}
-\bibcite{qwen3embedding2025}{{8}{2025}{{Qwen Team}}{{}}}
-\bibcite{riemenschneider2023lata}{{9}{2023}{{Riemenschneider and Frank}}{{}}}
-\bibcite{su2021whitening}{{10}{2021}{{Su et~al.}}{{Su, Cao, Liu, and Ou}}}
-\bibcite{sundararajan2017axiomatic}{{11}{2017}{{Sundararajan et~al.}}{{Sundararajan, Taly, and Yan}}}
-\bibcite{vandermaaten2008tsne}{{12}{2008}{{van~der Maaten and Hinton}}{{}}}
-\bibcite{xue2021mt5}{{13}{2021}{{Xue et~al.}}{{Xue, Constant, Roberts, Kale, Al-Rfou, Siddhant, Barua, and Raffel}}}
-\def\@LN@column{1}
-\@LN{593}{21}
-\@LN{594}{21}
-\@LN{595}{21}
-\@LN{596}{21}
-\@LN{597}{21}
-\@LN{598}{21}
-\@LN{599}{21}
-\@LN{600}{21}
-\@LN{601}{21}
-\@LN{602}{21}
-\@LN{603}{21}
-\@LN{604}{21}
-\@LN{605}{21}
-\@LN{606}{21}
-\@LN{607}{21}
-\@LN{608}{21}
-\@LN{609}{21}
-\@LN{610}{21}
-\@LN{611}{21}
-\@LN{612}{21}
-\@LN{613}{21}
-\@LN{614}{21}
-\@LN{615}{21}
-\@LN{616}{21}
-\@LN{617}{21}
-\@LN{618}{21}
-\@LN{619}{21}
-\@LN{620}{21}
-\@LN{621}{21}
-\@LN{622}{21}
-\@LN{623}{21}
-\@LN{624}{21}
-\@LN{625}{21}
-\@LN{626}{21}
-\@LN{627}{21}
-\@LN{628}{21}
-\@LN{629}{21}
-\@LN{630}{21}
-\@LN{631}{21}
-\@LN{632}{21}
-\@LN{633}{21}
-\@LN{634}{21}
-\@LN{635}{21}
-\@LN{636}{21}
-\@LN{637}{21}
-\@LN{638}{21}
-\@LN{639}{21}
-\@LN{640}{21}
-\@LN{641}{21}
-\@LN{642}{21}
-\@LN{643}{21}
-\@LN{644}{21}
-\@LN{645}{21}
-\def\@LN@column{2}
-\@LN{646}{21}
-\@writefile{toc}{\contentsline {section}{\numberline {A}Last-Token vs.\ Mean Pooling}{22}{appendix.A}\protected@file@percent }
-\newlabel{app:lasttok}{{A}{22}{Last-Token vs.\ Mean Pooling}{appendix.A}{}}
-\@LN{647}{21}
-\@LN{648}{21}
-\@LN{649}{21}
-\@LN{650}{21}
-\@LN{651}{21}
-\@LN{652}{21}
-\@LN{653}{21}
-\@LN{654}{21}
-\@LN{655}{21}
-\@LN{656}{21}
-\@LN{657}{21}
-\@LN{658}{21}
-\@LN{659}{21}
-\@LN{660}{21}
-\@LN{661}{21}
-\@LN{662}{21}
-\@LN{663}{21}
-\@LN{664}{21}
-\@LN{665}{21}
-\@LN{666}{21}
-\@LN{667}{21}
-\@LN{668}{21}
-\@LN{669}{21}
-\@LN{670}{21}
-\@LN{671}{21}
-\@LN{672}{21}
-\@LN{673}{21}
-\@LN{674}{21}
-\@writefile{toc}{\contentsline {section}{\numberline {B}Cluster Geometry: Additional Models}{22}{appendix.B}\protected@file@percent }
-\newlabel{app:cluster_geometry}{{B}{22}{Cluster Geometry: Additional Models}{appendix.B}{}}
-\@LN{675}{21}
-\@LN{676}{21}
-\@LN{677}{21}
-\@LN{678}{21}
-\@LN{679}{21}
-\@LN{680}{21}
-\@LN{681}{21}
-\@LN{682}{21}
-\@LN{683}{21}
-\@LN{684}{21}
-\@LN{685}{21}
-\@LN{686}{21}
-\@LN{687}{21}
-\@writefile{lot}{\contentsline {table}{\numberline {6}{\ignorespaces Mean vs.\ last-token pooling on the balanced split, restricted to ABTT post-processing. Best layer per (model, pooling) selected by Task A assignment accuracy. Task B metrics (Acc@1, cosine gap) reported at that same layer.}}{23}{table.caption.17}\protected@file@percent }
-\newlabel{tab:lasttok_comparison}{{6}{23}{Mean vs.\ last-token pooling on the balanced split, restricted to ABTT post-processing. Best layer per (model, pooling) selected by Task A assignment accuracy. Task B metrics (Acc@1, cosine gap) reported at that same layer}{table.caption.17}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {9}{\ignorespaces t-SNE projections of the six most-populated directories at each model's best layer for LaBSE, Qwen3-0.6B, and KaLM-mini. Same directory palette as Figure~\ref {fig:tsne}; baseline (left) vs.\ pure \texttt  {ABTT} ($D{=}10$) (right). ABTT tightens same-color clusters for every model.}}{23}{figure.caption.18}\protected@file@percent }
-\newlabel{fig:tsne_appendix}{{9}{23}{t-SNE projections of the six most-populated directories at each model's best layer for LaBSE, Qwen3-0.6B, and KaLM-mini. Same directory palette as Figure~\ref {fig:tsne}; baseline (left) vs.\ pure \texttt {ABTT} ($D{=}10$) (right). ABTT tightens same-color clusters for every model}{figure.caption.18}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {10}{\ignorespaces UMAP projections matching Figure~\ref {fig:tsne_appendix}. The cluster-tightening is reproduced under a different projection algorithm.}}{24}{figure.caption.19}\protected@file@percent }
-\newlabel{fig:umap_appendix}{{10}{24}{UMAP projections matching Figure~\ref {fig:tsne_appendix}. The cluster-tightening is reproduced under a different projection algorithm}{figure.caption.19}{}}
-\gdef \@abspage@last{24}
+\@writefile{lof}{\contentsline {figure}{\numberline {9}{\ignorespaces t-SNE projections of the six most-populated directories at each model's best layer for LaBSE, Qwen3-0.6B, and KaLM-mini. Same directory palette as Figure~\ref {fig:tsne}; baseline (left) vs.\ pure \texttt  {ABTT} ($D{=}10$) (right). ABTT tightens same-color clusters for every model.}}{31}{figure.caption.18}\protected@file@percent }
+\newlabel{fig:tsne_appendix}{{9}{31}{t-SNE projections of the six most-populated directories at each model's best layer for LaBSE, Qwen3-0.6B, and KaLM-mini. Same directory palette as Figure~\ref {fig:tsne}; baseline (left) vs.\ pure \texttt {ABTT} ($D{=}10$) (right). ABTT tightens same-color clusters for every model}{figure.caption.18}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {10}{\ignorespaces UMAP projections matching Figure~\ref {fig:tsne_appendix}. The cluster-tightening is reproduced under a different projection algorithm.}}{32}{figure.caption.19}\protected@file@percent }
+\newlabel{fig:umap_appendix}{{10}{32}{UMAP projections matching Figure~\ref {fig:tsne_appendix}. The cluster-tightening is reproduced under a different projection algorithm}{figure.caption.19}{}}
+\gdef \@abspage@last{32}

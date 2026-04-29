@@ -1,0 +1,70 @@
+\documentclass[11pt]{article}
+\usepackage[margin=0.7in]{geometry}
+\usepackage{booktabs}
+\usepackage{amsmath,amssymb}
+\usepackage{caption}
+\captionsetup{font=small,labelfont=bf}
+\usepackage[hidelinks]{hyperref}
+\pagestyle{empty}
+
+\begin{document}
+
+\begin{center}
+{\large\bfseries Attribution-quality metrics: MaRC and IG, baseline vs ABTT}\\[2pt]
+{\small \textbf{200 random test pairs per model} (up from 20 curated); LaTa + PhilTa.\\
+Generated 2026-04-21.}
+\end{center}
+
+\vspace{0.4em}
+
+\begin{table}[h]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{lrrrrrrrr}
+\toprule
+Method & \multicolumn{2}{c}{Suff@25\%~$\uparrow$} & \multicolumn{2}{c}{Comp@25\%~$\uparrow$} & \multicolumn{2}{c}{Cmpct@0.8~$\downarrow$} & \multicolumn{2}{c}{$\rho_{\text{LOO}}$~$\uparrow$} \\
+\cmidrule(lr){2-3} \cmidrule(lr){4-5} \cmidrule(lr){6-7} \cmidrule(lr){8-9}
+ & base & abtt & base & abtt & base & abtt & base & abtt \\
+\midrule
+\multicolumn{9}{l}{\textit{LaTa}} \\
+IG   & \textbf{0.585} & 0.468          & \textbf{0.065} & 0.023          & \textbf{0.318} & 0.324 & -0.014 & \textbf{0.106} \\
+MaRC & \textbf{0.037} & -0.014         & -0.009         & \textbf{-0.001} & \textbf{0.902} & 0.903 & -0.106 & \textbf{0.017} \\
+\midrule
+\multicolumn{9}{l}{\textit{PhilTa}} \\
+IG   & \textbf{0.779} & 0.708          & \textbf{0.114} & 0.080          & \textbf{0.136} & 0.166 & 0.042  & \textbf{0.120} \\
+MaRC & -0.342         & \textbf{0.069} & -0.009         & \textbf{0.019} & \textbf{0.661} & 0.916 & \textbf{-0.036} & -0.120 \\
+\bottomrule
+\end{tabular}
+\caption*{Within each (method, metric) cell, the better of \{baseline, ABTT\} is \textbf{bolded}. Group means over 200 random test pairs per model. Standard errors are in the accompanying summary CSV; they shrank by $\sim\sqrt{10} \approx 3.2\times$ vs the 20-curated version, so differences of $\sim 0.05$ are now real.}
+\end{table}
+
+\vspace{0.4em}
+
+\noindent\textbf{Per-cell ABTT-wins count (out of 4 metrics):}
+\begin{itemize}
+\itemsep0em
+\item LaTa $\times$ IG: \textbf{1/4} (rho only)
+\item LaTa $\times$ MaRC: \textbf{2/4} (comp + rho)
+\item PhilTa $\times$ IG: \textbf{1/4} (rho only)
+\item PhilTa $\times$ MaRC: \textbf{2/4} (suff + comp; rho actually regresses)
+\end{itemize}
+
+\noindent\textbf{Reading guide.}
+\textbf{Suff@25\%} ($\uparrow$): similarity retained with only the top 25\% attributed tokens.
+\textbf{Comp@25\%} ($\uparrow$): similarity drop when those tokens are removed.
+\textbf{Cmpct@0.8} ($\downarrow$): token fraction to recover 80\% of full-pair cosine.
+$\boldsymbol{\rho_{\text{LOO}}}$ ($\uparrow$): rank correlation between attribution magnitude and true leave-one-out $\Delta\cos$.
+
+\vspace{0.4em}
+
+\noindent\textbf{Bottom line at 200 pairs/model.}
+\begin{itemize}
+\itemsep0em
+\item The original ``$\geq 3/4$ metrics for both MaRC and IG on at least one T5 model'' threshold is still not met --- no cell clears 3/4.
+\item $\rho_{\text{LOO}}$ now improves on \textbf{3/4} T5 cells (LaTa$\times$IG, LaTa$\times$MaRC, PhilTa$\times$IG); PhilTa$\times$MaRC regresses from $-0.036$ to $-0.120$ (a $\sim 4\sigma$ drop). So the ``ABTT universally lifts $\rho_{\text{LOO}}$'' claim from the 20-pair snapshot no longer holds.
+\item The surviving robust signal: \textbf{for IG specifically}, ABTT lifts $\rho_{\text{LOO}}$ on both T5 models, and the per-cell wins are $\geq 1/4$ on every cell we looked at. That is a much narrower framing than ``ABTT improves explanation.''
+\item Caveat unchanged: cross-variant deltas conflate two effects (ABTT changes both the attribution scores and the cosine being explained), so these are descriptive shifts rather than fidelity-loss measures.
+\end{itemize}
+
+\end{document}
