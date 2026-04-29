@@ -17,6 +17,27 @@ L6 attribution framing. Those layers were useful for the meeting because they
 made the collapse-recovery story concrete, but Run 3 needs a stable operational
 rule before computing attribution metrics.
 
+## Paper Reporting Plan
+
+Use the retrieval-selected layers for the main attribution table. This table
+should carry the operational claim: after a predeclared train-only layer
+selection rule, do the attribution methods faithfully explain the same layer the
+retrieval pipeline uses?
+
+After the main table, include a mechanism figure using the recovered-collapse
+diagnostic layers: LaTa L8, PhilTa L6, and mT5-base L5. This figure should not
+replace the main table or reselect the headline attribution layers. Its job is
+to make the geometric story visible: the baseline layer is collapsed under
+PC1/effective-rank diagnostics, ABTT-D10 restores rank/cosine spread, and the
+token-level attribution view becomes more interpretable in that repaired space.
+
+Recommended framing:
+
+- Main table: "operational attribution at retrieval-selected layers."
+- Mechanism figure: "why ABTT matters at recovered-collapse layers."
+- Appendix: full layer diagnostics and, if Run 3 has budget, attribution checks
+  for the recovered-collapse layers as non-selector diagnostic evidence.
+
 ## Two Defensible Choices
 
 **Choice A: explain the retrieval-selected layer.** This is the selected rule.
