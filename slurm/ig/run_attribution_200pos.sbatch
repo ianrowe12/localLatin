@@ -13,8 +13,9 @@
 #SBATCH --mail-user=ian.rowe.rojas@gmail.com
 #SBATCH --mail-type=END,FAIL
 
-# 200-positive (gold-similar only) attribution-metrics rerun for LaTa + PhilTa.
-# Companion to scripts/ig/sample_positive_test_pairs.py.
+# 200-positive (gold-similar only) attribution-metrics rerun.
+# The current checked-in bundle contains LaTa + PhilTa. The pipeline is ready
+# for mT5 once Run 2 fixes the attribution layer rule and regenerates the CSV.
 #
 # Stages (chained sequentially in one sbatch):
 #   1) IG + companion artifact NPZs        scripts/_archive/run_phase12e_pair_explanations.py
@@ -33,14 +34,13 @@ set -euo pipefail
 module reset
 module load miniforge3-python
 
-cd /projects/beto/irowerojas/localLatin
+REPO_ROOT="${REPO_ROOT:-/projects/beto/irowerojas/localLatin}"
+cd "$REPO_ROOT"
 mkdir -p slurm/logs
 
 PY=/u/irowerojas/.conda/envs/localLatin/bin/python
-# scripts/_archive/run_phase12e_pair_explanations.py uses sys.path.append(parents[1]/"src"),
-# which resolves to scripts/src (nonexistent) now that the script lives under _archive/.
-# Fix by putting the real src/ on PYTHONPATH.
-export PYTHONPATH="/projects/beto/irowerojas/localLatin/src:${PYTHONPATH:-}"
+# Keep the real src/ importable for archived scripts and sbatch environments.
+export PYTHONPATH="$REPO_ROOT/src:${PYTHONPATH:-}"
 
 EXAMPLES_CSV=runs/active/ig_examples_200pos/positive200_examples.csv
 ARTIFACTS_DIR=runs/active/ig_examples_200pos/artifacts
@@ -109,3 +109,8 @@ echo ""
 echo "=== Done ($(date)) ==="
 echo "Summary CSV: $METRICS_OUT_DIR/summary.csv"
 echo "Paper table: $TEX_OUT"
+
+# Post-Run-2 example sampler command for a three-model bundle:
+# $PY scripts/ig/sample_positive_test_pairs.py \
+#     --models bowphs/LaTa bowphs/PhilTa google/mt5-base \
+#     --layer_overrides google/mt5-base=<RUN_2_LAYER>

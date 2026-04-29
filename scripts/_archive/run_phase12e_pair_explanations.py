@@ -19,7 +19,7 @@ import pandas as pd
 import torch
 from transformers import AutoModel, AutoModelForSeq2SeqLM, AutoTokenizer
 
-sys.path.append(str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.append(str(Path(__file__).resolve().parents[2] / "src"))
 
 from attribution_targets import get_embedding_layer
 from retrieval_targets import ABTTCosSimTarget, BaselineCosSimTarget
@@ -28,7 +28,7 @@ from token_filtering import TOKEN_FILTER_CHOICES, build_token_keep_lookup
 try:
     from captum.attr import LayerIntegratedGradients
 except ImportError:
-    raise ImportError("captum is required: pip install captum")
+    LayerIntegratedGradients = None
 
 
 def parse_args() -> argparse.Namespace:
@@ -46,6 +46,28 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--half_precision", action="store_true")
     parser.add_argument("--trust_remote_code", action="store_true")
+    parser.add_argument(
+        "--models",
+        nargs="*",
+        default=None,
+        help="Restrict to these model_name strings.",
+    )
+    parser.add_argument(
+        "--max_examples",
+        type=int,
+        default=0,
+        help="0 = all; N = first N rows after filtering.",
+    )
+    parser.add_argument(
+        "--dry_run",
+        action="store_true",
+        help="Validate CSV rows, text paths, PC files, and output paths without loading models.",
+    )
+    parser.add_argument(
+        "--dry_run_require_pcs",
+        action="store_true",
+        help="With --dry_run, fail if planned PC files are missing.",
+    )
     parser.add_argument(
         "--skip_existing", action="store_true",
         help="Skip examples whose output NPZ already exists.",
@@ -147,6 +169,8 @@ def run_ig(
     emb_layer: torch.nn.Module,
     n_steps: int,
 ) -> np.ndarray:
+    if LayerIntegratedGradients is None:
+        raise ImportError("captum is required for IG generation: pip install captum")
     lig = LayerIntegratedGradients(target_fn, emb_layer)
     attr = lig.attribute(
         input_ids,
@@ -160,11 +184,50 @@ def run_ig(
 def main() -> None:
     args = parse_args()
     examples = pd.read_csv(args.examples_csv)
+    if args.models:
+        examples = examples[examples["model_name"].isin(args.models)].reset_index(drop=True)
+    if args.max_examples and args.max_examples > 0:
+        examples = examples.head(args.max_examples).reset_index(drop=True)
     out_root = Path(args.out_dir)
     artifacts_root = out_root / "artifacts"
-    artifacts_root.mkdir(parents=True, exist_ok=True)
+    if not args.dry_run:
+        artifacts_root.mkdir(parents=True, exist_ok=True)
     pc_root = Path(args.pc_root)
     device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    if args.dry_run:
+        failures: list[str] = []
+        for row in examples.itertuples(index=False):
+            example_id = int(row.example_id)
+            slug = model_slug(row.model_name)
+            out_path = (
+                artifacts_root / slug
+                / f"example{example_id:03d}_{row.candidate_role}.npz"
+            )
+            if pd.isna(row.query_path) or not str(row.query_path).strip():
+                failures.append(f"example {example_id}: missing query_path")
+            elif not Path(row.query_path).exists():
+                failures.append(f"example {example_id}: query_path missing on disk: {row.query_path}")
+            if pd.isna(row.candidate_path) or not str(row.candidate_path).strip():
+                failures.append(f"example {example_id}: missing candidate_path")
+            elif not Path(row.candidate_path).exists():
+                failures.append(
+                    f"example {example_id}: candidate_path missing on disk: {row.candidate_path}"
+                )
+            if str(row.candidate_label) == "__NEW__":
+                failures.append(f"example {example_id}: candidate is __NEW__")
+            pc_path = pc_root / slug / f"layer{int(row.layer)}_pcs.npz"
+            pc_status = "exists" if pc_path.exists() else "missing"
+            if args.dry_run_require_pcs and not pc_path.exists():
+                failures.append(f"example {example_id}: PC file missing: {pc_path}")
+            print(
+                f"[DRY] example {example_id:03d} {slug} layer={int(row.layer)} "
+                f"D={int(row.D)} pc={pc_status} -> {out_path}"
+            )
+        if failures:
+            raise SystemExit("Dry run failed:\n" + "\n".join(failures))
+        print(f"Dry run OK for {len(examples)} examples")
+        return
 
     current_model_name = None
     model = None

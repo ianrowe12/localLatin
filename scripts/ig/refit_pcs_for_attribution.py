@@ -50,15 +50,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 from sif_abtt import remove_top_components  # noqa: E402
 
-
-# Layer per slug (mirrors scripts/ig/extract_pcs_from_npzs.py:MODEL_LAYER and
-# the FEATURED_MODELS dict in scripts/ig/sample_random_test_pairs.py).
-SLUG_LAYER = {
-    "bowphs_LaTa": 4,
-    "bowphs_PhilTa": 6,
-    "sentence-transformers_LaBSE": 12,
-    "Qwen_Qwen3-Embedding-0.6B": 23,
-}
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from attribution_model_config import parse_layer_overrides, slug_layer_map  # noqa: E402
 
 
 def refit_one(
@@ -70,20 +63,27 @@ def refit_one(
     n_split_rows: int,
     pc_root: Path,
     d: int,
+    dry_run: bool,
 ) -> None:
     emb_path = bases_root / slug / pooling / f"hidden_layer{layer}_embeddings.npy"
     if not emb_path.exists():
         raise SystemExit(f"Embedding cache missing: {emb_path}")
-    emb = np.load(emb_path)
+    emb = np.load(emb_path, mmap_mode="r" if dry_run else None)
     if emb.shape[0] != n_split_rows:
         raise SystemExit(
             f"[{slug}] cache rows {emb.shape[0]} != split rows {n_split_rows}. "
             f"Likely wrong --bases_root / --split_csv combination."
         )
+    out = pc_root / slug / f"layer{layer}_pcs.npz"
+    if dry_run:
+        print(
+            f"[DRY] {slug}: would fit D={d} on layer {layer} train "
+            f"({len(train_idx)}, {emb.shape[1]}) from {emb_path} -> {out}"
+        )
+        return
     train_emb = emb[train_idx].astype(np.float32)
     print(f"[{slug}] fitting D={d} on layer {layer} train ({train_emb.shape})")
     _, mean_vec, pcs = remove_top_components(train_emb, num_components=d, center=True)
-    out = pc_root / slug / f"layer{layer}_pcs.npz"
     out.parent.mkdir(parents=True, exist_ok=True)
     np.savez(out, pcs=pcs, mean_vec=mean_vec)
     print(f"[{slug}] wrote {out}  pcs.shape={pcs.shape}  mean.shape={mean_vec.shape}")
@@ -92,7 +92,7 @@ def refit_one(
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--slugs", nargs="+", default=["bowphs_LaTa", "bowphs_PhilTa"],
-                    help="model slugs to refit (must be keys of SLUG_LAYER)")
+                    help="model slugs to refit (known attribution model slugs)")
     ap.add_argument("--bases_root",
                     default="runs/active/encoder_bases",
                     help="Default matches the canon (phase9) cache used by the "
@@ -110,7 +110,16 @@ def main() -> None:
     ap.add_argument("--d", type=int, default=10,
                     help="number of top PCs to fit (universal default per "
                          "2026-03-31 meeting)")
+    ap.add_argument("--layer_overrides", nargs="*", default=None,
+                    help="Optional MODEL_OR_SLUG=LAYER overrides, e.g. google_mt5-base=4.")
+    ap.add_argument("--dry_run", action="store_true",
+                    help="Validate inputs and planned outputs without writing PC files.")
     args = ap.parse_args()
+    try:
+        layer_overrides = parse_layer_overrides(args.layer_overrides)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+    slug_layers = slug_layer_map(layer_overrides)
 
     split = pd.read_csv(args.split_csv)
     train_idx = np.where(split["split"] == "train")[0]
@@ -120,10 +129,11 @@ def main() -> None:
     pc_root = Path(args.pc_root)
 
     for slug in args.slugs:
-        if slug not in SLUG_LAYER:
-            raise SystemExit(f"Unknown slug {slug!r}; add to SLUG_LAYER")
-        refit_one(slug, SLUG_LAYER[slug], bases_root, args.pooling,
-                  train_idx, n_split_rows, pc_root, args.d)
+        if slug not in slug_layers:
+            known = ", ".join(sorted(slug_layers))
+            raise SystemExit(f"Unknown slug {slug!r}; known slugs: {known}")
+        refit_one(slug, slug_layers[slug], bases_root, args.pooling,
+                  train_idx, n_split_rows, pc_root, args.d, args.dry_run)
 
 
 if __name__ == "__main__":

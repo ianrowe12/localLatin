@@ -75,6 +75,7 @@ from matplotlib.cm import ScalarMappable
 MODEL_SHORT = {
     "bowphs/PhilTa": "PhilTa",
     "bowphs/LaTa": "LaTa",
+    "google/mt5-base": "mT5-base",
     "sentence-transformers/LaBSE": "LaBSE",
     "Qwen/Qwen3-Embedding-0.6B": "Qwen3-0.6B",
     "KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5": "KaLM-mini",

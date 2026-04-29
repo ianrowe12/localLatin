@@ -71,6 +71,7 @@ MAIN_METHODS: list[str] = [
     "dla",
     "attention_standalone",
 ]
+PRESERVED_SIDECAR_METHODS: list[str] = ["retrieval_mark"]
 
 VARIANTS: list[str] = ["baseline", "abtt"]
 
@@ -260,6 +261,12 @@ def process_row(
 
     matrices = compute_pair_matrices(existing)
     succeeded = [m for m in MAIN_METHODS if m in matrices]
+    for method in PRESERVED_SIDECAR_METHODS:
+        if (
+            f"pair_matrix_{method}_baseline" in existing
+            and f"pair_matrix_{method}_abtt" in existing
+        ):
+            succeeded.append(method)
     new_keys = build_new_npz_keys(matrices, topk)
 
     if dry_run:
@@ -317,7 +324,8 @@ def main() -> None:
 
     methods_available_per_row: list[str] = []
     counts = {"ok": 0, "missing": 0, "error": 0}
-    method_success_counts = {m: 0 for m in MAIN_METHODS}
+    report_methods = MAIN_METHODS + PRESERVED_SIDECAR_METHODS
+    method_success_counts = {m: 0 for m in report_methods}
 
     for idx, row in examples.iterrows():
         if args.max_rows is not None and counts["ok"] + counts["missing"] + counts["error"] >= args.max_rows:
@@ -346,7 +354,7 @@ def main() -> None:
     print(f"  rows skipped (missing):   {counts['missing']}")
     print(f"  rows failed (error):      {counts['error']}")
     print("  per-method success counts:")
-    for m in MAIN_METHODS:
+    for m in report_methods:
         print(f"    {m:22s}: {method_success_counts[m]}")
 
     if args.dry_run:
