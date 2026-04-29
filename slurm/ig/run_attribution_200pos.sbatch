@@ -14,8 +14,8 @@
 #SBATCH --mail-type=END,FAIL
 
 # 200-positive (gold-similar only) attribution-metrics rerun.
-# The current checked-in bundle contains LaTa + PhilTa. The pipeline is ready
-# for mT5 once Run 2 fixes the attribution layer rule and regenerates the CSV.
+# Run 2 fixed the Run 3 layer contract in scripts/ig/attribution_model_config.py:
+# LaTa L7, PhilTa L1, mT5-base L1. Regenerate the CSV before a three-model run.
 #
 # Stages (chained sequentially in one sbatch):
 #   1) IG + companion artifact NPZs        scripts/_archive/run_phase12e_pair_explanations.py
@@ -112,5 +112,4 @@ echo "Paper table: $TEX_OUT"
 
 # Post-Run-2 example sampler command for a three-model bundle:
 # $PY scripts/ig/sample_positive_test_pairs.py \
-#     --models bowphs/LaTa bowphs/PhilTa google/mt5-base \
-#     --layer_overrides google/mt5-base=<RUN_2_LAYER>
+#     --models bowphs/LaTa bowphs/PhilTa google/mt5-base

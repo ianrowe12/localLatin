@@ -6,9 +6,8 @@ mix produced by the random sampler hides per-bucket attribution behavior; this
 script gives a clean 200-positive sample so attribution-quality metrics are
 computed exclusively on the regime where attribution should be most informative.
 
-Default models remain scoped to LaTa + PhilTa, matching the existing 200-positive
-bundle. mT5 is available by passing ``--models google/mt5-base``; use
-``--layer_overrides`` after Run 2 fixes the attribution layer rule.
+Default models are the Run 3 contract models: LaTa, PhilTa, and mT5-base.
+Their default layers come from ``scripts/ig/attribution_model_config.py``.
 
 Output schema mirrors ``runs/active/ig_examples_200pair/random200_examples.csv``
 exactly so the downstream pipeline (IG NPZ generation, MaRC, persist methods,
@@ -84,7 +83,7 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=20260426)
     ap.add_argument(
         "--models", nargs="*", default=DEFAULT_MODELS,
-        help="Subset of FEATURED_MODELS to sample for. Default: LaTa + PhilTa.",
+        help="Subset of FEATURED_MODELS to sample for. Default: LaTa + PhilTa + mT5-base.",
     )
     ap.add_argument(
         "--layer_overrides",

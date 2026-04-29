@@ -1,8 +1,9 @@
 """Shared model metadata for attribution example generation.
 
-Run 2 will choose the final attribution layer rule. Until then, callers can
-override layers from the command line while reusing one consistent model/D/tau
-metadata table across the positive sampler, random sampler, and PC refit path.
+Run 2 fixed the Run 3 attribution layer contract on 2026-04-29:
+use the train-selected operational retrieval layer, not the recovered-collapse
+diagnostic layer. CLI layer overrides remain available for diagnostics, but
+production Run 3 attribution should use these defaults.
 """
 from __future__ import annotations
 
@@ -19,29 +20,30 @@ METHODS_AVAILABLE = (
     "retrieval_mark",
 )
 
-DEFAULT_MODELS = ["bowphs/LaTa", "bowphs/PhilTa"]
+DEFAULT_MODELS = ["bowphs/LaTa", "bowphs/PhilTa", "google/mt5-base"]
 
 # D=10 universal per the 2026-03-31 meeting decision: abtt_fixed (D=10)
 # matches abtt_optimal across layers, so per-layer D tuning adds no benefit.
-# mT5's layer is deliberately provisional; Run 2 owns the final rule.
+# Layers below are the Run 2 contract:
+#   LaTa L7, PhilTa L1, mT5-base L1.
 FEATURED_MODELS = {
     "bowphs/LaTa": {
         "model_short": "LaTa",
         "model_type": "t5",
-        "layer": 4,
+        "layer": 7,
         "D": 10,
-        "tau": 0.5628140703517588,
-        "baseline_tau": 0.9296482412060302,
-        "abtt_tau": 0.5628140703517588,
+        "tau": 0.5025125628140703,
+        "baseline_tau": 0.9949748743718592,
+        "abtt_tau": 0.5025125628140703,
     },
     "bowphs/PhilTa": {
         "model_short": "PhilTa",
         "model_type": "t5",
-        "layer": 6,
+        "layer": 1,
         "D": 10,
-        "tau": 0.4623115577889447,
-        "baseline_tau": 0.9748743718592964,
-        "abtt_tau": 0.4623115577889447,
+        "tau": 0.4170854271356784,
+        "baseline_tau": 0.8944723618090452,
+        "abtt_tau": 0.4170854271356784,
     },
     "google/mt5-base": {
         "model_short": "mT5-base",
