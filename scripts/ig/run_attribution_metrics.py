@@ -5,8 +5,8 @@ Reads every per-pair NPZ under
 (sufficiency, comprehensiveness, compactness, LOO rank correlation) for every
 attribution method present in the NPZ, separately for {baseline, abtt} ABTT
 variants. Methods are auto-discovered from ``pair_matrix_*_baseline`` key
-prefixes, so when Agent 2.1 adds ``retrieval_mark`` to the artifact NPZs it
-will appear in the table without any code change here.
+prefixes, so ``retrieval_mark``/MaRC sidecars appear in the table whenever
+they have been merged into the artifact NPZs.
 
 In addition to the stored attribution methods, the driver synthesizes two
 diagnostic baselines per pair × variant:
@@ -286,6 +286,7 @@ HEADLINE_LABELS = {
 MODEL_SHORT = {
     "bowphs/LaTa": "LaTa",
     "bowphs/PhilTa": "PhilTa",
+    "google/mt5-base": "mT5-base",
     "sentence-transformers/LaBSE": "LaBSE",
     "Qwen/Qwen3-Embedding-0.6B": "Qwen3-0.6B",
     "KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5": "KaLM-mini",
@@ -295,7 +296,7 @@ MODEL_SHORT = {
 METHOD_DISPLAY_ORDER = (
     "ig", "bertscore", "ot",
     "attention_weighted", "attention_standalone", "dla",
-    "retrieval_mark",  # Agent 2.1 - appears here automatically post-merge
+    "retrieval_mark",
     "random", "inverse",
 )
 METHOD_LABELS = {
@@ -305,7 +306,7 @@ METHOD_LABELS = {
     "attention_weighted": "Att-weighted",
     "attention_standalone": "Att-standalone",
     "dla": "DLA",
-    "retrieval_mark": "RetrievalMarK",
+    "retrieval_mark": "MaRC",
     "random": "\\textit{random}",
     "inverse": "\\textit{inverse}",
 }
@@ -447,11 +448,27 @@ def render_latex(summary: pd.DataFrame, out_path: Path) -> None:
         lines[-1] = r"\bottomrule"
     lines.append(r"\end{tabular}")
 
+    real = summary[~summary["method"].isin(["random", "inverse"])].copy()
+    if real.empty:
+        counts = summary.groupby("model")["n"].max()
+    else:
+        counts = real.groupby("model")["n"].max()
+    model_bits = [
+        f"{MODEL_SHORT.get(model, model)} n={int(n)}" for model, n in counts.items()
+    ]
+    model_phrase = "; ".join(model_bits)
+    decoder_caveat = ""
+    if any("Qwen" in model or "KaLM" in model for model in counts.index):
+        decoder_caveat = (
+            r"For decoder-only models, masking replaces tokens with PAD under "
+            r"the causal mask, which does not fully remove their influence on "
+            r"downstream hidden states; those rows should be interpreted with "
+            r"this caveat. "
+        )
+
     caption = (
-        r"Retrieval-adapted attribution-quality metrics on 80 hand-selected "
-        r"query--candidate pairs from the phase12f visualization set "
-        r"(20 per model; not a random sample of test pairs, so absolute values "
-        r"should not be read as population estimates). "
+        rf"Retrieval-adapted attribution-quality metrics on cached "
+        rf"query--candidate attribution examples ({model_phrase}). "
         r"For each model $\times$ \{baseline, ABTT\} $\times$ method we report: "
         r"\textbf{Suff@25\%}: $S_v(q_{\text{top-25\%}}, c) / S_v(q_{\text{full}}, c)$ "
         r"(higher is better); restricted to pairs with $S_v(q_{\text{full}}, c) \ge 0.05$ "
@@ -462,7 +479,7 @@ def render_latex(summary: pd.DataFrame, out_path: Path) -> None:
         r"$\ge 0.8 \cdot S_v(q_{\text{full}}, c)$ (lower is better). "
         r"\textbf{$\rho_{\text{LOO}}$}: Spearman correlation between $|a|$ and "
         r"single-token leave-one-out $\Delta\cos$ "
-        r"(higher is better; tokens with $|\Delta| < 10^{-4}$ excluded as noise). "
+        r"(higher is better; tokens with $|\Delta| < 10^{-6}$ excluded as noise). "
         r"\textit{random} and \textit{inverse} rows serve as lower- and upper-bound "
         r"sanity checks; a useful method should beat \textit{random} on every metric, "
         r"and \textit{inverse} (using $1 / (\varepsilon + |\textsc{IG}|)$ as the per-token "
@@ -470,11 +487,9 @@ def render_latex(summary: pd.DataFrame, out_path: Path) -> None:
         r"Bolded values mark the best real method per (metric, variant) within each model. "
         r"Cross-variant deltas conflate two effects (ABTT changes both the attribution "
         r"scores and the decision function $\cos(\text{embed}_{\text{ABTT}}(q), \text{embed}_{\text{ABTT}}(c))$ "
-        r"being explained) and should be read as descriptive shifts on this curated "
-        r"set rather than as a measure of fidelity loss caused by ABTT alone. "
-        r"For decoder-only models (here Qwen3-0.6B), masking replaces tokens with PAD "
-        r"under the causal mask, which does not fully remove their influence on downstream "
-        r"hidden states; those rows should be interpreted with this caveat. "
+        r"being explained) and should be read as descriptive shifts on this "
+        r"example set rather than as a measure of fidelity loss caused by ABTT alone. "
+        + decoder_caveat +
         r"\textsc{IG} and \textsc{OT} produce numerically identical rows because the "
         r"\textsc{OT} pair-matrix uses $|\textsc{IG}|$ as transport mass and our "
         r"row-sum-positive reduction recovers the same per-token magnitudes; "
@@ -519,6 +534,8 @@ def parse_args() -> argparse.Namespace:
                    help="Override device (default: cuda if available else cpu).")
     p.add_argument("--dry_run", action="store_true",
                    help="List planned work and exit; do no forward passes.")
+    p.add_argument("--dry_run_require_existing", action="store_true",
+                   help="With --dry_run, fail if planned artifact NPZs are missing.")
     p.add_argument("--skip_existing", action="store_true",
                    help="Skip per-pair JSONs that already exist on disk.")
     p.add_argument("--render_only", action="store_true",
@@ -543,11 +560,26 @@ def main() -> None:
 
     artifacts_root = Path(args.artifacts_root)
     out_root = Path(args.out_root)
-    out_root.mkdir(parents=True, exist_ok=True)
+    if not args.dry_run:
+        out_root.mkdir(parents=True, exist_ok=True)
 
     if args.dry_run:
+        failures: list[str] = []
         for slug, sub in examples.groupby("slug"):
-            print(f"{slug}: {len(sub)} examples")
+            planned = sub
+            if args.max_pairs_per_model is not None:
+                planned = planned.head(args.max_pairs_per_model)
+            print(f"{slug}: {len(planned)} examples")
+            for ex in planned.to_dict(orient="records"):
+                ex_id = int(ex["example_id"])
+                role = str(ex.get("candidate_role", "pair_example"))
+                npz_path = artifacts_root / slug / f"example{ex_id:03d}_{role}.npz"
+                status = "exists" if npz_path.exists() else "missing"
+                print(f"  [DRY] example{ex_id:03d}_{role}.npz {status}: {npz_path}")
+                if args.dry_run_require_existing and not npz_path.exists():
+                    failures.append(f"missing artifact: {npz_path}")
+        if failures:
+            raise SystemExit("Dry run failed:\n" + "\n".join(failures))
         return
 
     all_rows: List[dict] = []

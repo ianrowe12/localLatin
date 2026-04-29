@@ -23,55 +23,13 @@ from pathlib import Path  # noqa: F401 - used below via Path(p).exists()
 import numpy as np
 import pandas as pd
 
-
-# D=10 universal per the 2026-03-31 meeting decision: abtt_fixed (D=10) matches
-# abtt_optimal across layers, so per-layer D tuning adds no benefit. The legacy
-# per-model D values (LaTa=2, LaBSE=1, Qwen3=3) under-cleaned at the dip layers
-# and produced inflated full_cos in the 200-random-pair attribution run
-# (LaTa L4: abtt full_cos 0.985 > baseline 0.926). See
-# docs/analyses/cosine_inflation_investigation.md.
-FEATURED_MODELS = {
-    "bowphs/LaTa": {
-        "model_short": "LaTa",
-        "model_type": "t5",
-        "layer": 4,
-        "D": 10,
-        # tau/baseline_tau/abtt_tau from runs/active/ig_examples/phase12f_examples.csv
-        # NOTE: abtt_tau was fit at D=2; refit needed at D=10. Kept as-is for
-        # diagnostic continuity; downstream metrics regenerate the cosine target
-        # at D=10 regardless.
-        "tau": 0.5628140703517588,
-        "baseline_tau": 0.9296482412060302,
-        "abtt_tau": 0.5628140703517588,
-    },
-    "bowphs/PhilTa": {
-        "model_short": "PhilTa",
-        "model_type": "t5",
-        "layer": 6,
-        "D": 10,
-        "tau": 0.4623115577889447,
-        "baseline_tau": 0.9748743718592964,
-        "abtt_tau": 0.4623115577889447,
-    },
-    "sentence-transformers/LaBSE": {
-        "model_short": "LaBSE",
-        "model_type": "bert",
-        "layer": 12,
-        "D": 10,
-        "tau": 0.5829145728643216,
-        "baseline_tau": 0.9195979899497488,
-        "abtt_tau": 0.5829145728643216,
-    },
-    "Qwen/Qwen3-Embedding-0.6B": {
-        "model_short": "Qwen3-0.6B",
-        "model_type": "decoder",
-        "layer": 23,
-        "D": 10,
-        "tau": 0.5226130653266332,
-        "baseline_tau": 0.984924623115578,
-        "abtt_tau": 0.5226130653266332,
-    },
-}
+from attribution_model_config import (  # noqa: E402
+    DEFAULT_MODELS,
+    FEATURED_MODELS,
+    methods_available_string,
+    model_config,
+    parse_layer_overrides,
+)
 
 
 def sample_pairs_for_model(
@@ -158,10 +116,20 @@ def main() -> None:
     ap.add_argument("--n_per_model", type=int, default=200)
     ap.add_argument("--seed", type=int, default=20260420)
     ap.add_argument(
-        "--models", nargs="*", default=["bowphs/LaTa", "bowphs/PhilTa"],
+        "--models", nargs="*", default=DEFAULT_MODELS,
         help="Subset of FEATURED_MODELS to sample for.",
     )
+    ap.add_argument(
+        "--layer_overrides",
+        nargs="*",
+        default=None,
+        help="Optional MODEL=LAYER overrides, e.g. google/mt5-base=4.",
+    )
     args = ap.parse_args()
+    try:
+        layer_overrides = parse_layer_overrides(args.layer_overrides)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
 
     split = pd.read_csv(args.split_csv)
     test = split[(split["split"] == "test") & split["is_winnable"]].reset_index(drop=True)
@@ -185,7 +153,7 @@ def main() -> None:
     for model_name in args.models:
         if model_name not in FEATURED_MODELS:
             raise SystemExit(f"Unknown model: {model_name}")
-        cfg = FEATURED_MODELS[model_name]
+        cfg = model_config(model_name, layer_overrides)
         pairs = sample_pairs_for_model(
             test,
             n_positive=args.n_per_model // 2,
@@ -213,7 +181,7 @@ def main() -> None:
         ]:
             pairs[col] = np.nan
         pairs["bucket"] = np.where(pairs["gold_similar"] == 1, "rand_similar", "rand_not_similar")
-        pairs["methods_available"] = "ig,bertscore,ot,attention_weighted,dla,attention_standalone,retrieval_mark"
+        pairs["methods_available"] = methods_available_string()
         pairs.insert(0, "example_id", np.arange(1, len(pairs) + 1) + example_id_offset)
         example_id_offset += len(pairs)
         frames.append(pairs)

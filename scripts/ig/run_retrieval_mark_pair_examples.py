@@ -97,6 +97,16 @@ def parse_args() -> argparse.Namespace:
         help="Skip examples whose sidecar NPZ already exists.",
     )
     parser.add_argument(
+        "--dry_run",
+        action="store_true",
+        help="Validate canonical and sidecar paths without loading models or optimizing masks.",
+    )
+    parser.add_argument(
+        "--dry_run_require_existing",
+        action="store_true",
+        help="With --dry_run, fail if canonical NPZs are missing.",
+    )
+    parser.add_argument(
         "--require_cuda",
         action="store_true",
         help="Fail hard if CUDA is not available (for GPU sbatch runs).",
@@ -195,6 +205,33 @@ def main() -> None:
 
     if args.max_examples and args.max_examples > 0:
         examples = examples.head(args.max_examples).reset_index(drop=True)
+
+    if args.dry_run:
+        failures: list[str] = []
+        for row in examples.itertuples(index=False):
+            example_id = int(row.example_id)
+            slug = model_slug(str(row.model_name))
+            src_path = (
+                args.artifacts_in_dir
+                / slug
+                / f"example{example_id:03d}_pair_example.npz"
+            )
+            out_path = (
+                args.artifacts_out_dir
+                / slug
+                / f"example{example_id:03d}_pair_example.npz"
+            )
+            if args.dry_run_require_existing and not src_path.exists():
+                failures.append(f"example {example_id}: missing canonical NPZ: {src_path}")
+            status = "exists" if src_path.exists() else "missing"
+            print(
+                f"[DRY] example {example_id:03d} {slug}: canonical={status} "
+                f"{src_path} -> {out_path}"
+            )
+        if failures:
+            raise SystemExit("Dry run failed:\n" + "\n".join(failures))
+        print(f"Dry run OK for {len(examples)} examples")
+        return
 
     cuda_avail = torch.cuda.is_available()
     device_count = torch.cuda.device_count() if cuda_avail else 0

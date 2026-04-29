@@ -6,11 +6,9 @@ mix produced by the random sampler hides per-bucket attribution behavior; this
 script gives a clean 200-positive sample so attribution-quality metrics are
 computed exclusively on the regime where attribution should be most informative.
 
-Default models are scoped to LaTa + PhilTa, matching Run 1 of the resubmit
-pipeline. ``FEATURED_MODELS`` (layer / D / tau / baseline_tau / abtt_tau) is
-copied verbatim from ``sample_random_test_pairs.py`` so the two scripts stay in
-lockstep; if Agent 1.1's cosine investigation prescribes a different layer,
-update both files in the same commit.
+Default models remain scoped to LaTa + PhilTa, matching the existing 200-positive
+bundle. mT5 is available by passing ``--models google/mt5-base``; use
+``--layer_overrides`` after Run 2 fixes the attribution layer rule.
 
 Output schema mirrors ``runs/active/ig_examples_200pair/random200_examples.csv``
 exactly so the downstream pipeline (IG NPZ generation, MaRC, persist methods,
@@ -25,50 +23,13 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-
-# Copied verbatim from scripts/ig/sample_random_test_pairs.py. Keep in sync.
-FEATURED_MODELS = {
-    "bowphs/LaTa": {
-        "model_short": "LaTa",
-        "model_type": "t5",
-        "layer": 4,
-        "D": 10,
-        # tau/baseline_tau/abtt_tau from runs/active/ig_examples/phase12f_examples.csv
-        "tau": 0.5628140703517588,
-        "baseline_tau": 0.9296482412060302,
-        "abtt_tau": 0.5628140703517588,
-    },
-    "bowphs/PhilTa": {
-        "model_short": "PhilTa",
-        "model_type": "t5",
-        "layer": 6,
-        "D": 10,
-        "tau": 0.4623115577889447,
-        "baseline_tau": 0.9748743718592964,
-        "abtt_tau": 0.4623115577889447,
-    },
-    "sentence-transformers/LaBSE": {
-        "model_short": "LaBSE",
-        "model_type": "bert",
-        "layer": 12,
-        "D": 10,
-        "tau": 0.5829145728643216,
-        "baseline_tau": 0.9195979899497488,
-        "abtt_tau": 0.5829145728643216,
-    },
-    "Qwen/Qwen3-Embedding-0.6B": {
-        "model_short": "Qwen3-0.6B",
-        "model_type": "decoder",
-        "layer": 23,
-        "D": 10,
-        "tau": 0.5226130653266332,
-        "baseline_tau": 0.984924623115578,
-        "abtt_tau": 0.5226130653266332,
-    },
-}
-
-
-DEFAULT_MODELS = ["bowphs/LaTa", "bowphs/PhilTa"]
+from attribution_model_config import (  # noqa: E402
+    DEFAULT_MODELS,
+    FEATURED_MODELS,
+    methods_available_string,
+    model_config,
+    parse_layer_overrides,
+)
 
 
 def _sample_positive(test_meta: pd.DataFrame, n: int, rng: np.random.Generator) -> pd.DataFrame:
@@ -125,7 +86,17 @@ def main() -> None:
         "--models", nargs="*", default=DEFAULT_MODELS,
         help="Subset of FEATURED_MODELS to sample for. Default: LaTa + PhilTa.",
     )
+    ap.add_argument(
+        "--layer_overrides",
+        nargs="*",
+        default=None,
+        help="Optional MODEL=LAYER overrides, e.g. google/mt5-base=4.",
+    )
     args = ap.parse_args()
+    try:
+        layer_overrides = parse_layer_overrides(args.layer_overrides)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
 
     split = pd.read_csv(args.split_csv)
     test = split[(split["split"] == "test") & split["is_winnable"]].reset_index(drop=True)
@@ -146,7 +117,7 @@ def main() -> None:
     for model_name in args.models:
         if model_name not in FEATURED_MODELS:
             raise SystemExit(f"Unknown model: {model_name}")
-        cfg = FEATURED_MODELS[model_name]
+        cfg = model_config(model_name, layer_overrides)
         pairs = _sample_positive(test, args.n_per_model, rng)
         # Deterministic shuffle so artifact filenames don't preserve the sample order.
         pairs = pairs.sample(frac=1.0, random_state=int(rng.integers(0, 2**31))).reset_index(drop=True)
@@ -170,7 +141,7 @@ def main() -> None:
         ]:
             pairs[col] = np.nan
         pairs["bucket"] = "rand_similar"
-        pairs["methods_available"] = "ig,bertscore,ot,attention_weighted,dla,attention_standalone,retrieval_mark"
+        pairs["methods_available"] = methods_available_string()
         pairs.insert(0, "example_id", np.arange(1, len(pairs) + 1) + example_id_offset)
         example_id_offset += len(pairs)
         frames.append(pairs)
