@@ -39,6 +39,7 @@ from scipy.stats import spearmanr
 # discard the actual signal rather than pure noise on those pairs.
 FULL_COS_FLOOR: float = 0.05
 LOO_NOISE_FLOOR: float = 1e-6
+DEFAULT_COMPACTNESS_THRESHOLDS: Tuple[float, ...] = (0.70, 0.80, 0.90, 0.95)
 
 
 # ----------------------------------------------------------------------------
@@ -262,24 +263,48 @@ def compactness(
     ctx: PairContext,
     scores: np.ndarray,
     *,
-    threshold: float = 0.8,
+    threshold: Optional[float] = None,
+    thresholds: Optional[Tuple[float, ...]] = None,
 ) -> Dict[str, float]:
-    """Compactness: smallest fraction k/n such that sufficiency_ratio >= threshold.
+    """Minimum recovery fraction: smallest k/n with sufficiency_ratio >= tau.
 
-    Returns ``compactness@<tau>``. NaN if |full_cos| < FULL_COS_FLOOR (ratio undefined).
-    Returns 1.0 if no k attains the threshold.
+    Returns ``compactness@<tau>`` for each requested tau. This is a
+    sparsity/recovery-at-threshold metric, not MaRC's contiguity regularizer;
+    the key name is kept for compatibility with existing artifacts.
+
+    NaN if |full_cos| < FULL_COS_FLOOR (ratio undefined). Returns 1.0 if no
+    k attains a threshold. When multiple thresholds are requested, all
+    thresholds are computed in one scan over k to avoid repeated model
+    forward passes in the GPU-backed driver.
     """
+    if threshold is not None and thresholds is not None:
+        raise ValueError("pass either threshold or thresholds, not both")
+    if thresholds is None:
+        thresholds = (threshold,) if threshold is not None else DEFAULT_COMPACTNESS_THRESHOLDS
+    thresholds = tuple(float(t) for t in thresholds)
+    out: Dict[str, float] = {f"compactness@{t:.2f}": float("nan") for t in thresholds}
+
     n = ctx.n_q
     full = ctx.full_cos
     if abs(full) < FULL_COS_FLOOR:
-        return {f"compactness@{threshold:.2f}": float("nan")}
+        return out
+
+    remaining = set(thresholds)
 
     for k in range(1, n + 1):
         mask = top_k_mask(scores, k)
         s = float(ctx.eval_masked_cos(mask.astype(np.int64)))
-        if (s / full) >= threshold:
-            return {f"compactness@{threshold:.2f}": k / n}
-    return {f"compactness@{threshold:.2f}": 1.0}
+        ratio = s / full
+        for t in tuple(remaining):
+            if ratio >= t:
+                out[f"compactness@{t:.2f}"] = k / n
+                remaining.remove(t)
+        if not remaining:
+            return out
+
+    for t in remaining:
+        out[f"compactness@{t:.2f}"] = 1.0
+    return out
 
 
 @register("loo_correlation")
@@ -353,7 +378,7 @@ def _self_test() -> None:
 
     suff = sufficiency(ctx, aligned, fractions=(0.10, 0.25, 0.50), compute_aopc=True)
     comp = comprehensiveness(ctx, aligned, fractions=(0.10, 0.25, 0.50), compute_aopc=True)
-    compact = compactness(ctx, aligned, threshold=0.8)
+    compact = compactness(ctx, aligned, thresholds=DEFAULT_COMPACTNESS_THRESHOLDS)
     loo = loo_correlation(ctx, aligned)
 
     # 1. Suff @ k=n must equal 1.0 (full mask).
@@ -369,6 +394,10 @@ def _self_test() -> None:
 
     # 3. Compactness should be small (top-5 of 20 = 0.25) for this construction.
     assert compact["compactness@0.80"] <= 0.30, compact
+    assert set(compact) == {f"compactness@{t:.2f}" for t in DEFAULT_COMPACTNESS_THRESHOLDS}
+    assert compactness(ctx, aligned, threshold=0.8) == {
+        "compactness@0.80": compact["compactness@0.80"]
+    }
 
     # 4. Aligned scores should yield Spearman ~ 1.
     assert loo["loo_rho"] > 0.99, loo

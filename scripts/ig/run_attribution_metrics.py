@@ -21,8 +21,9 @@ ranking matter".
 Outputs:
 
   runs/active/ig_examples/attribution_metrics/<slug>/<example_tag>.json   per pair
-  runs/active/ig_examples/attribution_metrics/summary.csv                 per (model, method, variant)
-  overleaf_drafts/tables/attribution_metrics.tex                          paper-ready table
+  runs/active/ig_examples/attribution_metrics/summary.csv                 wide per (model, method, variant)
+  runs/active/ig_examples/attribution_metrics/summary_sweep_long.csv      long sweep summary
+  overleaf_drafts/tables/attribution_metrics.tex                          headline table
 
 Usage:
   python scripts/ig/run_attribution_metrics.py \\
@@ -37,9 +38,8 @@ import argparse
 import json
 import sys
 import time
-from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
@@ -50,6 +50,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from attribution_metrics import (  # noqa: E402
+    DEFAULT_COMPACTNESS_THRESHOLDS,
+    FULL_COS_FLOOR,
+    LOO_NOISE_FLOOR,
     METHOD_SCORE_REDUCER,
     METRIC_REGISTRY,
     REDUCER_FALLBACK,
@@ -148,7 +151,7 @@ def infer_methods(keys: List[str]) -> List[str]:
 # Per-pair driver
 # ---------------------------------------------------------------------------
 def process_pair(npz_path: Path, model, tokenizer, device: str,
-                 fractions: Tuple[float, ...], compactness_threshold: float,
+                 fractions: Tuple[float, ...], compactness_thresholds: Tuple[float, ...],
                  method_filter: Optional[List[str]],
                  random_seeds: int = 5,
                  compute_aopc: bool = False) -> List[dict]:
@@ -227,14 +230,14 @@ def process_pair(npz_path: Path, model, tokenizer, device: str,
                 stored = stored[:n_q]
             reducer = METHOD_SCORE_REDUCER.get(method, REDUCER_FALLBACK)
             scores = scores_from_pair_matrix(pm[:n_q, :n_c], stored, reducer)
-            rows.append(_eval_one(ctx, method, scores, fractions, compactness_threshold, compute_aopc))
+            rows.append(_eval_one(ctx, method, scores, fractions, compactness_thresholds, compute_aopc))
 
         # Pseudo-baseline: random scores. Emit one row per seed so seed variance
         # propagates into the across-pair std (per statistician audit).
         rng = np.random.default_rng(0)
         for seed in range(random_seeds):
             r = rng.uniform(-1.0, 1.0, size=n_q)
-            rows.append(_eval_one(ctx, "random", r, fractions, compactness_threshold, compute_aopc))
+            rows.append(_eval_one(ctx, "random", r, fractions, compactness_thresholds, compute_aopc))
 
         # Pseudo-baseline: inverse. We want a method whose ranking is the
         # *reverse* of IG (low |IG| ranked highest) AND whose |score| is
@@ -245,13 +248,13 @@ def process_pair(npz_path: Path, model, tokenizer, device: str,
         if ig_key in data.files:
             ig_abs = np.abs(data[ig_key][:n_q].astype(np.float64))
             inv_scores = 1.0 / (1e-9 + ig_abs)
-            rows.append(_eval_one(ctx, "inverse", inv_scores, fractions, compactness_threshold, compute_aopc))
+            rows.append(_eval_one(ctx, "inverse", inv_scores, fractions, compactness_thresholds, compute_aopc))
 
     return rows
 
 
 def _eval_one(ctx: PairContext, method: str, scores: np.ndarray,
-              fractions: Tuple[float, ...], compactness_threshold: float,
+              fractions: Tuple[float, ...], compactness_thresholds: Tuple[float, ...],
               compute_aopc: bool = False) -> dict:
     """Run all registered metrics on one (ctx, scores) pair. Returns a flat row."""
     row: dict = {"method": method, "variant": ctx.variant,
@@ -262,7 +265,7 @@ def _eval_one(ctx: PairContext, method: str, scores: np.ndarray,
         elif name == "comprehensiveness":
             row.update(fn(ctx, scores, fractions=fractions, compute_aopc=compute_aopc))
         elif name == "compactness":
-            row.update(fn(ctx, scores, threshold=compactness_threshold))
+            row.update(fn(ctx, scores, thresholds=compactness_thresholds))
         else:
             row.update(fn(ctx, scores))
     return row
@@ -271,18 +274,75 @@ def _eval_one(ctx: PairContext, method: str, scores: np.ndarray,
 # ---------------------------------------------------------------------------
 # Aggregation + LaTeX
 # ---------------------------------------------------------------------------
-HEADLINE_METRIC_KEYS = (
-    "suff@0.25_ratio",
-    "comp@0.25_ratio",
-    "compactness@0.80",
-    "loo_rho",
-)
-HEADLINE_LABELS = {
-    "suff@0.25_ratio": r"Suff@25\%~$\uparrow$",
-    "comp@0.25_ratio": r"Comp@25\%~$\uparrow$",
-    "compactness@0.80": r"Cmpct@0.8~$\downarrow$",
-    "loo_rho": r"$\rho_{\text{LOO}}$~$\uparrow$",
-}
+def _pct_label(frac: float) -> str:
+    return str(int(round(frac * 100)))
+
+
+def _latex_float(value: float) -> str:
+    if value == 0:
+        return "0"
+    exponent = int(np.floor(np.log10(abs(value))))
+    if abs(exponent) < 3:
+        return f"{value:g}"
+    coeff = value / (10 ** exponent)
+    if np.isclose(coeff, 1.0):
+        return rf"10^{{{exponent}}}"
+    return rf"{coeff:g}\times 10^{{{exponent}}}"
+
+
+def _metric_key(kind: str, value: float) -> str:
+    if kind == "suff":
+        return f"suff@{value:.2f}_ratio"
+    if kind == "comp":
+        return f"comp@{value:.2f}_ratio"
+    if kind == "compactness":
+        return f"compactness@{value:.2f}"
+    raise ValueError(f"unknown metric kind: {kind!r}")
+
+
+def headline_metric_keys(headline_fraction: float,
+                         headline_compactness_threshold: float) -> Tuple[str, ...]:
+    """Global headline columns. The same values apply to every model/method."""
+    return (
+        "loo_rho",
+        _metric_key("suff", headline_fraction),
+        _metric_key("comp", headline_fraction),
+        _metric_key("compactness", headline_compactness_threshold),
+    )
+
+
+def metric_label(metric_key: str) -> str:
+    if metric_key == "loo_rho":
+        return r"$\rho_{\text{LOO}}$~$\uparrow$"
+    if metric_key.startswith("suff@") and metric_key.endswith("_ratio"):
+        frac = float(metric_key.split("@", 1)[1].split("_", 1)[0])
+        return rf"Suff@{_pct_label(frac)}\%~$\uparrow$"
+    if metric_key.startswith("comp@") and metric_key.endswith("_ratio"):
+        frac = float(metric_key.split("@", 1)[1].split("_", 1)[0])
+        return rf"Comp@{_pct_label(frac)}\%~$\uparrow$"
+    if metric_key.startswith("compactness@"):
+        threshold = float(metric_key.split("@", 1)[1])
+        return rf"MinFrac@{threshold:.2f}~$\downarrow$"
+    return metric_key
+
+
+def higher_is_better(metric_key: str) -> bool:
+    return not metric_key.startswith("compactness@")
+
+
+def required_result_keys(fractions: Sequence[float],
+                         compactness_thresholds: Sequence[float]) -> set[str]:
+    keys = {"loo_rho", "loo_p", "loo_n_used", "loo_n_total"}
+    for frac in fractions:
+        keys.update({
+            f"suff@{frac:.2f}_raw",
+            f"suff@{frac:.2f}_ratio",
+            f"comp@{frac:.2f}_drop",
+            f"comp@{frac:.2f}_ratio",
+        })
+    for threshold in compactness_thresholds:
+        keys.add(f"compactness@{threshold:.2f}")
+    return keys
 MODEL_SHORT = {
     "bowphs/LaTa": "LaTa",
     "bowphs/PhilTa": "PhilTa",
@@ -339,19 +399,143 @@ def aggregate(per_pair_rows: List[dict]) -> pd.DataFrame:
     return pd.DataFrame(out_rows)
 
 
-def render_latex(summary: pd.DataFrame, out_path: Path) -> None:
+def aggregate_sweep_long(summary: pd.DataFrame,
+                         fractions: Sequence[float],
+                         compactness_thresholds: Sequence[float]) -> pd.DataFrame:
+    """Return a tidy sweep summary from the wide aggregate table."""
+    rows: List[dict] = []
+    specs: List[Tuple[str, str, float | None]] = [
+        ("rho_LOO", "loo_rho", None),
+    ]
+    for frac in fractions:
+        specs.append(("sufficiency", f"suff@{frac:.2f}_ratio", float(frac)))
+    for frac in fractions:
+        specs.append(("comprehensiveness", f"comp@{frac:.2f}_ratio", float(frac)))
+    for threshold in compactness_thresholds:
+        specs.append(("min_recovery_fraction", f"compactness@{threshold:.2f}", float(threshold)))
+
+    for _, src in summary.iterrows():
+        base = {
+            "model": src["model"],
+            "method": src["method"],
+            "variant": src["variant"],
+            "n": int(src["n"]),
+            "n_q_mean": float(src["n_q_mean"]),
+            "full_cos_mean": float(src["full_cos_mean"]),
+        }
+        for metric, key, threshold in specs:
+            mean_col = f"{key}_mean"
+            if mean_col not in summary.columns:
+                continue
+            rows.append({
+                **base,
+                "metric": metric,
+                "metric_key": key,
+                "threshold": threshold,
+                "mean": float(src[mean_col]) if pd.notna(src[mean_col]) else float("nan"),
+                "std": float(src[f"{key}_std"]) if f"{key}_std" in summary.columns and pd.notna(src[f"{key}_std"]) else float("nan"),
+                "se": float(src[f"{key}_se"]) if f"{key}_se" in summary.columns and pd.notna(src[f"{key}_se"]) else float("nan"),
+                "metric_n": int(src[f"{key}_n"]) if f"{key}_n" in summary.columns and pd.notna(src[f"{key}_n"]) else 0,
+            })
+    return pd.DataFrame(rows)
+
+
+def render_sweep_latex(summary: pd.DataFrame, out_path: Path,
+                       fractions: Sequence[float],
+                       compactness_thresholds: Sequence[float]) -> None:
+    """Render an appendix-oriented table exposing every threshold column."""
+    metric_keys: List[str] = ["loo_rho"]
+    metric_keys.extend(_metric_key("suff", frac) for frac in fractions)
+    metric_keys.extend(_metric_key("comp", frac) for frac in fractions)
+    metric_keys.extend(_metric_key("compactness", threshold) for threshold in compactness_thresholds)
+
+    def fmt(v: float) -> str:
+        if v is None or (isinstance(v, float) and np.isnan(v)):
+            return "--"
+        return f"{v:.3f}"
+
+    lines: List[str] = []
+    lines.append("% Auto-generated by scripts/ig/run_attribution_metrics.py")
+    lines.append("% Edit the script, not this file.")
+    lines.append(r"\begin{table*}[t]")
+    lines.append(r"\centering")
+    lines.append(r"\scriptsize")
+    lines.append(r"\setlength{\tabcolsep}{2pt}")
+    lines.append(r"\resizebox{\textwidth}{!}{%")
+    colspec = "l" + "rr" * len(metric_keys)
+    lines.append(rf"\begin{{tabular}}{{{colspec}}}")
+    lines.append(r"\toprule")
+
+    h1 = ["Method"]
+    for key in metric_keys:
+        h1.append(rf"\multicolumn{{2}}{{c}}{{{metric_label(key)}}}")
+    lines.append(" & ".join(h1) + r" \\")
+    cmid_parts = []
+    for i, _ in enumerate(metric_keys):
+        a = 2 + 2 * i
+        b = 3 + 2 * i
+        cmid_parts.append(rf"\cmidrule(lr){{{a}-{b}}}")
+    lines.append(" ".join(cmid_parts))
+    h2 = [""]
+    for _ in metric_keys:
+        h2.extend(["base", "abtt"])
+    lines.append(" & ".join(h2) + r" \\")
+    lines.append(r"\midrule")
+
+    seen_models = list(dict.fromkeys(summary["model"].tolist()))
+    for model in seen_models:
+        short = MODEL_SHORT.get(model, model)
+        lines.append(rf"\multicolumn{{{1 + 2 * len(metric_keys)}}}{{l}}{{\textit{{{short}}}}} \\")
+        sub = summary[summary["model"] == model]
+        for method in METHOD_DISPLAY_ORDER:
+            if method not in sub["method"].values:
+                continue
+            row_cells = [METHOD_LABELS.get(method, method)]
+            for key in metric_keys:
+                col_mean = f"{key}_mean"
+                for variant in ("baseline", "abtt"):
+                    cell = sub[(sub["method"] == method) & (sub["variant"] == variant)]
+                    if cell.empty or col_mean not in cell.columns:
+                        row_cells.append("--")
+                    else:
+                        row_cells.append(fmt(float(cell.iloc[0][col_mean])))
+            lines.append(" & ".join(row_cells) + r" \\")
+        lines.append(r"\midrule")
+
+    if lines[-1] == r"\midrule":
+        lines[-1] = r"\bottomrule"
+    lines.append(r"\end{tabular}%")
+    lines.append(r"}")
+    fraction_bits = ", ".join(f"{_pct_label(frac)}\\%" for frac in fractions)
+    threshold_bits = ", ".join(f"{threshold:.2f}" for threshold in compactness_thresholds)
+    lines.append(
+        r"\caption{Full attribution metric threshold sweep. "
+        r"$\rho_{\text{LOO}}$ is threshold-free and is reported once; "
+        rf"Sufficiency and Comprehensiveness are shown at $\{{{fraction_bits}}}$; "
+        rf"MinFrac is shown at $\tau \in \{{{threshold_bits}}}$ "
+        r"(stored internally as compactness for compatibility). Higher is better for "
+        r"$\rho_{\text{LOO}}$, Sufficiency, and Comprehensiveness; lower is better for MinFrac. "
+        rf"Ratio metrics use $|S_v(q_{{\text{{full}}}}, c)| \ge {_latex_float(FULL_COS_FLOOR)}$ and "
+        rf"$\rho_{{\text{{LOO}}}}$ excludes tokens with $|\Delta| < {_latex_float(LOO_NOISE_FLOOR)}$.}}"
+    )
+    lines.append(r"\label{tab:attribution_metrics_sweep}")
+    lines.append(r"\end{table*}")
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print(f"Wrote {out_path}")
+
+
+def render_latex(summary: pd.DataFrame, out_path: Path,
+                 headline_fraction: float = 0.25,
+                 headline_compactness_threshold: float = 0.80) -> None:
     """Render the methods × {baseline | abtt} table grouped by model.
 
     Uses booktabs + multicolumn. Bolds the best method per (metric, variant)
     column within each model block. Direction-aware: higher-is-better for
-    sufficiency, comprehensiveness, loo_rho; lower-is-better for compactness.
+    sufficiency, comprehensiveness, loo_rho; lower-is-better for MinFrac.
     """
-    HIGHER_BETTER = {
-        "suff@0.25_ratio": True,
-        "comp@0.25_ratio": True,
-        "compactness@0.80": False,
-        "loo_rho": True,
-    }
+    headline_keys = headline_metric_keys(headline_fraction, headline_compactness_threshold)
 
     def fmt(v: float) -> str:
         if v is None or (isinstance(v, float) and np.isnan(v)):
@@ -368,26 +552,26 @@ def render_latex(summary: pd.DataFrame, out_path: Path) -> None:
 
     # Column spec: method | (baseline abtt) for each of 4 metrics = 1 + 8 = 9 cols.
     # Right-aligned numeric cells for cleaner decimal alignment without siunitx.
-    colspec = "l" + "rr" * len(HEADLINE_METRIC_KEYS)
+    colspec = "l" + "rr" * len(headline_keys)
     lines.append(rf"\begin{{tabular}}{{{colspec}}}")
     lines.append(r"\toprule")
 
     # Header row 1: metric group names spanning 2 cols each.
     h1 = ["Method"]
-    for k in HEADLINE_METRIC_KEYS:
-        h1.append(rf"\multicolumn{{2}}{{c}}{{{HEADLINE_LABELS[k]}}}")
+    for k in headline_keys:
+        h1.append(rf"\multicolumn{{2}}{{c}}{{{metric_label(k)}}}")
     lines.append(" & ".join(h1) + r" \\")
 
     # Header row 2: baseline / abtt under each.
     cmid_parts = []
-    for i, _ in enumerate(HEADLINE_METRIC_KEYS):
+    for i, _ in enumerate(headline_keys):
         # Method col is col 1; metric i has cols 2+2i and 3+2i.
         a = 2 + 2 * i
         b = 3 + 2 * i
         cmid_parts.append(rf"\cmidrule(lr){{{a}-{b}}}")
     lines.append(" ".join(cmid_parts))
     h2 = [""]
-    for _ in HEADLINE_METRIC_KEYS:
+    for _ in headline_keys:
         h2.append("base")
         h2.append("abtt")
     lines.append(" & ".join(h2) + r" \\")
@@ -397,7 +581,7 @@ def render_latex(summary: pd.DataFrame, out_path: Path) -> None:
     seen_models = list(dict.fromkeys(summary["model"].tolist()))
     for model in seen_models:
         short = MODEL_SHORT.get(model, model)
-        lines.append(rf"\multicolumn{{{1 + 2 * len(HEADLINE_METRIC_KEYS)}}}{{l}}{{\textit{{{short}}}}} \\")
+        lines.append(rf"\multicolumn{{{1 + 2 * len(headline_keys)}}}{{l}}{{\textit{{{short}}}}} \\")
 
         sub = summary[summary["model"] == model]
         # Determine bolding: best per (metric, variant) over real methods only.
@@ -405,7 +589,7 @@ def render_latex(summary: pd.DataFrame, out_path: Path) -> None:
                         if m in sub["method"].values and m not in ("random", "inverse")]
         order_key = {m: i for i, m in enumerate(METHOD_DISPLAY_ORDER)}
         best_idx: Dict[Tuple[str, str], str] = {}
-        for k in HEADLINE_METRIC_KEYS:
+        for k in headline_keys:
             for v in ("baseline", "abtt"):
                 col = f"{k}_mean"
                 if col not in sub.columns:
@@ -416,7 +600,7 @@ def render_latex(summary: pd.DataFrame, out_path: Path) -> None:
                     continue
                 # Sort deterministically by display order so ties resolve consistently.
                 cand = cand.assign(_ord=cand["method"].map(order_key)).sort_values("_ord")
-                if HIGHER_BETTER[k]:
+                if higher_is_better(k):
                     best = cand.loc[cand[col].idxmax(), "method"]
                 else:
                     best = cand.loc[cand[col].idxmin(), "method"]
@@ -428,7 +612,7 @@ def render_latex(summary: pd.DataFrame, out_path: Path) -> None:
                 continue
             row_label = METHOD_LABELS.get(method, method)
             row_cells = [row_label]
-            for k in HEADLINE_METRIC_KEYS:
+            for k in headline_keys:
                 col_mean = f"{k}_mean"
                 for v in ("baseline", "abtt"):
                     cell = sub[(sub["method"] == method) & (sub["variant"] == v)]
@@ -469,17 +653,22 @@ def render_latex(summary: pd.DataFrame, out_path: Path) -> None:
     caption = (
         rf"Retrieval-adapted attribution-quality metrics on cached "
         rf"query--candidate attribution examples ({model_phrase}). "
-        r"For each model $\times$ \{baseline, ABTT\} $\times$ method we report: "
-        r"\textbf{Suff@25\%}: $S_v(q_{\text{top-25\%}}, c) / S_v(q_{\text{full}}, c)$ "
-        r"(higher is better); restricted to pairs with $S_v(q_{\text{full}}, c) \ge 0.05$ "
+        r"For each model $\times$ \{baseline, ABTT\} $\times$ method we report one "
+        r"global headline threshold choice: "
+        rf"\textbf{{Suff@{_pct_label(headline_fraction)}\%}}: "
+        rf"$S_v(q_{{\text{{top-{_pct_label(headline_fraction)}\%}}}}, c) / "
+        r"S_v(q_{\text{full}}, c)$ "
+        rf"(higher is better); restricted to pairs with $|S_v(q_{{\text{{full}}}}, c)| \ge {_latex_float(FULL_COS_FLOOR)}$ "
         r"to avoid small-denominator instability. "
-        r"\textbf{Comp@25\%}: relative drop when the top 25\% of tokens are masked "
+        rf"\textbf{{Comp@{_pct_label(headline_fraction)}\%}}: relative drop when the top "
+        rf"{_pct_label(headline_fraction)}\% of tokens are masked "
         r"(higher is better). "
-        r"\textbf{Compact@0.8}: smallest token fraction that recovers "
-        r"$\ge 0.8 \cdot S_v(q_{\text{full}}, c)$ (lower is better). "
+        rf"\textbf{{MinFrac@{headline_compactness_threshold:.2f}}}: smallest token fraction that recovers "
+        rf"$\ge {headline_compactness_threshold:.2f} \cdot S_v(q_{{\text{{full}}}}, c)$ "
+        r"(lower is better; internally stored as compactness for compatibility). "
         r"\textbf{$\rho_{\text{LOO}}$}: Spearman correlation between $|a|$ and "
         r"single-token leave-one-out $\Delta\cos$ "
-        r"(higher is better; tokens with $|\Delta| < 10^{-6}$ excluded as noise). "
+        rf"(higher is better; tokens with $|\Delta| < {_latex_float(LOO_NOISE_FLOOR)}$ excluded as noise). "
         r"\textit{random} and \textit{inverse} rows serve as lower- and upper-bound "
         r"sanity checks; a useful method should beat \textit{random} on every metric, "
         r"and \textit{inverse} (using $1 / (\varepsilon + |\textsc{IG}|)$ as the per-token "
@@ -495,8 +684,8 @@ def render_latex(summary: pd.DataFrame, out_path: Path) -> None:
         r"row-sum-positive reduction recovers the same per-token magnitudes; "
         r"any methodological gap between them shows up only in the pair-matrix "
         r"heatmaps, not in the per-token aggregate. "
-        r"Per-pair rows and the full sweep over fractions $\{0.10, 0.25, 0.50\}$ are in "
-        r"the companion summary CSV."
+        r"Per-pair rows, wide summary columns, and the long sweep summary expose "
+        r"the full threshold grid."
     )
     lines.append(rf"\caption{{{caption}}}")
     lines.append(r"\label{tab:attribution_metrics}")
@@ -526,7 +715,18 @@ def parse_args() -> argparse.Namespace:
                    help="Restrict to these method names (default: auto-detect from NPZ).")
     p.add_argument("--sufficiency_fractions", default="0.10,0.25,0.50",
                    help="Comma-separated fractions for suff/comp sweeps.")
-    p.add_argument("--compactness_threshold", type=float, default=0.8)
+    p.add_argument("--compactness_thresholds",
+                   default=",".join(f"{t:.2f}" for t in DEFAULT_COMPACTNESS_THRESHOLDS),
+                   help="Comma-separated thresholds for MinFrac/compactness sweeps.")
+    p.add_argument("--compactness_threshold", type=float, default=None,
+                   help="Backward-compatible single-threshold alias. When provided, "
+                        "it overrides --compactness_thresholds.")
+    p.add_argument("--headline_fraction", type=float, default=0.25,
+                   help="Global Suff/Comp fraction used in the headline TEX table.")
+    p.add_argument("--headline_compactness_threshold", type=float, default=0.80,
+                   help="Global MinFrac threshold used in the headline TEX table.")
+    p.add_argument("--sweep_tex_out", default=None,
+                   help="Optional appendix-style TEX table exposing the full sweep.")
     p.add_argument("--max_pairs_per_model", type=int, default=None)
     p.add_argument("--half_precision", action="store_true")
     p.add_argument("--trust_remote_code", action="store_true")
@@ -536,6 +736,8 @@ def parse_args() -> argparse.Namespace:
                    help="List planned work and exit; do no forward passes.")
     p.add_argument("--dry_run_require_existing", action="store_true",
                    help="With --dry_run, fail if planned artifact NPZs are missing.")
+    p.add_argument("--require_artifacts", action="store_true",
+                   help="Fail during metric computation if any planned artifact NPZ is missing.")
     p.add_argument("--skip_existing", action="store_true",
                    help="Skip per-pair JSONs that already exist on disk.")
     p.add_argument("--render_only", action="store_true",
@@ -546,9 +748,21 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
+def parse_float_tuple(raw: str, *, name: str) -> Tuple[float, ...]:
+    vals = tuple(float(x.strip()) for x in raw.split(",") if x.strip())
+    if not vals:
+        raise ValueError(f"{name} must contain at least one value")
+    return vals
+
+
 def main() -> None:
     args = parse_args()
-    fractions = tuple(float(x) for x in args.sufficiency_fractions.split(","))
+    fractions = parse_float_tuple(args.sufficiency_fractions, name="--sufficiency_fractions")
+    if args.compactness_threshold is not None:
+        compactness_thresholds = (float(args.compactness_threshold),)
+    else:
+        compactness_thresholds = parse_float_tuple(args.compactness_thresholds, name="--compactness_thresholds")
+    required_keys = required_result_keys(fractions, compactness_thresholds)
     device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
 
     examples = pd.read_csv(args.examples_csv)
@@ -576,7 +790,7 @@ def main() -> None:
                 npz_path = artifacts_root / slug / f"example{ex_id:03d}_{role}.npz"
                 status = "exists" if npz_path.exists() else "missing"
                 print(f"  [DRY] example{ex_id:03d}_{role}.npz {status}: {npz_path}")
-                if args.dry_run_require_existing and not npz_path.exists():
+                if (args.dry_run_require_existing or args.require_artifacts) and not npz_path.exists():
                     failures.append(f"missing artifact: {npz_path}")
         if failures:
             raise SystemExit("Dry run failed:\n" + "\n".join(failures))
@@ -607,20 +821,25 @@ def main() -> None:
                 example_tag = f"example{ex_id:03d}_{role}"
                 npz_path = artifacts_root / slug / f"{example_tag}.npz"
                 if not npz_path.exists():
-                    print(f"  [skip] missing NPZ: {npz_path}")
+                    msg = f"missing NPZ: {npz_path}"
+                    if args.require_artifacts:
+                        raise FileNotFoundError(msg)
+                    print(f"  [skip] {msg}")
                     continue
                 json_path = slug_dir / f"{example_tag}.json"
                 if args.skip_existing and json_path.exists():
-                    print(f"  [skip-existing] {example_tag}")
                     with open(json_path) as f:
                         cached = json.load(f)
-                    all_rows.extend(cached)
-                    continue
+                    if cached and all(required_keys <= set(row) for row in cached):
+                        print(f"  [skip-existing] {example_tag}")
+                        all_rows.extend(cached)
+                        continue
+                    print(f"  [recompute] {example_tag}: cached JSON lacks requested sweep keys")
                 t_pair = time.time()
                 rows = process_pair(
                     npz_path, model, tokenizer, device,
                     fractions=fractions,
-                    compactness_threshold=args.compactness_threshold,
+                    compactness_thresholds=compactness_thresholds,
                     method_filter=args.methods,
                     compute_aopc=args.compute_aopc,
                 )
@@ -640,6 +859,8 @@ def main() -> None:
         # Load existing per-pair JSONs.
         for json_path in sorted(out_root.glob("*/*.json")):
             cached = json.loads(json_path.read_text())
+            if args.require_artifacts and cached and not all(required_keys <= set(row) for row in cached):
+                raise ValueError(f"cached JSON lacks requested sweep keys: {json_path}")
             all_rows.extend(cached)
         print(f"Loaded {len(all_rows)} cached rows from {out_root}")
 
@@ -652,7 +873,19 @@ def main() -> None:
     summary.to_csv(summary_csv, index=False)
     print(f"Wrote {summary_csv} ({len(summary)} rows)")
 
-    render_latex(summary, Path(args.tex_out))
+    summary_long = aggregate_sweep_long(summary, fractions, compactness_thresholds)
+    summary_long_csv = out_root / "summary_sweep_long.csv"
+    summary_long.to_csv(summary_long_csv, index=False)
+    print(f"Wrote {summary_long_csv} ({len(summary_long)} rows)")
+
+    render_latex(
+        summary,
+        Path(args.tex_out),
+        headline_fraction=args.headline_fraction,
+        headline_compactness_threshold=args.headline_compactness_threshold,
+    )
+    if args.sweep_tex_out:
+        render_sweep_latex(summary, Path(args.sweep_tex_out), fractions, compactness_thresholds)
 
 
 if __name__ == "__main__":
