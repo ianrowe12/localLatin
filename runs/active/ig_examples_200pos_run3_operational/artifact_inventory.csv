@@ -1,0 +1,4 @@
+model_name,model_slug,expected_examples,examples_csv_rows,layer_values,d_values,canonical_npz_present,canonical_npz_missing,retrieval_mark_sidecar_present,retrieval_mark_sidecar_missing,metric_json_present,metric_json_missing,pc_path,pc_exists
+bowphs/LaTa,bowphs_LaTa,200,200,7,10,200,0,200,0,200,0,runs/active/ig_examples_200pos_run3_operational/pcs/bowphs_LaTa/layer7_pcs.npz,True
+bowphs/PhilTa,bowphs_PhilTa,200,200,1,10,200,0,200,0,200,0,runs/active/ig_examples_200pos_run3_operational/pcs/bowphs_PhilTa/layer1_pcs.npz,True
+google/mt5-base,google_mt5-base,200,200,1,10,200,0,200,0,200,0,runs/active/ig_examples_200pos_run3_operational/pcs/google_mt5-base/layer1_pcs.npz,True

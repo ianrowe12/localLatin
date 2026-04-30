@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "created_at_utc": "2026-04-29T20:52:53.351388+00:00",
+  "script": "scripts/ig/build_attribution_run_manifest.py",
+  "examples_csv": "runs/active/ig_examples_200pos_run3_operational/smoke/positive2_examples.csv",
+  "pc_root": "runs/active/ig_examples_200pos_run3_operational/pcs",
+  "artifacts_root": "runs/active/ig_examples_200pos_run3_operational/smoke/artifacts",
+  "retrieval_mark_root": "runs/active/ig_examples_200pos_run3_operational/smoke/retrieval_mark/artifacts",
+  "metrics_root": "runs/active/ig_examples_200pos_run3_operational/smoke/attribution_metrics",
+  "expected_models": [
+    "bowphs/LaTa",
+    "bowphs/PhilTa",
+    "google/mt5-base"
+  ],
+  "expected_n_per_model": 2,
+  "required_methods": [
+    "ig",
+    "retrieval_mark"
+  ],
+  "variants": [
+    "baseline",
+    "abtt"
+  ],
+  "pc_files": {
+    "bowphs_LaTa": {
+      "path": "runs/active/ig_examples_200pos_run3_operational/pcs/bowphs_LaTa/layer7_pcs.npz",
+      "exists": true,
+      "pcs_shape": [
+        10,
+        768
+      ],
+      "mean_vec_shape": [
+        768
+      ]
+    },
+    "bowphs_PhilTa": {
+      "path": "runs/active/ig_examples_200pos_run3_operational/pcs/bowphs_PhilTa/layer1_pcs.npz",
+      "exists": true,
+      "pcs_shape": [
+        10,
+        768
+      ],
+      "mean_vec_shape": [
+        768
+      ]
+    },
+    "google_mt5-base": {
+      "path": "runs/active/ig_examples_200pos_run3_operational/pcs/google_mt5-base/layer1_pcs.npz",
+      "exists": true,
+      "pcs_shape": [
+        10,
+        768
+      ],
+      "mean_vec_shape": [
+        768
+      ]
+    }
+  },
+  "summary": {
+    "path": "runs/active/ig_examples_200pos_run3_operational/smoke/attribution_metrics/summary.csv",
+    "exists": true,
+    "rows": 54,
+    "models": [
+      "bowphs/LaTa",
+      "bowphs/PhilTa",
+      "google/mt5-base"
+    ],
+    "methods": [
+      "attention_standalone",
+      "attention_weighted",
+      "bertscore",
+      "dla",
+      "ig",
+      "inverse",
+      "ot",
+      "random",
+      "retrieval_mark"
+    ],
+    "variants": [
+      "abtt",
+      "baseline"
+    ]
+  },
+  "inventory_csv": "runs/active/ig_examples_200pos_run3_operational/smoke/artifact_inventory.csv",
+  "artifact_method_errors": 0,
+  "warnings": [],
+  "errors": []
+}
