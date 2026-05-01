@@ -1,0 +1,39 @@
+{
+  "source_rows": 54,
+  "models_present": [
+    "bowphs/LaTa",
+    "bowphs/PhilTa",
+    "google/mt5-base"
+  ],
+  "methods_present": [
+    "attention_standalone",
+    "attention_weighted",
+    "bertscore",
+    "dla",
+    "ig",
+    "inverse",
+    "ot",
+    "random",
+    "retrieval_mark"
+  ],
+  "required_metric_keys": [
+    "loo_rho",
+    "suff@0.10_ratio",
+    "suff@0.25_ratio",
+    "suff@0.50_ratio",
+    "comp@0.10_ratio",
+    "comp@0.25_ratio",
+    "comp@0.50_ratio",
+    "compactness@0.70",
+    "compactness@0.80",
+    "compactness@0.90",
+    "compactness@0.95"
+  ],
+  "missing_mean_columns": [
+    "compactness@0.70_mean",
+    "compactness@0.90_mean",
+    "compactness@0.95_mean"
+  ],
+  "missing_model_method_variant_cells": [],
+  "complete": false
+}
