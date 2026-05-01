@@ -20,7 +20,7 @@ found in the 2026-04-26 cosine investigation (see
 
 This script refits PCs from the canonical TRAIN embeddings using the same
 mean-pool path that ``run_attribution_metrics.forward_pooled`` produces,
-and overwrites the PC file at the path the IG NPZ generator reads from.
+and writes the PC file at the path the IG NPZ generator reads from.
 
 Default usage matches the 200-pair pipeline (CANON dataset, phase9 split,
 encoder_bases cache)::
@@ -33,6 +33,12 @@ For the canon_labelled / resubmit pipeline use::
         --bases_root runs/active/resubmit_bases/phase9_bases \\
         --pooling hidden_mean_tokempty \\
         --split_csv runs/active/resubmit/data/phase_resubmit_split.csv
+
+For Run 3 three-model attribution, prefer an active-run PC root so the
+operational-layer PCs are not confused with older meeting artifacts::
+
+    python scripts/ig/refit_pcs_for_attribution.py \\
+        --pc_root runs/active/ig_examples_200pos_run3_operational/pcs
 
 After running, ``run_phase12e_pair_explanations.py`` will load 10 PCs
 (line 229 slices ``pc_data["pcs"][:d_value]``).
@@ -91,8 +97,12 @@ def refit_one(
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--slugs", nargs="+", default=["bowphs_LaTa", "bowphs_PhilTa"],
-                    help="model slugs to refit (known attribution model slugs)")
+    ap.add_argument(
+        "--slugs",
+        nargs="+",
+        default=["bowphs_LaTa", "bowphs_PhilTa", "google_mt5-base"],
+        help="model slugs to refit (known attribution model slugs)",
+    )
     ap.add_argument("--bases_root",
                     default="runs/active/encoder_bases",
                     help="Default matches the canon (phase9) cache used by the "
