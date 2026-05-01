@@ -236,14 +236,14 @@ We evaluate six pre-trained models from three architecture families:
 \item \textbf{LaTa}: a T5-based seq2seq model pre-trained on Latin \citep{riemenschneider2023lata}. We extract encoder hidden states (12 transformer blocks).
 \item \textbf{PhilTa}: a philologically-oriented variant of LaTa, also T5-based \citep{riemenschneider2023lata}.
 \item \textbf{LaBSE}: a language-agnostic BERT sentence encoder covering 109 languages \citep{feng2022labse} (12 encoder layers).
-\item \textbf{mt5-base}: a multilingual T5 encoder-decoder \citep{xue2021mt5} (12 encoder layers).
+\item \textbf{mT5-base}: a multilingual T5 encoder-decoder \citep{xue2021mt5} (12 encoder layers).
 \item \textbf{Qwen3-0.6B}: a multilingual decoder-only embedding model (28 layers) \citep{qwen3embedding2025}.
 \item \textbf{KaLM-mini}: a multilingual decoder-only embedding model (24 layers) \citep{kalm2025embedding}.
 \end{itemize}
 
 \subsection{Embedding Extraction}
 
-We extract hidden-state representations from every transformer block, starting at layer 1 and ending at the final block, while skipping layer 0, the static embedding table. LaTa, PhilTa, LaBSE, and mt5-base each contribute 12 layers. Qwen3-0.6B contributes 28, and KaLM-mini contributes 24. Token representations at each layer are then pooled into a single sentence vector, either by plain mean pooling or by SIF weighting. For the decoder-only models, last-token pooling is another natural choice; we compare it against mean pooling under ABTT post-processing across all six models in Appendix~\ref{app:lasttok}.
+We extract hidden-state representations from every transformer block, starting at layer 1 and ending at the final block, while skipping layer 0, the static embedding table. LaTa, PhilTa, LaBSE, and mT5-base each contribute 12 layers. Qwen3-0.6B contributes 28, and KaLM-mini contributes 24. Token representations at each layer are then pooled into a single sentence vector, either by plain mean pooling or by SIF weighting. For the decoder-only models, last-token pooling is another natural choice; we compare it against mean pooling under ABTT post-processing across all six models in Appendix~\ref{app:lasttok}.
 
 For the paper-facing pooling baseline, we remove only tokenizer artifacts with no lexical content, such as whitespace, padding, or tokenizer-prefix-only tokens. We keep punctuation and numerals in the pooled representations. In the explanation figures, though, we always show the original decoded tokens rather than filtered display tokens.
 
@@ -280,13 +280,13 @@ where $\tilde{\mathbf{z}}_q(\mathbf{m}) = \mathrm{pool}(E_{>0}(\mathrm{diag}(\ma
 \input{tables/taskA_main}
 \twocolumn
 
-Table~\ref{tab:taskA_main} reports per-layer Task~A pairwise metrics for the three headline models (LaTa, PhilTa, mT5-base), comparing the uncorrected \texttt{baseline} (mean pooling) against \texttt{abtt\_optimal} (ABTT with $D$ tuned per layer on the train split, no SIF weighting). Both AUROC and cosine gap are read off the test n$\times$n cosine matrix without any threshold. Bolded rows mark each model's best layer by ABTT AUROC. The two columns drift apart sharply in the middle layers of the Latin T5 encoders (LaTa, PhilTa) and in \texttt{mt5-base}, and much less in LaBSE, Qwen3-0.6B, and KaLM-mini (Appendix~\ref{app:per_layer_extra}, Table~\ref{tab:taskA_appendix}). SIF-conditioned alternatives (\texttt{sif\_only}, \texttt{sif\_abtt\_fixed}, \texttt{sif\_abtt\_optimal}) are reported in Appendix~\ref{app:sif_variants}. The remainder of this section unpacks where these numbers come from layer by layer.
+Table~\ref{tab:taskA_main} reports per-layer Task~A pairwise metrics for the three headline models (LaTa, PhilTa, mT5-base), comparing the uncorrected \texttt{baseline} (mean pooling) against \texttt{abtt\_optimal} (ABTT with $D$ tuned per layer on the train split, no SIF weighting). Both AUROC and cosine gap are read off the test n$\times$n cosine matrix without any threshold. Bolded rows mark each model's best layer by ABTT AUROC. The two columns drift apart sharply in the middle layers of the Latin T5 encoders (LaTa, PhilTa) and in \texttt{mT5-base}, and much less in LaBSE, Qwen3-0.6B, and KaLM-mini (Appendix~\ref{app:per_layer_extra}, Table~\ref{tab:taskA_appendix}). SIF-conditioned alternatives (\texttt{sif\_only}, \texttt{sif\_abtt\_fixed}, \texttt{sif\_abtt\_optimal}) are reported in Appendix~\ref{app:sif_variants}. The remainder of this section unpacks where these numbers come from layer by layer.
 
 \subsection{The Mid-Layer Dip}
 
 The main result shows up immediately in the layerwise plots. Baseline mean-pooled embeddings from LaTa and PhilTa collapse in the middle encoder layers. LaTa drops from strong early-layer AUCROC to below 0.5, which is chance, and PhilTa follows almost the same path. Both recover somewhat by the final layer.
 
-LaBSE and mt5-base do not show the same kind of collapse, and even their weakest layers remain well above chance. Qwen3-0.6B and KaLM-mini also vary much less across depth, which fits their decoder-only architecture.
+LaBSE and mT5-base do not show the same kind of collapse, and even their weakest layers remain well above chance. Qwen3-0.6B and KaLM-mini also vary much less across depth, which fits their decoder-only architecture.
 
 \begin{figure*}[t]
 \centering
@@ -316,7 +316,7 @@ The cosine-gap plots tell the same story in a more compact way. In LaTa and Phil
 
 \subsection{Cluster Geometry}
 
-Cosine-gap and AUCROC curves summarize separability in aggregate. Two-dimensional projections make the geometric effect of ABTT visible directly. Figures~\ref{fig:tsne} and~\ref{fig:umap} show t-SNE~\citep{vandermaaten2008tsne} and UMAP~\citep{mcinnes2018umap} embeddings of the 1{,}705 labelled fragments at each of three representative models' best layer, comparing mean-pooled \texttt{baseline} to pure \texttt{ABTT} (no SIF, $D{=}10$). To isolate the geometric signal, we plot only the six most-populated directories (sizes 8--10); the remaining winnable fragments and singletons are suppressed. Under baseline, colored points from different directories often bleed into one another. Under ABTT, same-color fragments consistently collapse onto tight, well-separated clusters; the effect is strongest on \texttt{mt5-base}, where baseline silhouette is negative on both projections and ABTT brings it above $0.2$. The pattern holds across both projection algorithms, indicating that the tightening reflects the post-processed embedding geometry rather than an artifact of either dimensionality-reduction method. The remaining three models (LaBSE, Qwen3-0.6B, KaLM-mini) show the same pattern and are reported in Appendix~\ref{app:cluster_geometry}.
+Cosine-gap and AUCROC curves summarize separability in aggregate. Two-dimensional projections make the geometric effect of ABTT visible directly. Figures~\ref{fig:tsne} and~\ref{fig:umap} show t-SNE~\citep{vandermaaten2008tsne} and UMAP~\citep{mcinnes2018umap} embeddings of the 1{,}705 labelled fragments at each of three representative models' best layer, comparing mean-pooled \texttt{baseline} to pure \texttt{ABTT} (no SIF, $D{=}10$). To isolate the geometric signal, we plot only the six most-populated directories (sizes 8--10); the remaining winnable fragments and singletons are suppressed. Under baseline, colored points from different directories often bleed into one another. Under ABTT, same-color fragments consistently collapse onto tight, well-separated clusters; the effect is strongest on \texttt{mT5-base}, where baseline silhouette is negative on both projections and ABTT brings it above $0.2$. The pattern holds across both projection algorithms, indicating that the tightening reflects the post-processed embedding geometry rather than an artifact of either dimensionality-reduction method. The remaining three models (LaBSE, Qwen3-0.6B, KaLM-mini) show the same pattern and are reported in Appendix~\ref{app:cluster_geometry}.
 
 \begin{figure*}[!t]
 \centering
@@ -354,10 +354,10 @@ PhilTa     & 90.0 $\pm$ 0.9 & 95.7 $\pm$ 0.4 & 96.9 $\pm$ 0.4 & 97.4 $\pm$ 0.3 &
 LaBSE      & 90.4 $\pm$ 0.8 & 95.5 $\pm$ 0.4 & 96.4 $\pm$ 0.3 & 97.1 $\pm$ 0.5 & 97.7 $\pm$ 0.4 \\
 Qwen3-0.6B & 90.3 $\pm$ 0.6 & 95.5 $\pm$ 0.5 & 96.8 $\pm$ 0.3 & 97.2 $\pm$ 0.5 & 97.4 $\pm$ 0.4 \\
 KaLM-mini  & 89.4 $\pm$ 0.5 & 95.1 $\pm$ 0.4 & 96.4 $\pm$ 0.2 & 96.9 $\pm$ 0.3 & 97.3 $\pm$ 0.4 \\
-mt5-base   & 89.8 $\pm$ 0.4 & 95.6 $\pm$ 0.5 & 96.6 $\pm$ 0.3 & 96.9 $\pm$ 0.2 & 97.2 $\pm$ 0.2 \\
+mT5-base   & 89.8 $\pm$ 0.4 & 95.6 $\pm$ 0.5 & 96.6 $\pm$ 0.3 & 96.9 $\pm$ 0.2 & 97.2 $\pm$ 0.2 \\
 \bottomrule
 \end{tabular}
-\caption{Cumulative top-$K$ accuracy for Task B across the six models, reported as mean $\pm$ standard deviation over $M=5$ query/reference reseedings at a fixed v2 train/test split. Each cell gives the percentage of test queries whose labeled directory appears within the model's top~$K$ options at its best layer/method configuration. All models exceed 89\% by Top-1 and 95\% by Top-2. Only ABTT post-processing is reported in the main paper; SIF-only, PCA whitening, and SIF+ABTT are reported in the appendix.}
+\caption{Cumulative top-$K$ accuracy for Task B across the six models, reported as mean $\pm$ standard deviation over $M=5$ query/reference reseedings at a fixed v2 train/test split. Each cell gives the percentage of test queries whose labeled directory appears within the model's top~$K$ options at its best layer/method configuration. All models exceed 89\% by Top-1 and 95\% by Top-2. This variance-aware table uses the SIF+ABTT configurations available in the multi-seed sweep; the pure-ABTT top-$k$ ranking view is reported per layer on the single-seed v2 split in Tables~\ref{tab:taskB_ranking_main} and~\ref{tab:taskB_ranking_appendix}.}
 \label{tab:taskb}
 \end{table*}
 
@@ -403,7 +403,7 @@ Baseline and ABTT variants differ in which content positions retain non-trivial 
 
 PCA whitening has worked well for English sentence similarity \citep{su2021whitening, huang2021whiteningbert}, but it performs poorly here. A plausible reason is that whitening removes variance that still helps separate equivalent from non-equivalent Latin legal passages. In this corpus, the original variance structure seems to carry useful signal rather than just noise.
 
-The depth profiles also differ by architecture. The strongest dip appears in the two Latin T5 encoders. mt5-base shows a milder version of the same pattern, and LaBSE plus the decoder-only models vary much less across depth. Architecture and pre-training objective are the most likely reasons. After ABTT, those differences matter less in practice because the weak middle layers become much more usable. It also reduces the need to hunt for a narrow ``good'' layer band before retrieval.
+The depth profiles also differ by architecture. The strongest dip appears in the two Latin T5 encoders. mT5-base shows a milder version of the same pattern, and LaBSE plus the decoder-only models vary much less across depth. Architecture and pre-training objective are the most likely reasons. After ABTT, those differences matter less in practice because the weak middle layers become much more usable. It also reduces the need to hunt for a narrow ``good'' layer band before retrieval.
 
 We also tested SIF-weighted pooling and whitening as simpler alternatives. They can help in individual cases, but neither produces the same consistent repair across models and layers. Mean pooling plus ABTT remains the safer default for this retrieval pipeline.
 
