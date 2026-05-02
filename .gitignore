@@ -1,4 +1,8 @@
-runs/
+runs/*
+!runs/active/
+runs/active/*
+!runs/active/ig_examples_200pos_run3_operational/
+!runs/active/ig_examples_200pos_run3_operational/**
 canon/
 data/canon/
 data/canon_labelled/
