@@ -1,0 +1,13 @@
+model,method,projection,silhouette,n_points
+LaTa,baseline,tsne,0.3363430202007293,1160
+LaTa,abtt_fixed,tsne,0.4879707098007202,1160
+PhilTa,baseline,tsne,0.4773913621902466,1160
+PhilTa,abtt_fixed,tsne,0.564880907535553,1160
+mT5-base,baseline,tsne,-0.2689956724643707,1160
+mT5-base,abtt_fixed,tsne,0.4779857099056244,1160
+LaTa,baseline,umap,0.07069682329893112,1160
+LaTa,abtt_fixed,umap,0.21933244168758392,1160
+PhilTa,baseline,umap,0.13328570127487183,1160
+PhilTa,abtt_fixed,umap,0.3026900589466095,1160
+mT5-base,baseline,umap,-0.43702414631843567,1160
+mT5-base,abtt_fixed,umap,0.20391561090946198,1160

@@ -217,11 +217,32 @@ def write_missing_report(
     missing_columns = [col for col in required_mean_columns(keys) if col not in summary.columns]
     present = set(zip(summary["model"], summary["method"], summary["variant"]))
     missing_cells = []
+    missing_metric_cells = []
     for model in models:
         for method in methods:
             for variant in VARIANTS:
                 if (model, method, variant) not in present:
                     missing_cells.append({"model": model, "method": method, "variant": variant})
+                    continue
+                row = summary[
+                    (summary["model"] == model)
+                    & (summary["method"] == method)
+                    & (summary["variant"] == variant)
+                ].iloc[0]
+                for key in keys:
+                    mean_col = f"{key}_mean"
+                    n_col = f"{key}_n"
+                    if mean_col not in summary.columns:
+                        continue
+                    metric_n = int(row[n_col]) if n_col in summary.columns and pd.notna(row[n_col]) else 0
+                    if pd.isna(row[mean_col]) or metric_n <= 0:
+                        missing_metric_cells.append({
+                            "model": model,
+                            "method": method,
+                            "variant": variant,
+                            "metric_key": key,
+                            "reason": "missing_mean_or_zero_n",
+                        })
 
     report = {
         "source_rows": int(len(summary)),
@@ -230,7 +251,8 @@ def write_missing_report(
         "required_metric_keys": list(keys),
         "missing_mean_columns": missing_columns,
         "missing_model_method_variant_cells": missing_cells,
-        "complete": not missing_columns and not missing_cells,
+        "missing_metric_cells": missing_metric_cells,
+        "complete": not missing_columns and not missing_cells and not missing_metric_cells,
     }
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
@@ -287,7 +309,11 @@ def main() -> None:
         methods=MAIN_METHODS,
     )
     if args.strict and not report["complete"]:
-        missing = ", ".join(report["missing_mean_columns"]) or "model/method/variant cells"
+        missing = ", ".join(report["missing_mean_columns"])
+        if not missing and report["missing_metric_cells"]:
+            missing = "metric cells with missing means or metric_n=0"
+        if not missing:
+            missing = "model/method/variant cells"
         raise SystemExit(f"Appendix sweep is incomplete: missing {missing}")
 
     fraction_bits = ", ".join(f"{_pct_label(frac)}\\%" for frac in fractions)
