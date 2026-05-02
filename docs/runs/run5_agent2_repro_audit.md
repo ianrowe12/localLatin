@@ -134,10 +134,10 @@ active Run 3 generated artifacts.
 
 ## Remaining Risks For Rewrite
 
-- Do not treat a clean source checkout as containing the active Run 3 heavy
-  attribution artifacts; the regenerated PC, NPZ, MaRC sidecar, and per-pair
-  metric JSON artifacts are generated/ignored outputs that must be restored or
-  regenerated before `--require_complete` can pass in a fresh checkout.
+- The active Run 3 heavy attribution artifacts are intentionally tracked as of
+  commit `e57b714`; a clean checkout of `main` should contain the PC, NPZ, MaRC
+  sidecar, and per-pair metric JSON artifacts needed for
+  `build_attribution_run_manifest.py --require_complete`.
 - Do not use older 20-pair, 200-random, 200-positive two-model, LaTa L4, or
   PhilTa L6 artifacts as current headline evidence.
 - Keep rho_LOO as the primary faithfulness result; ERASER-style sufficiency,
