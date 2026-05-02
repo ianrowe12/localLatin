@@ -1,6 +1,6 @@
 # Run 5 Agent 2 Reproducibility Audit
 
-Updated: 2026-05-01
+Updated: 2026-05-02 01:33 CDT
 
 ## Scope
 
@@ -16,8 +16,8 @@ avoidance of superseded 200-random or two-model-only attribution artifacts.
 | Main attribution table traceability | Pass | `overleaf_drafts/tables/attribution_metrics_main.tex` rebuilds from `runs/active/ig_examples_200pos_run3_operational/attribution_metrics/summary.csv` via `scripts/ig/build_main_attribution_artifacts.py`. |
 | Main attribution model coverage | Pass | Source summary has 54 rows and includes LaTa, PhilTa, and mT5-base; the main IG/MaRC slice has all 12 model-method-variant rows with n=200 per row. |
 | Attribution metric directionality | Pass | Caption states rho_LOO, Suff@25, and Comp@25 are higher-is-better, while MinFrac@0.80 is lower-is-better; bolding follows those directions. Verified rho_LOO improves in all 6/6 model-method cells. |
-| Attribution compactness sweep | Intentional external-artifact limitation | The metric code supports `compactness@0.70`, `@0.80`, `@0.90`, and `@0.95`, but this checkout lacks the active Run 3 NPZ artifacts and per-pair metric JSONs needed to recompute thresholds other than 0.80. The checked-in `summary.csv` is aggregate-only; the missing thresholds cannot be reconstructed from it without fabricating values. |
-| Cached attribution artifact receipt | Intentional external-artifact limitation | `build_attribution_run_manifest.py --require_complete` fails in this checkout because `runs/active/ig_examples_200pos_run3_operational/{pcs,artifacts,retrieval_mark/artifacts}` are ignored heavy generated artifacts and are not materialized. The checked-in `manifest.json`/`artifact_inventory.csv` record the completed GPU run receipt, but a fresh checkout must rerun or restore those generated artifacts before `--require_complete` can pass. |
+| Attribution compactness sweep | Pass | Regenerated the active Run 3 bundle and rebuilt `runs/active/ig_examples_200pos_run3_operational/attribution_metrics/summary.csv`, `summary_sweep_long.csv`, and `appendix_sweep_completeness.json`. The summary now includes `compactness@0.70`, `@0.80`, `@0.90`, and `@0.95`; the sweep has 594 rows and `complete: true`. |
+| Cached attribution artifact receipt | Pass | Slurm job `18001329` materialized the active Run 3 generated artifacts locally: 600 canonical attribution NPZs, 600 MaRC sidecars, 600 per-pair metric JSONs, plus the three PC files. `build_attribution_run_manifest.py --require_complete` now passes against those generated paths. |
 | Task B cumulative top-K table traceability | Pass | The inline top-K table in `overleaf_drafts/acl_latex.tex` traces to `overleaf_drafts/figures/taskb_mseed_selected_configs.csv`; values match after multiplying `dir_acc_at_K_mean` by 100 and rounding. |
 | Task B cumulative top-K method label | Pass | The table values come from SIF+ABTT multi-seed configs, not pure ABTT. The caption labels it as the variance-aware SIF+ABTT table and points pure-ABTT ranking to the single-seed per-layer tables. |
 | Per-layer Task A / Task B table source traceability | Pass | Restored the ignored source CSVs `runs/active/resubmit/results/phase_resubmit_results.csv` and `runs/active/resubmit/taskb_mseed/aggregated_results.csv`, plus regenerated audit CSVs under `runs/active/resubmit/results/perlayer_tables/`. `python scripts/resubmit/build_per_layer_tables.py` rebuilds the tracked TeX tables without changing headline numbers. |
@@ -27,10 +27,36 @@ avoidance of superseded 200-random or two-model-only attribution artifacts.
 
 ## Attribution Artifact Reproduction
 
-The active Run 3 compactness sweep can be completed only after restoring or
-regenerating the active generated artifacts. Do not substitute the older
-`runs/active/ig_examples_200pos/` bundle: it is two-model and uses superseded
-LaTa/PhilTa attribution layers.
+The active Run 3 compactness sweep was completed by regenerating the active
+generated artifacts. No full active Run 3 generated artifacts were found in this
+checkout, nearby `/projects/beto/irowerojas/` worktrees, or
+`/projects/beto/irowerojas/localLatin_archive/` before regeneration; only
+checked-in aggregate receipts and smoke-run artifacts were materialized locally.
+The full GPU regeneration was submitted from this checkout:
+
+```bash
+REPO_ROOT=/projects/beto/irowerojas/localLatin \
+sbatch slurm/ig/run_attribution_200pos_run3_operational.sbatch
+```
+
+Slurm job: `18001329` (`attr_200pos_r3`). It ran on `gpua067` from
+2026-05-01 21:03:30 CDT to 2026-05-02 01:20:53 CDT and completed successfully
+with exit code `0:0`.
+
+Materialized generated artifacts:
+
+```text
+600 canonical attribution NPZs
+600 MaRC sidecar NPZs
+600 per-pair metric JSONs
+3 PC files: LaTa L7, PhilTa L1, mT5-base L1
+```
+
+After the GPU job completed, the metric/reporting outputs were rebuilt from the
+cached per-pair JSONs with `--require_artifacts --render_only`, using the full
+compactness threshold set `0.70,0.80,0.90,0.95`. This avoids repeating the GPU
+forward passes while still requiring the materialized artifacts and cached
+per-pair metrics.
 
 Expected materialized generated paths:
 
@@ -48,8 +74,7 @@ REPO_ROOT=/projects/beto/irowerojas/localLatin \
 sbatch slurm/ig/run_attribution_200pos_run3_operational.sbatch
 ```
 
-If the NPZ/sidecar artifacts already exist, rerun only the metric and reporting
-stages:
+Metric and reporting rebuild command:
 
 ```bash
 python scripts/ig/run_attribution_metrics.py \
@@ -60,7 +85,8 @@ python scripts/ig/run_attribution_metrics.py \
   --sweep_tex_out overleaf_drafts/tables/attribution_metrics_200pos_sweep_appendix.tex \
   --compactness_thresholds 0.70,0.80,0.90,0.95 \
   --trust_remote_code \
-  --require_artifacts
+  --require_artifacts \
+  --render_only
 
 python scripts/ig/package_attribution_sweep_appendix.py --strict
 python scripts/ig/build_main_attribution_artifacts.py
@@ -84,15 +110,12 @@ python scripts/ig/build_attribution_run_manifest.py \
 
 ```bash
 python -m py_compile \
+  scripts/ig/run_attribution_metrics.py \
   scripts/ig/build_main_attribution_artifacts.py \
   scripts/ig/package_attribution_sweep_appendix.py \
-  scripts/resubmit/build_per_layer_tables.py \
-  scripts/resubmit/visualize_taskb_mseed.py \
-  scripts/resubmit/visualize_resubmit.py
+  scripts/ig/build_attribution_run_manifest.py
 
-python scripts/resubmit/build_per_layer_tables.py
 python scripts/ig/build_main_attribution_artifacts.py
-python scripts/ig/package_attribution_sweep_appendix.py
 python scripts/ig/package_attribution_sweep_appendix.py --strict
 
 python scripts/ig/build_attribution_run_manifest.py \
@@ -106,21 +129,16 @@ python scripts/ig/build_attribution_run_manifest.py \
   --require_complete
 ```
 
-Observed expected failures in this checkout:
-
-- `package_attribution_sweep_appendix.py --strict` fails until active Run 3
-  per-pair metrics are recomputed from materialized NPZ artifacts.
-- `build_attribution_run_manifest.py --require_complete` fails until active
-  Run 3 generated PC, NPZ, MaRC sidecar, and per-pair metric JSON artifacts are
-  restored or regenerated.
+Observed result: all verification commands above pass after materializing the
+active Run 3 generated artifacts.
 
 ## Remaining Risks For Rewrite
 
-- Do not present `compactness@0.70`, `compactness@0.90`, or
-  `compactness@0.95` as measured for the active three-model Run 3 bundle until
-  the GPU metric stage above is rerun.
 - Do not treat a clean source checkout as containing the active Run 3 heavy
-  attribution artifacts; it contains checked-in receipts plus documented
-  reproduction commands.
+  attribution artifacts; the regenerated PC, NPZ, MaRC sidecar, and per-pair
+  metric JSON artifacts are generated/ignored outputs that must be restored or
+  regenerated before `--require_complete` can pass in a fresh checkout.
 - Do not use older 20-pair, 200-random, 200-positive two-model, LaTa L4, or
   PhilTa L6 artifacts as current headline evidence.
+- Keep rho_LOO as the primary faithfulness result; ERASER-style sufficiency,
+  comprehensiveness, and MinFrac compactness metrics remain complementary.

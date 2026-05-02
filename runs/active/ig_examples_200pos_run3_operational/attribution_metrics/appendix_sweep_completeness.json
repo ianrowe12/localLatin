@@ -29,12 +29,8 @@
     "compactness@0.90",
     "compactness@0.95"
   ],
-  "missing_mean_columns": [
-    "compactness@0.70_mean",
-    "compactness@0.90_mean",
-    "compactness@0.95_mean"
-  ],
+  "missing_mean_columns": [],
   "missing_model_method_variant_cells": [],
   "missing_metric_cells": [],
-  "complete": false
+  "complete": true
 }
