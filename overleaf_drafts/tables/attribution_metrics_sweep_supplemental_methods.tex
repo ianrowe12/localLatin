@@ -37,6 +37,6 @@ mT5-base & BERTScore & 0.271 & 0.556 & 0.615 & 0.694 & 0.776 & 1.005 & 0.917 & 1
 \bottomrule
 \end{tabular}%
 }
-\caption{Supplemental attribution sweep for additional methods and sanity baselines. \textit{random} and \textit{inverse} are diagnostic baselines, not paper-facing attribution methods. Direction arrows are printed in the column headers. Sufficiency and Comprehensiveness are ratio metrics at $\{10\%, 25\%, 50\%\}$; MinFrac is the minimum retained query-token fraction needed to recover $\tau \in \{0.70, 0.80, 0.90, 0.95\}$ of the full cosine (lower is better). Ratio metrics require $|S_v(q_{\text{full}}, c)| \ge 0.05$; $\rho_{\text{LOO}}$ excludes $|\Delta| < 10^{-6}$. Cells shown as -- were absent from the source summary and are listed in \texttt{appendix\_sweep\_completeness.json}.}
+\caption{Supplemental attribution sweep for additional methods and sanity baselines. \textit{random} and \textit{inverse} are diagnostic baselines, not paper-facing attribution methods. Direction arrows are printed in the column headers. Sufficiency and Comprehensiveness are ratio metrics at $\{10\%, 25\%, 50\%\}$; MinFrac is the minimum retained query-token fraction needed to recover $\tau \in \{0.70, 0.80, 0.90, 0.95\}$ of the full cosine (lower is better). Ratio metrics require $|S_v(q_{\text{full}}, c)| \ge 0.05$; $\rho_{\text{LOO}}$ excludes $|\Delta| < 10^{-6}$. The completeness report contains no missing metric cells.}
 \label{tab:attribution_sweep_supplemental_methods}
 \end{table*}

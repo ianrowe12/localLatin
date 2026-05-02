@@ -187,7 +187,7 @@ def render_table(summary: pd.DataFrame, out_path: Path) -> None:
             (
                 r"\caption{\textbf{Main-text candidate attribution metrics at the "
                 r"predeclared operational layers for LaTa, PhilTa, and mT5-base.} "
-                r"We report 200 positive query--candidate pairs per model and the two "
+                r"We report 200 positive query-candidate pairs per model and the two "
                 r"attribution methods used in the paper: integrated gradients (IG) "
                 r"and retrieval-adapted MaRC. The primary faithfulness signal is "
                 rf"$\rho_{{\text{{LOO}}}}$, which improves under ABTT in "
@@ -197,10 +197,10 @@ def render_table(summary: pd.DataFrame, out_path: Path) -> None:
                 r"25\% of query tokens, and MinFrac at recovery threshold 0.80 "
                 r"(lower is better for MinFrac; higher is better otherwise). These "
                 r"are the conventional midpoint thresholds from the available sweep "
-                r"grid and are retained as the global main-text setting rather than "
+                r"grid and are retained as the global main-text setting instead of "
                 r"selecting model- or method-specific thresholds; the appendix exposes "
-                r"the available 10/25/50\% sufficiency/comprehensiveness sweep and "
-                r"marks unavailable compactness thresholds as missing. Boldface inside the "
+                r"the 10/25/50\% sufficiency/comprehensiveness sweep and the "
+                r"0.70/0.80/0.90/0.95 MinFrac sweep. Boldface inside the "
                 r"ERASER cells marks the better variant, making disagreements visible: "
                 rf"ABTT wins {total_eraser_wins}/{total_cells} ERASER-style "
                 r"comparisons even though $\rho_{\text{LOO}}$ improves consistently. "
@@ -303,10 +303,10 @@ def render_rho_figure(summary: pd.DataFrame, out_base: Path) -> None:
             (
                 r"\caption{\textbf{$\rho_{\text{LOO}}$ foreground view for the main "
                 r"candidate-attribution result.} Each line connects the baseline "
-                r"and ABTT variants for one model--method cell at the predeclared "
+                r"and ABTT variants for one model-method cell at the predeclared "
                 r"operational attribution layer. ABTT improves the leave-one-out "
                 r"rank-correlation signal in all six cells; Table~\ref{tab:attribution_metrics_main} "
-                r"shows the ERASER-style disagreements that qualify this narrower "
+                r"shows the ERASER-style disagreements which qualify this narrower "
                 r"faithfulness claim.}"
             ),
             r"\label{fig:attribution_rho_loo_main}",

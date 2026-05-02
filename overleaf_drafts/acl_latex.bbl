@@ -8,18 +8,18 @@ Sanjeev Arora, Yingyu Liang, and Tengyu Ma. 2017.
 
 \bibitem[{Brinner and Zarrie{\ss}(2023)}]{brinnerzarriess2023marc}
 Marc Brinner and Sina Zarrie{\ss}. 2023.
-\newblock Model interpretability and rationale extraction by input mask optimization.
+\newblock \href {https://doi.org/10.18653/v1/2023.findings-acl.867} {Model interpretability and rationale extraction by input mask optimization}.
 \newblock In \emph{Findings of the Association for Computational Linguistics: ACL 2023}, pages 13722--13744. Association for Computational Linguistics.
+
+\bibitem[{DeYoung et~al.(2020)DeYoung, Jain, Rajani, Lehman, Xiong, Socher, and Wallace}]{deyoung2020eraser}
+Jay DeYoung, Sarthak Jain, Nazneen~Fatema Rajani, Eric Lehman, Caiming Xiong, Richard Socher, and Byron~C. Wallace. 2020.
+\newblock \href {https://doi.org/10.18653/v1/2020.acl-main.408} {{ERASER}: A benchmark to evaluate rationalized {NLP} models}.
+\newblock In \emph{Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics}, pages 4443--4458, Online. Association for Computational Linguistics.
 
 \bibitem[{Feng et~al.(2022)Feng, Yang, Cer, Arivazhagan, and Wang}]{feng2022labse}
 Fangxiaoyu Feng, Yinfei Yang, Daniel Cer, Naveen Arivazhagan, and Wei Wang. 2022.
 \newblock \href {https://doi.org/10.18653/v1/2022.acl-long.62} {Language-agnostic {BERT} sentence embedding}.
 \newblock In \emph{Proceedings of the 60th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)}, pages 878--891. Association for Computational Linguistics.
-
-\bibitem[{Huang et~al.(2021)Huang, Tang, Zhong, Lu, Shou, Gong, Jiang, and Duan}]{huang2021whiteningbert}
-Junjie Huang, Duyu Tang, Wanjun Zhong, Shuai Lu, Linjun Shou, Ming Gong, Daxin Jiang, and Nan Duan. 2021.
-\newblock \href {https://doi.org/10.18653/v1/2021.findings-emnlp.23} {{W}hitening{BERT}: An easy unsupervised sentence embedding approach}.
-\newblock In \emph{Findings of the Association for Computational Linguistics: {EMNLP} 2021}, pages 238--244. Association for Computational Linguistics.
 
 \bibitem[{Lu et~al.(2025)Lu, Maharramov et~al.}]{kalm2025embedding}
 Xinyu Lu, Nurlan Maharramov, and 1 others. 2025.

@@ -318,6 +318,12 @@ def main() -> None:
 
     fraction_bits = ", ".join(f"{_pct_label(frac)}\\%" for frac in fractions)
     threshold_bits = ", ".join(f"{threshold:.2f}" for threshold in compactness_thresholds)
+    missing_note = (
+        r" Missing cells, if any, are listed in "
+        r"\texttt{appendix\_sweep\_completeness.json}."
+        if not report["complete"] else
+        r" The completeness report contains no missing metric cells."
+    )
     shared_caption_tail = (
         r" Direction arrows are printed in the column headers. "
         r"Sufficiency and Comprehensiveness are ratio metrics at "
@@ -325,9 +331,8 @@ def main() -> None:
         rf"needed to recover $\tau \in \{{{threshold_bits}\}}$ of the full cosine "
         r"(lower is better). "
         rf"Ratio metrics require $|S_v(q_{{\text{{full}}}}, c)| \ge {_latex_float(FULL_COS_FLOOR)}$; "
-        rf"$\rho_{{\text{{LOO}}}}$ excludes $|\Delta| < {_latex_float(LOO_NOISE_FLOOR)}$. "
-        r"Cells shown as -- were absent from the source summary and are listed in "
-        r"\texttt{appendix\_sweep\_completeness.json}."
+        rf"$\rho_{{\text{{LOO}}}}$ excludes $|\Delta| < {_latex_float(LOO_NOISE_FLOOR)}$."
+        + missing_note
     )
 
     render_table(
