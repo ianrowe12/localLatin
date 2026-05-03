@@ -1,26 +1,13 @@
-\begingroup
-\small
-\setlength{\tabcolsep}{4pt}
-\begin{longtable}{llcccc}
-\caption{Per-layer Task~A pairwise duplicate-detection metrics for the three headline models (LaTa, PhilTa, mT5-base). \texttt{baseline} is mean pooling without correction; \texttt{abtt\_optimal} applies ABTT (no SIF weighting) with $D$ tuned per layer on the train split. Both AUROC and cosine gap are computed over the test n$\times$n cosine matrix with no threshold and no directory routing: AUROC treats same-directory test pairs as positives, and cosine gap is the difference between mean same-directory and mean different-directory cosine. Rows in bold mark the best layer per model, selected by ABTT AUROC.}
-\label{tab:taskA_main} \\
+\begin{table*}[t]
+\centering
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{llcccc}
 \toprule
 \multicolumn{2}{c}{} & \multicolumn{4}{c}{\textbf{Task A: Pairwise Duplicate Detection (main)}} \\
 \cmidrule(lr){3-6}
 \textbf{Model} & \textbf{Layer} & \makecell{AUROC\\(base)} & \makecell{AUROC\\(ABTT)} & \makecell{Cosine gap\\(base)} & \makecell{Cosine gap\\(ABTT)} \\
 \midrule
-\endfirsthead
-\toprule
-\multicolumn{2}{c}{} & \multicolumn{4}{c}{\textbf{Task A: Pairwise Duplicate Detection (main)}} \\
-\cmidrule(lr){3-6}
-\textbf{Model} & \textbf{Layer} & \makecell{AUROC\\(base)} & \makecell{AUROC\\(ABTT)} & \makecell{Cosine gap\\(base)} & \makecell{Cosine gap\\(ABTT)} \\
-\midrule
-\endhead
-\midrule
-\multicolumn{6}{r}{\textit{(continued on next page)}} \\
-\endfoot
-\bottomrule
-\endlastfoot
 LaTa & 1 & 0.933 & 0.969 & 0.286 & 0.565 \\
  & 2 & 0.565 & 0.969 & 0.020 & 0.553 \\
  & 3 & 0.515 & 0.972 & -0.046 & 0.555 \\
@@ -59,5 +46,8 @@ mT5-base & 1 & 0.823 & 0.979 & 0.027 & 0.550 \\
  & 10 & 0.659 & 0.975 & 0.225 & 0.459 \\
  & 11 & 0.660 & 0.971 & 0.213 & 0.449 \\
  & 12 & 0.839 & 0.970 & 0.082 & 0.441 \\
-\end{longtable}
-\endgroup
+\bottomrule
+\end{tabular}
+\caption{Per-layer Task~A pairwise duplicate-detection metrics for the three headline models (LaTa, PhilTa, mT5-base). \texttt{baseline} is mean pooling without correction; \texttt{abtt\_optimal} applies ABTT (no SIF weighting) with $D$ tuned per layer on the train split. Both AUROC and cosine gap are computed over the test n$\times$n cosine matrix with no threshold and no directory routing: AUROC treats same-directory test pairs as positives, and cosine gap is the difference between mean same-directory and mean different-directory cosine. Rows in bold mark the best layer per model, selected by ABTT AUROC.}
+\label{tab:taskA_main}
+\end{table*}

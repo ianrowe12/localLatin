@@ -220,6 +220,51 @@ def _write_longtable(wide: pd.DataFrame, spec: TableSpec, out_path: Path) -> Non
     out_path.write_text("\n".join(lines) + "\n")
 
 
+def _write_table_star(wide: pd.DataFrame, spec: TableSpec, out_path: Path) -> None:
+    ncols = len(spec.col_spec)
+    metric_span = ncols - 2
+    banner_row = (
+        r"\multicolumn{2}{c}{}"
+        + f" & \\multicolumn{{{metric_span}}}{{c}}{{\\textbf{{{spec.banner}}}}}"
+        + r" \\"
+    )
+    header_row = r"\textbf{Model} & \textbf{Layer}"
+    for h in spec.metric_headers:
+        header_row += " & " + h
+    header_row += r" \\"
+
+    lines: list[str] = []
+    lines.append(r"\begin{table*}[t]")
+    lines.append(r"\centering")
+    lines.append(r"\scriptsize")
+    lines.append(r"\setlength{\tabcolsep}{3pt}")
+    lines.append(r"\begin{tabular}{" + spec.col_spec + r"}")
+    lines.append(r"\toprule")
+    lines.append(banner_row)
+    lines.append(r"\cmidrule(lr){3-" + str(ncols) + "}")
+    lines.append(header_row)
+    lines.append(r"\midrule")
+
+    prev_model = None
+    for i, row in wide.iterrows():
+        if prev_model is not None and row["model"] != prev_model:
+            lines.append(r"\midrule")
+        cells = spec.row_cells_fn(i, row)
+        if prev_model == row["model"]:
+            cells[0] = ""
+        lines.append(" & ".join(cells) + r" \\")
+        prev_model = row["model"]
+
+    lines.append(r"\bottomrule")
+    lines.append(r"\end{tabular}")
+    lines.append(r"\caption{" + spec.caption + r"}")
+    lines.append(r"\label{" + spec.label + r"}")
+    lines.append(r"\end{table*}")
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text("\n".join(lines) + "\n")
+
+
 # ------------------------------ table emitters -------------------------------
 
 
@@ -242,6 +287,7 @@ def emit_taskA(
     banner: str,
     best_method: str,
     best_metric: str = "aucroc",
+    float_table: bool = False,
 ) -> pd.DataFrame:
     """Emit Task A per-layer table.
 
@@ -279,7 +325,8 @@ def emit_taskA(
         best_rows=best_rows,
         row_cells_fn=row_cells,
     )
-    _write_longtable(wide, spec, out_tex)
+    writer = _write_table_star if float_table else _write_longtable
+    writer(wide, spec, out_tex)
     return wide
 
 
@@ -295,6 +342,7 @@ def emit_taskB_routing(
     banner: str,
     best_method: str,
     best_metric: str = "overall_assignment_acc",
+    float_table: bool = False,
 ) -> pd.DataFrame:
     """Emit Task B routing per-layer table (single-seed).
 
@@ -336,7 +384,8 @@ def emit_taskB_routing(
         best_rows=best_rows,
         row_cells_fn=row_cells,
     )
-    _write_longtable(wide, spec, out_tex)
+    writer = _write_table_star if float_table else _write_longtable
+    writer(wide, spec, out_tex)
     return wide
 
 
@@ -352,6 +401,7 @@ def emit_taskB_ranking_single(
     banner: str,
     best_method: str,
     best_metric: str = "dir_acc_at_1",
+    float_table: bool = False,
 ) -> pd.DataFrame:
     """Emit Task B ranking table from the single-seed Task A CSV (no ±std)."""
     wide = _pivot(df, models, methods, metrics)
@@ -390,7 +440,8 @@ def emit_taskB_ranking_single(
         best_rows=best_rows,
         row_cells_fn=row_cells,
     )
-    _write_longtable(wide, spec, out_tex)
+    writer = _write_table_star if float_table else _write_longtable
+    writer(wide, spec, out_tex)
     return wide
 
 
@@ -523,6 +574,7 @@ def main() -> None:
         banner=r"Task A: Pairwise Duplicate Detection (main)",
         best_method="abtt_optimal",
         best_metric="aucroc",
+        float_table=True,
     )
     emit_taskA(
         taskA_df,
@@ -580,6 +632,7 @@ def main() -> None:
         banner=r"Task B: Autonomous Routing (main, file-level, $\tau$-thresholded)",
         best_method="abtt_optimal",
         best_metric="overall_assignment_acc",
+        float_table=True,
     )
     emit_taskB_routing(
         taskA_df,
@@ -636,6 +689,7 @@ def main() -> None:
         banner=r"Task B: Top-K Ranking (main, single-seed v2)",
         best_method="abtt_optimal",
         best_metric="dir_acc_at_1",
+        float_table=True,
     )
     emit_taskB_ranking_single(
         taskA_df,

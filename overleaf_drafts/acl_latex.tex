@@ -183,9 +183,7 @@ The results move from diagnosis to use. First, layerwise geometry exposes repres
 
 \subsection{Task A: Pairwise Duplicate Detection}
 
-\onecolumn
 \input{tables/taskA_main}
-\twocolumn
 
 Table~\ref{tab:taskA_main} reports per-layer Task A metrics for LaTa, PhilTa, and mT5-base. The baseline uses mean pooling. The ABTT setting uses ABTT with $D$ tuned per layer on the train split, without SIF weighting. Both AUROC and cosine gap come from the test cosine matrix and use no threshold. The table shows the main pattern behind the paper: baseline mean-pooled representations lose separation in the middle of the Latin T5 encoders, while ABTT recovers much of the lost separation.
 
@@ -231,10 +229,8 @@ Two-dimensional projections give a visual check on the same geometric change. Fi
 
 \subsection{Task B: Directory Routing}
 
-\onecolumn
 \input{tables/taskB_routing_main}
 \input{tables/taskB_ranking_main}
-\twocolumn
 
 Task B connects the layerwise analysis to the retrieval workflow. Table~\ref{tab:taskB_routing_main} reports autonomous routing, where a learned threshold decides between an existing directory and the new class. Table~\ref{tab:taskB_ranking_main} reports top-$k$ ranking, where the system presents directory options to a simulated expert. The main tables show LaTa, PhilTa, and mT5-base; Appendix~\ref{app:per_layer_extra} reports the remaining models.
 
@@ -264,9 +260,7 @@ The cumulative top-$K$ view describes the scholar-facing shortlist. All six mode
 
 \subsection{Attribution at Retrieval-Selected Layers}
 
-\onecolumn
 \input{tables/attribution_metrics_main}
-\twocolumn
 
 Table~\ref{tab:attribution_metrics_main} reports the main attribution comparison. The experiment uses 200 positive query-candidate pairs per model for LaTa, PhilTa, and mT5-base. Each model has baseline and ABTT variants for both integrated gradients and retrieval-adapted MaRC.
 
@@ -280,21 +274,21 @@ The example figures show what the local explanations look like for one PhilTa re
 
 \begin{figure*}[!t]
 \centering
-\includegraphics[width=\textwidth]{fig_pair_matrix_philta.pdf}
+\includegraphics[width=0.94\textwidth]{fig_pair_matrix_philta.pdf}
 \caption{Derived pairwise heatmap for one PhilTa retrieval case. The left panel shows the baseline representation and the right panel shows the same example after ABTT. Both axes use original decoded tokens. Cell values combine token-token cosine similarity with single-sequence integrated-gradient scores.}
 \label{fig:pairmatrix}
 \end{figure*}
 
 \begin{figure*}[!t]
 \centering
-\includegraphics[width=\textwidth]{fig_attention_philta.pdf}
+\includegraphics[width=0.94\textwidth]{fig_attention_philta.pdf}
 \caption{Companion self-attention maps for the same PhilTa example. ABTT is applied after encoding, so attention is included only as supporting context.}
 \label{fig:attention}
 \end{figure*}
 
 \begin{figure*}[!t]
 \centering
-\includegraphics[width=\textwidth]{fig_retrieval_mark_pair_philta.pdf}
+\includegraphics[width=0.94\textwidth]{fig_retrieval_mark_pair_philta.pdf}
 \caption{Retrieval-adapted MaRC masks for the same PhilTa pair as Figure~\ref{fig:pairmatrix}. Top row: mask on the query with the candidate fixed. Bottom row: mask on the candidate with the query fixed. Left column: baseline cosine target. Right column: ABTT-corrected cosine target.}
 \label{fig:retrieval_mark}
 \end{figure*}
@@ -374,10 +368,8 @@ The main text uses pure ABTT as the paper-facing repair. This appendix reports S
 
 This appendix expands the main attribution table across Sufficiency and Comprehensiveness thresholds of 10\%, 25\%, and 50\%, and MinFrac recovery thresholds of 0.70, 0.80, 0.90, and 0.95. The main text uses one global midpoint setting rather than selecting thresholds per model or per method.
 
-\onecolumn
 \input{tables/attribution_metrics_sweep_main_methods}
 \input{tables/attribution_metrics_sweep_supplemental_methods}
-\twocolumn
 
 \section{Cluster Geometry: Additional Models}
 \label{app:cluster_geometry}

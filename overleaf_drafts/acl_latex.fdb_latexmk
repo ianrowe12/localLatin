@@ -1,13 +1,13 @@
 # Fdb version 4
-["bibtex acl_latex"] 1777756265.99925 "acl_latex.aux" "acl_latex.bbl" "acl_latex" 1777756268.62018 0
+["bibtex acl_latex"] 1777771300.20009 "acl_latex.aux" "acl_latex.bbl" "acl_latex" 1777771302.64129 0
   "./acl_natbib.bst" 1771197234 45186 3d1af46d62cc9172ef6e42b56c1cd613 ""
   "./custom.bib" 1777755828 9514 445ee19c44ecc422953b35a0238a9907 ""
-  "acl_latex.aux" 1777756268 44360 9696ded4de89ae8880bf606d5ccafafd "pdflatex"
+  "acl_latex.aux" 1777771302 43591 a6635331abfcee661a4b5f9bdc1e65a6 "pdflatex"
   (generated)
   "acl_latex.bbl"
   "acl_latex.blg"
   (rewritten before read)
-["pdflatex"] 1777756266.1076 "acl_latex.tex" "acl_latex.pdf" "acl_latex" 1777756268.62157 0
+["pdflatex"] 1777771300.2969 "acl_latex.tex" "acl_latex.pdf" "acl_latex" 1777771302.64312 0
   "/u/irowerojas/.TinyTeX/texmf-dist/fonts/enc/dvips/base/8r.enc" 1165713224 4850 80dc9bab7f31fb78a000ccfed0e27cab ""
   "/u/irowerojas/.TinyTeX/texmf-dist/fonts/enc/dvips/inconsolata/i4-t1-0.enc" 1558214095 7631 5169ff1acd97ff1c4ab83563c99f96f4 ""
   "/u/irowerojas/.TinyTeX/texmf-dist/fonts/tfm/adobe/helvetic/phvb.tfm" 1136768653 2300 14616918391efa49ac8b481a75fbdc1a ""
@@ -181,10 +181,10 @@
   "/u/irowerojas/.TinyTeX/texmf-var/web2c/pdftex/pdflatex.fmt" 1775594354 2292448 7f6b73c247db06403797e2c68920a8f7 ""
   "/u/irowerojas/.TinyTeX/texmf.cnf" 1775534761 637 edd806fb06a89761a6034e1968af9017 ""
   "acl.sty" 1771197235 11615 e2c027f483aa40e577ed34264c8b0655 ""
-  "acl_latex.aux" 1777756268 44360 9696ded4de89ae8880bf606d5ccafafd "pdflatex"
-  "acl_latex.bbl" 1777756266 5113 3f39f9eea7b9dbff21d833a44ea20e7f "bibtex acl_latex"
-  "acl_latex.out" 1777756268 4376 1d096b3fa07740ed46c1ce1bd3cd9bf8 "pdflatex"
-  "acl_latex.tex" 1777756247 32199 efe091b04e4212143d8b49e003a8526f ""
+  "acl_latex.aux" 1777771302 43591 a6635331abfcee661a4b5f9bdc1e65a6 "pdflatex"
+  "acl_latex.bbl" 1777771300 5113 3f39f9eea7b9dbff21d833a44ea20e7f "bibtex acl_latex"
+  "acl_latex.out" 1777771302 4376 1d096b3fa07740ed46c1ce1bd3cd9bf8 "pdflatex"
+  "acl_latex.tex" 1777771289 32123 2eb065012dae3b024a6877b9b6adaa7c ""
   "figures/fig_attention_philta.pdf" 1773467294 27574 5ad4f21f485a7fbb79880b3f070f1cb3 ""
   "figures/fig_pair_matrix_philta.pdf" 1773467294 28657 6793b50a49045632f400bbbef6d94353 ""
   "figures/fig_release_aucroc_per_model.pdf" 1776736662 24368 e5ca5d40d3674e90bceedb2f3f6515cc ""
@@ -199,15 +199,15 @@
   "tables/attribution_metrics_main.tex" 1777756141 2875 b9ac032e8c88da72dbffdfba4d33f24b ""
   "tables/attribution_metrics_sweep_main_methods.tex" 1777756206 3017 3358b6ac6fd120ef2a1cea5cff675487 ""
   "tables/attribution_metrics_sweep_supplemental_methods.tex" 1777756206 6024 d9975ce3cc5bb4661087cdaff5027d82 ""
-  "tables/taskA_appendix.tex" 1777685433 4284 e41663430043c9b6f2e5a86ce24be859 ""
-  "tables/taskA_appendix_sif.tex" 1777685433 5756 126b085fadd2fa142a8edf7d3f60a4ab ""
-  "tables/taskA_main.tex" 1777685433 3070 055ddc87b8d1c263d266f18afbda6400 ""
-  "tables/taskB_ranking_appendix.tex" 1777685433 5415 68cb0d82a19eb0f93d2220539f09d684 ""
-  "tables/taskB_ranking_appendix_mseed.tex" 1777685433 14978 2358dc78e889114f6252d360f61e93d5 ""
-  "tables/taskB_ranking_main.tex" 1777685433 3792 6a61ea081b7ec6aae07513b97a034832 ""
-  "tables/taskB_routing_appendix.tex" 1777685433 5716 07ce60eac213fe5ea2b8f709d8abb6f8 ""
-  "tables/taskB_routing_appendix_sif.tex" 1777685433 5715 3a3151bc32b0f9ada820b14b6b7e70c7 ""
-  "tables/taskB_routing_main.tex" 1777685433 4151 e39a770b4c8c347c9e4e0ae510296c21 ""
+  "tables/taskA_appendix.tex" 1777771205 4284 e41663430043c9b6f2e5a86ce24be859 ""
+  "tables/taskA_appendix_sif.tex" 1777771205 5756 126b085fadd2fa142a8edf7d3f60a4ab ""
+  "tables/taskA_main.tex" 1777771205 2688 f58b9fa0d479970ed6f31bdd4e22f0b1 ""
+  "tables/taskB_ranking_appendix.tex" 1777771205 5415 68cb0d82a19eb0f93d2220539f09d684 ""
+  "tables/taskB_ranking_appendix_mseed.tex" 1777771205 14978 2358dc78e889114f6252d360f61e93d5 ""
+  "tables/taskB_ranking_main.tex" 1777771205 3363 18d2aaef648ca9a029601f3bfa433e47 ""
+  "tables/taskB_routing_appendix.tex" 1777771205 5716 07ce60eac213fe5ea2b8f709d8abb6f8 ""
+  "tables/taskB_routing_appendix_sif.tex" 1777771205 5715 3a3151bc32b0f9ada820b14b6b7e70c7 ""
+  "tables/taskB_routing_main.tex" 1777771205 3697 8021c67fd08b35091a1f40530f66d38e ""
   (generated)
   "acl_latex.aux"
   "acl_latex.log"

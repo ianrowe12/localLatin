@@ -1,26 +1,13 @@
-\begingroup
-\small
-\setlength{\tabcolsep}{4pt}
-\begin{longtable}{llcccccc}
-\caption{Per-layer Task~B top-$k$ ranking metrics for the three headline models. \texttt{baseline} is mean pooling without correction; \texttt{abtt\_optimal} applies ABTT (no SIF weighting) with $D$ tuned per layer on the train split. This table is computed on the single-seed v2 split (no $M$-seed averaging, since the mseed sweep was run only for SIF-conditioned variants; see Table~\ref{tab:taskB_ranking_appendix_mseed} for the multi-seed SIF+ABTT view). \textbf{Acc@1} is directory accuracy at rank~1, with an existing/new decomposition. Rows in bold mark the best layer per model, selected by ABTT Acc@1.}
-\label{tab:taskB_ranking_main} \\
+\begin{table*}[t]
+\centering
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{llcccccc}
 \toprule
 \multicolumn{2}{c}{} & \multicolumn{6}{c}{\textbf{Task B: Top-K Ranking (main, single-seed v2)}} \\
 \cmidrule(lr){3-8}
 \textbf{Model} & \textbf{Layer} & \makecell{Acc@1\\(base)} & \makecell{Acc@1\\(ABTT)} & \makecell{Existing\\(base)} & \makecell{Existing\\(ABTT)} & \makecell{New\\(base)} & \makecell{New\\(ABTT)} \\
 \midrule
-\endfirsthead
-\toprule
-\multicolumn{2}{c}{} & \multicolumn{6}{c}{\textbf{Task B: Top-K Ranking (main, single-seed v2)}} \\
-\cmidrule(lr){3-8}
-\textbf{Model} & \textbf{Layer} & \makecell{Acc@1\\(base)} & \makecell{Acc@1\\(ABTT)} & \makecell{Existing\\(base)} & \makecell{Existing\\(ABTT)} & \makecell{New\\(base)} & \makecell{New\\(ABTT)} \\
-\midrule
-\endhead
-\midrule
-\multicolumn{8}{r}{\textit{(continued on next page)}} \\
-\endfoot
-\bottomrule
-\endlastfoot
 LaTa & 1 & 0.721 & 0.880 & 0.630 & 0.910 & 0.916 & 0.907 \\
  & 2 & 0.383 & 0.869 & 0.153 & 0.905 & 0.913 & 0.892 \\
  & \textbf{3} & \textbf{0.350} & \textbf{0.882} & \textbf{0.256} & \textbf{0.882} & \textbf{0.842} & \textbf{0.950} \\
@@ -59,5 +46,8 @@ mT5-base & \textbf{1} & \textbf{0.451} & \textbf{0.885} & \textbf{0.135} & \text
  & 10 & 0.387 & 0.788 & 0.314 & 0.794 & 0.783 & 0.876 \\
  & 11 & 0.378 & 0.765 & 0.297 & 0.763 & 0.780 & 0.854 \\
  & 12 & 0.466 & 0.779 & 0.198 & 0.834 & 0.926 & 0.799 \\
-\end{longtable}
-\endgroup
+\bottomrule
+\end{tabular}
+\caption{Per-layer Task~B top-$k$ ranking metrics for the three headline models. \texttt{baseline} is mean pooling without correction; \texttt{abtt\_optimal} applies ABTT (no SIF weighting) with $D$ tuned per layer on the train split. This table is computed on the single-seed v2 split (no $M$-seed averaging, since the mseed sweep was run only for SIF-conditioned variants; see Table~\ref{tab:taskB_ranking_appendix_mseed} for the multi-seed SIF+ABTT view). \textbf{Acc@1} is directory accuracy at rank~1, with an existing/new decomposition. Rows in bold mark the best layer per model, selected by ABTT Acc@1.}
+\label{tab:taskB_ranking_main}
+\end{table*}

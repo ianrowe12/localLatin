@@ -1,26 +1,13 @@
-\begingroup
-\small
-\setlength{\tabcolsep}{4pt}
-\begin{longtable}{llcccccc}
-\caption{Per-layer Task~B autonomous routing accuracy for the three headline models. \texttt{baseline} is mean pooling without correction; \texttt{abtt\_optimal} applies ABTT (no SIF weighting) with $D$ tuned per layer on the train split. For every test file we compute $s_i = \max_{j \neq i} \cos(e_i, e_j)$ against the rest of the test set and compare to the learned threshold $\tau$ (fit on train via $F_1$-optimal cut on same-directory vs.\ different-directory pairs). The decision is binary first (existing if $s_i \geq \tau$, else new); only files predicted existing are then routed to their top-1 neighbour's directory. We report \textbf{existing accuracy} (restricted to files whose true partner is in the test set), \textbf{new accuracy} (files that should be flagged as novel), and \textbf{overall assignment accuracy}. Rows in bold mark the best layer per model, selected by ABTT overall assignment accuracy.}
-\label{tab:taskB_routing_main} \\
+\begin{table*}[t]
+\centering
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{llcccccc}
 \toprule
 \multicolumn{2}{c}{} & \multicolumn{6}{c}{\textbf{Task B: Autonomous Routing (main, file-level, $\tau$-thresholded)}} \\
 \cmidrule(lr){3-8}
 \textbf{Model} & \textbf{Layer} & \makecell{Existing\\(base)} & \makecell{Existing\\(ABTT)} & \makecell{New\\(base)} & \makecell{New\\(ABTT)} & \makecell{Overall\\(base)} & \makecell{Overall\\(ABTT)} \\
 \midrule
-\endfirsthead
-\toprule
-\multicolumn{2}{c}{} & \multicolumn{6}{c}{\textbf{Task B: Autonomous Routing (main, file-level, $\tau$-thresholded)}} \\
-\cmidrule(lr){3-8}
-\textbf{Model} & \textbf{Layer} & \makecell{Existing\\(base)} & \makecell{Existing\\(ABTT)} & \makecell{New\\(base)} & \makecell{New\\(ABTT)} & \makecell{Overall\\(base)} & \makecell{Overall\\(ABTT)} \\
-\midrule
-\endhead
-\midrule
-\multicolumn{8}{r}{\textit{(continued on next page)}} \\
-\endfoot
-\bottomrule
-\endlastfoot
 LaTa & \textbf{1} & \textbf{0.630} & \textbf{0.910} & \textbf{0.916} & \textbf{0.907} & \textbf{0.738} & \textbf{0.909} \\
  & 2 & 0.153 & 0.905 & 0.913 & 0.892 & 0.439 & 0.900 \\
  & 3 & 0.256 & 0.882 & 0.842 & 0.950 & 0.477 & 0.908 \\
@@ -59,5 +46,8 @@ mT5-base & \textbf{1} & \textbf{0.135} & \textbf{0.877} & \textbf{0.981} & \text
  & 10 & 0.314 & 0.794 & 0.783 & 0.876 & 0.491 & 0.825 \\
  & 11 & 0.297 & 0.763 & 0.780 & 0.854 & 0.479 & 0.797 \\
  & 12 & 0.198 & 0.834 & 0.926 & 0.799 & 0.472 & 0.821 \\
-\end{longtable}
-\endgroup
+\bottomrule
+\end{tabular}
+\caption{Per-layer Task~B autonomous routing accuracy for the three headline models. \texttt{baseline} is mean pooling without correction; \texttt{abtt\_optimal} applies ABTT (no SIF weighting) with $D$ tuned per layer on the train split. For every test file we compute $s_i = \max_{j \neq i} \cos(e_i, e_j)$ against the rest of the test set and compare to the learned threshold $\tau$ (fit on train via $F_1$-optimal cut on same-directory vs.\ different-directory pairs). The decision is binary first (existing if $s_i \geq \tau$, else new); only files predicted existing are then routed to their top-1 neighbour's directory. We report \textbf{existing accuracy} (restricted to files whose true partner is in the test set), \textbf{new accuracy} (files that should be flagged as novel), and \textbf{overall assignment accuracy}. Rows in bold mark the best layer per model, selected by ABTT overall assignment accuracy.}
+\label{tab:taskB_routing_main}
+\end{table*}
