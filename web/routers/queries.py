@@ -4,7 +4,13 @@ from fastapi import APIRouter, Depends, Query
 
 from web.dependencies import get_current_user, get_db, get_store
 from web.exceptions import QueryNotFoundError
-from web.models import QueryDetail, QueryListItem, QueryListResponse, UserPublic
+from web.models import (
+    NextQueryResponse,
+    QueryDetail,
+    QueryListItem,
+    QueryListResponse,
+    UserPublic,
+)
 from web.services.data_store import DataStore
 from web.services.feedback_db import FeedbackDB
 from web.services.text_tokenizer import latin_tokenize
@@ -68,6 +74,29 @@ async def list_queries(
         page_size=page_size,
         has_more=end < total,
     )
+
+
+@router.get("/queries/next", response_model=NextQueryResponse)
+async def get_next_query(
+    after: int | None = None,
+    store: DataStore = Depends(get_store),
+    db: FeedbackDB = Depends(get_db),
+    current_user: UserPublic = Depends(get_current_user),
+) -> NextQueryResponse:
+    query_statuses = await db.get_query_statuses()
+    actionable_ids = [
+        fid
+        for fid in store.file_ids
+        if query_statuses.get(fid, {}).get("review_status", "unreviewed")
+        == "unreviewed"
+    ]
+
+    if after is not None:
+        for fid in actionable_ids:
+            if fid > after:
+                return NextQueryResponse(file_id=fid)
+
+    return NextQueryResponse(file_id=actionable_ids[0] if actionable_ids else None)
 
 
 @router.get("/query/{file_id}", response_model=QueryDetail)

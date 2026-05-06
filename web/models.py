@@ -24,6 +24,10 @@ class QueryListResponse(BaseModel):
     has_more: bool
 
 
+class NextQueryResponse(BaseModel):
+    file_id: Optional[int] = None
+
+
 class TokenInfo(BaseModel):
     text: str
     index: int

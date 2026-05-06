@@ -19,7 +19,7 @@ const FILTER_TO_STATUS: Record<string, string> = {
   all: 'all',
   pending: 'unreviewed',
   reviewed: 'reviewed',
-  skipped: 'all',
+  skipped: 'skipped',
 }
 
 export default function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {

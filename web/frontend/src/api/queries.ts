@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { apiFetch } from './client'
+import { FEEDBACK_UPDATED_EVENT } from './feedback'
 
 // ---------------------------------------------------------------------------
 // Types matching backend models.py
@@ -9,7 +10,7 @@ export interface QueryListItem {
   file_id: number
   filename: string
   text_preview: string
-  review_status: string // "unreviewed" | "reviewed"
+  review_status: 'unreviewed' | 'reviewed' | 'skipped'
   review_count: number
 }
 
@@ -19,6 +20,10 @@ export interface QueryListResponse {
   page: number
   page_size: number
   has_more: boolean
+}
+
+export interface NextQueryResponse {
+  file_id: number | null
 }
 
 export interface TokenInfo {
@@ -82,6 +87,16 @@ export function useQueryList(
     error: null,
   })
   const cache = useRef(new Map<string, QueryListResponse>())
+  const [refreshVersion, setRefreshVersion] = useState(0)
+
+  useEffect(() => {
+    const refresh = () => {
+      cache.current.clear()
+      setRefreshVersion((version) => version + 1)
+    }
+    window.addEventListener(FEEDBACK_UPDATED_EVENT, refresh)
+    return () => window.removeEventListener(FEEDBACK_UPDATED_EVENT, refresh)
+  }, [])
 
   useEffect(() => {
     const params = new URLSearchParams()
@@ -113,9 +128,16 @@ export function useQueryList(
     return () => {
       cancelled = true
     }
-  }, [status, search, page])
+  }, [status, search, page, refreshVersion])
 
   return state
+}
+
+export async function fetchNextQuery(after?: number): Promise<NextQueryResponse> {
+  const params = new URLSearchParams()
+  if (after !== undefined) params.set('after', String(after))
+  const query = params.toString()
+  return apiFetch<NextQueryResponse>(`/api/queries/next${query ? `?${query}` : ''}`)
 }
 
 // ---------------------------------------------------------------------------

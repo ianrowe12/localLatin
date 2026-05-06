@@ -5,9 +5,15 @@ interface SubmitButtonProps {
   onSubmit: () => void
   onSkip: () => void
   disabled?: boolean
+  skipDisabled?: boolean
 }
 
-export default function SubmitButton({ onSubmit, onSkip, disabled }: SubmitButtonProps) {
+export default function SubmitButton({
+  onSubmit,
+  onSkip,
+  disabled,
+  skipDisabled,
+}: SubmitButtonProps) {
   const [showCheck, setShowCheck] = useState(false)
 
   const handleSubmit = () => {
@@ -80,9 +86,11 @@ export default function SubmitButton({ onSubmit, onSkip, disabled }: SubmitButto
       <button
         type="button"
         onClick={onSkip}
+        disabled={skipDisabled}
         className="text-stone-500 hover:text-stone-700 dark:hover:text-stone-300
                    hover:bg-stone-100 dark:hover:bg-stone-800
-                   px-3 py-2 rounded-lg text-sm transition-colors"
+                   px-3 py-2 rounded-lg text-sm transition-colors
+                   disabled:opacity-50 disabled:cursor-not-allowed"
       >
         Skip
       </button>

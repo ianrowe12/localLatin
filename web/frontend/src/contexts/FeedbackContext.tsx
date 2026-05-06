@@ -7,7 +7,10 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { submitFeedback as postFeedback } from '../api/feedback'
+import {
+  FEEDBACK_UPDATED_EVENT,
+  submitFeedback as postFeedback,
+} from '../api/feedback'
 import type { Prediction } from '../api/queries'
 
 export interface FeedbackDraft {
@@ -20,6 +23,7 @@ export interface FeedbackContextValue {
   getDraft: (queryId: number, model: string) => FeedbackDraft
   updateDraft: (queryId: number, model: string, patch: Partial<FeedbackDraft>) => void
   submitFeedback: (queryId: number, model: string, predictions: Prediction[]) => Promise<void>
+  skipFeedback: (queryId: number, model: string, notes: string) => Promise<void>
   undoLastSubmit: () => void
   lastSubmittedKey: string | null
 }
@@ -98,6 +102,12 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
       await postFeedback({
         query_id: queryId,
         model_slug: model,
+        outcome:
+          draft.correctRank === 0
+            ? 'none_of_top_k'
+            : draft.correctRank
+              ? 'matched_rank'
+              : undefined,
         correct_rank: draft.correctRank,
         correct_dir: selectedPrediction?.dir_name ?? null,
         notes: draft.notes,
@@ -111,6 +121,34 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
         next.delete(key)
         return next
       })
+      window.dispatchEvent(new Event(FEEDBACK_UPDATED_EVENT))
+    },
+    [drafts],
+  )
+
+  const skipFeedback = useCallback(
+    async (queryId: number, model: string, notes: string): Promise<void> => {
+      const key = makeDraftKey(queryId, model)
+      const draft = drafts.get(key) ?? emptyDraft()
+
+      await postFeedback({
+        query_id: queryId,
+        model_slug: model,
+        outcome: 'skipped',
+        correct_rank: null,
+        correct_dir: null,
+        notes,
+      })
+
+      lastSubmittedDraft.current = { key, draft: { ...draft, notes } }
+      setLastSubmittedKey(key)
+
+      setDrafts((prev) => {
+        const next = new Map(prev)
+        next.delete(key)
+        return next
+      })
+      window.dispatchEvent(new Event(FEEDBACK_UPDATED_EVENT))
     },
     [drafts],
   )
@@ -132,6 +170,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
     getDraft,
     updateDraft,
     submitFeedback,
+    skipFeedback,
     undoLastSubmit,
     lastSubmittedKey,
   }

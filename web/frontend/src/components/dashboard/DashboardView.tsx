@@ -53,7 +53,7 @@ function ClockIcon() {
   )
 }
 
-function ChatIcon() {
+function SkipIcon() {
   return (
     <svg
       width="20"
@@ -66,7 +66,8 @@ function ChatIcon() {
       strokeLinejoin="round"
       aria-hidden="true"
     >
-      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+      <polygon points="5 4 15 12 5 20 5 4" />
+      <line x1="19" y1="5" x2="19" y2="19" />
     </svg>
   )
 }
@@ -167,10 +168,10 @@ export default function DashboardView() {
             color="text-highlight"
           />
           <StatCard
-            label="Total Feedback"
-            value={stats.feedback_count}
-            icon={<ChatIcon />}
-            color="text-accent"
+            label="Skipped"
+            value={stats.skipped_count}
+            icon={<SkipIcon />}
+            color="text-stone-500"
           />
           <StatCard
             label="Completion"

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { apiFetch } from './client'
+import { FEEDBACK_UPDATED_EVENT } from './feedback'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -23,11 +24,14 @@ export interface RecentReview {
 export interface StatsResponse {
   total_queries: number
   reviewed_count: number
+  skipped_count: number
   unreviewed_count: number
+  unresolved_count: number
   feedback_count: number
   reviews_by_model: Record<string, number>
   reviews_by_reviewer: Record<string, number>
   rank_distribution: Record<string, number>
+  outcome_distribution: Record<string, number>
   recent_reviews: RecentReview[]
   next_unreviewed_ids: number[]
 }
@@ -85,6 +89,16 @@ export function useStats(enabled = true): HookState<StatsResponse> {
     error: null,
   })
   const cache = useRef<StatsResponse | null>(null)
+  const [refreshVersion, setRefreshVersion] = useState(0)
+
+  useEffect(() => {
+    const refresh = () => {
+      cache.current = null
+      setRefreshVersion((version) => version + 1)
+    }
+    window.addEventListener(FEEDBACK_UPDATED_EVENT, refresh)
+    return () => window.removeEventListener(FEEDBACK_UPDATED_EVENT, refresh)
+  }, [])
 
   useEffect(() => {
     if (!enabled) {
@@ -113,7 +127,7 @@ export function useStats(enabled = true): HookState<StatsResponse> {
     return () => {
       cancelled = true
     }
-  }, [enabled])
+  }, [enabled, refreshVersion])
 
   return state
 }

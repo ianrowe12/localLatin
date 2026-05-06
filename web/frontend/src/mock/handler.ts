@@ -207,11 +207,14 @@ function handleStats(): StatsResponse {
   return {
     total_queries: 2238,
     reviewed_count: 247,
-    unreviewed_count: 1991,
+    skipped_count: 12,
+    unreviewed_count: 1979,
+    unresolved_count: 0,
     feedback_count: 312,
     reviews_by_model: { 'bowphs/LaTa': 247 },
     reviews_by_reviewer: { scholar: 247 },
-    rank_distribution: { '1': 89, '2': 67, '3': 45, '4': 28, '5': 18 },
+    rank_distribution: { '1': 89, '2': 67, '3': 45, '4': 28, '5': 18, skipped: 12 },
+    outcome_distribution: { matched_rank: 247, skipped: 12 },
     recent_reviews: [
       { file_id: 101, filename: 'BnF lat. 4886, f.12r', timestamp: new Date(Date.now() - 3600_000).toISOString(), model_slug: 'bowphs/LaTa' },
       { file_id: 203, filename: 'BnF lat. 5132, f.45v', timestamp: new Date(Date.now() - 7200_000).toISOString(), model_slug: 'bowphs/LaTa' },
