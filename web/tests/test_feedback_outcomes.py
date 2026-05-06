@@ -199,9 +199,16 @@ def test_feedback_outcomes_drive_status_stats_and_export(tmp_path: Path) -> None
         assert stats["rank_distribution"]["none_of_top_k"] == 1
         assert stats["rank_distribution"]["skipped"] == 1
         assert stats["next_unreviewed_ids"] == []
+        assert [item["file_id"] for item in stats["needs_attention"]] == [3, 2]
+        assert {
+            item["outcome"] for item in stats["needs_attention"]
+        } == {"skipped", "none_of_top_k"}
+        assert stats["recent_reviews"][0]["reviewer"] == "PI"
+        assert stats["recent_reviews"][0]["outcome"] == "matched_rank"
 
         exported = client.get("/api/feedback/export").text
         rows = list(csv.DictReader(exported.splitlines()))
+        assert rows[0]["filename"] == "query-1.txt"
         assert [row["outcome"] for row in rows] == [
             "matched_rank",
             "none_of_top_k",
@@ -209,6 +216,26 @@ def test_feedback_outcomes_drive_status_stats_and_export(tmp_path: Path) -> None
             "matched_rank",
         ]
         assert rows[0]["correct_dir"] == "candidate-b"
+
+        skipped_export = client.get(
+            "/api/feedback/export", params={"status": "skipped"}
+        )
+        skipped_rows = list(csv.DictReader(skipped_export.text.splitlines()))
+        assert [row["query_id"] for row in skipped_rows] == ["3"]
+        assert skipped_rows[0]["filename"] == "query-3.txt"
+
+        none_export = client.get(
+            "/api/feedback/export", params={"outcome": "none_of_top_k"}
+        )
+        none_rows = list(csv.DictReader(none_export.text.splitlines()))
+        assert [row["query_id"] for row in none_rows] == ["2"]
+
+        empty_export = client.get(
+            "/api/feedback/export",
+            params={"reviewer": "Missing Reviewer", "date_from": "2999-01-01"},
+        )
+        empty_lines = empty_export.text.splitlines()
+        assert empty_lines == [",".join(rows[0].keys())]
 
 
 def test_feedback_outcome_validation_rejects_ambiguous_payloads(tmp_path: Path) -> None:

@@ -4,6 +4,9 @@ import ResumeCard, { ResumeCardSkeleton } from './ResumeCard'
 import RecentActivityList, {
   RecentActivitySkeleton,
 } from './RecentActivityList'
+import NeedsAttentionList, {
+  NeedsAttentionSkeleton,
+} from './NeedsAttentionList'
 import ModelProgressBars, {
   ModelProgressSkeleton,
 } from './ModelProgressBars'
@@ -11,6 +14,7 @@ import RankDistributionChart, {
   RankDistributionSkeleton,
 } from './RankDistributionChart'
 import ReviewerTable, { ReviewerTableSkeleton } from './ReviewerTable'
+import ExportControls from './ExportControls'
 
 // ---------------------------------------------------------------------------
 // Icon helpers (inline SVGs matching the codebase style)
@@ -103,6 +107,11 @@ function DashboardSkeleton() {
         {/* Resume card */}
         <ResumeCardSkeleton />
 
+        <div>
+          <SectionHeader>Needs Attention</SectionHeader>
+          <NeedsAttentionSkeleton />
+        </div>
+
         {/* Two-column: activity + model progress */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div>
@@ -186,6 +195,16 @@ export default function DashboardView() {
 
         {/* Section 2: Resume CTA */}
         <ResumeCard stats={stats} />
+
+        <div>
+          <SectionHeader>CSV Export</SectionHeader>
+          <ExportControls stats={stats} />
+        </div>
+
+        <div>
+          <SectionHeader>Needs Attention</SectionHeader>
+          <NeedsAttentionList items={stats.needs_attention ?? []} />
+        </div>
 
         {/* Section 3: Activity + Model Progress */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

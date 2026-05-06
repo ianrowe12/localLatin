@@ -235,6 +235,19 @@ class RecentReview(BaseModel):
     filename: str
     timestamp: str
     model_slug: str
+    outcome: str
+    reviewer: str
+    correct_rank: Optional[int] = None
+
+
+class NeedsAttentionItem(BaseModel):
+    file_id: int
+    filename: str
+    timestamp: str
+    model_slug: str
+    outcome: str
+    notes: str
+    reviewer: str
 
 
 class StatsResponse(BaseModel):
@@ -249,6 +262,7 @@ class StatsResponse(BaseModel):
     rank_distribution: Dict[str, int]
     outcome_distribution: Dict[str, int] = {}
     recent_reviews: List[RecentReview] = []
+    needs_attention: List[NeedsAttentionItem] = []
     next_unreviewed_ids: List[int] = []
 
 

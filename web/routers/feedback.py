@@ -43,11 +43,30 @@ async def create_feedback(
 async def export_feedback(
     model: str | None = None,
     reviewer: str | None = None,
+    outcome: str | None = Query(
+        None,
+        pattern="^(matched_rank|none_of_top_k|skipped|legacy_unresolved)$",
+    ),
+    status: str | None = Query(
+        None,
+        pattern="^(reviewed|skipped|needs_attention)$",
+    ),
+    date_from: str | None = None,
+    date_to: str | None = None,
+    store: DataStore = Depends(get_store),
     db: FeedbackDB = Depends(get_db),
     current_user: UserPublic = Depends(require_pi_admin),
 ) -> PlainTextResponse:
     slug = normalize_slug(model) if model else None
-    csv_data = await db.export_csv(model=slug, reviewer=reviewer)
+    csv_data = await db.export_csv(
+        model=slug,
+        reviewer=reviewer,
+        outcome=outcome,
+        status=status,
+        date_from=date_from,
+        date_to=date_to,
+        filename_by_query=store.file_id_to_filename,
+    )
     return PlainTextResponse(
         content=csv_data,
         media_type="text/csv",

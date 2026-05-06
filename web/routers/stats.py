@@ -3,7 +3,13 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 
 from web.dependencies import get_db, get_store, require_pi_admin
-from web.models import ModelInfo, RecentReview, StatsResponse, UserPublic
+from web.models import (
+    ModelInfo,
+    NeedsAttentionItem,
+    RecentReview,
+    StatsResponse,
+    UserPublic,
+)
 from web.services.data_store import DataStore
 from web.services.feedback_db import FeedbackDB
 
@@ -28,8 +34,25 @@ async def get_stats(
             filename=store.file_id_to_filename.get(r["file_id"], f"unknown-{r['file_id']}"),
             timestamp=r["timestamp"],
             model_slug=r["model_slug"],
+            outcome=r["outcome"],
+            reviewer=r["reviewer"],
+            correct_rank=r["correct_rank"],
         )
         for r in raw_recent
+    ]
+
+    raw_needs_attention = await db.get_needs_attention(10)
+    needs_attention = [
+        NeedsAttentionItem(
+            file_id=r["file_id"],
+            filename=store.file_id_to_filename.get(r["file_id"], f"unknown-{r['file_id']}"),
+            timestamp=r["timestamp"],
+            model_slug=r["model_slug"],
+            outcome=r["outcome"],
+            notes=r["notes"],
+            reviewer=r["reviewer"],
+        )
+        for r in raw_needs_attention
     ]
 
     next_unreviewed_ids = await db.get_next_unreviewed(store.file_ids, 5)
@@ -46,6 +69,7 @@ async def get_stats(
         rank_distribution=db_stats["rank_distribution"],
         outcome_distribution=db_stats["outcome_distribution"],
         recent_reviews=recent_reviews,
+        needs_attention=needs_attention,
         next_unreviewed_ids=next_unreviewed_ids,
     )
 

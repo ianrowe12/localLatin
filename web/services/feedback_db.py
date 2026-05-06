@@ -58,6 +58,7 @@ CREATE INDEX IF NOT EXISTS idx_account_sessions_expires ON account_sessions(expi
 _EXPORT_COLUMNS = [
     "id",
     "query_id",
+    "filename",
     "timestamp",
     "model_slug",
     "outcome",
@@ -414,7 +415,12 @@ class FeedbackDB:
         assert self._db is not None
         rows = await (
             await self._db.execute(
-                "SELECT DISTINCT query_id, timestamp, model_slug FROM feedback ORDER BY timestamp DESC LIMIT ?",
+                """
+                SELECT query_id, timestamp, model_slug, outcome, reviewer, correct_rank
+                FROM feedback
+                ORDER BY timestamp DESC, id DESC
+                LIMIT ?
+                """,
                 (limit,),
             )
         ).fetchall()
@@ -423,6 +429,35 @@ class FeedbackDB:
                 "file_id": r["query_id"],
                 "timestamp": r["timestamp"],
                 "model_slug": r["model_slug"],
+                "outcome": r["outcome"],
+                "reviewer": r["reviewer"],
+                "correct_rank": r["correct_rank"],
+            }
+            for r in rows
+        ]
+
+    async def get_needs_attention(self, limit: int = 10) -> list[dict]:
+        assert self._db is not None
+        rows = await (
+            await self._db.execute(
+                """
+                SELECT query_id, timestamp, model_slug, outcome, notes, reviewer
+                FROM feedback
+                WHERE outcome IN ('skipped', 'none_of_top_k')
+                ORDER BY timestamp DESC, id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            )
+        ).fetchall()
+        return [
+            {
+                "file_id": r["query_id"],
+                "timestamp": r["timestamp"],
+                "model_slug": r["model_slug"],
+                "outcome": r["outcome"],
+                "notes": r["notes"],
+                "reviewer": r["reviewer"],
             }
             for r in rows
         ]
@@ -438,7 +473,14 @@ class FeedbackDB:
         return result
 
     async def export_csv(
-        self, model: str | None = None, reviewer: str | None = None
+        self,
+        model: str | None = None,
+        reviewer: str | None = None,
+        outcome: str | None = None,
+        status: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        filename_by_query: dict[int, str] | None = None,
     ) -> str:
         assert self._db is not None
         query = "SELECT * FROM feedback WHERE 1=1"
@@ -449,14 +491,34 @@ class FeedbackDB:
         if reviewer:
             query += " AND reviewer = ?"
             params.append(reviewer)
-        query += " ORDER BY timestamp"
+        if outcome:
+            query += " AND outcome = ?"
+            params.append(outcome)
+        if status:
+            if status == "reviewed":
+                query += " AND outcome IN ('matched_rank', 'none_of_top_k')"
+            elif status == "skipped":
+                query += " AND outcome = 'skipped'"
+            elif status == "needs_attention":
+                query += " AND outcome IN ('skipped', 'none_of_top_k')"
+        if date_from:
+            query += " AND timestamp >= ?"
+            params.append(date_from)
+        if date_to:
+            query += " AND timestamp <= ?"
+            params.append(date_to)
+        query += " ORDER BY timestamp, id"
 
         rows = await (await self._db.execute(query, params)).fetchall()
         output = io.StringIO()
         writer = csv.DictWriter(output, fieldnames=_EXPORT_COLUMNS)
         writer.writeheader()
+        filename_lookup = filename_by_query or {}
         for r in rows:
             row = dict(r)
+            row["filename"] = filename_lookup.get(
+                row["query_id"], f"unknown-{row['query_id']}"
+            )
             writer.writerow({column: row.get(column) for column in _EXPORT_COLUMNS})
         return output.getvalue()
 
