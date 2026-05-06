@@ -18,6 +18,7 @@ async def get_stats(
     db_stats = await db.get_stats()
     total_queries = len(store.file_ids)
     reviewed = db_stats["reviewed_count"]
+    skipped = db_stats["skipped_count"]
 
     raw_recent = await db.get_recent_reviews(10)
     recent_reviews = [
@@ -35,11 +36,14 @@ async def get_stats(
     return StatsResponse(
         total_queries=total_queries,
         reviewed_count=reviewed,
-        unreviewed_count=total_queries - reviewed,
+        skipped_count=skipped,
+        unreviewed_count=total_queries - reviewed - skipped,
+        unresolved_count=db_stats["unresolved_count"],
         feedback_count=db_stats["feedback_count"],
         reviews_by_model=db_stats["reviews_by_model"],
         reviews_by_reviewer=db_stats["reviews_by_reviewer"],
         rank_distribution=db_stats["rank_distribution"],
+        outcome_distribution=db_stats["outcome_distribution"],
         recent_reviews=recent_reviews,
         next_unreviewed_ids=next_unreviewed_ids,
     )
