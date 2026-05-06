@@ -237,11 +237,15 @@ function handleStats(): StatsResponse {
     rank_distribution: { '1': 89, '2': 67, '3': 45, '4': 28, '5': 18, skipped: 12 },
     outcome_distribution: { matched_rank: 247, skipped: 12 },
     recent_reviews: [
-      { file_id: 101, filename: 'BnF lat. 4886, f.12r', timestamp: new Date(Date.now() - 3600_000).toISOString(), model_slug: 'bowphs/LaTa' },
-      { file_id: 203, filename: 'BnF lat. 5132, f.45v', timestamp: new Date(Date.now() - 7200_000).toISOString(), model_slug: 'bowphs/LaTa' },
-      { file_id: 87, filename: 'BnF lat. 2819, f.3r', timestamp: new Date(Date.now() - 86400_000).toISOString(), model_slug: 'bowphs/LaTa' },
-      { file_id: 512, filename: 'BnF lat. 7230, f.91r', timestamp: new Date(Date.now() - 172800_000).toISOString(), model_slug: 'bowphs/LaTa' },
-      { file_id: 44, filename: 'BnF lat. 1118, f.22v', timestamp: new Date(Date.now() - 604800_000).toISOString(), model_slug: 'bowphs/LaTa' },
+      { file_id: 101, filename: 'BnF lat. 4886, f.12r', timestamp: new Date(Date.now() - 3600_000).toISOString(), model_slug: 'bowphs/LaTa', outcome: 'matched_rank', reviewer: 'scholar', correct_rank: 1 },
+      { file_id: 203, filename: 'BnF lat. 5132, f.45v', timestamp: new Date(Date.now() - 7200_000).toISOString(), model_slug: 'bowphs/LaTa', outcome: 'skipped', reviewer: 'scholar', correct_rank: null },
+      { file_id: 87, filename: 'BnF lat. 2819, f.3r', timestamp: new Date(Date.now() - 86400_000).toISOString(), model_slug: 'bowphs/LaTa', outcome: 'none_of_top_k', reviewer: 'scholar', correct_rank: 0 },
+      { file_id: 512, filename: 'BnF lat. 7230, f.91r', timestamp: new Date(Date.now() - 172800_000).toISOString(), model_slug: 'bowphs/LaTa', outcome: 'matched_rank', reviewer: 'scholar', correct_rank: 2 },
+      { file_id: 44, filename: 'BnF lat. 1118, f.22v', timestamp: new Date(Date.now() - 604800_000).toISOString(), model_slug: 'bowphs/LaTa', outcome: 'matched_rank', reviewer: 'scholar', correct_rank: 1 },
+    ],
+    needs_attention: [
+      { file_id: 203, filename: 'BnF lat. 5132, f.45v', timestamp: new Date(Date.now() - 7200_000).toISOString(), model_slug: 'bowphs/LaTa', outcome: 'skipped', reviewer: 'scholar', notes: 'Needs reference work' },
+      { file_id: 87, filename: 'BnF lat. 2819, f.3r', timestamp: new Date(Date.now() - 86400_000).toISOString(), model_slug: 'bowphs/LaTa', outcome: 'none_of_top_k', reviewer: 'scholar', notes: 'No candidate is acceptable' },
     ],
     next_unreviewed_ids: [248, 249, 250, 251, 252],
   }

@@ -27,6 +27,13 @@ function formatRelativeTime(timestamp: string): string {
   return `${months}mo ago`
 }
 
+function outcomeSummary(outcome: string, rank: number | null): string {
+  if (outcome === 'matched_rank' && rank !== null) return `Rank ${rank}`
+  if (outcome === 'none_of_top_k') return 'None of top K'
+  if (outcome === 'skipped') return 'Skipped'
+  return outcome.replace(/_/g, ' ')
+}
+
 export default function RecentActivityList({
   reviews,
 }: RecentActivityListProps) {
@@ -61,6 +68,9 @@ export default function RecentActivityList({
               <div className="min-w-0 flex-1">
                 <p className="font-latin text-sm text-stone-800 dark:text-stone-100 truncate">
                   {review.filename}
+                </p>
+                <p className="font-ui text-xs text-stone-500 dark:text-stone-400 truncate mt-0.5">
+                  {review.reviewer} - {outcomeSummary(review.outcome, review.correct_rank)}
                 </p>
               </div>
               <span className="flex-shrink-0 px-2 py-0.5 rounded-full text-xs font-ui font-medium bg-accent/10 text-accent dark:bg-accent-light/10 dark:text-accent-light">

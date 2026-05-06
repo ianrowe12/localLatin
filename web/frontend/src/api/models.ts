@@ -19,6 +19,19 @@ export interface RecentReview {
   filename: string
   timestamp: string
   model_slug: string
+  outcome: string
+  reviewer: string
+  correct_rank: number | null
+}
+
+export interface NeedsAttentionItem {
+  file_id: number
+  filename: string
+  timestamp: string
+  model_slug: string
+  outcome: string
+  notes: string
+  reviewer: string
 }
 
 export interface StatsResponse {
@@ -33,6 +46,7 @@ export interface StatsResponse {
   rank_distribution: Record<string, number>
   outcome_distribution: Record<string, number>
   recent_reviews: RecentReview[]
+  needs_attention: NeedsAttentionItem[]
   next_unreviewed_ids: number[]
 }
 
