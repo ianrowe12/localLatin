@@ -51,11 +51,12 @@ export default function ReviewerLoginModal() {
                    p-6"
       >
         <h2 className="font-latin text-xl font-semibold text-stone-800 dark:text-stone-100 mb-1">
-          LocalLatin Access
+          Reviewer Account
         </h2>
         <p className="font-ui text-sm text-stone-500 dark:text-stone-400 mb-5">
-          Sign in to review manuscripts. Display names and initials are used for
-          attribution; account sign-in controls access.
+          Use the account assigned for this review pilot. Your display name or
+          initials are saved with submitted decisions for PI summaries and
+          exports.
         </p>
 
         <div className="grid grid-cols-2 gap-2 mb-4">
@@ -107,7 +108,7 @@ export default function ReviewerLoginModal() {
                          bg-white dark:bg-surface-900 text-sm font-ui text-stone-800 dark:text-stone-200
                          placeholder:text-stone-400 dark:placeholder:text-stone-500
                          focus:outline-none focus:ring-2 focus:ring-accent/30"
-              aria-label="Display name"
+              aria-label="Display name or initials for attribution"
             />
           )}
 

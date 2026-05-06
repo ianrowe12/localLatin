@@ -123,7 +123,7 @@ export default function FeedbackPanel() {
           onClick={clearReviewer}
           className="text-accent hover:text-accent-dark transition-colors underline"
         >
-          change
+          sign out
         </button>
       </div>
 

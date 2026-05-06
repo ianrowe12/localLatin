@@ -1,4 +1,9 @@
-import type { QueryListItem, QueryListResponse, QueryDetail } from '../api/queries'
+import type {
+  NextQueryResponse,
+  QueryDetail,
+  QueryListItem,
+  QueryListResponse,
+} from '../api/queries'
 import type { StatsResponse, ModelInfo } from '../api/models'
 import type { TokenMapResponse } from '../api/tokenMap'
 import { MOCK_QUERIES, MOCK_QUERY_DETAILS } from './queries'
@@ -115,6 +120,22 @@ function handleQueryList(url: string): QueryListResponse {
     page_size: pageSize,
     has_more: start + pageSize < total,
   }
+}
+
+function handleNextQuery(url: string): NextQueryResponse {
+  const params = new URL(url, 'http://localhost').searchParams
+  const afterParam = params.get('after')
+  const after = afterParam === null ? null : parseInt(afterParam, 10)
+  const actionable = ALL_QUERIES
+    .filter((q) => q.review_status === 'unreviewed')
+    .map((q) => q.file_id)
+
+  if (after !== null && Number.isFinite(after)) {
+    const nextAfter = actionable.find((fileId) => fileId > after)
+    if (nextAfter !== undefined) return { file_id: nextAfter }
+  }
+
+  return { file_id: actionable[0] ?? null }
 }
 
 function handleQueryDetail(id: number): QueryDetail | { error: { message: string } } {
@@ -265,6 +286,11 @@ export function installMockHandler(): void {
     await new Promise((r) => setTimeout(r, 200 + Math.random() * 200))
 
     // Route to mock handlers
+    // Next actionable query
+    if (url.match(/\/api\/queries\/next/)) {
+      return mockResponse(handleNextQuery(url))
+    }
+
     // Query list
     if (url.match(/\/api\/queries\?/) || url.match(/\/api\/queries$/)) {
       return mockResponse(handleQueryList(url))
