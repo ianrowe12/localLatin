@@ -17,12 +17,12 @@ async def list_queries(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     search: str | None = None,
-    status: str | None = Query(None, pattern="^(reviewed|unreviewed|all)$"),
+    status: str | None = Query(None, pattern="^(reviewed|unreviewed|skipped|all)$"),
     sort: str = Query("file_id", pattern="^(file_id|filename)$"),
     store: DataStore = Depends(get_store),
     db: FeedbackDB = Depends(get_db),
 ) -> QueryListResponse:
-    review_counts = await db.get_review_counts()
+    query_statuses = await db.get_query_statuses()
 
     # Build filtered list
     items: list[tuple[int, str]] = []
@@ -30,10 +30,8 @@ async def list_queries(
         fname = store.file_id_to_filename[fid]
         if search and search.lower() not in fname.lower():
             continue
-        is_reviewed = fid in review_counts
-        if status == "reviewed" and not is_reviewed:
-            continue
-        if status == "unreviewed" and is_reviewed:
+        review_status = query_statuses.get(fid, {}).get("review_status", "unreviewed")
+        if status and status != "all" and status != review_status:
             continue
         items.append((fid, fname))
 
@@ -51,13 +49,15 @@ async def list_queries(
     result_items = []
     for fid, fname in page_items:
         text = store.unlabelled_texts.get(fid, "")
-        count = review_counts.get(fid, 0)
+        status_info = query_statuses.get(
+            fid, {"review_status": "unreviewed", "review_count": 0}
+        )
         result_items.append(QueryListItem(
             file_id=fid,
             filename=fname,
             text_preview=text[:150],
-            review_status="reviewed" if count > 0 else "unreviewed",
-            review_count=count,
+            review_status=status_info["review_status"],
+            review_count=status_info["review_count"],
         ))
 
     return QueryListResponse(

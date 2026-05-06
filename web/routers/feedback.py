@@ -28,6 +28,7 @@ async def create_feedback(
     row = await db.insert(
         query_id=body.query_id,
         model_slug=slug,
+        outcome=body.outcome.value,
         correct_rank=body.correct_rank,
         correct_dir=body.correct_dir,
         notes=body.notes,

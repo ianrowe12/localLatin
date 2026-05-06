@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from typing import Dict, List, Optional
+from enum import StrEnum
+from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # --- Queries ---
@@ -11,7 +12,7 @@ class QueryListItem(BaseModel):
     file_id: int
     filename: str
     text_preview: str
-    review_status: str  # "unreviewed" | "reviewed"
+    review_status: str  # "unreviewed" | "reviewed" | "skipped"
     review_count: int
 
 
@@ -133,13 +134,61 @@ class TokenMapExamplesGroupedResponse(BaseModel):
 
 # --- Feedback ---
 
+class FeedbackOutcome(StrEnum):
+    MATCHED_RANK = "matched_rank"
+    NONE_OF_TOP_K = "none_of_top_k"
+    SKIPPED = "skipped"
+    LEGACY_UNRESOLVED = "legacy_unresolved"
+
+
 class FeedbackCreate(BaseModel):
     query_id: int
     model_slug: str
+    outcome: Optional[FeedbackOutcome] = None
     correct_rank: Optional[int] = Field(None, ge=0, le=10)
     correct_dir: Optional[str] = None
     notes: str = ""
     reviewer: str
+
+    @model_validator(mode="before")
+    @classmethod
+    def validate_outcome_contract(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+
+        values = dict(data)
+        explicit_outcome = values.get("outcome") is not None
+        outcome = values.get("outcome")
+        rank = values.get("correct_rank")
+        correct_dir = values.get("correct_dir")
+
+        if outcome is None:
+            if rank is None:
+                outcome = FeedbackOutcome.LEGACY_UNRESOLVED.value
+            elif rank == 0:
+                outcome = FeedbackOutcome.NONE_OF_TOP_K.value
+            else:
+                outcome = FeedbackOutcome.MATCHED_RANK.value
+
+        if outcome == FeedbackOutcome.LEGACY_UNRESOLVED.value and explicit_outcome:
+            raise ValueError("legacy_unresolved cannot be created explicitly")
+
+        if outcome == FeedbackOutcome.MATCHED_RANK.value:
+            if rank is None or not 1 <= int(rank) <= 10:
+                raise ValueError("matched_rank requires correct_rank from 1 to 10")
+        elif outcome == FeedbackOutcome.NONE_OF_TOP_K.value:
+            if rank is not None and int(rank) != 0:
+                raise ValueError("none_of_top_k requires correct_rank 0")
+            values["correct_rank"] = 0
+            values["correct_dir"] = None
+        elif outcome == FeedbackOutcome.SKIPPED.value:
+            if rank is not None or correct_dir is not None:
+                raise ValueError("skipped cannot include correct_rank or correct_dir")
+            values["correct_rank"] = None
+            values["correct_dir"] = None
+
+        values["outcome"] = outcome
+        return values
 
 
 class FeedbackEntry(BaseModel):
@@ -147,10 +196,12 @@ class FeedbackEntry(BaseModel):
     query_id: int
     timestamp: str
     model_slug: str
+    outcome: FeedbackOutcome
     correct_rank: Optional[int]
     correct_dir: Optional[str]
     notes: str
     reviewer: str
+    schema_version: int = 2
 
 
 # --- Stats ---
@@ -165,11 +216,14 @@ class RecentReview(BaseModel):
 class StatsResponse(BaseModel):
     total_queries: int
     reviewed_count: int
+    skipped_count: int = 0
     unreviewed_count: int
+    unresolved_count: int = 0
     feedback_count: int
     reviews_by_model: Dict[str, int]
     reviews_by_reviewer: Dict[str, int]
     rank_distribution: Dict[str, int]
+    outcome_distribution: Dict[str, int] = {}
     recent_reviews: List[RecentReview] = []
     next_unreviewed_ids: List[int] = []
 
