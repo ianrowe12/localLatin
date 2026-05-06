@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from 'react'
 import { submitFeedback as postFeedback } from '../api/feedback'
+import type { Prediction } from '../api/queries'
 
 export interface FeedbackDraft {
   correctRank: number | null
@@ -18,7 +19,7 @@ export interface FeedbackContextValue {
   drafts: Map<string, FeedbackDraft>
   getDraft: (queryId: number, model: string) => FeedbackDraft
   updateDraft: (queryId: number, model: string, patch: Partial<FeedbackDraft>) => void
-  submitFeedback: (queryId: number, model: string) => Promise<void>
+  submitFeedback: (queryId: number, model: string, predictions: Prediction[]) => Promise<void>
   undoLastSubmit: () => void
   lastSubmittedKey: string | null
 }
@@ -82,15 +83,23 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
   )
 
   const submitFeedback = useCallback(
-    async (queryId: number, model: string): Promise<void> => {
+    async (
+      queryId: number,
+      model: string,
+      predictions: Prediction[],
+    ): Promise<void> => {
       const key = makeDraftKey(queryId, model)
       const draft = drafts.get(key) ?? emptyDraft()
+      const selectedPrediction =
+        draft.correctRank && draft.correctRank > 0
+          ? predictions.find((prediction) => prediction.rank === draft.correctRank)
+          : null
 
       await postFeedback({
         query_id: queryId,
         model_slug: model,
         correct_rank: draft.correctRank,
-        correct_dir: null,
+        correct_dir: selectedPrediction?.dir_name ?? null,
         notes: draft.notes,
       })
 

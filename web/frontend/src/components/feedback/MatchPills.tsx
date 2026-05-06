@@ -4,7 +4,7 @@ interface MatchPillsProps {
   onChange: (rank: number | null) => void
 }
 
-export default function MatchPills({ selectedRank, maxRank = 5, onChange }: MatchPillsProps) {
+export default function MatchPills({ selectedRank, maxRank = 10, onChange }: MatchPillsProps) {
   const handleClick = (rank: number) => {
     // Toggle: if already selected, deselect; otherwise select
     if (selectedRank === rank) {
@@ -17,7 +17,7 @@ export default function MatchPills({ selectedRank, maxRank = 5, onChange }: Matc
   const matchPills = Array.from({ length: maxRank }, (_, i) => i + 1)
 
   return (
-    <div className="grid grid-cols-3 gap-1.5">
+    <div className="grid grid-cols-5 gap-1.5">
       {matchPills.map((rank) => {
         const isSelected = selectedRank === rank
         return (
@@ -25,7 +25,7 @@ export default function MatchPills({ selectedRank, maxRank = 5, onChange }: Matc
             key={rank}
             type="button"
             onClick={() => handleClick(rank)}
-            className={`text-xs py-1.5 px-2 rounded-full text-center cursor-pointer transition-all ${
+            className={`text-xs py-1.5 px-2 rounded-full text-center cursor-pointer transition-all focus:outline-none focus:ring-2 focus:ring-accent/40 ${
               isSelected
                 ? 'bg-correct/15 text-correct ring-1 ring-correct/40 font-medium'
                 : 'bg-stone-100 dark:bg-stone-700 text-stone-600 dark:text-stone-300 hover:bg-stone-200 dark:hover:bg-stone-600'
@@ -41,14 +41,14 @@ export default function MatchPills({ selectedRank, maxRank = 5, onChange }: Matc
       <button
         type="button"
         onClick={() => handleClick(0)}
-        className={`col-span-3 text-xs py-1.5 px-2 rounded-full text-center cursor-pointer transition-all ${
+        className={`col-span-5 text-xs py-1.5 px-2 rounded-full text-center cursor-pointer transition-all focus:outline-none focus:ring-2 focus:ring-accent/40 ${
           selectedRank === 0
             ? 'bg-incorrect/15 text-incorrect ring-1 ring-incorrect/40 font-medium'
             : 'bg-stone-100 dark:bg-stone-700 text-stone-600 dark:text-stone-300 hover:bg-stone-200 dark:hover:bg-stone-600'
         }`}
         aria-pressed={selectedRank === 0}
       >
-        None correct
+        None of top {maxRank}
       </button>
     </div>
   )
