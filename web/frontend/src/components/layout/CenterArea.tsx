@@ -77,6 +77,7 @@ export default function CenterArea() {
   const {
     selectedMethod,
     selectedVariant,
+    viewMode,
     setAvailableMethods,
     clearAllPins,
   } = useTokens()
@@ -231,11 +232,13 @@ export default function CenterArea() {
         </div>
 
         {/* SVG connection overlay */}
-        <ConnectionOverlay
-          containerRef={containerRef}
-          leftPanelRef={queryScrollRef}
-          rightPanelRef={candidateScrollRef}
-        />
+        {viewMode !== 'heatmap' && (
+          <ConnectionOverlay
+            containerRef={containerRef}
+            leftPanelRef={queryScrollRef}
+            rightPanelRef={candidateScrollRef}
+          />
+        )}
       </div>
     </TokenRefProvider>
   )

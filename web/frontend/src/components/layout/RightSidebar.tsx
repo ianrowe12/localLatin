@@ -7,6 +7,7 @@ import FeedbackPanel from '../feedback/FeedbackPanel'
 import ViewModeToggle from '../common/ViewModeToggle'
 import AttributionMethodSelector from '../common/AttributionMethodSelector'
 import Toast from '../common/Toast'
+import { useReviewer } from '../../contexts/ReviewerContext'
 
 interface RightSidebarProps {
   isOpen: boolean
@@ -15,6 +16,7 @@ interface RightSidebarProps {
 
 export default function RightSidebar({ isOpen, onToggle }: RightSidebarProps) {
   const { lastSubmittedKey, undoLastSubmit } = useFeedback()
+  const { isPiAdmin } = useReviewer()
 
   const handleToastClose = useCallback(() => {
     // Toast auto-dismisses; lastSubmittedKey will be cleared on next submit or undo
@@ -69,18 +71,20 @@ export default function RightSidebar({ isOpen, onToggle }: RightSidebarProps) {
             {/* Visualization mode */}
             <div>
               <label className="text-xs font-semibold uppercase tracking-wider text-stone-400 mb-1.5 block">
-                Visualization Mode
+                Evidence View
               </label>
               <ViewModeToggle />
             </div>
 
             {/* Attribution method */}
-            <div>
-              <label className="text-xs font-semibold uppercase tracking-wider text-stone-400 mb-1.5 block">
-                Attribution Method
-              </label>
-              <AttributionMethodSelector />
-            </div>
+            {isPiAdmin && (
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-wider text-stone-400 mb-1.5 block">
+                  Attribution Controls
+                </label>
+                <AttributionMethodSelector />
+              </div>
+            )}
 
             {/* Prediction list — scrollable */}
             <div className="flex-1 overflow-y-auto rounded-lg bg-stone-50 dark:bg-surface-900/50">

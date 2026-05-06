@@ -5,6 +5,7 @@ import type {
   QueryListResponse,
 } from '../api/queries'
 import type { StatsResponse, ModelInfo } from '../api/models'
+import type { AuthUser } from '../api/auth'
 import type { TokenMapResponse } from '../api/tokenMap'
 import { MOCK_QUERIES, MOCK_QUERY_DETAILS } from './queries'
 import { MOCK_PREDICTIONS } from './predictions'
@@ -74,6 +75,7 @@ function generateSyntheticQueries(): QueryListItem[] {
 }
 
 const ALL_QUERIES = generateSyntheticQueries()
+let mockUser: AuthUser | null = null
 
 // ---------------------------------------------------------------------------
 // Mock response helper
@@ -84,6 +86,32 @@ function mockResponse(data: unknown, status = 200): Response {
     status,
     headers: { 'Content-Type': 'application/json' },
   })
+}
+
+async function handleAuth(url: string, init?: RequestInit): Promise<Response | null> {
+  if (url.includes('/api/auth/me')) {
+    return mockUser
+      ? mockResponse(mockUser)
+      : mockResponse({ error: { message: 'Not authenticated' } }, 401)
+  }
+
+  if (url.includes('/api/auth/signout')) {
+    mockUser = null
+    return mockResponse({ success: true })
+  }
+
+  if (url.includes('/api/auth/register') || url.includes('/api/auth/signin')) {
+    const body = init?.body ? JSON.parse(String(init.body)) : {}
+    mockUser = {
+      id: body.admin_code ? 1 : 2,
+      username: body.username ?? 'reviewer',
+      display_name: body.display_name ?? body.username ?? 'Reviewer',
+      role: body.admin_code ? 'pi_admin' : 'reviewer',
+    }
+    return mockResponse(mockUser, url.includes('/register') ? 201 : 200)
+  }
+
+  return null
 }
 
 // ---------------------------------------------------------------------------
@@ -290,6 +318,9 @@ export function installMockHandler(): void {
     await new Promise((r) => setTimeout(r, 200 + Math.random() * 200))
 
     // Route to mock handlers
+    const authResponse = await handleAuth(url, init)
+    if (authResponse) return authResponse
+
     // Next actionable query
     if (url.match(/\/api\/queries\/next/)) {
       return mockResponse(handleNextQuery(url))
