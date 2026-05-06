@@ -6,7 +6,7 @@ app:
   port: 8000
 
 paths:
-  repo_root: "/u/irowerojas/localLatin"
+  data_root: "/u/irowerojas/localLatin"
   canon_unlabelled: "data/canon_unlabelled"
   canon_labelled: "data/canon_labelled"
   predictions_combined: "runs/active/resubmit/unlabelled/unlabelled_predictions.csv"
@@ -24,3 +24,7 @@ cors:
 pagination:
   default_page_size: 50
   max_page_size: 200
+
+auth:
+  secure_cookies: true
+  session_days: 14

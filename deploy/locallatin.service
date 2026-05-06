@@ -7,8 +7,9 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=/u/irowerojas/localLatin
 Environment=LOCALLATIN_CONFIG=/u/irowerojas/localLatin/web/config.production.yaml
+Environment=LOCALLATIN_DATA_ROOT=/u/irowerojas/localLatin
 Environment=PATH=/u/irowerojas/.local/bin:/usr/bin:/bin
-ExecStart=/u/irowerojas/.local/bin/uvicorn web.app:create_app --factory --host 127.0.0.1 --port 8000 --workers 2 --log-level info
+ExecStart=/u/irowerojas/.local/bin/uvicorn web.app:create_app --factory --host 127.0.0.1 --port 8000 --workers 1 --log-level info
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
