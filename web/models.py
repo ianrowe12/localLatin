@@ -141,6 +141,25 @@ class FeedbackOutcome(StrEnum):
     LEGACY_UNRESOLVED = "legacy_unresolved"
 
 
+class UserPublic(BaseModel):
+    id: int
+    username: str
+    display_name: str
+    role: str
+
+
+class RegisterRequest(BaseModel):
+    username: str = Field(min_length=2, max_length=64)
+    display_name: str = Field(min_length=1, max_length=120)
+    password: str = Field(min_length=12, max_length=256)
+    admin_code: Optional[str] = None
+
+
+class SignInRequest(BaseModel):
+    username: str
+    password: str
+
+
 class FeedbackCreate(BaseModel):
     query_id: int
     model_slug: str
@@ -148,7 +167,7 @@ class FeedbackCreate(BaseModel):
     correct_rank: Optional[int] = Field(None, ge=0, le=10)
     correct_dir: Optional[str] = None
     notes: str = ""
-    reviewer: str
+    reviewer: str = ""
 
     @model_validator(mode="before")
     @classmethod
@@ -201,6 +220,7 @@ class FeedbackEntry(BaseModel):
     correct_dir: Optional[str]
     notes: str
     reviewer: str
+    reviewer_account_id: Optional[int] = None
     schema_version: int = 2
 
 

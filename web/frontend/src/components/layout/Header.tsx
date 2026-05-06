@@ -6,10 +6,10 @@ import { useReviewer } from '../../contexts/ReviewerContext'
 import ThemeToggle from '../common/ThemeToggle'
 
 export default function Header() {
-  const { data: stats } = useStats()
   const { currentView, setCurrentView } = useApp()
   const { startTour } = useTour()
-  const { reviewerName } = useReviewer()
+  const { reviewerName, isPiAdmin, clearReviewer } = useReviewer()
+  const { data: stats } = useStats(isPiAdmin)
 
   const handleHelp = () => {
     startTour(currentView === 'dashboard' ? DASHBOARD_TOUR_STEPS : REVIEW_TOUR_STEPS)
@@ -41,27 +41,30 @@ export default function Header() {
         </p>
       </div>
 
-      {/* Center: Stats progress */}
-      <div className="flex items-center gap-3 font-ui text-sm text-stone-600 dark:text-stone-300">
-        <span>
-          {reviewed}
-          <span className="text-stone-400 dark:text-stone-500"> / </span>
-          {total}
-          <span className="ml-1 text-stone-400 dark:text-stone-500">
-            reviewed
+      {isPiAdmin ? (
+        <div className="flex items-center gap-3 font-ui text-sm text-stone-600 dark:text-stone-300">
+          <span>
+            {reviewed}
+            <span className="text-stone-400 dark:text-stone-500"> / </span>
+            {total}
+            <span className="ml-1 text-stone-400 dark:text-stone-500">
+              reviewed
+            </span>
           </span>
-        </span>
-        <div className="w-32 h-1.5 rounded-full bg-stone-200 dark:bg-stone-700 overflow-hidden">
-          <div
-            className="h-full rounded-full bg-accent transition-all duration-300"
-            style={{ width: `${progressPercent}%` }}
-          />
+          <div className="w-32 h-1.5 rounded-full bg-stone-200 dark:bg-stone-700 overflow-hidden">
+            <div
+              className="h-full rounded-full bg-accent transition-all duration-300"
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
         </div>
-      </div>
+      ) : (
+        <div />
+      )}
 
       {/* Right: Actions */}
       <div className="flex items-center gap-2 flex-shrink-0">
-        {currentView !== 'dashboard' && (
+        {currentView !== 'dashboard' && isPiAdmin && (
           <button
             type="button"
             onClick={() => setCurrentView('dashboard')}
@@ -85,40 +88,47 @@ export default function Header() {
             </svg>
           </button>
         )}
-        <button
-          type="button"
-          onClick={() => setCurrentView('examples')}
-          className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors text-stone-600 dark:text-stone-300 ${
-            currentView === 'examples'
-              ? 'bg-stone-200 dark:bg-stone-700'
-              : 'hover:bg-stone-200 dark:hover:bg-stone-700'
-          }`}
-          aria-label="Browse example pairs"
-          title="Example pairs gallery"
-        >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
+        {isPiAdmin && (
+          <button
+            type="button"
+            onClick={() => setCurrentView('examples')}
+            className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors text-stone-600 dark:text-stone-300 ${
+              currentView === 'examples'
+                ? 'bg-stone-200 dark:bg-stone-700'
+                : 'hover:bg-stone-200 dark:hover:bg-stone-700'
+            }`}
+            aria-label="Browse example pairs"
+            title="Example pairs gallery"
           >
-            <rect x="3" y="3" width="7" height="7" />
-            <rect x="14" y="3" width="7" height="7" />
-            <rect x="3" y="14" width="7" height="7" />
-            <rect x="14" y="14" width="7" height="7" />
-          </svg>
-        </button>
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <rect x="3" y="3" width="7" height="7" />
+              <rect x="14" y="3" width="7" height="7" />
+              <rect x="3" y="14" width="7" height="7" />
+              <rect x="14" y="14" width="7" height="7" />
+            </svg>
+          </button>
+        )}
         <ThemeToggle />
 
         {/* Reviewer badge */}
         {reviewerName && (
-          <div className="flex items-center gap-1.5 px-2 py-1 rounded-full
-                          bg-accent/10 dark:bg-accent/15">
+          <button
+            type="button"
+            onClick={clearReviewer}
+            className="flex items-center gap-1.5 px-2 py-1 rounded-full
+                       bg-accent/10 dark:bg-accent/15 hover:bg-accent/20 transition-colors"
+            title="Sign out"
+          >
             <span
               className="w-5 h-5 rounded-full bg-accent text-white
                          flex items-center justify-center text-[10px] font-bold font-ui
@@ -130,7 +140,7 @@ export default function Header() {
             <span className="text-xs font-ui font-medium text-accent dark:text-accent-light">
               {reviewerName}
             </span>
-          </div>
+          </button>
         )}
 
         <button
@@ -143,29 +153,32 @@ export default function Header() {
         >
           <span className="font-ui text-sm font-semibold">?</span>
         </button>
-        <button
-          type="button"
-          className="w-8 h-8 rounded-full flex items-center justify-center
-                     hover:bg-stone-200 dark:hover:bg-stone-700 transition-colors
-                     text-stone-600 dark:text-stone-300"
-          aria-label="Export data"
-        >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
+        {isPiAdmin && (
+          <button
+            type="button"
+            onClick={() => window.open('/api/feedback/export', '_blank')}
+            className="w-8 h-8 rounded-full flex items-center justify-center
+                       hover:bg-stone-200 dark:hover:bg-stone-700 transition-colors
+                       text-stone-600 dark:text-stone-300"
+            aria-label="Export data"
           >
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-            <polyline points="7 10 12 15 17 10" />
-            <line x1="12" y1="15" x2="12" y2="3" />
-          </svg>
-        </button>
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+          </button>
+        )}
       </div>
     </header>
   )

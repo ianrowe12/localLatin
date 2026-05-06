@@ -31,12 +31,12 @@ export default function FeedbackPanel() {
 
   const handleSubmit = useCallback(async () => {
     if (activeQueryId === null) return
-    await submitFeedback(activeQueryId, activeModel, reviewerName ?? undefined)
+    await submitFeedback(activeQueryId, activeModel)
     // Auto-advance to next query after a short delay
     setTimeout(() => {
       setActiveQueryId(activeQueryId + 1)
     }, 500)
-  }, [activeQueryId, activeModel, reviewerName, submitFeedback, setActiveQueryId])
+  }, [activeQueryId, activeModel, submitFeedback, setActiveQueryId])
 
   const handleSkip = useCallback(() => {
     if (activeQueryId === null) return

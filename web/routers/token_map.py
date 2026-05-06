@@ -2,9 +2,14 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
 
-from web.dependencies import get_store
+from web.dependencies import get_current_user, get_store
 from web.exceptions import ExampleNotFoundError
-from web.models import TokenMapExampleSummary, TokenMapExamplesGroupedResponse, TokenMapResponse
+from web.models import (
+    TokenMapExampleSummary,
+    TokenMapExamplesGroupedResponse,
+    TokenMapResponse,
+    UserPublic,
+)
 from web.services.data_store import DataStore
 from web.services import token_map_svc
 
@@ -16,6 +21,7 @@ async def list_token_map_examples(
     model: str | None = None,
     bucket: str | None = None,
     store: DataStore = Depends(get_store),
+    current_user: UserPublic = Depends(get_current_user),
 ) -> list[TokenMapExampleSummary]:
     return token_map_svc.list_examples(store, model=model, bucket=bucket)
 
@@ -23,6 +29,7 @@ async def list_token_map_examples(
 @router.get("/token_map_examples_grouped", response_model=TokenMapExamplesGroupedResponse)
 async def list_token_map_examples_grouped(
     store: DataStore = Depends(get_store),
+    current_user: UserPublic = Depends(get_current_user),
 ) -> TokenMapExamplesGroupedResponse:
     result = token_map_svc.list_examples_grouped(store)
     return TokenMapExamplesGroupedResponse(**result)
@@ -32,6 +39,7 @@ async def list_token_map_examples_grouped(
 async def get_token_map(
     example_id: int,
     store: DataStore = Depends(get_store),
+    current_user: UserPublic = Depends(get_current_user),
 ) -> TokenMapResponse:
     result = token_map_svc.load_token_map(store, example_id)
     if result is None:
@@ -45,6 +53,7 @@ async def get_token_map_by_query(
     candidate_dir: str = Query(..., description="Candidate directory name"),
     model: str = Query("", description="Model slug (optional, narrows lookup)"),
     store: DataStore = Depends(get_store),
+    current_user: UserPublic = Depends(get_current_user),
 ) -> TokenMapResponse:
     """Look up a token map by query file_id + candidate directory."""
     example_id = token_map_svc.resolve_example_id(

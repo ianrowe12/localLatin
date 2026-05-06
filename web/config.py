@@ -41,11 +41,19 @@ class PaginationConfig(BaseModel):
     max_page_size: int = 200
 
 
+class AuthConfig(BaseModel):
+    session_cookie: str = "locallatin_session"
+    session_days: int = 14
+    secure_cookies: bool = False
+    admin_registration_code: str | None = os.environ.get("LOCALLATIN_ADMIN_CODE")
+
+
 class Settings(BaseModel):
     app: AppConfig = AppConfig()
     paths: PathsConfig = PathsConfig()
     cors: CorsConfig = CorsConfig()
     pagination: PaginationConfig = PaginationConfig()
+    auth: AuthConfig = AuthConfig()
 
 
 def load_settings(config_path: str | Path | None = None) -> Settings:

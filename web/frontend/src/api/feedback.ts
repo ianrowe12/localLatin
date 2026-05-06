@@ -6,7 +6,6 @@ export interface FeedbackPayload {
   correct_rank: number | null
   correct_dir: string | null
   notes: string
-  reviewer: string
 }
 
 export async function submitFeedback(payload: FeedbackPayload): Promise<void> {

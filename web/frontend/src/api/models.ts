@@ -78,7 +78,7 @@ export function useModels(): HookState<ModelInfo[]> {
   return state
 }
 
-export function useStats(): HookState<StatsResponse> {
+export function useStats(enabled = true): HookState<StatsResponse> {
   const [state, setState] = useState<HookState<StatsResponse>>({
     data: null,
     loading: false,
@@ -87,6 +87,10 @@ export function useStats(): HookState<StatsResponse> {
   const cache = useRef<StatsResponse | null>(null)
 
   useEffect(() => {
+    if (!enabled) {
+      setState({ data: null, loading: false, error: null })
+      return
+    }
     if (cache.current) {
       setState({ data: cache.current, loading: false, error: null })
       return
@@ -109,7 +113,7 @@ export function useStats(): HookState<StatsResponse> {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [enabled])
 
   return state
 }

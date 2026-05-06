@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import csv
+import hashlib
+import hmac
 import io
 import logging
+import secrets
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import aiosqlite
@@ -20,11 +24,35 @@ CREATE TABLE IF NOT EXISTS feedback (
     correct_dir TEXT,
     notes TEXT NOT NULL DEFAULT '',
     reviewer TEXT NOT NULL,
+    reviewer_account_id INTEGER,
     schema_version INTEGER NOT NULL DEFAULT 2
 );
 CREATE INDEX IF NOT EXISTS idx_feedback_query ON feedback(query_id);
 CREATE INDEX IF NOT EXISTS idx_feedback_model ON feedback(model_slug);
 CREATE INDEX IF NOT EXISTS idx_feedback_reviewer ON feedback(reviewer);
+
+CREATE TABLE IF NOT EXISTS accounts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL COLLATE NOCASE UNIQUE,
+    display_name TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'reviewer' CHECK (role IN ('reviewer', 'pi_admin')),
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    last_login_at TEXT
+);
+CREATE TABLE IF NOT EXISTS account_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    token_hash TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at TEXT NOT NULL,
+    revoked_at TEXT,
+    last_seen_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_account_sessions_account ON account_sessions(account_id);
+CREATE INDEX IF NOT EXISTS idx_account_sessions_expires ON account_sessions(expires_at);
 """
 
 _EXPORT_COLUMNS = [
@@ -37,6 +65,7 @@ _EXPORT_COLUMNS = [
     "correct_dir",
     "notes",
     "reviewer",
+    "reviewer_account_id",
     "schema_version",
 ]
 
@@ -71,13 +100,23 @@ class FeedbackDB:
         correct_dir: str | None,
         notes: str,
         reviewer: str,
+        reviewer_account_id: int | None = None,
     ) -> dict:
         assert self._db is not None
         cursor = await self._db.execute(
             """INSERT INTO feedback
-                   (query_id, model_slug, outcome, correct_rank, correct_dir, notes, reviewer, schema_version)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 2)""",
-            (query_id, model_slug, outcome, correct_rank, correct_dir, notes, reviewer),
+                   (query_id, model_slug, outcome, correct_rank, correct_dir, notes, reviewer, reviewer_account_id, schema_version)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 2)""",
+            (
+                query_id,
+                model_slug,
+                outcome,
+                correct_rank,
+                correct_dir,
+                notes,
+                reviewer,
+                reviewer_account_id,
+            ),
         )
         await self._db.commit()
         row = await (
@@ -134,6 +173,112 @@ class FeedbackDB:
         await self._db.execute(
             "CREATE INDEX IF NOT EXISTS idx_feedback_outcome ON feedback(outcome)"
         )
+        if "reviewer_account_id" not in columns:
+            await self._db.execute(
+                "ALTER TABLE feedback ADD COLUMN reviewer_account_id INTEGER"
+            )
+        await self._db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_feedback_reviewer_account ON feedback(reviewer_account_id)"
+        )
+
+    async def account_count(self) -> int:
+        assert self._db is not None
+        row = await (await self._db.execute("SELECT COUNT(*) FROM accounts")).fetchone()
+        return int(row[0])
+
+    async def create_account(
+        self,
+        username: str,
+        display_name: str,
+        password: str,
+        role: str,
+    ) -> dict:
+        assert self._db is not None
+        password_hash = _hash_password(password)
+        cursor = await self._db.execute(
+            """
+            INSERT INTO accounts (username, display_name, password_hash, role)
+            VALUES (?, ?, ?, ?)
+            """,
+            (username.strip().lower(), display_name.strip(), password_hash, role),
+        )
+        await self._db.commit()
+        row = await (
+            await self._db.execute("SELECT * FROM accounts WHERE id = ?", (cursor.lastrowid,))
+        ).fetchone()
+        return _public_account(row)
+
+    async def verify_account(self, username: str, password: str) -> dict | None:
+        assert self._db is not None
+        row = await (
+            await self._db.execute(
+                "SELECT * FROM accounts WHERE username = ? AND is_active = 1",
+                (username.strip().lower(),),
+            )
+        ).fetchone()
+        if row is None or not _verify_password(password, row["password_hash"]):
+            return None
+        await self._db.execute(
+            "UPDATE accounts SET last_login_at = datetime('now') WHERE id = ?",
+            (row["id"],),
+        )
+        await self._db.commit()
+        return _public_account(row)
+
+    async def create_session(self, account_id: int, session_days: int) -> str:
+        assert self._db is not None
+        token = secrets.token_urlsafe(32)
+        expires_at = _utc_now() + timedelta(days=session_days)
+        await self._db.execute(
+            """
+            INSERT INTO account_sessions (account_id, token_hash, expires_at)
+            VALUES (?, ?, ?)
+            """,
+            (account_id, _hash_token(token), _format_time(expires_at)),
+        )
+        await self._db.commit()
+        return token
+
+    async def get_account_by_session(self, token: str | None) -> dict | None:
+        assert self._db is not None
+        if not token:
+            return None
+        row = await (
+            await self._db.execute(
+                """
+                SELECT accounts.*
+                FROM account_sessions
+                JOIN accounts ON accounts.id = account_sessions.account_id
+                WHERE account_sessions.token_hash = ?
+                  AND account_sessions.revoked_at IS NULL
+                  AND account_sessions.expires_at > datetime('now')
+                  AND accounts.is_active = 1
+                """,
+                (_hash_token(token),),
+            )
+        ).fetchone()
+        if row is None:
+            return None
+        await self._db.execute(
+            "UPDATE account_sessions SET last_seen_at = datetime('now') WHERE token_hash = ?",
+            (_hash_token(token),),
+        )
+        await self._db.commit()
+        return _public_account(row)
+
+    async def revoke_session(self, token: str | None) -> None:
+        assert self._db is not None
+        if not token:
+            return
+        await self._db.execute(
+            """
+            UPDATE account_sessions
+               SET revoked_at = datetime('now')
+             WHERE token_hash = ? AND revoked_at IS NULL
+            """,
+            (_hash_token(token),),
+        )
+        await self._db.commit()
 
     async def get_reviewed_query_ids(self) -> set[int]:
         assert self._db is not None
@@ -314,3 +459,48 @@ class FeedbackDB:
             row = dict(r)
             writer.writerow({column: row.get(column) for column in _EXPORT_COLUMNS})
         return output.getvalue()
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _format_time(value: datetime) -> str:
+    return value.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _hash_password(password: str) -> str:
+    salt = secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac(
+        "sha256", password.encode("utf-8"), salt.encode("utf-8"), 200_000
+    ).hex()
+    return f"pbkdf2_sha256$200000${salt}${digest}"
+
+
+def _verify_password(password: str, stored: str) -> bool:
+    try:
+        algorithm, rounds, salt, expected = stored.split("$", 3)
+        if algorithm != "pbkdf2_sha256":
+            return False
+        digest = hashlib.pbkdf2_hmac(
+            "sha256",
+            password.encode("utf-8"),
+            salt.encode("utf-8"),
+            int(rounds),
+        ).hex()
+        return hmac.compare_digest(digest, expected)
+    except (ValueError, TypeError):
+        return False
+
+
+def _public_account(row: aiosqlite.Row) -> dict:
+    return {
+        "id": row["id"],
+        "username": row["username"],
+        "display_name": row["display_name"],
+        "role": row["role"],
+    }

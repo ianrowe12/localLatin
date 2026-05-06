@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import { Virtuoso } from 'react-virtuoso'
 import { useApp } from '../../contexts/AppContext'
+import { useReviewer } from '../../contexts/ReviewerContext'
 import { useQueryList } from '../../api/queries'
 import { useStats } from '../../api/models'
 import ProgressRing from '../sidebar/ProgressRing'
@@ -23,13 +24,14 @@ const FILTER_TO_STATUS: Record<string, string> = {
 
 export default function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
   const { activeQueryId, setActiveQueryId } = useApp()
+  const { isPiAdmin } = useReviewer()
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all')
   const [page, setPage] = useState(1)
 
   const apiStatus = FILTER_TO_STATUS[filter] ?? 'all'
   const { data, loading } = useQueryList(apiStatus, search, page)
-  const { data: stats } = useStats()
+  const { data: stats } = useStats(isPiAdmin)
 
   const handleSearch = useCallback((value: string) => {
     setSearch(value)
@@ -86,13 +88,14 @@ export default function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
 
         {isOpen && (
           <>
-            {/* Progress ring */}
-            <div className="flex justify-center py-3 flex-shrink-0">
-              <ProgressRing
-                reviewed={stats?.reviewed_count ?? 0}
-                total={stats?.total_queries ?? 0}
-              />
-            </div>
+            {isPiAdmin && (
+              <div className="flex justify-center py-3 flex-shrink-0">
+                <ProgressRing
+                  reviewed={stats?.reviewed_count ?? 0}
+                  total={stats?.total_queries ?? 0}
+                />
+              </div>
+            )}
 
             {/* Search */}
             <div className="px-3 py-2 flex-shrink-0">
