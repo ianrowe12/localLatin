@@ -1,7 +1,8 @@
-import { useCallback } from 'react'
+import { useCallback, useEffect } from 'react'
 import { useApp } from '../../contexts/AppContext'
 import { useFeedback } from '../../contexts/FeedbackContext'
 import { useReviewer } from '../../contexts/ReviewerContext'
+import { usePredictions } from '../../api/queries'
 import MatchPills from './MatchPills'
 import NotesTextarea from './NotesTextarea'
 import SubmitButton from './SubmitButton'
@@ -10,8 +11,24 @@ export default function FeedbackPanel() {
   const { activeQueryId, activeModel, setActiveQueryId } = useApp()
   const { getDraft, updateDraft, submitFeedback } = useFeedback()
   const { reviewerName, clearReviewer } = useReviewer()
+  const { data: predictionData } = usePredictions(activeQueryId, activeModel)
 
   const draft = activeQueryId !== null ? getDraft(activeQueryId, activeModel) : null
+  const predictions = predictionData?.predictions?.slice(0, 10) ?? []
+
+  useEffect(() => {
+    if (
+      activeQueryId === null ||
+      !draft?.correctRank ||
+      draft.correctRank <= 0 ||
+      predictions.length === 0
+    ) {
+      return
+    }
+    if (!predictions.some((prediction) => prediction.rank === draft.correctRank)) {
+      updateDraft(activeQueryId, activeModel, { correctRank: null })
+    }
+  }, [activeQueryId, activeModel, draft?.correctRank, predictions, updateDraft])
 
   const handleMatchChange = useCallback(
     (rank: number | null) => {
@@ -31,12 +48,12 @@ export default function FeedbackPanel() {
 
   const handleSubmit = useCallback(async () => {
     if (activeQueryId === null) return
-    await submitFeedback(activeQueryId, activeModel)
+    await submitFeedback(activeQueryId, activeModel, predictions)
     // Auto-advance to next query after a short delay
     setTimeout(() => {
       setActiveQueryId(activeQueryId + 1)
     }, 500)
-  }, [activeQueryId, activeModel, submitFeedback, setActiveQueryId])
+  }, [activeQueryId, activeModel, predictions, submitFeedback, setActiveQueryId])
 
   const handleSkip = useCallback(() => {
     if (activeQueryId === null) return
@@ -61,6 +78,7 @@ export default function FeedbackPanel() {
 
       <MatchPills
         selectedRank={draft?.correctRank ?? null}
+        maxRank={predictions.length || 10}
         onChange={handleMatchChange}
       />
 
