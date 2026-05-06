@@ -157,6 +157,14 @@ def test_feedback_outcomes_drive_status_stats_and_export(tmp_path: Path) -> None
         unreviewed = client.get("/api/queries", params={"status": "unreviewed"}).json()
         assert [item["file_id"] for item in unreviewed["items"]] == [4]
 
+        next_after_skipped = client.get("/api/queries/next", params={"after": 3})
+        assert next_after_skipped.status_code == 200
+        assert next_after_skipped.json() == {"file_id": 4}
+
+        next_after_reviewed = client.get("/api/queries/next", params={"after": 1})
+        assert next_after_reviewed.status_code == 200
+        assert next_after_reviewed.json() == {"file_id": 4}
+
         stats = client.get("/api/stats").json()
         assert stats["reviewed_count"] == 2
         assert stats["skipped_count"] == 1

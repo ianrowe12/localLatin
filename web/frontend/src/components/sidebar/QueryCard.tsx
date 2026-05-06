@@ -9,6 +9,13 @@ interface QueryCardProps {
 
 function QueryCardInner({ item, isActive, onClick }: QueryCardProps) {
   const isReviewed = item.review_status === 'reviewed'
+  const isSkipped = item.review_status === 'skipped'
+  const statusLabel = isReviewed ? 'Reviewed' : isSkipped ? 'Skipped' : 'Pending'
+  const statusColor = isReviewed
+    ? 'bg-correct'
+    : isSkipped
+      ? 'bg-stone-400 dark:bg-stone-500'
+      : 'bg-highlight'
   const preview =
     item.text_preview.length > 60
       ? item.text_preview.slice(0, 60) + '...'
@@ -34,13 +41,11 @@ function QueryCardInner({ item, isActive, onClick }: QueryCardProps) {
       {/* Status badge + preview */}
       <div className="flex items-center gap-1.5 mt-1">
         <span
-          className={`inline-block w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-            isReviewed ? 'bg-correct' : 'bg-highlight'
-          }`}
+          className={`inline-block w-1.5 h-1.5 rounded-full flex-shrink-0 ${statusColor}`}
           aria-hidden="true"
         />
         <span className="text-xs text-stone-500 dark:text-stone-400 font-ui">
-          {isReviewed ? 'Reviewed' : 'Pending'}
+          {statusLabel}
         </span>
       </div>
 
