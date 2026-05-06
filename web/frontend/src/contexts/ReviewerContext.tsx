@@ -3,47 +3,98 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useState,
   type ReactNode,
 } from 'react'
+import {
+  getCurrentUser,
+  register as registerAccount,
+  signIn as signInAccount,
+  signOut as signOutAccount,
+  type AuthUser,
+  type RegisterPayload,
+  type SignInPayload,
+} from '../api/auth'
 
 export interface ReviewerContextValue {
+  user: AuthUser | null
   reviewerName: string | null
-  setReviewerName: (name: string) => void
-  clearReviewer: () => void
+  loading: boolean
+  error: string | null
+  isPiAdmin: boolean
+  signIn: (payload: SignInPayload) => Promise<void>
+  register: (payload: RegisterPayload) => Promise<void>
+  clearReviewer: () => Promise<void>
 }
 
 const ReviewerContext = createContext<ReviewerContextValue | null>(null)
 
-const REVIEWER_KEY = 'locallatin-reviewer'
-
 export function ReviewerProvider({ children }: { children: ReactNode }) {
-  const [reviewerName, setReviewerNameState] = useState<string | null>(() => {
-    return localStorage.getItem(REVIEWER_KEY)
-  })
+  const [user, setUser] = useState<AuthUser | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (reviewerName === null) {
-      localStorage.removeItem(REVIEWER_KEY)
-    } else {
-      localStorage.setItem(REVIEWER_KEY, reviewerName)
+    let cancelled = false
+    getCurrentUser()
+      .then((currentUser) => {
+        if (cancelled) return
+        setUser(currentUser)
+        setError(null)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setUser(null)
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
     }
-  }, [reviewerName])
-
-  const setReviewerName = useCallback((name: string) => {
-    const trimmed = name.trim()
-    if (trimmed) setReviewerNameState(trimmed)
   }, [])
 
-  const clearReviewer = useCallback(() => {
-    setReviewerNameState(null)
+  const signIn = useCallback(async (payload: SignInPayload) => {
+    setError(null)
+    try {
+      setUser(await signInAccount(payload))
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Sign-in failed'
+      setError(message)
+      throw err
+    }
   }, [])
 
-  const value: ReviewerContextValue = {
-    reviewerName,
-    setReviewerName,
-    clearReviewer,
-  }
+  const register = useCallback(async (payload: RegisterPayload) => {
+    setError(null)
+    try {
+      setUser(await registerAccount(payload))
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Registration failed'
+      setError(message)
+      throw err
+    }
+  }, [])
+
+  const clearReviewer = useCallback(async () => {
+    await signOutAccount()
+    setUser(null)
+  }, [])
+
+  const value = useMemo<ReviewerContextValue>(
+    () => ({
+      user,
+      reviewerName: user?.display_name ?? null,
+      loading,
+      error,
+      isPiAdmin: user?.role === 'pi_admin',
+      signIn,
+      register,
+      clearReviewer,
+    }),
+    [clearReviewer, error, loading, register, signIn, user],
+  )
 
   return (
     <ReviewerContext.Provider value={value}>{children}</ReviewerContext.Provider>

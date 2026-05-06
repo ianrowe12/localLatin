@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
 
-from web.dependencies import get_db, get_store
+from web.dependencies import get_current_user, get_db, get_store
 from web.exceptions import QueryNotFoundError
-from web.models import QueryDetail, QueryListItem, QueryListResponse
+from web.models import QueryDetail, QueryListItem, QueryListResponse, UserPublic
 from web.services.data_store import DataStore
 from web.services.feedback_db import FeedbackDB
 from web.services.text_tokenizer import latin_tokenize
@@ -21,6 +21,7 @@ async def list_queries(
     sort: str = Query("file_id", pattern="^(file_id|filename)$"),
     store: DataStore = Depends(get_store),
     db: FeedbackDB = Depends(get_db),
+    current_user: UserPublic = Depends(get_current_user),
 ) -> QueryListResponse:
     query_statuses = await db.get_query_statuses()
 
@@ -73,6 +74,7 @@ async def list_queries(
 async def get_query(
     file_id: int,
     store: DataStore = Depends(get_store),
+    current_user: UserPublic = Depends(get_current_user),
 ) -> QueryDetail:
     if file_id not in store.unlabelled_texts:
         raise QueryNotFoundError(file_id)

@@ -82,8 +82,22 @@ def _client(tmp_path: Path) -> TestClient:
     return TestClient(create_app(str(_write_fixture_data(tmp_path))))
 
 
+def _sign_in(client: TestClient) -> None:
+    response = client.post(
+        "/api/auth/register",
+        json={
+            "username": "pi",
+            "display_name": "PI",
+            "password": "correct horse battery staple",
+        },
+    )
+    assert response.status_code == 201
+
+
 def test_feedback_outcomes_drive_status_stats_and_export(tmp_path: Path) -> None:
     with _client(tmp_path) as client:
+        _sign_in(client)
+
         matched = client.post(
             "/api/feedback",
             json={
@@ -170,6 +184,8 @@ def test_feedback_outcomes_drive_status_stats_and_export(tmp_path: Path) -> None
 
 def test_feedback_outcome_validation_rejects_ambiguous_payloads(tmp_path: Path) -> None:
     with _client(tmp_path) as client:
+        _sign_in(client)
+
         missing_rank = client.post(
             "/api/feedback",
             json={

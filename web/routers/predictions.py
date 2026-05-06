@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
 
-from web.dependencies import get_store
+from web.dependencies import get_current_user, get_store
 from web.exceptions import InvalidModelError, QueryNotFoundError
-from web.models import CandidateFile, Prediction, PredictionResponse
+from web.models import CandidateFile, Prediction, PredictionResponse, UserPublic
 from web.services.data_store import DataStore, normalize_slug
 
 router = APIRouter(prefix="/api", tags=["predictions"])
@@ -32,6 +32,7 @@ async def get_predictions(
     model: str = Query(..., description="Model slug"),
     top_k: int = Query(10, ge=1, le=10),
     store: DataStore = Depends(get_store),
+    current_user: UserPublic = Depends(get_current_user),
 ) -> PredictionResponse:
     slug = normalize_slug(model)
     if slug not in store.predictions:
@@ -80,6 +81,7 @@ async def get_candidates(
     rank: int,
     model: str = Query(..., description="Model slug"),
     store: DataStore = Depends(get_store),
+    current_user: UserPublic = Depends(get_current_user),
 ) -> list[CandidateFile]:
     slug = normalize_slug(model)
     if slug not in store.predictions:
@@ -108,6 +110,7 @@ async def get_candidates(
 async def get_candidate_dir_files(
     candidate_dir: str,
     store: DataStore = Depends(get_store),
+    current_user: UserPublic = Depends(get_current_user),
 ) -> list[CandidateFile]:
     """Return all files in a labelled candidate directory. Used by the example gallery
     when navigating to an off-top-10 candidate that's not in the predictions list."""

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
-from web.dependencies import get_db, get_store
-from web.models import ModelInfo, RecentReview, StatsResponse
+from web.dependencies import get_db, get_store, require_pi_admin
+from web.models import ModelInfo, RecentReview, StatsResponse, UserPublic
 from web.services.data_store import DataStore
 from web.services.feedback_db import FeedbackDB
 
@@ -14,6 +14,7 @@ router = APIRouter(prefix="/api", tags=["stats"])
 async def get_stats(
     store: DataStore = Depends(get_store),
     db: FeedbackDB = Depends(get_db),
+    current_user: UserPublic = Depends(require_pi_admin),
 ) -> StatsResponse:
     db_stats = await db.get_stats()
     total_queries = len(store.file_ids)

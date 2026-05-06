@@ -6,18 +6,20 @@ import CenterArea from './CenterArea'
 import RightSidebar from './RightSidebar'
 import DashboardView from '../dashboard/DashboardView'
 import ExamplesGallery from '../gallery/ExamplesGallery'
+import { useReviewer } from '../../contexts/ReviewerContext'
 
 export default function AppShell() {
   const { currentView } = useApp()
+  const { isPiAdmin } = useReviewer()
   const [leftOpen, setLeftOpen] = useState(true)
   const [rightOpen, setRightOpen] = useState(true)
 
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden bg-surface-50 dark:bg-surface-900">
       <Header />
-      {currentView === 'dashboard' ? (
+      {currentView === 'dashboard' && isPiAdmin ? (
         <DashboardView />
-      ) : currentView === 'examples' ? (
+      ) : currentView === 'examples' && isPiAdmin ? (
         <ExamplesGallery />
       ) : (
         <div className="flex-1 flex overflow-hidden">

@@ -3,9 +3,9 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import PlainTextResponse
 
-from web.dependencies import get_db, get_store
+from web.dependencies import get_current_user, get_db, get_store, require_pi_admin
 from web.exceptions import InvalidModelError, QueryNotFoundError
-from web.models import FeedbackCreate, FeedbackEntry
+from web.models import FeedbackCreate, FeedbackEntry, UserPublic
 from web.services.data_store import DataStore, normalize_slug
 from web.services.feedback_db import FeedbackDB
 
@@ -17,6 +17,7 @@ async def create_feedback(
     body: FeedbackCreate,
     store: DataStore = Depends(get_store),
     db: FeedbackDB = Depends(get_db),
+    current_user: UserPublic = Depends(get_current_user),
 ) -> FeedbackEntry:
     if body.query_id not in store.file_id_to_filename:
         raise QueryNotFoundError(body.query_id)
@@ -32,7 +33,8 @@ async def create_feedback(
         correct_rank=body.correct_rank,
         correct_dir=body.correct_dir,
         notes=body.notes,
-        reviewer=body.reviewer,
+        reviewer=current_user.display_name,
+        reviewer_account_id=current_user.id,
     )
     return FeedbackEntry(**row)
 
@@ -42,6 +44,7 @@ async def export_feedback(
     model: str | None = None,
     reviewer: str | None = None,
     db: FeedbackDB = Depends(get_db),
+    current_user: UserPublic = Depends(require_pi_admin),
 ) -> PlainTextResponse:
     slug = normalize_slug(model) if model else None
     csv_data = await db.export_csv(model=slug, reviewer=reviewer)

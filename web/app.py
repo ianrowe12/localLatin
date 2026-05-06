@@ -14,7 +14,7 @@ from web.config import Settings, load_settings
 from web.dependencies import set_db, set_store
 from web.exceptions import ExampleNotFoundError, InvalidModelError, QueryNotFoundError
 from web.models import ErrorResponse, ErrorDetail
-from web.routers import feedback, predictions, queries, stats, token_map
+from web.routers import auth, feedback, predictions, queries, stats, token_map
 from web.services.data_store import build_store
 from web.services.feedback_db import FeedbackDB
 
@@ -99,6 +99,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
         )
 
     # Routers
+    app.include_router(auth.router)
     app.include_router(queries.router)
     app.include_router(predictions.router)
     app.include_router(token_map.router)
