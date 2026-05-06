@@ -462,6 +462,20 @@ class FeedbackDB:
             for r in rows
         ]
 
+    async def get_feedback_for_query(
+        self, query_id: int, model: str | None = None, limit: int = 10
+    ) -> list[dict]:
+        assert self._db is not None
+        query = "SELECT * FROM feedback WHERE query_id = ?"
+        params: list = [query_id]
+        if model:
+            query += " AND model_slug = ?"
+            params.append(model)
+        query += " ORDER BY timestamp DESC, id DESC LIMIT ?"
+        params.append(limit)
+        rows = await (await self._db.execute(query, params)).fetchall()
+        return [dict(row) for row in rows]
+
     async def get_next_unreviewed(self, all_file_ids: list[int], limit: int = 5) -> list[int]:
         statuses = await self.get_query_statuses()
         result: list[int] = []
