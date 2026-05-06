@@ -11,6 +11,8 @@ STATIC_DIR="${REPO_DIR}/web/static"
 DATA_DIR="${REPO_DIR}/data"
 SERVICE_NAME="locallatin.service"
 SYSTEMD_USER_DIR="${HOME}/.config/systemd/user"
+PYTHON_BIN="${PYTHON_BIN:-python3}"
+LOCAL_BASE_URL="${LOCAL_BASE_URL:-http://127.0.0.1:8000}"
 
 info()  { printf '\033[1;34m[deploy]\033[0m %s\n' "$*"; }
 error() { printf '\033[1;31m[deploy]\033[0m %s\n' "$*" >&2; }
@@ -31,6 +33,11 @@ if ! command -v node &>/dev/null; then
 fi
 
 info "Using node $(node --version), npm $(npm --version)"
+if ! command -v "${PYTHON_BIN}" &>/dev/null; then
+    error "Python not found: ${PYTHON_BIN}"
+    exit 1
+fi
+info "Using python $("${PYTHON_BIN}" --version)"
 
 # Pull latest
 cd "${REPO_DIR}"
@@ -38,6 +45,9 @@ if git rev-parse --is-inside-work-tree &>/dev/null; then
     info "Pulling latest changes..."
     git pull --ff-only || { error "git pull failed — resolve manually"; exit 1; }
 fi
+
+info "Installing backend dependencies..."
+"${PYTHON_BIN}" -m pip install --user -r "${REPO_DIR}/web/requirements.txt"
 
 # Build frontend
 info "Installing frontend dependencies..."
@@ -54,6 +64,10 @@ cp -r "${FRONTEND_DIR}/dist" "${STATIC_DIR}"
 
 # Ensure data directory
 mkdir -p "${DATA_DIR}"
+if [[ ! -w "${DATA_DIR}" ]]; then
+    error "Feedback/data directory is not writable by $(whoami): ${DATA_DIR}"
+    exit 1
+fi
 
 # Install systemd user unit
 info "Installing systemd user unit..."
@@ -82,12 +96,34 @@ else
     exit 1
 fi
 
-# Health check
+# Health check. /api/models is intentionally unauthenticated and proves the
+# backend loaded the model/data store without requiring a reviewer session.
 info "Checking API health..."
-if curl -sf http://127.0.0.1:8000/api/stats >/dev/null 2>&1; then
-    info "API responding on port 8000."
+healthy=0
+for attempt in {1..30}; do
+    if curl -sf "${LOCAL_BASE_URL}/api/models" >/dev/null 2>&1; then
+        healthy=1
+        break
+    fi
+    sleep 2
+done
+if [[ "${healthy}" -eq 1 ]]; then
+    info "API responding at ${LOCAL_BASE_URL}."
 else
-    info "API not yet responding — may still be loading. Check: journalctl --user -u ${SERVICE_NAME} -f"
+    error "API did not become healthy at ${LOCAL_BASE_URL}/api/models"
+    error "Check: journalctl --user -u ${SERVICE_NAME} -n 100"
+    exit 1
+fi
+
+if [[ -n "${LOCALLATIN_SMOKE_USERNAME:-}" && -n "${LOCALLATIN_SMOKE_PASSWORD:-}" ]]; then
+    info "Running authenticated reviewer-pilot smoke checks..."
+    "${PYTHON_BIN}" "${REPO_DIR}/scripts/webapp/smoke_reviewer_pilot.py" \
+        --base-url "${LOCAL_BASE_URL}" \
+        --username "${LOCALLATIN_SMOKE_USERNAME}" \
+        --password "${LOCALLATIN_SMOKE_PASSWORD}" \
+        ${LOCALLATIN_SMOKE_WRITE:+--write-check}
+else
+    info "Skipping authenticated smoke checks. Set LOCALLATIN_SMOKE_USERNAME and LOCALLATIN_SMOKE_PASSWORD to enable them."
 fi
 
 info ""
