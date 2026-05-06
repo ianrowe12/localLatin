@@ -146,6 +146,10 @@ def test_feedback_outcomes_drive_status_stats_and_export(tmp_path: Path) -> None
         assert skipped.json()["correct_rank"] is None
         assert skipped.json()["correct_dir"] is None
 
+        first_actionable = client.get("/api/queries/next")
+        assert first_actionable.status_code == 200
+        assert first_actionable.json() == {"file_id": 4}
+
         reviewed = client.get("/api/queries", params={"status": "reviewed"}).json()
         assert [item["file_id"] for item in reviewed["items"]] == [1, 2]
         assert {item["review_status"] for item in reviewed["items"]} == {"reviewed"}
@@ -165,20 +169,36 @@ def test_feedback_outcomes_drive_status_stats_and_export(tmp_path: Path) -> None
         assert next_after_reviewed.status_code == 200
         assert next_after_reviewed.json() == {"file_id": 4}
 
+        final_review = client.post(
+            "/api/feedback",
+            json={
+                "query_id": 4,
+                "model_slug": "bowphs/LaTa",
+                "outcome": "matched_rank",
+                "correct_rank": 1,
+                "correct_dir": "candidate-a",
+                "notes": "last unreviewed item",
+                "reviewer": "PI",
+            },
+        )
+        assert final_review.status_code == 201
+        assert client.get("/api/queries/next").json() == {"file_id": None}
+
         stats = client.get("/api/stats").json()
-        assert stats["reviewed_count"] == 2
+        assert stats["reviewed_count"] == 3
         assert stats["skipped_count"] == 1
-        assert stats["unreviewed_count"] == 1
-        assert stats["feedback_count"] == 3
+        assert stats["unreviewed_count"] == 0
+        assert stats["feedback_count"] == 4
         assert stats["outcome_distribution"] == {
-            "matched_rank": 1,
+            "matched_rank": 2,
             "none_of_top_k": 1,
             "skipped": 1,
         }
         assert stats["rank_distribution"]["2"] == 1
+        assert stats["rank_distribution"]["1"] == 1
         assert stats["rank_distribution"]["none_of_top_k"] == 1
         assert stats["rank_distribution"]["skipped"] == 1
-        assert stats["next_unreviewed_ids"] == [4]
+        assert stats["next_unreviewed_ids"] == []
 
         exported = client.get("/api/feedback/export").text
         rows = list(csv.DictReader(exported.splitlines()))
@@ -186,6 +206,7 @@ def test_feedback_outcomes_drive_status_stats_and_export(tmp_path: Path) -> None
             "matched_rank",
             "none_of_top_k",
             "skipped",
+            "matched_rank",
         ]
         assert rows[0]["correct_dir"] == "candidate-b"
 
