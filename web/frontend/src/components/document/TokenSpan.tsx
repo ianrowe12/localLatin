@@ -77,7 +77,9 @@ function TokenSpanInner({
       backgroundColor: colorPalette
         ? importanceToColor(highlightScore, colorPalette, theme)
         : similarityToColor(highlightScore, theme),
+      boxShadow: 'inset 0 -2px 0 rgba(68, 64, 60, 0.45)',
     }
+    extraClass = 'decoration-dotted'
   }
 
   // Dimming: if a query token is hovered but this candidate token is not highlighted
@@ -92,6 +94,10 @@ function TokenSpanInner({
   }
 
   const interactive = onMouseEnter != null || onClick != null
+  const accessibleLabel =
+    highlightScore != null && highlightScore > 0
+      ? `${side} token ${token.text}, highlighted evidence`
+      : `${side} token ${token.text}`
 
   return (
     <span
@@ -105,8 +111,19 @@ function TokenSpanInner({
         ${extraClass}
       `}
       style={bgStyle}
+      tabIndex={interactive ? 0 : undefined}
+      aria-label={interactive ? accessibleLabel : undefined}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
+      onFocus={onMouseEnter}
+      onBlur={onMouseLeave}
+      onKeyDown={(event) => {
+        if (!onClick) return
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onClick()
+        }
+      }}
       onClick={onClick}
       data-token-idx={token.index}
       data-side={side}

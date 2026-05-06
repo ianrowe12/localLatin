@@ -5,19 +5,19 @@ import type {
   AttributionVariant,
 } from '../../api/tokenMap'
 
-const METHODS: { key: AttributionMethod; label: string }[] = [
-  { key: 'ig', label: 'IG' },
-  { key: 'bertscore', label: 'BERTScore' },
-  { key: 'ot', label: 'OT' },
-  { key: 'attention_weighted', label: 'Attn-W' },
-  { key: 'dla', label: 'DLA' },
-  { key: 'attention_standalone', label: 'Attn-S' },
-  { key: 'retrieval_mark', label: 'MarK' },
+const METHODS: { key: AttributionMethod; label: string; title: string }[] = [
+  { key: 'ig', label: 'IG', title: 'Integrated gradients attribution' },
+  { key: 'bertscore', label: 'BERTScore', title: 'Token similarity score' },
+  { key: 'ot', label: 'OT', title: 'Optimal transport alignment' },
+  { key: 'attention_weighted', label: 'Attn-W', title: 'Attention-weighted alignment' },
+  { key: 'dla', label: 'DLA', title: 'Directional layer attribution' },
+  { key: 'attention_standalone', label: 'Attn-S', title: 'Standalone attention' },
+  { key: 'retrieval_mark', label: 'MarK', title: 'Retrieval marker attribution' },
 ]
 
-const VARIANTS: { key: AttributionVariant; label: string }[] = [
-  { key: 'baseline', label: 'Base' },
-  { key: 'abtt', label: 'ABTT' },
+const VARIANTS: { key: AttributionVariant; label: string; title: string }[] = [
+  { key: 'baseline', label: 'Raw', title: 'Raw attribution values' },
+  { key: 'abtt', label: 'ABTT-cleaned', title: 'ABTT-cleaned attribution values' },
 ]
 
 export default function AttributionMethodSelector() {
@@ -51,6 +51,8 @@ export default function AttributionMethodSelector() {
               type="button"
               role="radio"
               aria-checked={isActive}
+              aria-label={method.title}
+              title={method.title}
               disabled={!isAvailable}
               onClick={() => {
                 if (isAvailable) setSelectedMethod(method.key)
@@ -90,6 +92,8 @@ export default function AttributionMethodSelector() {
               type="button"
               role="radio"
               aria-checked={isActive}
+              aria-label={variant.title}
+              title={variant.title}
               onClick={() => setSelectedVariant(variant.key)}
               className={`relative px-3 py-1 text-xs font-medium rounded-md transition-all ${
                 isActive

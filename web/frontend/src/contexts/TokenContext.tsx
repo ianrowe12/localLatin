@@ -57,7 +57,7 @@ export interface TokenContextValue {
 const TokenContext = createContext<TokenContextValue | null>(null)
 
 export function TokenProvider({ children }: { children: ReactNode }) {
-  const [viewMode, setViewMode] = useState<ViewMode>('connections')
+  const [viewMode, setViewMode] = useState<ViewMode>('heatmap')
   const [hoveredQueryTokenIdx, setHoveredQueryTokenIdx] = useState<number | null>(null)
   const [hoveredMatches, setHoveredMatches] = useState<HoverMatch[]>([])
   const [pinnedTokens, setPinnedTokens] = useState<Map<number, PinEntry>>(new Map())

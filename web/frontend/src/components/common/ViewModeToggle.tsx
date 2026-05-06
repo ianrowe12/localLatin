@@ -1,16 +1,42 @@
 import { motion } from 'framer-motion'
 import { useTokens, type ViewMode } from '../../contexts/TokenContext'
+import { useReviewer } from '../../contexts/ReviewerContext'
 
-const MODES: { key: ViewMode; label: string; requiresIg?: boolean }[] = [
-  { key: 'connections', label: 'Lines' },
-  { key: 'heatmap', label: 'Heatmap' },
-  { key: 'ig', label: 'IG', requiresIg: true },
+const MODES: {
+  key: ViewMode
+  label: string
+  requiresIg?: boolean
+  requiresAdvanced?: boolean
+}[] = [
+  { key: 'heatmap', label: 'Highlights' },
+  { key: 'connections', label: 'Connections' },
+  { key: 'ig', label: 'Attribution', requiresIg: true, requiresAdvanced: true },
 ]
 
 export default function ViewModeToggle() {
-  const { viewMode, setViewMode, hasIgData, hasAutoHighlights, clearAutoHighlights } = useTokens()
+  const {
+    viewMode,
+    setViewMode,
+    hasIgData,
+    hasAutoHighlights,
+    clearAllPins,
+    clearAutoHighlights,
+  } = useTokens()
+  const { isPiAdmin } = useReviewer()
 
-  const visibleModes = MODES.filter((m) => !m.requiresIg || hasIgData)
+  const visibleModes = MODES.filter(
+    (m) =>
+      (!m.requiresIg || hasIgData) &&
+      (!m.requiresAdvanced || isPiAdmin),
+  )
+
+  const handleModeChange = (mode: ViewMode) => {
+    if (mode === 'heatmap') {
+      clearAllPins()
+      clearAutoHighlights()
+    }
+    setViewMode(mode)
+  }
 
   return (
     <div className="flex items-center">
@@ -25,7 +51,14 @@ export default function ViewModeToggle() {
             type="button"
             role="radio"
             aria-checked={viewMode === mode.key}
-            onClick={() => setViewMode(mode.key)}
+            onClick={() => handleModeChange(mode.key)}
+            title={
+              mode.key === 'heatmap'
+                ? 'Highlight related tokens without connection lines'
+                : mode.key === 'connections'
+                  ? 'Show token relationship lines on hover'
+                  : 'Inspect attribution methods and variants'
+            }
             className={`relative px-3 py-1 text-xs font-medium rounded-md transition-all ${
               viewMode === mode.key
                 ? 'text-stone-800 dark:text-stone-100'
@@ -45,7 +78,9 @@ export default function ViewModeToggle() {
       </div>
       {hasAutoHighlights && (
         <button
+          type="button"
           onClick={clearAutoHighlights}
+          aria-label="Clear automatic highlights"
           className="ml-2 text-xs px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-800/40 transition-colors flex items-center gap-1"
         >
           <span className="font-medium">Auto</span>
