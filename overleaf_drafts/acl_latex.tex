@@ -183,9 +183,9 @@ The results move from diagnosis to use. First, layerwise geometry exposes repres
 
 \subsection{Task A: Pairwise Duplicate Detection}
 
-\input{tables/taskA_main}
+\input{tables/retrieval_summary_main}
 
-Table~\ref{tab:taskA_main} reports per-layer Task A metrics for LaTa, PhilTa, and mT5-base. The baseline uses mean pooling. The ABTT setting uses ABTT with $D$ tuned per layer on the train split, without SIF weighting. Both AUROC and cosine gap come from the test cosine matrix and use no threshold. The table shows the main pattern behind the paper: baseline mean-pooled representations lose separation in the middle of the Latin T5 encoders, while ABTT recovers much of the lost separation.
+Table~\ref{tab:retrieval_summary_main} compresses the retrieval evidence used by the main attribution experiment. At the predeclared attribution layers, ABTT improves both pairwise duplicate detection and directory ranking for the three headline models. The expanded per-layer Task A and Task B grids are reported in Appendix~\ref{app:per_layer_headline}; the main text uses the compact table so the retrieval results support, rather than crowd out, the attribution analysis.
 
 \subsection{Layerwise Geometry Diagnosis}
 
@@ -229,10 +229,7 @@ Two-dimensional projections give a visual check on the same geometric change. Fi
 
 \subsection{Task B: Directory Routing}
 
-\input{tables/taskB_routing_main}
-\input{tables/taskB_ranking_main}
-
-Task B connects the layerwise analysis to the retrieval workflow. Table~\ref{tab:taskB_routing_main} reports autonomous routing, where a learned threshold decides between an existing directory and the new class. Table~\ref{tab:taskB_ranking_main} reports top-$k$ ranking, where the system presents directory options to a simulated expert. The main tables show LaTa, PhilTa, and mT5-base; Appendix~\ref{app:per_layer_extra} reports the remaining models.
+Task B connects the layerwise analysis to the retrieval workflow. We evaluate autonomous routing, where a learned threshold decides between an existing directory and the new class, and top-$k$ ranking, where the system presents directory options to a simulated expert. The full per-layer routing and ranking tables for the headline models are in Appendix~\ref{app:per_layer_headline}; Appendix~\ref{app:per_layer_extra} reports the remaining models.
 
 The same training signal also selects attribution layers. We choose the earliest layer within 0.5 percentage points of the best training-set directory accuracy at rank 1 under ABTT. This rule selects LaTa layer 7, PhilTa layer 1, and mT5-base layer 1. The choice is locked before attribution metrics are computed, so the attribution results do not choose their own layer.
 
@@ -252,7 +249,7 @@ KaLM-mini  & 89.4 $\pm$ 0.5 & 95.1 $\pm$ 0.4 & 96.4 $\pm$ 0.2 & 96.9 $\pm$ 0.3 &
 mT5-base   & 89.8 $\pm$ 0.4 & 95.6 $\pm$ 0.5 & 96.6 $\pm$ 0.3 & 96.9 $\pm$ 0.2 & 97.2 $\pm$ 0.2 \\
 \bottomrule
 \end{tabular}
-\caption{Cumulative top-$K$ accuracy for Task B across the six models, reported as mean $\pm$ standard deviation over five query/reference reseedings at a fixed v2 split. Each cell gives the percentage of test queries whose labelled directory appears within the top $K$ options. This variance-aware table uses the SIF+ABTT configurations from the multi-seed sweep; pure-ABTT top-$k$ rankings are reported per layer in Tables~\ref{tab:taskB_ranking_main} and~\ref{tab:taskB_ranking_appendix}.}
+\caption{Cumulative top-$K$ accuracy for Task B across the six models, reported as mean $\pm$ standard deviation over five query/reference reseedings at a fixed v2 split. Each cell gives the percentage of test queries whose labelled directory appears within the top $K$ options. This variance-aware table uses the SIF+ABTT configurations from the multi-seed sweep; expanded pure-ABTT top-$k$ rankings are reported per layer in Appendix Tables~\ref{tab:taskB_ranking_main} and~\ref{tab:taskB_ranking_appendix}, with corresponding layerwise retrieval curves in Figures~\ref{fig:dip} and~\ref{fig:gap}.}
 \label{tab:taskb}
 \end{table*}
 
@@ -261,36 +258,23 @@ The cumulative top-$K$ view describes the scholar-facing shortlist. All six mode
 \subsection{Attribution at Retrieval-Selected Layers}
 
 \input{tables/attribution_metrics_main}
+\input{figures/fig_attribution_rho_loo_main}
 
-Table~\ref{tab:attribution_metrics_main} reports the main attribution comparison. The experiment uses 200 positive query-candidate pairs per model for LaTa, PhilTa, and mT5-base. Each model has baseline and ABTT variants for both integrated gradients and retrieval-adapted MaRC.
+Table~\ref{tab:attribution_metrics_main} and Figure~\ref{fig:attribution_rho_loo_main} report the main attribution comparison. The experiment uses 200 positive query-candidate pairs per model for LaTa, PhilTa, and mT5-base. Each model has baseline and ABTT variants for both integrated gradients and retrieval-adapted MaRC.
 
 The clearest quantitative result is rank faithfulness. ABTT improves $\rho_{\mathrm{LOO}}$ in all six model-method cells: LaTa IG $-0.001 \rightarrow 0.396$, LaTa MaRC $0.042 \rightarrow 0.401$, PhilTa IG $0.182 \rightarrow 0.607$, PhilTa MaRC $0.190 \rightarrow 0.331$, mT5-base IG $0.164 \rightarrow 0.597$, and mT5-base MaRC $0.250 \rightarrow 0.392$. In those cases, tokens with higher attribution align more closely with leave-one-out drops in the same retrieval score.
 
 The ERASER-style metrics qualify this result. At the global headline thresholds, ABTT improves only 6 of 18 Sufficiency, Comprehensiveness, and MinFrac comparisons. MinFrac@0.80 worsens in all six cells. We therefore interpret attribution as support for the ABTT repair story through leave-one-out rank faithfulness, not as a uniform gain across every rationale metric.
 
-\subsection{Example-Level Views}
+\subsection{Example-Level View}
 
-The example figures show what the local explanations look like for one PhilTa retrieval case. Figure~\ref{fig:pairmatrix} shows the integrated-gradient pair matrix before and after ABTT. Figure~\ref{fig:attention} adds companion self-attention maps for context only, since ABTT is applied after encoding. Figure~\ref{fig:retrieval_mark} shows the retrieval-adapted MaRC masks for the same pair.
+The main text keeps one example-level view to show what the local explanations look like for a PhilTa retrieval case. Figure~\ref{fig:pairmatrix} shows the integrated-gradient pair matrix before and after ABTT. Companion self-attention and retrieval-adapted MaRC visualizations for the same pair are reported in Appendix~\ref{app:qual_attribution}.
 
 \begin{figure*}[!t]
 \centering
 \includegraphics[width=0.94\textwidth]{fig_pair_matrix_philta.pdf}
 \caption{Derived pairwise heatmap for one PhilTa retrieval case. The left panel shows the baseline representation and the right panel shows the same example after ABTT. Both axes use original decoded tokens. Cell values combine token-token cosine similarity with single-sequence integrated-gradient scores.}
 \label{fig:pairmatrix}
-\end{figure*}
-
-\begin{figure*}[!t]
-\centering
-\includegraphics[width=0.94\textwidth]{fig_attention_philta.pdf}
-\caption{Companion self-attention maps for the same PhilTa example. ABTT is applied after encoding, so attention is included only as supporting context.}
-\label{fig:attention}
-\end{figure*}
-
-\begin{figure*}[!t]
-\centering
-\includegraphics[width=0.94\textwidth]{fig_retrieval_mark_pair_philta.pdf}
-\caption{Retrieval-adapted MaRC masks for the same PhilTa pair as Figure~\ref{fig:pairmatrix}. Top row: mask on the query with the candidate fixed. Bottom row: mask on the candidate with the query fixed. Left column: baseline cosine target. Right column: ABTT-corrected cosine target.}
-\label{fig:retrieval_mark}
 \end{figure*}
 
 \section{Discussion}
@@ -334,6 +318,17 @@ mT5-base & 1 & 5 & 1.000 & 0.044 & 1.00$\rightarrow$151.74 \\
 
 Across the main-model layer grid, PC1 dominance and low effective rank are strongly associated with ABTT gains over baseline. These associations explain why ABTT helps, but they do not replace the train-only retrieval rule used for layer selection.
 
+\section{Expanded Per-Layer Results for Headline Models}
+\label{app:per_layer_headline}
+
+The main text compresses the headline retrieval results into Table~\ref{tab:retrieval_summary_main}. This appendix provides the expanded per-layer Task A duplicate-detection, Task B autonomous-routing, and Task B top-$k$ ranking tables for LaTa, PhilTa, and mT5-base.
+
+\onecolumn
+\input{tables/taskA_main}
+\input{tables/taskB_routing_main}
+\input{tables/taskB_ranking_main}
+\twocolumn
+
 \section{Last-Token vs.\ Mean Pooling}
 \label{app:lasttok}
 
@@ -370,6 +365,25 @@ This appendix expands the main attribution table across Sufficiency and Comprehe
 
 \input{tables/attribution_metrics_sweep_main_methods}
 \input{tables/attribution_metrics_sweep_supplemental_methods}
+
+\section{Qualitative Attribution Examples}
+\label{app:qual_attribution}
+
+This appendix keeps the example-level companion views for the PhilTa pair shown in Figure~\ref{fig:pairmatrix}. The attention map is context only, since ABTT is applied after encoding. The retrieval-adapted MaRC masks show the learned-mask view for the same pair.
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=0.94\textwidth]{fig_attention_philta.pdf}
+\caption{Companion self-attention maps for the same PhilTa example as Figure~\ref{fig:pairmatrix}. ABTT is applied after encoding, so attention is included only as supporting context.}
+\label{fig:attention}
+\end{figure*}
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=0.94\textwidth]{fig_retrieval_mark_pair_philta.pdf}
+\caption{Retrieval-adapted MaRC masks for the same PhilTa pair as Figure~\ref{fig:pairmatrix}. Top row: mask on the query with the candidate fixed. Bottom row: mask on the candidate with the query fixed. Left column: baseline cosine target. Right column: ABTT-corrected cosine target.}
+\label{fig:retrieval_mark}
+\end{figure*}
 
 \section{Cluster Geometry: Additional Models}
 \label{app:cluster_geometry}

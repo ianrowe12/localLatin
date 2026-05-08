@@ -1,0 +1,16 @@
+\begin{table*}[t]
+\centering
+\small
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{lrrrr}
+\toprule
+\textbf{Model} & \makecell{\textbf{Attribution}\\\textbf{layer}} & \makecell{\textbf{Task A AUROC}\\\textbf{base$\rightarrow$ABTT}} & \makecell{\textbf{Task B Acc@1}\\\textbf{base$\rightarrow$ABTT}} & \makecell{\textbf{Diagnostic}\\\textbf{collapse layer}} \\
+\midrule
+LaTa & 7 & 0.499$\rightarrow$0.961 & 0.302$\rightarrow$0.868 & 8 \\
+PhilTa & 1 & 0.939$\rightarrow$0.976 & 0.693$\rightarrow$0.883 & 6 \\
+mT5-base & 1 & 0.823$\rightarrow$0.979 & 0.451$\rightarrow$0.885 & 5 \\
+\bottomrule
+\end{tabular}
+\caption{Compact retrieval summary for the three headline models. The attribution layer is selected by the predeclared train-only Task B rule and is used for the main attribution experiment. Task A and Task B columns report test-set baseline mean pooling versus pure ABTT at that layer. Expanded per-layer Task A, autonomous-routing, and top-$k$ results are reported in Appendix Tables~\ref{tab:taskA_main}, \ref{tab:taskB_routing_main}, and~\ref{tab:taskB_ranking_main}; the full layerwise retrieval curves are shown in Figures~\ref{fig:dip} and~\ref{fig:gap}. Diagnostic collapse layers identify where geometry is most anisotropic and are reported for interpretation rather than layer selection.}
+\label{tab:retrieval_summary_main}
+\end{table*}
