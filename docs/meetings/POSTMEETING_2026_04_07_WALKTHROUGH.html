@@ -146,40 +146,6 @@
   </div>
 </div>
 
-<h3>Code (<code>src/canon_split_v2.py</code> lines 61&ndash;91)</h3>
-<pre><code># --- Multi-file (>=3): varied per-folder allocation within each size class ---
-# For each size-n class of K folders, distribute train_n values uniformly
-# over {1, ..., n-1} via stratified allocation, with the remainder going
-# to values nearest n/2 so the class average stays ~n/2. Determinism is
-# preserved via the shared rng. This avoids the pathological case where
-# every size-3 folder is forced to (1 train, 2 test) and contributes zero
-# same-folder positive pairs to the training split.
-multi_mask = meta["folder_size"] >= 3
-if multi_mask.any():
-    multi_df = meta.loc[multi_mask, ["folder_id", "folder_size"]]
-    train_n_by_folder: Dict[str, int] = {}
-    for size_n in sorted(multi_df["folder_size"].unique().tolist()):
-        class_folder_ids = np.sort(
-            multi_df.loc[multi_df["folder_size"] == size_n, "folder_id"].unique()
-        )
-        K = len(class_folder_ids)
-        allowed = list(range(1, int(size_n)))
-        n_allowed = len(allowed)
-        base, rem = divmod(K, n_allowed)
-        counts = [base] * n_allowed
-        mid = size_n / 2.0
-        order = sorted(range(n_allowed), key=lambda i: (abs(allowed[i] - mid), i))
-        for r in range(rem):
-            counts[order[r]] += 1
-        values: List[int] = []
-        for val, cnt in zip(allowed, counts):
-            values.extend([val] * cnt)
-        shuffled_folders = rng.permutation(class_folder_ids)
-        shuffled_values = rng.permutation(np.asarray(values, dtype=np.int32))
-        for fid, tn in zip(shuffled_folders, shuffled_values):
-            train_n_by_folder[str(fid)] = int(tn)</code></pre>
-
-<p>Determinism is preserved via the shared <code>rng = np.random.default_rng(random_seed=42)</code>, so reruns produce identical splits. Singleton (size-1) and doubleton (size-2) rules are unchanged.</p>
 
 <div class="finding">
   <strong>Reviewer-proofing.</strong> The previous setup's pathological case &mdash; size-3 directories contributing zero positive training pairs &mdash; is exactly the kind of artifact a hostile reviewer would flag. The new rule has no such bias: every size class with <code>n &ge; 2</code> contributes positive pairs to both train and test.
