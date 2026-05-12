@@ -32,7 +32,7 @@ The deploy script always fails if `/api/models` does not become healthy. With cr
 
 ```bash
 python3 scripts/webapp/smoke_reviewer_pilot.py \
-  --base-url http://127.0.0.1:8000 \
+  --base-url http://127.0.0.1:8080 \
   --username <pi-admin-user> \
   --password <pi-admin-password>
 ```

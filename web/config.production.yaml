@@ -3,10 +3,10 @@ app:
   version: "0.1.0"
   debug: false
   host: "127.0.0.1"
-  port: 8000
+  port: 8080
 
 paths:
-  data_root: "/u/irowerojas/localLatin"
+  data_root: "/homes/ipro222/localLatin"
   canon_unlabelled: "data/canon_unlabelled"
   canon_labelled: "data/canon_labelled"
   predictions_combined: "runs/active/resubmit/unlabelled/unlabelled_predictions.csv"

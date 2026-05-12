@@ -9,8 +9,10 @@ data/canon_labelled/
 data/canon_unlabelled/
 data/decritals_labelled
 data/decritals_unlabelled
+data/feedback.db
 third_party/SIF/
 .vscode/
+.venv/
 sa_drive_key.json
 **/__pycache__/
 .ipynb_checkpoints/

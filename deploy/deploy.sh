@@ -5,14 +5,15 @@
 #
 set -euo pipefail
 
-REPO_DIR="/u/irowerojas/localLatin"
+REPO_DIR="${DEPLOY_PATH:-/homes/ipro222/localLatin}"
 FRONTEND_DIR="${REPO_DIR}/web/frontend"
 STATIC_DIR="${REPO_DIR}/web/static"
 DATA_DIR="${REPO_DIR}/data"
 SERVICE_NAME="locallatin.service"
 SYSTEMD_USER_DIR="${HOME}/.config/systemd/user"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
-LOCAL_BASE_URL="${LOCAL_BASE_URL:-http://127.0.0.1:8000}"
+VENV_DIR="${REPO_DIR}/.venv"
+LOCAL_BASE_URL="${LOCAL_BASE_URL:-http://127.0.0.1:8080}"
 
 info()  { printf '\033[1;34m[deploy]\033[0m %s\n' "$*"; }
 error() { printf '\033[1;31m[deploy]\033[0m %s\n' "$*" >&2; }
@@ -47,7 +48,9 @@ if git rev-parse --is-inside-work-tree &>/dev/null; then
 fi
 
 info "Installing backend dependencies..."
-"${PYTHON_BIN}" -m pip install --user -r "${REPO_DIR}/web/requirements.txt"
+"${PYTHON_BIN}" -m venv "${VENV_DIR}"
+"${VENV_DIR}/bin/python" -m pip install --upgrade pip
+"${VENV_DIR}/bin/python" -m pip install -r "${REPO_DIR}/web/requirements.txt"
 
 # Build frontend
 info "Installing frontend dependencies..."
@@ -130,6 +133,7 @@ info ""
 info "Deployment complete."
 info "  Frontend: ${STATIC_DIR}"
 info "  Config:   ${REPO_DIR}/web/config.production.yaml"
+info "  Local URL: ${LOCAL_BASE_URL}"
 info "  Logs:     journalctl --user -u ${SERVICE_NAME} -f"
 info ""
 info "If nginx not configured yet:"
