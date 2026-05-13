@@ -74,7 +74,9 @@ def test_github_actions_workflow_tests_then_deploys_after_main_push() -> None:
     assert "python -m pytest web/tests" in workflow
     assert "npm run build" in workflow
     assert "needs: test" in workflow
-    assert "DEPLOY_HOST" in workflow
-    assert "DEPLOY_USER" in workflow
-    assert "DEPLOY_SSH_KEY" in workflow
+    assert "self-hosted" in workflow
+    assert "locallatin" in workflow
+    assert "production" in workflow
+    assert "DEPLOY_PATH" in workflow
+    assert "git pull --ff-only origin main" in workflow
     assert "bash deploy/deploy.sh" in workflow
