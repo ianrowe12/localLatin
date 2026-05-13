@@ -1,4 +1,4 @@
-import { apiFetch } from './client'
+import { apiFetch, apiUrl } from './client'
 
 export const FEEDBACK_UPDATED_EVENT = 'locallatin:feedback-updated'
 
@@ -21,5 +21,5 @@ export async function submitFeedback(payload: FeedbackPayload): Promise<void> {
 }
 
 export function exportFeedbackCsv(): void {
-  window.open('/api/feedback/export', '_blank')
+  window.open(apiUrl('/api/feedback/export'), '_blank')
 }

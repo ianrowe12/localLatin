@@ -10,10 +10,11 @@ LocalLatin reviewer webapp.
   `127.0.0.1:8080`, supervised by user `systemd`, and configured with explicit
   production paths.
 - Frontend is built by Vite and served as static files from `web/static` behind
-  nginx at `https://ai.csr.uky.edu`.
+  nginx at `https://ai.csr.uky.edu/locallatin/`.
 - GitHub Actions runs backend tests and frontend build checks on every push to
   `main`.
-- GitHub Actions deploys automatically after the checks pass on `main`.
+- GitHub Actions deploys after the checks pass on `main` only when the
+  `ENABLE_PRODUCTION_DEPLOY` repository variable is set to `true`.
 - Deployment is repeatable with `bash deploy/deploy.sh` and fails if the API
   health check does not pass.
 - Every behavior change starts with a failing or updated test, then code, then
@@ -39,12 +40,14 @@ LocalLatin reviewer webapp.
 ### Frontend Hosting
 
 - Runtime: static Vite build, no Node process in production.
-- Build command: `cd web/frontend && npm ci && npm run build`.
+- Build command:
+  `cd web/frontend && npm ci && VITE_BASE_PATH=/locallatin/ npm run build`.
 - Artifact path: `web/frontend/dist`.
 - Deployed path: `web/static`.
 - Web server: nginx using the active `ai.csr.uky.edu` virtual host.
 - Routing:
-  `/api/` proxies to FastAPI, all other paths fall back to `index.html`.
+  `/locallatin/` proxies to FastAPI with the prefix stripped, so public
+  `/locallatin/api/*` requests reach the app as `/api/*`.
 - Cache policy:
   Vite-fingerprinted assets under `/assets/` use long immutable caching.
 
@@ -52,34 +55,32 @@ LocalLatin reviewer webapp.
 
 The workflow in `.github/workflows/deploy.yml` is the production gate.
 
-Required repository secrets:
+Required repository setting:
 
-- `DEPLOY_HOST`: target host, for example `ai.csr.uky.edu`.
-- `DEPLOY_USER`: SSH user that owns `/homes/ipro222/localLatin`.
-- `DEPLOY_SSH_KEY`: private SSH key authorized on the target host.
-
-Recommended repository secret:
-
-- `DEPLOY_KNOWN_HOSTS`: pinned `known_hosts` entry for the target host.
+- Repository variable `ENABLE_PRODUCTION_DEPLOY`: must be `true` before the
+  self-hosted production deploy job can run.
 
 Optional repository settings:
 
-- `DEPLOY_PORT`: SSH port. Defaults to `22`.
-- Repository variable `DEPLOY_PATH`: remote repo path. Defaults to
-  `/homes/ipro222/localLatin`.
+- Repository variable `DEPLOY_PATH`: local repo path on the self-hosted runner.
+  Defaults to `/homes/ipro222/localLatin`.
+- Repository variable `PUBLIC_BASE_PATH`: public route prefix. Defaults to
+  `/locallatin/`.
 
 Push-to-production flow:
 
 1. A push lands on `main`.
 2. The `test` job installs Python dependencies and runs `python -m pytest web/tests`.
 3. The `test` job installs frontend dependencies and runs `npm run build`.
-4. The `deploy` job opens an SSH session to the VM.
+4. If `ENABLE_PRODUCTION_DEPLOY=true`, the self-hosted runner on the VM starts
+   the `deploy` job.
 5. The VM fetches `origin/main`, fast-forwards the checked out repo, and runs
-   `bash deploy/deploy.sh`.
+   `PUBLIC_BASE_PATH=/locallatin/ bash deploy/deploy.sh`.
 6. The deploy script installs dependencies, builds the frontend, refreshes
    `web/static`, restarts `locallatin.service`, and verifies `/api/models`.
 
-Deployment will not run if tests or the frontend build fail.
+Deployment will not run if tests or the frontend build fail, and it remains
+disabled while `ENABLE_PRODUCTION_DEPLOY` is unset or not `true`.
 
 ## Test Driven Development Plan
 
@@ -124,7 +125,7 @@ Current deployment invariants covered by tests:
 ### Phase 3: Automated Production Deploy
 
 - Allow deployment only after the CI gate passes.
-- Use SSH to trigger deployment on the VM.
+- Use the self-hosted runner to trigger deployment on the VM.
 - Use `git pull --ff-only` to avoid deploying unresolved merge states.
 - Restart through `deploy/deploy.sh`, not ad hoc remote commands.
 - Require `/api/models` to respond before the deployment is considered healthy.

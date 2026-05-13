@@ -1,4 +1,4 @@
-import { apiFetch } from './client'
+import { apiFetch, apiUrl } from './client'
 
 export interface AuthUser {
   id: number
@@ -38,7 +38,7 @@ export function signIn(payload: SignInPayload): Promise<AuthUser> {
 }
 
 export async function signOut(): Promise<void> {
-  await fetch('/api/auth/signout', {
+  await fetch(apiUrl('/api/auth/signout'), {
     method: 'POST',
     credentials: 'include',
   })

@@ -57,7 +57,7 @@ sbatch slurm/ig/ig_examples.sbatch
 cd web && cp config.yaml.example config.yaml  # set data_root to ".."
 cd .. && python -m web
 
-# Deploy webapp to production (ai.csr.uky.edu)
+# Deploy webapp to production path (ai.csr.uky.edu/locallatin/)
 bash deploy/deploy.sh
 ```
 

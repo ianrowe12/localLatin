@@ -1,4 +1,5 @@
 import { useStats } from '../../api/models'
+import { apiUrl } from '../../api/client'
 import { useApp } from '../../contexts/AppContext'
 import { useTour } from '../onboarding/TourProvider'
 import { DASHBOARD_TOUR_STEPS, REVIEW_TOUR_STEPS } from '../onboarding/tourSteps'
@@ -159,7 +160,7 @@ export default function Header() {
             onClick={() => {
               const model = encodeURIComponent(activeModel)
               window.open(
-                `/api/packets/review/${activeQueryId}?model=${model}&top_k=10`,
+                apiUrl(`/api/packets/review/${activeQueryId}?model=${model}&top_k=10`),
                 '_blank',
               )
             }}
@@ -190,7 +191,7 @@ export default function Header() {
         {isPiAdmin && (
           <button
             type="button"
-            onClick={() => window.open('/api/feedback/export', '_blank')}
+            onClick={() => window.open(apiUrl('/api/feedback/export'), '_blank')}
             className="w-8 h-8 rounded-full flex items-center justify-center
                        hover:bg-stone-200 dark:hover:bg-stone-700 transition-colors
                        text-stone-600 dark:text-stone-300"

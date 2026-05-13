@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useModels } from '../../api/models'
 import type { StatsResponse } from '../../api/models'
+import { apiUrl } from '../../api/client'
 
 interface ExportControlsProps {
   stats: StatsResponse
@@ -27,7 +28,7 @@ export default function ExportControls({ stats }: ExportControlsProps) {
     if (dateFrom) params.set('date_from', dateFrom)
     if (dateTo) params.set('date_to', dateTo)
     const query = params.toString()
-    window.open(`/api/feedback/export${query ? `?${query}` : ''}`, '_blank')
+    window.open(apiUrl(`/api/feedback/export${query ? `?${query}` : ''}`), '_blank')
   }
 
   return (

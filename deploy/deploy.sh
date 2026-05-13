@@ -14,6 +14,7 @@ SYSTEMD_USER_DIR="${HOME}/.config/systemd/user"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 VENV_DIR="${REPO_DIR}/.venv"
 LOCAL_BASE_URL="${LOCAL_BASE_URL:-http://127.0.0.1:8080}"
+PUBLIC_BASE_PATH="${PUBLIC_BASE_PATH:-/locallatin/}"
 
 info()  { printf '\033[1;34m[deploy]\033[0m %s\n' "$*"; }
 error() { printf '\033[1;31m[deploy]\033[0m %s\n' "$*" >&2; }
@@ -58,7 +59,7 @@ cd "${FRONTEND_DIR}"
 npm ci --prefer-offline
 
 info "Building frontend..."
-npm run build
+VITE_BASE_PATH="${PUBLIC_BASE_PATH}" npm run build
 
 # Deploy to web/static/
 info "Deploying frontend to ${STATIC_DIR}..."
@@ -134,8 +135,9 @@ info "Deployment complete."
 info "  Frontend: ${STATIC_DIR}"
 info "  Config:   ${REPO_DIR}/web/config.production.yaml"
 info "  Local URL: ${LOCAL_BASE_URL}"
+info "  Public path: ${PUBLIC_BASE_PATH}"
 info "  Logs:     journalctl --user -u ${SERVICE_NAME} -f"
 info ""
 info "If nginx not configured yet:"
-info "  sudo cp ${REPO_DIR}/deploy/nginx.conf /etc/nginx/conf.d/locallatin.conf"
+info "  ask the server admin to merge ${REPO_DIR}/deploy/nginx.conf into the active ai.csr.uky.edu server block"
 info "  sudo nginx -t && sudo systemctl reload nginx"
