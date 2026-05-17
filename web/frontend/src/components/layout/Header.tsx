@@ -65,14 +65,14 @@ export default function Header() {
 
       {/* Right: Actions */}
       <div className="flex items-center gap-2 flex-shrink-0">
-        {currentView !== 'dashboard' && isPiAdmin && (
+        {currentView !== (isPiAdmin ? 'dashboard' : 'review') && (
           <button
             type="button"
-            onClick={() => setCurrentView('dashboard')}
+            onClick={() => setCurrentView(isPiAdmin ? 'dashboard' : 'review')}
             className="w-8 h-8 rounded-full flex items-center justify-center
                        hover:bg-stone-200 dark:hover:bg-stone-700 transition-colors
                        text-stone-600 dark:text-stone-300"
-            aria-label="Go to dashboard"
+            aria-label={isPiAdmin ? 'Go to dashboard' : 'Go to review'}
           >
             <svg
               width="16"
@@ -89,36 +89,34 @@ export default function Header() {
             </svg>
           </button>
         )}
-        {isPiAdmin && (
-          <button
-            type="button"
-            onClick={() => setCurrentView('examples')}
-            className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors text-stone-600 dark:text-stone-300 ${
-              currentView === 'examples'
-                ? 'bg-stone-200 dark:bg-stone-700'
-                : 'hover:bg-stone-200 dark:hover:bg-stone-700'
-            }`}
-            aria-label="Browse example pairs"
-            title="Example pairs gallery"
+        <button
+          type="button"
+          onClick={() => setCurrentView('files')}
+          className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors text-stone-600 dark:text-stone-300 ${
+            currentView === 'files'
+              ? 'bg-stone-200 dark:bg-stone-700'
+              : 'hover:bg-stone-200 dark:hover:bg-stone-700'
+          }`}
+          aria-label="Browse manuscript files"
+          title="Browse manuscript files"
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
           >
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <rect x="3" y="3" width="7" height="7" />
-              <rect x="14" y="3" width="7" height="7" />
-              <rect x="3" y="14" width="7" height="7" />
-              <rect x="14" y="14" width="7" height="7" />
-            </svg>
-          </button>
-        )}
+            <rect x="3" y="3" width="7" height="7" />
+            <rect x="14" y="3" width="7" height="7" />
+            <rect x="3" y="14" width="7" height="7" />
+            <rect x="14" y="14" width="7" height="7" />
+          </svg>
+        </button>
         <ThemeToggle />
 
         {/* Reviewer badge */}

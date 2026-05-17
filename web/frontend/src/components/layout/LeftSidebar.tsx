@@ -145,6 +145,26 @@ export default function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
                     )
                   }}
                   endReached={handleEndReached}
+                  components={{
+                    Footer: () => (
+                      <div className="flex justify-center py-3">
+                        {data.has_more ? (
+                          <button
+                            type="button"
+                            onClick={handleEndReached}
+                            disabled={loading}
+                            className="h-8 px-3 rounded-lg bg-stone-100 dark:bg-stone-700 text-xs font-ui font-medium text-stone-600 dark:text-stone-300 hover:bg-stone-200 dark:hover:bg-stone-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          >
+                            {loading ? 'Loading...' : 'Load more'}
+                          </button>
+                        ) : (
+                          <span className="text-xs text-stone-400 dark:text-stone-500 font-ui">
+                            {data.items.length} of {data.total}
+                          </span>
+                        )}
+                      </div>
+                    ),
+                  }}
                 />
               )}
             </div>

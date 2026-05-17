@@ -5,7 +5,7 @@ import LeftSidebar from './LeftSidebar'
 import CenterArea from './CenterArea'
 import RightSidebar from './RightSidebar'
 import DashboardView from '../dashboard/DashboardView'
-import ExamplesGallery from '../gallery/ExamplesGallery'
+import FileBrowser from '../files/FileBrowser'
 import { useReviewer } from '../../contexts/ReviewerContext'
 
 export default function AppShell() {
@@ -19,8 +19,8 @@ export default function AppShell() {
       <Header />
       {currentView === 'dashboard' && isPiAdmin ? (
         <DashboardView />
-      ) : currentView === 'examples' && isPiAdmin ? (
-        <ExamplesGallery />
+      ) : currentView === 'files' ? (
+        <FileBrowser />
       ) : (
         <div className="flex-1 flex overflow-hidden">
           <LeftSidebar

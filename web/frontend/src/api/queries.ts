@@ -80,6 +80,7 @@ export function useQueryList(
   status: string,
   search: string,
   page: number,
+  pageSize = 50,
 ): HookState<QueryListResponse> {
   const [state, setState] = useState<HookState<QueryListResponse>>({
     data: null,
@@ -87,6 +88,7 @@ export function useQueryList(
     error: null,
   })
   const cache = useRef(new Map<string, QueryListResponse>())
+  const listKeyRef = useRef<string | null>(null)
   const [refreshVersion, setRefreshVersion] = useState(0)
 
   useEffect(() => {
@@ -103,11 +105,33 @@ export function useQueryList(
     if (status) params.set('status', status)
     if (search) params.set('search', search)
     params.set('page', String(page))
+    params.set('page_size', String(pageSize))
     const key = params.toString()
+    const listKey = `${status}|${search}|${pageSize}`
+    const sameList = listKeyRef.current === listKey
+    listKeyRef.current = listKey
+
+    const applyPage = (data: QueryListResponse) => {
+      setState((prev) => {
+        if (page > 1 && sameList && prev.data) {
+          const seen = new Set(prev.data.items.map((item) => item.file_id))
+          const mergedItems = [
+            ...prev.data.items,
+            ...data.items.filter((item) => !seen.has(item.file_id)),
+          ]
+          return {
+            data: { ...data, items: mergedItems },
+            loading: false,
+            error: null,
+          }
+        }
+        return { data, loading: false, error: null }
+      })
+    }
 
     const cached = cache.current.get(key)
     if (cached) {
-      setState({ data: cached, loading: false, error: null })
+      applyPage(cached)
       return
     }
 
@@ -118,7 +142,7 @@ export function useQueryList(
       .then((data) => {
         if (cancelled) return
         cache.current.set(key, data)
-        setState({ data, loading: false, error: null })
+        applyPage(data)
       })
       .catch((err: Error) => {
         if (cancelled) return
@@ -128,7 +152,7 @@ export function useQueryList(
     return () => {
       cancelled = true
     }
-  }, [status, search, page, refreshVersion])
+  }, [status, search, page, pageSize, refreshVersion])
 
   return state
 }

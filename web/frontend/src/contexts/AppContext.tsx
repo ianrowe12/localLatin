@@ -10,7 +10,7 @@ import {
 
 export type Theme = 'light' | 'dark'
 
-export type View = 'dashboard' | 'review' | 'examples'
+export type View = 'dashboard' | 'review' | 'files'
 
 export interface AppContextValue {
   theme: Theme
