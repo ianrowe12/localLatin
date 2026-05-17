@@ -123,6 +123,15 @@ cd .. && python -m web                         # from repo root
 
 Frontend: `cd web/frontend && npm install && npm run dev` (or `npm run dev:mock` for mock data).
 
+### Deployment rule
+
+After pushing webapp, deployment, or frontend changes to `main`, verify the
+`CI and Deploy` GitHub Actions run for the pushed commit finishes green before
+calling the work done. If it fails, inspect the failed job logs, fix the cause
+or rerun after clearing transient runner state, and report the final workflow
+status. Stop local dev servers before triggering production deploys so `npm ci`
+can clean `web/frontend/node_modules` without NFS `EBUSY` file-handle errors.
+
 ### Subtree workflow
 
 ```bash
