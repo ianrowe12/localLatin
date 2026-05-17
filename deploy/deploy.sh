@@ -14,7 +14,7 @@ SYSTEMD_USER_DIR="${HOME}/.config/systemd/user"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 VENV_DIR="${REPO_DIR}/.venv"
 LOCAL_BASE_URL="${LOCAL_BASE_URL:-http://127.0.0.1:8080}"
-PUBLIC_BASE_PATH="${PUBLIC_BASE_PATH:-/locallatin/}"
+PUBLIC_BASE_PATH="${PUBLIC_BASE_PATH:-/}"
 
 info()  { printf '\033[1;34m[deploy]\033[0m %s\n' "$*"; }
 error() { printf '\033[1;31m[deploy]\033[0m %s\n' "$*" >&2; }
@@ -139,5 +139,5 @@ info "  Public path: ${PUBLIC_BASE_PATH}"
 info "  Logs:     journalctl --user -u ${SERVICE_NAME} -f"
 info ""
 info "If nginx not configured yet:"
-info "  ask the server admin to merge ${REPO_DIR}/deploy/nginx.conf into the active ai.csr.uky.edu server block"
+info "  ensure the active ai.csr.uky.edu server block proxies / to http://127.0.0.1:8080"
 info "  sudo nginx -t && sudo systemctl reload nginx"

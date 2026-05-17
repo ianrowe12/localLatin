@@ -37,7 +37,7 @@ def test_deploy_script_installs_dependencies_and_fails_health_checks() -> None:
     assert '-m venv "${VENV_DIR}"' in deploy
     assert 'bin/python" -m pip install -r' in deploy
     assert "DEPLOY_PATH:-/homes/ipro222/localLatin" in deploy
-    assert "PUBLIC_BASE_PATH:-/locallatin/" in deploy
+    assert "PUBLIC_BASE_PATH:-/}" in deploy
     assert 'VITE_BASE_PATH="${PUBLIC_BASE_PATH}" npm run build' in deploy
     assert "http://127.0.0.1:8080" in deploy
     assert "/api/models" in deploy
@@ -74,7 +74,7 @@ def test_github_actions_workflow_tests_then_deploys_after_main_push() -> None:
     assert "push:" in workflow
     assert "main" in workflow
     assert "python -m pytest web/tests" in workflow
-    assert "VITE_BASE_PATH=/locallatin/ npm run build" in workflow
+    assert "npm run build" in workflow
     assert "needs: test" in workflow
     assert "self-hosted" in workflow
     assert "locallatin" in workflow
@@ -82,16 +82,15 @@ def test_github_actions_workflow_tests_then_deploys_after_main_push() -> None:
     assert "ENABLE_PRODUCTION_DEPLOY" in workflow
     assert "DEPLOY_PATH" in workflow
     assert "PUBLIC_BASE_PATH" in workflow
-    assert "/locallatin/" in workflow
     assert "git pull --ff-only origin main" in workflow
     assert 'PUBLIC_BASE_PATH="${PUBLIC_BASE_PATH}" bash deploy/deploy.sh' in workflow
 
 
-def test_nginx_template_scopes_locallatin_to_path_prefix() -> None:
+def test_nginx_template_scopes_locallatin_to_root_domain() -> None:
     nginx = (ROOT / "deploy" / "nginx.conf").read_text(encoding="utf-8")
 
-    assert "location = /locallatin" in nginx
-    assert "location ^~ /locallatin/" in nginx
-    assert "proxy_pass http://127.0.0.1:8080/" in nginx
-    assert "X-Forwarded-Prefix /locallatin" in nginx
-    assert "location / {" not in nginx
+    assert "location / {" in nginx
+    assert "proxy_pass http://127.0.0.1:8080" in nginx
+    assert "X-Forwarded-Proto $scheme" in nginx
+    assert "locallatin/" not in nginx
+    assert "X-Forwarded-Prefix" not in nginx

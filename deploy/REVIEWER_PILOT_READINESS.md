@@ -4,7 +4,7 @@ This deployment is for a protected reviewer pilot, not a public unauthenticated 
 
 ## Access Posture
 
-- Serve the app behind TLS at the configured path, currently `https://ai.csr.uky.edu/locallatin/`.
+- Serve the app behind TLS at the configured origin, currently `https://ai.csr.uky.edu`.
 - Keep `cors.allow_origins` narrow and aligned with the deployed origin.
 - Require LocalLatin app accounts for reviewers and PI/admin users.
 - Treat CSV exports and PDF packets as PI/admin-only data-release artifacts.

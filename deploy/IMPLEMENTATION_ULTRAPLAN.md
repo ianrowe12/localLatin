@@ -10,7 +10,7 @@ LocalLatin reviewer webapp.
   `127.0.0.1:8080`, supervised by user `systemd`, and configured with explicit
   production paths.
 - Frontend is built by Vite and served as static files from `web/static` behind
-  nginx at `https://ai.csr.uky.edu/locallatin/`.
+  nginx at `https://ai.csr.uky.edu`.
 - GitHub Actions runs backend tests and frontend build checks on every push to
   `main`.
 - GitHub Actions deploys after the checks pass on `main` only when the
@@ -40,14 +40,12 @@ LocalLatin reviewer webapp.
 ### Frontend Hosting
 
 - Runtime: static Vite build, no Node process in production.
-- Build command:
-  `cd web/frontend && npm ci && VITE_BASE_PATH=/locallatin/ npm run build`.
+- Build command: `cd web/frontend && npm ci && npm run build`.
 - Artifact path: `web/frontend/dist`.
 - Deployed path: `web/static`.
 - Web server: nginx using the active `ai.csr.uky.edu` virtual host.
 - Routing:
-  `/locallatin/` proxies to FastAPI with the prefix stripped, so public
-  `/locallatin/api/*` requests reach the app as `/api/*`.
+  `/` proxies to FastAPI, which serves `/api/*` and the built SPA.
 - Cache policy:
   Vite-fingerprinted assets under `/assets/` use long immutable caching.
 
@@ -64,8 +62,7 @@ Optional repository settings:
 
 - Repository variable `DEPLOY_PATH`: local repo path on the self-hosted runner.
   Defaults to `/homes/ipro222/localLatin`.
-- Repository variable `PUBLIC_BASE_PATH`: public route prefix. Defaults to
-  `/locallatin/`.
+- Repository variable `PUBLIC_BASE_PATH`: public route prefix. Defaults to `/`.
 
 Push-to-production flow:
 
@@ -75,7 +72,7 @@ Push-to-production flow:
 4. If `ENABLE_PRODUCTION_DEPLOY=true`, the self-hosted runner on the VM starts
    the `deploy` job.
 5. The VM fetches `origin/main`, fast-forwards the checked out repo, and runs
-   `PUBLIC_BASE_PATH=/locallatin/ bash deploy/deploy.sh`.
+   `PUBLIC_BASE_PATH=/ bash deploy/deploy.sh`.
 6. The deploy script installs dependencies, builds the frontend, refreshes
    `web/static`, restarts `locallatin.service`, and verifies `/api/models`.
 

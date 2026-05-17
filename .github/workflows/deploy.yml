@@ -49,7 +49,7 @@ jobs:
 
       - name: Build frontend
         working-directory: web/frontend
-        run: VITE_BASE_PATH=/locallatin/ npm run build
+        run: npm run build
 
   deploy:
     name: Deploy production
@@ -68,7 +68,7 @@ jobs:
         run: |
           set -euo pipefail
           DEPLOY_PATH="${DEPLOY_PATH:-/homes/ipro222/localLatin}"
-          PUBLIC_BASE_PATH="${PUBLIC_BASE_PATH:-/locallatin/}"
+          PUBLIC_BASE_PATH="${PUBLIC_BASE_PATH:-/}"
 
           cd "${DEPLOY_PATH}"
           git fetch origin main
