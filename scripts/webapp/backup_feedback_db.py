@@ -332,7 +332,7 @@ def main() -> int:
             return 0
 
         if args.local_db:
-            Path(str(snapshot["snapshot_path"])).replace(local_tmp)
+            shutil.move(str(snapshot["snapshot_path"]), local_tmp)
         else:
             scp_from_remote(args, str(snapshot["snapshot_path"]), local_tmp)
         actual_sha = sha256_file(local_tmp)
@@ -348,6 +348,7 @@ def main() -> int:
         backup_path.chmod(stat.S_IRUSR | stat.S_IWUSR)
         write_latest_link(args.dest, backup_path)
         state_path.write_text(f"{fingerprint}\n", encoding="utf-8")
+        state_path.chmod(stat.S_IRUSR | stat.S_IWUSR)
         metadata_path.write_text(
             json.dumps(
                 {
