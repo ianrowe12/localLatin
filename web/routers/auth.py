@@ -86,6 +86,7 @@ async def signout(
         secure=settings.auth.secure_cookies,
         samesite="lax",
     )
+    response.status_code = 204
     return response
 
 

@@ -234,9 +234,11 @@ def test_pi_admin_can_access_admin_data_after_sign_in(tmp_path: Path) -> None:
 
     with _client(config_path) as setup:
         _register_admin(setup)
-        setup.post(
+        signed_out = setup.post(
             "/api/auth/signout",
         )
+        assert signed_out.status_code == 204
+        assert setup.get("/api/auth/me").status_code == 401
 
     with _client(config_path) as client:
         signed_in = client.post(
