@@ -2,35 +2,54 @@ from __future__ import annotations
 
 import sqlite3
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 
 from web.config import Settings
-from web.dependencies import get_current_user, get_db, get_settings
-from web.models import RegisterRequest, SignInRequest, UserPublic
+from web.dependencies import get_current_user, get_db, get_settings, require_pi_admin
+from web.models import (
+    AccountPublic,
+    ApprovalDecisionRequest,
+    RegisterRequest,
+    RegistrationResponse,
+    SignInRequest,
+    UserPublic,
+)
 from web.services.feedback_db import FeedbackDB
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
-@router.post("/register", response_model=UserPublic, status_code=201)
+@router.post("/register", response_model=RegistrationResponse, status_code=201)
 async def register(
     body: RegisterRequest,
     response: Response,
     db: FeedbackDB = Depends(get_db),
     settings: Settings = Depends(get_settings),
-) -> UserPublic:
+) -> RegistrationResponse:
     role = await _registration_role(body, db, settings)
+    approval_status = "approved" if role == "pi_admin" else "pending"
     try:
         account = await db.create_account(
             username=body.username,
             display_name=body.display_name,
             password=body.password,
             role=role,
+            approval_status=approval_status,
         )
     except sqlite3.IntegrityError as exc:
         raise HTTPException(status_code=409, detail="Username already exists") from exc
-    await _set_session_cookie(response, db, settings, account["id"])
-    return UserPublic(**account)
+    if approval_status == "approved":
+        await _set_session_cookie(response, db, settings, account["id"])
+        return RegistrationResponse(
+            status="approved",
+            message="Account created.",
+            account=UserPublic(**account),
+        )
+    return RegistrationResponse(
+        status="pending_approval",
+        message="Account request submitted. A PI/admin must approve it before sign-in.",
+        account=UserPublic(**account),
+    )
 
 
 @router.post("/signin", response_model=UserPublic)
@@ -40,8 +59,14 @@ async def signin(
     db: FeedbackDB = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> UserPublic:
-    account = await db.verify_account(body.username, body.password)
+    account, reason = await db.verify_account(body.username, body.password)
     if account is None:
+        if reason == "pending":
+            raise HTTPException(status_code=403, detail="Account pending approval")
+        if reason == "rejected":
+            raise HTTPException(status_code=403, detail="Account registration was rejected")
+        if reason == "inactive":
+            raise HTTPException(status_code=403, detail="Account is inactive")
         raise HTTPException(status_code=401, detail="Invalid username or password")
     await _set_session_cookie(response, db, settings, account["id"])
     return UserPublic(**account)
@@ -67,6 +92,54 @@ async def signout(
 @router.get("/me", response_model=UserPublic)
 async def me(current_user: UserPublic = Depends(get_current_user)) -> UserPublic:
     return current_user
+
+
+@router.get("/accounts", response_model=list[AccountPublic])
+async def list_accounts(
+    status: str | None = Query(None, pattern="^(pending|approved|rejected|all)$"),
+    db: FeedbackDB = Depends(get_db),
+    current_user: UserPublic = Depends(require_pi_admin),
+) -> list[AccountPublic]:
+    del current_user
+    approval_status = None if status in (None, "all") else status
+    accounts = await db.list_accounts(approval_status=approval_status)
+    return [AccountPublic(**account) for account in accounts]
+
+
+@router.post("/accounts/{account_id}/approve", response_model=AccountPublic)
+async def approve_account(
+    account_id: int,
+    body: ApprovalDecisionRequest | None = None,
+    db: FeedbackDB = Depends(get_db),
+    current_user: UserPublic = Depends(require_pi_admin),
+) -> AccountPublic:
+    account = await db.set_account_approval(
+        account_id=account_id,
+        approval_status="approved",
+        approver_account_id=current_user.id,
+        note=body.note if body else "",
+    )
+    if account is None:
+        raise HTTPException(status_code=404, detail="Account not found")
+    return AccountPublic(**account)
+
+
+@router.post("/accounts/{account_id}/reject", response_model=AccountPublic)
+async def reject_account(
+    account_id: int,
+    body: ApprovalDecisionRequest | None = None,
+    db: FeedbackDB = Depends(get_db),
+    current_user: UserPublic = Depends(require_pi_admin),
+) -> AccountPublic:
+    account = await db.set_account_approval(
+        account_id=account_id,
+        approval_status="rejected",
+        approver_account_id=current_user.id,
+        note=body.note if body else "",
+    )
+    if account is None:
+        raise HTTPException(status_code=404, detail="Account not found")
+    return AccountPublic(**account)
 
 
 async def _registration_role(

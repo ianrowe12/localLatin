@@ -38,6 +38,11 @@ CREATE TABLE IF NOT EXISTS accounts (
     password_hash TEXT NOT NULL,
     role TEXT NOT NULL DEFAULT 'reviewer' CHECK (role IN ('reviewer', 'pi_admin')),
     is_active INTEGER NOT NULL DEFAULT 1,
+    approval_status TEXT NOT NULL DEFAULT 'approved' CHECK (approval_status IN ('pending', 'approved', 'rejected')),
+    approved_at TEXT,
+    approved_by_account_id INTEGER,
+    rejected_at TEXT,
+    approval_note TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     last_login_at TEXT
@@ -182,6 +187,42 @@ class FeedbackDB:
             "CREATE INDEX IF NOT EXISTS idx_feedback_reviewer_account ON feedback(reviewer_account_id)"
         )
 
+        account_rows = await (
+            await self._db.execute("PRAGMA table_info(accounts)")
+        ).fetchall()
+        account_columns = {r["name"] for r in account_rows}
+        if "approval_status" not in account_columns:
+            await self._db.execute(
+                """
+                ALTER TABLE accounts
+                ADD COLUMN approval_status TEXT NOT NULL DEFAULT 'approved'
+                CHECK (approval_status IN ('pending', 'approved', 'rejected'))
+                """
+            )
+        if "approved_at" not in account_columns:
+            await self._db.execute("ALTER TABLE accounts ADD COLUMN approved_at TEXT")
+        if "approved_by_account_id" not in account_columns:
+            await self._db.execute(
+                "ALTER TABLE accounts ADD COLUMN approved_by_account_id INTEGER"
+            )
+        if "rejected_at" not in account_columns:
+            await self._db.execute("ALTER TABLE accounts ADD COLUMN rejected_at TEXT")
+        if "approval_note" not in account_columns:
+            await self._db.execute(
+                "ALTER TABLE accounts ADD COLUMN approval_note TEXT NOT NULL DEFAULT ''"
+            )
+        await self._db.execute(
+            """
+            UPDATE accounts
+               SET approval_status = 'approved',
+                   updated_at = datetime('now')
+             WHERE approval_status IS NULL OR approval_status = ''
+            """
+        )
+        await self._db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_accounts_approval_status ON accounts(approval_status)"
+        )
+
     async def account_count(self) -> int:
         assert self._db is not None
         row = await (await self._db.execute("SELECT COUNT(*) FROM accounts")).fetchone()
@@ -193,15 +234,27 @@ class FeedbackDB:
         display_name: str,
         password: str,
         role: str,
+        approval_status: str = "approved",
+        approved_by_account_id: int | None = None,
     ) -> dict:
         assert self._db is not None
         password_hash = _hash_password(password)
+        approved_at = "datetime('now')" if approval_status == "approved" else "NULL"
         cursor = await self._db.execute(
-            """
-            INSERT INTO accounts (username, display_name, password_hash, role)
-            VALUES (?, ?, ?, ?)
+            f"""
+            INSERT INTO accounts
+                (username, display_name, password_hash, role, approval_status,
+                 approved_at, approved_by_account_id)
+            VALUES (?, ?, ?, ?, ?, {approved_at}, ?)
             """,
-            (username.strip().lower(), display_name.strip(), password_hash, role),
+            (
+                username.strip().lower(),
+                display_name.strip(),
+                password_hash,
+                role,
+                approval_status,
+                approved_by_account_id,
+            ),
         )
         await self._db.commit()
         row = await (
@@ -209,22 +262,94 @@ class FeedbackDB:
         ).fetchone()
         return _public_account(row)
 
-    async def verify_account(self, username: str, password: str) -> dict | None:
+    async def verify_account(self, username: str, password: str) -> tuple[dict | None, str | None]:
         assert self._db is not None
         row = await (
             await self._db.execute(
-                "SELECT * FROM accounts WHERE username = ? AND is_active = 1",
+                "SELECT * FROM accounts WHERE username = ?",
                 (username.strip().lower(),),
             )
         ).fetchone()
         if row is None or not _verify_password(password, row["password_hash"]):
-            return None
+            return None, "invalid"
+        if row["approval_status"] == "pending":
+            return None, "pending"
+        if row["approval_status"] == "rejected":
+            return None, "rejected"
+        if int(row["is_active"]) != 1:
+            return None, "inactive"
+        if row["approval_status"] != "approved":
+            return None, "inactive"
         await self._db.execute(
             "UPDATE accounts SET last_login_at = datetime('now') WHERE id = ?",
             (row["id"],),
         )
         await self._db.commit()
-        return _public_account(row)
+        return _public_account(row), None
+
+    async def list_accounts(self, approval_status: str | None = None) -> list[dict]:
+        assert self._db is not None
+        query = "SELECT * FROM accounts"
+        params: list[str] = []
+        if approval_status:
+            query += " WHERE approval_status = ?"
+            params.append(approval_status)
+        query += " ORDER BY created_at DESC, id DESC"
+        rows = await (await self._db.execute(query, params)).fetchall()
+        return [_account_public(row) for row in rows]
+
+    async def set_account_approval(
+        self,
+        account_id: int,
+        approval_status: str,
+        approver_account_id: int,
+        note: str = "",
+    ) -> dict | None:
+        assert self._db is not None
+        if approval_status == "approved":
+            await self._db.execute(
+                """
+                UPDATE accounts
+                   SET approval_status = 'approved',
+                       is_active = 1,
+                       approved_at = datetime('now'),
+                       approved_by_account_id = ?,
+                       rejected_at = NULL,
+                       approval_note = ?,
+                       updated_at = datetime('now')
+                 WHERE id = ?
+                """,
+                (approver_account_id, note.strip(), account_id),
+            )
+        elif approval_status == "rejected":
+            await self._db.execute(
+                """
+                UPDATE accounts
+                   SET approval_status = 'rejected',
+                       is_active = 0,
+                       rejected_at = datetime('now'),
+                       approval_note = ?,
+                       updated_at = datetime('now')
+                 WHERE id = ?
+                """,
+                (note.strip(), account_id),
+            )
+            await self._db.execute(
+                """
+                UPDATE account_sessions
+                   SET revoked_at = datetime('now')
+                 WHERE account_id = ? AND revoked_at IS NULL
+                """,
+                (account_id,),
+            )
+        else:
+            raise ValueError(f"Unsupported approval status: {approval_status}")
+
+        await self._db.commit()
+        row = await (
+            await self._db.execute("SELECT * FROM accounts WHERE id = ?", (account_id,))
+        ).fetchone()
+        return _account_public(row) if row is not None else None
 
     async def create_session(self, account_id: int, session_days: int) -> str:
         assert self._db is not None
@@ -254,6 +379,7 @@ class FeedbackDB:
                   AND account_sessions.revoked_at IS NULL
                   AND account_sessions.expires_at > datetime('now')
                   AND accounts.is_active = 1
+                  AND accounts.approval_status = 'approved'
                 """,
                 (_hash_token(token),),
             )
@@ -579,4 +705,22 @@ def _public_account(row: aiosqlite.Row) -> dict:
         "username": row["username"],
         "display_name": row["display_name"],
         "role": row["role"],
+        "approval_status": row["approval_status"],
     }
+
+
+def _account_public(row: aiosqlite.Row) -> dict:
+    account = _public_account(row)
+    account.update(
+        {
+            "is_active": bool(row["is_active"]),
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+            "last_login_at": row["last_login_at"],
+            "approved_at": row["approved_at"],
+            "approved_by_account_id": row["approved_by_account_id"],
+            "rejected_at": row["rejected_at"],
+            "approval_note": row["approval_note"] or "",
+        }
+    )
+    return account

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -145,11 +145,29 @@ class FeedbackOutcome(StrEnum):
     LEGACY_UNRESOLVED = "legacy_unresolved"
 
 
+class AccountApprovalStatus(StrEnum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
 class UserPublic(BaseModel):
     id: int
     username: str
     display_name: str
     role: str
+    approval_status: AccountApprovalStatus = AccountApprovalStatus.APPROVED
+
+
+class AccountPublic(UserPublic):
+    is_active: bool
+    created_at: str
+    updated_at: str
+    last_login_at: Optional[str] = None
+    approved_at: Optional[str] = None
+    approved_by_account_id: Optional[int] = None
+    rejected_at: Optional[str] = None
+    approval_note: str = ""
 
 
 class RegisterRequest(BaseModel):
@@ -162,6 +180,16 @@ class RegisterRequest(BaseModel):
 class SignInRequest(BaseModel):
     username: str
     password: str
+
+
+class RegistrationResponse(BaseModel):
+    status: Literal["approved", "pending_approval"]
+    message: str
+    account: UserPublic
+
+
+class ApprovalDecisionRequest(BaseModel):
+    note: str = Field(default="", max_length=500)
 
 
 class FeedbackCreate(BaseModel):

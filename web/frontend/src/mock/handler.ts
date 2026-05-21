@@ -76,6 +76,7 @@ function generateSyntheticQueries(): QueryListItem[] {
 
 const ALL_QUERIES = generateSyntheticQueries()
 let mockUser: AuthUser | null = null
+let pendingAccounts: AuthUser[] = []
 
 // ---------------------------------------------------------------------------
 // Mock response helper
@@ -100,15 +101,86 @@ async function handleAuth(url: string, init?: RequestInit): Promise<Response | n
     return mockResponse({ success: true })
   }
 
-  if (url.includes('/api/auth/register') || url.includes('/api/auth/signin')) {
+  if (url.includes('/api/auth/accounts')) {
+    if (url.includes('/approve')) {
+      const accountId = Number(url.match(/accounts\/(\d+)\/approve/)?.[1])
+      const account = pendingAccounts.find((item) => item.id === accountId)
+      pendingAccounts = pendingAccounts.filter((item) => item.id !== accountId)
+      return mockResponse({
+        ...account,
+        approval_status: 'approved',
+        is_active: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        last_login_at: null,
+        approved_at: new Date().toISOString(),
+        approved_by_account_id: 1,
+        rejected_at: null,
+        approval_note: '',
+      })
+    }
+    if (url.includes('/reject')) {
+      const accountId = Number(url.match(/accounts\/(\d+)\/reject/)?.[1])
+      const account = pendingAccounts.find((item) => item.id === accountId)
+      pendingAccounts = pendingAccounts.filter((item) => item.id !== accountId)
+      return mockResponse({
+        ...account,
+        approval_status: 'rejected',
+        is_active: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        last_login_at: null,
+        approved_at: null,
+        approved_by_account_id: null,
+        rejected_at: new Date().toISOString(),
+        approval_note: '',
+      })
+    }
+    return mockResponse(
+      pendingAccounts.map((account) => ({
+        ...account,
+        is_active: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        last_login_at: null,
+        approved_at: null,
+        approved_by_account_id: null,
+        rejected_at: null,
+        approval_note: '',
+      })),
+    )
+  }
+
+  if (url.includes('/api/auth/register')) {
     const body = init?.body ? JSON.parse(String(init.body)) : {}
-    mockUser = {
-      id: body.admin_code ? 1 : 2,
+    const account: AuthUser = {
+      id: pendingAccounts.length + 2,
       username: body.username ?? 'reviewer',
       display_name: body.display_name ?? body.username ?? 'Reviewer',
-      role: body.admin_code ? 'pi_admin' : 'reviewer',
+      role: 'reviewer',
+      approval_status: 'pending',
     }
-    return mockResponse(mockUser, url.includes('/register') ? 201 : 200)
+    pendingAccounts = [account, ...pendingAccounts]
+    return mockResponse(
+      {
+        status: 'pending_approval',
+        message: 'Account request submitted. A PI/admin must approve it before sign-in.',
+        account,
+      },
+      201,
+    )
+  }
+
+  if (url.includes('/api/auth/signin')) {
+    const body = init?.body ? JSON.parse(String(init.body)) : {}
+    mockUser = {
+      id: body.username === 'pi' ? 1 : 2,
+      username: body.username ?? 'reviewer',
+      display_name: body.username === 'pi' ? 'PI Scholar' : 'Reviewer',
+      role: body.username === 'pi' ? 'pi_admin' : 'reviewer',
+      approval_status: 'approved',
+    }
+    return mockResponse(mockUser)
   }
 
   return null

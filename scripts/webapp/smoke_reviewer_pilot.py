@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from http.cookiejar import CookieJar
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
@@ -51,8 +52,15 @@ class SmokeClient:
             raise RuntimeError(f"{method} {path} returned {status}, expected {expect}: {snippet}")
         return body, response_headers
 
-    def json(self, method: str, path: str, *, json_body: dict | None = None) -> dict | list:
-        body, _ = self.request(method, path, json_body=json_body)
+    def json(
+        self,
+        method: str,
+        path: str,
+        *,
+        json_body: dict | None = None,
+        expect: int = 200,
+    ) -> dict | list:
+        body, _ = self.request(method, path, json_body=json_body, expect=expect)
         return json.loads(body.decode("utf-8"))
 
 
@@ -97,6 +105,53 @@ def main() -> int:
     stats = client.json("GET", "/api/stats")
     if "total_queries" not in stats:
         raise RuntimeError("/api/stats response missing total_queries")
+
+    smoke_username = f"smoke_reviewer_{int(time.time())}"
+    smoke_password = "correct horse battery staple"
+    pending_client = SmokeClient(args.base_url)
+    registered = pending_client.json(
+        "POST",
+        "/api/auth/register",
+        json_body={
+            "username": smoke_username,
+            "display_name": "Deploy Smoke Reviewer",
+            "password": smoke_password,
+        },
+        expect=201,
+    )
+    if registered.get("status") != "pending_approval":
+        raise RuntimeError("Smoke reviewer registration did not return pending_approval")
+    account = registered.get("account") or {}
+    if account.get("approval_status") != "pending":
+        raise RuntimeError("Smoke reviewer account was not created as pending")
+    account_id = account.get("id")
+
+    pending_client.request("GET", "/api/queries?status=all&page_size=1", expect=401)
+    pending_client.request(
+        "POST",
+        "/api/auth/signin",
+        json_body={"username": smoke_username, "password": smoke_password},
+        expect=403,
+    )
+
+    pending_accounts = client.json("GET", "/api/auth/accounts?status=pending")
+    if not any(item.get("username") == smoke_username for item in pending_accounts):
+        raise RuntimeError("PI/admin could not see smoke reviewer in pending accounts")
+    approved = client.json("POST", f"/api/auth/accounts/{account_id}/approve")
+    if approved.get("approval_status") != "approved":
+        raise RuntimeError("PI/admin account approval did not mark reviewer approved")
+
+    approved_client = SmokeClient(args.base_url)
+    approved_signin = approved_client.json(
+        "POST",
+        "/api/auth/signin",
+        json_body={"username": smoke_username, "password": smoke_password},
+    )
+    if approved_signin.get("role") != "reviewer":
+        raise RuntimeError("Approved smoke reviewer could not sign in as reviewer")
+    approved_client.request("GET", "/api/queries?status=all&page_size=1")
+    approved_client.request("GET", "/api/stats", expect=403)
+    client.json("POST", f"/api/auth/accounts/{account_id}/reject")
 
     queries = client.json("GET", "/api/queries?status=all&page_size=1")
     if not queries.get("items"):

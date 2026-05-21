@@ -139,10 +139,11 @@ def test_pi_admin_can_generate_bounded_review_packet_pdf(tmp_path: Path) -> None
 
 def test_reviewers_cannot_generate_review_packet_pdf(tmp_path: Path) -> None:
     config_path = _write_fixture_data(tmp_path)
-    with _client(config_path) as admin:
-        _register_admin(admin)
-
     with _client(config_path) as reviewer:
+        _register_admin(reviewer)
+        admin_cookie = reviewer.cookies.get("locallatin_session")
+        assert admin_cookie
+        reviewer.cookies.clear()
         registered = reviewer.post(
             "/api/auth/register",
             json={
@@ -152,6 +153,15 @@ def test_reviewers_cannot_generate_review_packet_pdf(tmp_path: Path) -> None:
             },
         )
         assert registered.status_code == 201
+        reviewer_id = registered.json()["account"]["id"]
+        reviewer.cookies.set("locallatin_session", admin_cookie)
+        assert reviewer.post(f"/api/auth/accounts/{reviewer_id}/approve").status_code == 200
+        reviewer.cookies.clear()
+        signed_in = reviewer.post(
+            "/api/auth/signin",
+            json={"username": "reviewer", "password": "correct horse battery staple"},
+        )
+        assert signed_in.status_code == 200
         response = reviewer.get(
             "/api/packets/review/1",
             params={"model": "bowphs/LaTa"},

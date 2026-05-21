@@ -10,7 +10,7 @@ export default function ReviewerLoginModal() {
   const [username, setUsername] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [password, setPassword] = useState('')
-  const [adminCode, setAdminCode] = useState('')
+  const [pendingMessage, setPendingMessage] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
   const canSubmit =
@@ -22,16 +22,21 @@ export default function ReviewerLoginModal() {
     e.preventDefault()
     if (!canSubmit || submitting) return
     setSubmitting(true)
+    setPendingMessage(null)
     try {
       if (mode === 'signin') {
         await signIn({ username, password })
       } else {
-        await register({
+        const result = await register({
           username,
           display_name: displayName,
           password,
-          admin_code: adminCode.trim() || undefined,
         })
+        if (result.status === 'pending_approval') {
+          setPendingMessage(result.message)
+          setMode('signin')
+          setPassword('')
+        }
       }
     } finally {
       setSubmitting(false)
@@ -54,15 +59,17 @@ export default function ReviewerLoginModal() {
           Reviewer Account
         </h2>
         <p className="font-ui text-sm text-stone-500 dark:text-stone-400 mb-5">
-          Use the account assigned for this review pilot. Your display name or
-          initials are saved with submitted decisions for PI summaries and
-          exports.
+          Sign in after your reviewer account has been approved. New account
+          requests are reviewed by a PI/admin before access is enabled.
         </p>
 
         <div className="grid grid-cols-2 gap-2 mb-4">
           <button
             type="button"
-            onClick={() => setMode('signin')}
+            onClick={() => {
+              setMode('signin')
+              setPendingMessage(null)
+            }}
             className={`h-9 rounded-lg text-sm font-ui transition-colors ${
               mode === 'signin'
                 ? 'bg-accent text-white'
@@ -73,7 +80,10 @@ export default function ReviewerLoginModal() {
           </button>
           <button
             type="button"
-            onClick={() => setMode('register')}
+            onClick={() => {
+              setMode('register')
+              setPendingMessage(null)
+            }}
             className={`h-9 rounded-lg text-sm font-ui transition-colors ${
               mode === 'register'
                 ? 'bg-accent text-white'
@@ -124,18 +134,10 @@ export default function ReviewerLoginModal() {
             aria-label="Password"
           />
 
-          {mode === 'register' && (
-            <input
-              type="password"
-              value={adminCode}
-              onChange={(e) => setAdminCode(e.target.value)}
-              placeholder="Admin code (optional)"
-              className="w-full h-10 px-3 rounded-lg border border-stone-200 dark:border-stone-700
-                         bg-white dark:bg-surface-900 text-sm font-ui text-stone-800 dark:text-stone-200
-                         placeholder:text-stone-400 dark:placeholder:text-stone-500
-                         focus:outline-none focus:ring-2 focus:ring-accent/30"
-              aria-label="Admin code"
-            />
+          {pendingMessage && (
+            <p className="font-ui text-sm text-accent dark:text-accent-light">
+              {pendingMessage}
+            </p>
           )}
 
           {error && (

@@ -52,6 +52,19 @@ def test_smoke_script_is_valid_python() -> None:
     compile(script.read_text(encoding="utf-8"), str(script), "exec")
 
 
+def test_feedback_backup_script_is_valid_and_change_aware() -> None:
+    script = ROOT / "scripts" / "webapp" / "backup_feedback_db.py"
+    source = script.read_text(encoding="utf-8")
+
+    compile(source, str(script), "exec")
+    assert "sqlite3.connect" in source
+    assert ".backup(" in source
+    assert "PRAGMA integrity_check" in source
+    assert "feedback_fingerprint" in source
+    assert "LOCALLATIN_BACKUP_HOST" in source
+    assert "locallatin-feedback" in source
+
+
 def test_deployment_ultraplan_covers_hosting_actions_and_tdd() -> None:
     plan = (ROOT / "deploy" / "IMPLEMENTATION_ULTRAPLAN.md").read_text(
         encoding="utf-8"

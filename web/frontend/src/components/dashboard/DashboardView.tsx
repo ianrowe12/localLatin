@@ -15,6 +15,7 @@ import RankDistributionChart, {
 } from './RankDistributionChart'
 import ReviewerTable, { ReviewerTableSkeleton } from './ReviewerTable'
 import ExportControls from './ExportControls'
+import AccountApprovalPanel from './AccountApprovalPanel'
 
 // ---------------------------------------------------------------------------
 // Icon helpers (inline SVGs matching the codebase style)
@@ -195,6 +196,11 @@ export default function DashboardView() {
 
         {/* Section 2: Resume CTA */}
         <ResumeCard stats={stats} />
+
+        <div>
+          <SectionHeader>Account Requests</SectionHeader>
+          <AccountApprovalPanel />
+        </div>
 
         <div>
           <SectionHeader>CSV Export</SectionHeader>

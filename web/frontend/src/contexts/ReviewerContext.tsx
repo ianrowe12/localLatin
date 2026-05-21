@@ -14,6 +14,7 @@ import {
   signOut as signOutAccount,
   type AuthUser,
   type RegisterPayload,
+  type RegistrationResponse,
   type SignInPayload,
 } from '../api/auth'
 
@@ -24,7 +25,7 @@ export interface ReviewerContextValue {
   error: string | null
   isPiAdmin: boolean
   signIn: (payload: SignInPayload) => Promise<void>
-  register: (payload: RegisterPayload) => Promise<void>
+  register: (payload: RegisterPayload) => Promise<RegistrationResponse>
   clearReviewer: () => Promise<void>
 }
 
@@ -69,7 +70,9 @@ export function ReviewerProvider({ children }: { children: ReactNode }) {
   const register = useCallback(async (payload: RegisterPayload) => {
     setError(null)
     try {
-      setUser(await registerAccount(payload))
+      const result = await registerAccount(payload)
+      setUser(result.status === 'approved' ? result.account : null)
+      return result
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Registration failed'
       setError(message)
