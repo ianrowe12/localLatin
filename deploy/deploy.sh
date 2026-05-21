@@ -56,7 +56,7 @@ info "Installing backend dependencies..."
 # Build frontend
 info "Installing frontend dependencies..."
 cd "${FRONTEND_DIR}"
-npm ci --prefer-offline
+npm ci --prefer-offline --include=dev
 
 info "Building frontend..."
 VITE_BASE_PATH="${PUBLIC_BASE_PATH}" npm run build

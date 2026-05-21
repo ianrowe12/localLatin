@@ -44,6 +44,7 @@ def test_deploy_script_installs_dependencies_and_fails_health_checks() -> None:
     assert "API did not become healthy" in deploy
     assert "exit 1" in deploy
     assert "smoke_reviewer_pilot.py" in deploy
+    assert "npm ci --prefer-offline --include=dev" in deploy
 
 
 def test_smoke_script_is_valid_python() -> None:
