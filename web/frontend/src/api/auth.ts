@@ -32,6 +32,19 @@ export interface AccountPublic extends AuthUser {
   approval_note: string
 }
 
+export interface AccountCreatePayload {
+  username: string
+  display_name: string
+  role: 'reviewer' | 'pi_admin'
+  password?: string
+  approval_note?: string
+}
+
+export interface AccountCreateResponse {
+  account: AccountPublic
+  temporary_password: string | null
+}
+
 export interface SignInPayload {
   username: string
   password: string
@@ -65,6 +78,15 @@ export async function signOut(): Promise<void> {
 export function listAccounts(status = 'pending'): Promise<AccountPublic[]> {
   const params = new URLSearchParams({ status })
   return apiFetch<AccountPublic[]>(`/api/auth/accounts?${params}`)
+}
+
+export function createAccount(
+  payload: AccountCreatePayload,
+): Promise<AccountCreateResponse> {
+  return apiFetch<AccountCreateResponse>('/api/auth/accounts', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
 }
 
 export function approveAccount(id: number): Promise<AccountPublic> {

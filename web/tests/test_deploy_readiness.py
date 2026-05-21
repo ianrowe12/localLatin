@@ -63,6 +63,7 @@ def test_feedback_backup_script_is_valid_and_change_aware() -> None:
     assert "PRAGMA integrity_check" in source
     assert "feedback_fingerprint" in source
     assert "LOCALLATIN_BACKUP_HOST" in source
+    assert "LOCALLATIN_LOCAL_DB" in source
     assert "locallatin-feedback" in source
 
 

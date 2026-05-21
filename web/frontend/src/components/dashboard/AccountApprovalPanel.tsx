@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   approveAccount,
+  createAccount,
   listAccounts,
   rejectAccount,
+  type AccountCreateResponse,
   type AccountPublic,
 } from '../../api/auth'
 
@@ -22,6 +24,13 @@ export default function AccountApprovalPanel() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [actingId, setActingId] = useState<number | null>(null)
+  const [creating, setCreating] = useState(false)
+  const [newUsername, setNewUsername] = useState('')
+  const [newDisplayName, setNewDisplayName] = useState('')
+  const [newRole, setNewRole] = useState<'reviewer' | 'pi_admin'>('reviewer')
+  const [newPassword, setNewPassword] = useState('')
+  const [createdAccount, setCreatedAccount] =
+    useState<AccountCreateResponse | null>(null)
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -58,6 +67,35 @@ export default function AccountApprovalPanel() {
     }
   }
 
+  const canCreate =
+    newUsername.trim().length >= 2 &&
+    newDisplayName.trim().length > 0 &&
+    (newPassword.length === 0 || newPassword.length >= 12)
+
+  const createApprovedAccount = async () => {
+    if (!canCreate || creating) return
+    setCreating(true)
+    setError(null)
+    setCreatedAccount(null)
+    try {
+      const result = await createAccount({
+        username: newUsername,
+        display_name: newDisplayName,
+        role: newRole,
+        password: newPassword || undefined,
+      })
+      setCreatedAccount(result)
+      setNewUsername('')
+      setNewDisplayName('')
+      setNewRole('reviewer')
+      setNewPassword('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Account creation failed')
+    } finally {
+      setCreating(false)
+    }
+  }
+
   return (
     <div
       className="rounded-lg border border-stone-200/70 dark:border-stone-700/70
@@ -90,6 +128,86 @@ export default function AccountApprovalPanel() {
           {error}
         </div>
       )}
+
+      <div className="px-4 py-4 border-b border-stone-100 dark:border-stone-700/70">
+        <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-3">
+          <input
+            type="text"
+            value={newUsername}
+            onChange={(event) => setNewUsername(event.target.value)}
+            placeholder="Email or username"
+            className="h-9 px-3 rounded-md border border-stone-200 dark:border-stone-700
+                       bg-white dark:bg-surface-900 text-sm font-ui text-stone-800 dark:text-stone-200
+                       placeholder:text-stone-400 dark:placeholder:text-stone-500
+                       focus:outline-none focus:ring-2 focus:ring-accent/30"
+            aria-label="Email or username for new account"
+          />
+          <input
+            type="text"
+            value={newDisplayName}
+            onChange={(event) => setNewDisplayName(event.target.value)}
+            placeholder="Display name"
+            className="h-9 px-3 rounded-md border border-stone-200 dark:border-stone-700
+                       bg-white dark:bg-surface-900 text-sm font-ui text-stone-800 dark:text-stone-200
+                       placeholder:text-stone-400 dark:placeholder:text-stone-500
+                       focus:outline-none focus:ring-2 focus:ring-accent/30"
+            aria-label="Display name for new account"
+          />
+          <select
+            value={newRole}
+            onChange={(event) =>
+              setNewRole(event.target.value as 'reviewer' | 'pi_admin')
+            }
+            className="h-9 px-3 rounded-md border border-stone-200 dark:border-stone-700
+                       bg-white dark:bg-surface-900 text-sm font-ui text-stone-800 dark:text-stone-200
+                       focus:outline-none focus:ring-2 focus:ring-accent/30"
+            aria-label="Role for new account"
+          >
+            <option value="reviewer">Reviewer</option>
+            <option value="pi_admin">PI/admin</option>
+          </select>
+        </div>
+        <div className="mt-3 grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3">
+          <input
+            type="text"
+            value={newPassword}
+            onChange={(event) => setNewPassword(event.target.value)}
+            placeholder="Temporary password (optional)"
+            className="h-9 px-3 rounded-md border border-stone-200 dark:border-stone-700
+                       bg-white dark:bg-surface-900 text-sm font-ui text-stone-800 dark:text-stone-200
+                       placeholder:text-stone-400 dark:placeholder:text-stone-500
+                       focus:outline-none focus:ring-2 focus:ring-accent/30"
+            aria-label="Temporary password for new account"
+          />
+          <button
+            type="button"
+            onClick={() => void createApprovedAccount()}
+            disabled={!canCreate || creating}
+            className="h-9 px-4 rounded-md font-ui text-xs font-medium
+                       text-white bg-accent hover:bg-accent-dark transition-colors
+                       disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {creating ? 'Creating...' : 'Create Approved Account'}
+          </button>
+        </div>
+
+        {createdAccount && (
+          <div className="mt-3 rounded-md bg-accent/10 dark:bg-accent/15 px-3 py-2 font-ui text-sm text-stone-700 dark:text-stone-200">
+            Created {createdAccount.account.display_name} as{' '}
+            {createdAccount.account.role === 'pi_admin' ? 'PI/admin' : 'reviewer'}
+            {createdAccount.temporary_password && (
+              <>
+                {' '}
+                with temporary password{' '}
+                <span className="font-mono text-xs text-accent dark:text-accent-light">
+                  {createdAccount.temporary_password}
+                </span>
+              </>
+            )}
+            .
+          </div>
+        )}
+      </div>
 
       {loading ? (
         <div className="px-4 py-5 font-ui text-sm text-stone-500 dark:text-stone-400">

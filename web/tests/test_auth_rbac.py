@@ -229,6 +229,47 @@ def test_rejected_account_loses_existing_session(tmp_path: Path) -> None:
         assert rejected_signin.json()["detail"] == "Account registration was rejected"
 
 
+def test_pi_admin_can_manually_create_approved_admin_account(tmp_path: Path) -> None:
+    config_path = _write_fixture_data(tmp_path)
+
+    with _client(config_path) as client:
+        _register_admin(client)
+        created = client.post(
+            "/api/auth/accounts",
+            json={
+                "username": "afire2@uky.edu",
+                "display_name": "Firey",
+                "role": "pi_admin",
+            },
+        )
+        assert created.status_code == 201
+        assert created.json()["account"]["username"] == "afire2@uky.edu"
+        assert created.json()["account"]["role"] == "pi_admin"
+        assert created.json()["account"]["approval_status"] == "approved"
+        temp_password = created.json()["temporary_password"]
+        assert isinstance(temp_password, str)
+        assert len(temp_password) >= 12
+
+        duplicate = client.post(
+            "/api/auth/accounts",
+            json={
+                "username": "AFIRE2@uky.edu",
+                "display_name": "Duplicate Firey",
+                "role": "pi_admin",
+            },
+        )
+        assert duplicate.status_code == 409
+
+        assert client.post("/api/auth/signout").status_code == 204
+        signed_in = client.post(
+            "/api/auth/signin",
+            json={"username": "afire2@uky.edu", "password": temp_password},
+        )
+        assert signed_in.status_code == 200
+        assert signed_in.json()["role"] == "pi_admin"
+        assert client.get("/api/stats").status_code == 200
+
+
 def test_pi_admin_can_access_admin_data_after_sign_in(tmp_path: Path) -> None:
     config_path = _write_fixture_data(tmp_path)
 

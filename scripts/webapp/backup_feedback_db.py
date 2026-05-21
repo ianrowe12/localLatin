@@ -7,9 +7,11 @@ import json
 import os
 import shlex
 import shutil
+import sqlite3
 import stat
 import subprocess
 import sys
+import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -17,6 +19,19 @@ from pathlib import Path
 DEFAULT_ENV_FILE = Path("~/.config/locallatin/feedback-backup.env").expanduser()
 DEFAULT_DEST = Path("~/Backups/locallatin-feedback").expanduser()
 DEFAULT_REMOTE_DB = "/homes/ipro222/localLatin/data/feedback.db"
+FEEDBACK_COLUMNS = [
+    "id",
+    "query_id",
+    "timestamp",
+    "model_slug",
+    "outcome",
+    "correct_rank",
+    "correct_dir",
+    "notes",
+    "reviewer",
+    "reviewer_account_id",
+    "schema_version",
+]
 
 REMOTE_BACKUP_CODE = r"""
 from __future__ import annotations
@@ -143,6 +158,61 @@ def run_remote_snapshot(args: argparse.Namespace) -> dict[str, object]:
     return json.loads(result.stdout)
 
 
+def snapshot_metadata(snapshot_path: str) -> dict[str, object]:
+    check_conn = sqlite3.connect(snapshot_path)
+    integrity = check_conn.execute("PRAGMA integrity_check").fetchone()[0]
+    if integrity != "ok":
+        raise RuntimeError(f"Snapshot failed integrity_check: {integrity}")
+
+    feedback_digest = hashlib.sha256()
+    query = f"SELECT {', '.join(FEEDBACK_COLUMNS)} FROM feedback ORDER BY id"
+    count = 0
+    for row in check_conn.execute(query):
+        count += 1
+        feedback_digest.update(
+            json.dumps(
+                row,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                default=str,
+            ).encode("utf-8")
+        )
+        feedback_digest.update(b"\n")
+    check_conn.close()
+
+    db_digest = hashlib.sha256()
+    with open(snapshot_path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            db_digest.update(chunk)
+
+    return {
+        "snapshot_path": snapshot_path,
+        "db_sha256": db_digest.hexdigest(),
+        "feedback_fingerprint": feedback_digest.hexdigest(),
+        "feedback_rows": count,
+        "size": os.path.getsize(snapshot_path),
+    }
+
+
+def run_local_snapshot(db_path: str) -> dict[str, object]:
+    fd, snapshot_path = tempfile.mkstemp(prefix="locallatin-feedback-", suffix=".db")
+    os.close(fd)
+    try:
+        source = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        snapshot = sqlite3.connect(snapshot_path)
+        source.backup(snapshot)
+        snapshot.commit()
+        snapshot.close()
+        source.close()
+        return snapshot_metadata(snapshot_path)
+    except Exception:
+        try:
+            os.unlink(snapshot_path)
+        except OSError:
+            pass
+        raise
+
+
 def remove_remote_snapshot(args: argparse.Namespace, snapshot_path: str) -> None:
     command = build_ssh_base(args) + ["rm", "-f", remote_quote(snapshot_path)]
     subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
@@ -211,6 +281,11 @@ def build_parser(defaults: dict[str, str]) -> argparse.ArgumentParser:
         default=env_default(defaults, "LOCALLATIN_REMOTE_DB", DEFAULT_REMOTE_DB),
     )
     parser.add_argument(
+        "--local-db",
+        default=env_default(defaults, "LOCALLATIN_LOCAL_DB", ""),
+        help="Read a local SQLite DB directly instead of connecting over SSH.",
+    )
+    parser.add_argument(
         "--dest",
         type=Path,
         default=Path(env_default(defaults, "LOCALLATIN_BACKUP_DEST", str(DEFAULT_DEST))).expanduser(),
@@ -229,9 +304,9 @@ def main() -> int:
     parser = build_parser(defaults)
     args = parser.parse_args()
 
-    if not args.host:
+    if not args.local_db and not args.host:
         parser.error(
-            "Set --host or LOCALLATIN_BACKUP_HOST in "
+            "Set --host/LOCALLATIN_BACKUP_HOST or --local-db/LOCALLATIN_LOCAL_DB in "
             f"{DEFAULT_ENV_FILE}"
         )
 
@@ -246,13 +321,20 @@ def main() -> int:
     snapshot: dict[str, object] | None = None
     local_tmp = args.dest / ".incoming-feedback.db"
     try:
-        snapshot = run_remote_snapshot(args)
+        snapshot = (
+            run_local_snapshot(args.local_db)
+            if args.local_db
+            else run_remote_snapshot(args)
+        )
         fingerprint = str(snapshot["feedback_fingerprint"])
         if fingerprint == previous_fingerprint and not args.force:
             print("No feedback changes detected; backup unchanged.")
             return 0
 
-        scp_from_remote(args, str(snapshot["snapshot_path"]), local_tmp)
+        if args.local_db:
+            Path(str(snapshot["snapshot_path"])).replace(local_tmp)
+        else:
+            scp_from_remote(args, str(snapshot["snapshot_path"]), local_tmp)
         actual_sha = sha256_file(local_tmp)
         expected_sha = str(snapshot["db_sha256"])
         if actual_sha != expected_sha:
@@ -274,8 +356,8 @@ def main() -> int:
                     "db_sha256": expected_sha,
                     "feedback_fingerprint": fingerprint,
                     "feedback_rows": snapshot["feedback_rows"],
-                    "remote_db": args.remote_db,
-                    "remote_host": args.host,
+                    "source_db": args.local_db or args.remote_db,
+                    "source_host": "local" if args.local_db else args.host,
                 },
                 indent=2,
                 sort_keys=True,
@@ -291,7 +373,14 @@ def main() -> int:
         if local_tmp.exists():
             local_tmp.unlink()
         if snapshot and snapshot.get("snapshot_path"):
-            remove_remote_snapshot(args, str(snapshot["snapshot_path"]))
+            snapshot_path = str(snapshot["snapshot_path"])
+            if args.local_db:
+                try:
+                    Path(snapshot_path).unlink()
+                except FileNotFoundError:
+                    pass
+            else:
+                remove_remote_snapshot(args, snapshot_path)
 
 
 if __name__ == "__main__":

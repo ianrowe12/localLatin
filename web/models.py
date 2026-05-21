@@ -192,6 +192,19 @@ class ApprovalDecisionRequest(BaseModel):
     note: str = Field(default="", max_length=500)
 
 
+class AccountCreateRequest(BaseModel):
+    username: str = Field(min_length=2, max_length=128)
+    display_name: str = Field(min_length=1, max_length=120)
+    role: Literal["reviewer", "pi_admin"] = "reviewer"
+    password: Optional[str] = Field(default=None, min_length=12, max_length=256)
+    approval_note: str = Field(default="", max_length=500)
+
+
+class AccountCreateResponse(BaseModel):
+    account: AccountPublic
+    temporary_password: Optional[str] = None
+
+
 class FeedbackCreate(BaseModel):
     query_id: int
     model_slug: str

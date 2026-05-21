@@ -236,6 +236,7 @@ class FeedbackDB:
         role: str,
         approval_status: str = "approved",
         approved_by_account_id: int | None = None,
+        approval_note: str = "",
     ) -> dict:
         assert self._db is not None
         password_hash = _hash_password(password)
@@ -244,8 +245,8 @@ class FeedbackDB:
             f"""
             INSERT INTO accounts
                 (username, display_name, password_hash, role, approval_status,
-                 approved_at, approved_by_account_id)
-            VALUES (?, ?, ?, ?, ?, {approved_at}, ?)
+                 approved_at, approved_by_account_id, approval_note)
+            VALUES (?, ?, ?, ?, ?, {approved_at}, ?, ?)
             """,
             (
                 username.strip().lower(),
@@ -254,6 +255,7 @@ class FeedbackDB:
                 role,
                 approval_status,
                 approved_by_account_id,
+                approval_note.strip(),
             ),
         )
         await self._db.commit()

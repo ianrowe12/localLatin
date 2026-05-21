@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import sqlite3
+import secrets
+import string
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 
 from web.config import Settings
 from web.dependencies import get_current_user, get_db, get_settings, require_pi_admin
 from web.models import (
+    AccountCreateRequest,
+    AccountCreateResponse,
     AccountPublic,
     ApprovalDecisionRequest,
     RegisterRequest,
@@ -107,6 +111,33 @@ async def list_accounts(
     return [AccountPublic(**account) for account in accounts]
 
 
+@router.post("/accounts", response_model=AccountCreateResponse, status_code=201)
+async def create_account_as_admin(
+    body: AccountCreateRequest,
+    db: FeedbackDB = Depends(get_db),
+    current_user: UserPublic = Depends(require_pi_admin),
+) -> AccountCreateResponse:
+    password = body.password or _generate_temporary_password()
+    try:
+        account = await db.create_account(
+            username=body.username,
+            display_name=body.display_name,
+            password=password,
+            role=body.role,
+            approval_status="approved",
+            approved_by_account_id=current_user.id,
+            approval_note=body.approval_note,
+        )
+    except sqlite3.IntegrityError as exc:
+        raise HTTPException(status_code=409, detail="Username already exists") from exc
+    full_account = (await db.list_accounts(approval_status="approved"))
+    created = next(item for item in full_account if item["id"] == account["id"])
+    return AccountCreateResponse(
+        account=AccountPublic(**created),
+        temporary_password=password if body.password is None else None,
+    )
+
+
 @router.post("/accounts/{account_id}/approve", response_model=AccountPublic)
 async def approve_account(
     account_id: int,
@@ -174,3 +205,8 @@ async def _set_session_cookie(
         samesite="lax",
         max_age=settings.auth.session_days * 24 * 60 * 60,
     )
+
+
+def _generate_temporary_password() -> str:
+    alphabet = string.ascii_letters + string.digits + "-_!@#%"
+    return "".join(secrets.choice(alphabet) for _ in range(24))

@@ -136,6 +136,33 @@ async function handleAuth(url: string, init?: RequestInit): Promise<Response | n
         approval_note: '',
       })
     }
+    if (init?.method === 'POST') {
+      const body = init?.body ? JSON.parse(String(init.body)) : {}
+      const account: AuthUser = {
+        id: pendingAccounts.length + 10,
+        username: body.username ?? 'new-reviewer',
+        display_name: body.display_name ?? body.username ?? 'New Reviewer',
+        role: body.role ?? 'reviewer',
+        approval_status: 'approved',
+      }
+      return mockResponse(
+        {
+          account: {
+            ...account,
+            is_active: true,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            last_login_at: null,
+            approved_at: new Date().toISOString(),
+            approved_by_account_id: 1,
+            rejected_at: null,
+            approval_note: '',
+          },
+          temporary_password: body.password ? null : 'temporary-password-123',
+        },
+        201,
+      )
+    }
     return mockResponse(
       pendingAccounts.map((account) => ({
         ...account,
