@@ -211,6 +211,7 @@ class FeedbackCreate(BaseModel):
     outcome: Optional[FeedbackOutcome] = None
     correct_rank: Optional[int] = Field(None, ge=0, le=10)
     correct_dir: Optional[str] = None
+    selected_ranks: Optional[List[int]] = None
     notes: str = ""
     reviewer: str = ""
 
@@ -225,6 +226,32 @@ class FeedbackCreate(BaseModel):
         outcome = values.get("outcome")
         rank = values.get("correct_rank")
         correct_dir = values.get("correct_dir")
+        selected_ranks = values.get("selected_ranks")
+
+        if selected_ranks is not None:
+            if not isinstance(selected_ranks, list) or len(selected_ranks) == 0:
+                raise ValueError("selected_ranks must be a non-empty list")
+            normalized_ranks = []
+            for selected_rank in selected_ranks:
+                if isinstance(selected_rank, bool):
+                    raise ValueError("selected_ranks must contain integers from 1 to 10")
+                try:
+                    normalized_rank = int(selected_rank)
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(
+                        "selected_ranks must contain integers from 1 to 10"
+                    ) from exc
+                if not 1 <= normalized_rank <= 10:
+                    raise ValueError("selected_ranks must contain integers from 1 to 10")
+                normalized_ranks.append(normalized_rank)
+            if len(set(normalized_ranks)) != len(normalized_ranks):
+                raise ValueError("selected_ranks cannot contain duplicates")
+            if outcome not in (None, FeedbackOutcome.MATCHED_RANK.value):
+                raise ValueError("selected_ranks can only be used with matched_rank")
+            values["selected_ranks"] = normalized_ranks
+            outcome = FeedbackOutcome.MATCHED_RANK.value
+            values["correct_rank"] = normalized_ranks[0]
+            rank = normalized_ranks[0]
 
         if outcome is None:
             if rank is None:
@@ -245,11 +272,13 @@ class FeedbackCreate(BaseModel):
                 raise ValueError("none_of_top_k requires correct_rank 0")
             values["correct_rank"] = 0
             values["correct_dir"] = None
+            values["selected_ranks"] = None
         elif outcome == FeedbackOutcome.SKIPPED.value:
             if rank is not None or correct_dir is not None:
                 raise ValueError("skipped cannot include correct_rank or correct_dir")
             values["correct_rank"] = None
             values["correct_dir"] = None
+            values["selected_ranks"] = None
 
         values["outcome"] = outcome
         return values
@@ -263,6 +292,7 @@ class FeedbackEntry(BaseModel):
     outcome: FeedbackOutcome
     correct_rank: Optional[int]
     correct_dir: Optional[str]
+    selected_ranks: Optional[List[int]] = None
     notes: str
     reviewer: str
     reviewer_account_id: Optional[int] = None
