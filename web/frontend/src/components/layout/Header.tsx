@@ -2,7 +2,7 @@ import { useStats } from '../../api/models'
 import { apiUrl } from '../../api/client'
 import { useApp } from '../../contexts/AppContext'
 import { useTour } from '../onboarding/TourProvider'
-import { DASHBOARD_TOUR_STEPS, REVIEW_TOUR_STEPS } from '../onboarding/tourSteps'
+import { DASHBOARD_TOUR_STEPS, getReviewTourSteps } from '../onboarding/tourSteps'
 import { useReviewer } from '../../contexts/ReviewerContext'
 import ThemeToggle from '../common/ThemeToggle'
 
@@ -13,7 +13,11 @@ export default function Header() {
   const { data: stats } = useStats(isPiAdmin)
 
   const handleHelp = () => {
-    startTour(currentView === 'dashboard' ? DASHBOARD_TOUR_STEPS : REVIEW_TOUR_STEPS)
+    startTour(
+      currentView === 'dashboard'
+        ? DASHBOARD_TOUR_STEPS
+        : getReviewTourSteps(isPiAdmin),
+    )
   }
 
   const reviewed = stats?.reviewed_count ?? 0

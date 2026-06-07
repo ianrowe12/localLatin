@@ -246,7 +246,10 @@ export default function FeedbackPanel() {
         <div className="text-xs font-semibold uppercase tracking-wider text-stone-400 mb-0">
           Your Assessment
         </div>
-        <label className="flex items-center gap-1.5 text-xs font-ui text-stone-500 dark:text-stone-400 cursor-pointer select-none">
+        <label
+          data-tour="multi-select"
+          className="flex items-center gap-1.5 text-xs font-ui text-stone-500 dark:text-stone-400 cursor-pointer select-none"
+        >
           <input
             type="checkbox"
             checked={multiSelect}

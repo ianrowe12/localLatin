@@ -35,7 +35,7 @@ export default function AttributionMethodSelector() {
   }
 
   return (
-    <div className="flex flex-col gap-1">
+    <div data-tour="attribution-controls" className="flex flex-col gap-1">
       {/* Method row */}
       <div
         className="flex flex-wrap bg-stone-100 dark:bg-stone-800 rounded-lg p-0.5"

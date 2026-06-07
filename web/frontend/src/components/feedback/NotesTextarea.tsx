@@ -6,6 +6,7 @@ interface NotesTextareaProps {
 export default function NotesTextarea({ value, onChange }: NotesTextareaProps) {
   return (
     <textarea
+      data-tour="notes"
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder="Add notes for this query..."
