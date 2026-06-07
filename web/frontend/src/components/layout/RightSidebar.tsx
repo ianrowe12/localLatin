@@ -2,6 +2,7 @@ import { useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useFeedback } from '../../contexts/FeedbackContext'
 import ModelSelector from '../predictions/ModelSelector'
+import ModelDiversityNudge from '../predictions/ModelDiversityNudge'
 import PredictionList from '../predictions/PredictionList'
 import FeedbackPanel from '../feedback/FeedbackPanel'
 import Toast from '../common/Toast'
@@ -62,6 +63,7 @@ export default function RightSidebar({ isOpen, onToggle }: RightSidebarProps) {
                 Model Selection
               </label>
               <ModelSelector />
+              <ModelDiversityNudge />
             </div>
 
             {/* Prediction list — scrollable */}
