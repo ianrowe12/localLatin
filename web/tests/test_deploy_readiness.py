@@ -130,6 +130,11 @@ def test_static_frontend_rewrites_spa_routes_without_masking_missing_assets() ->
     asset_response = client.get(f"/assets/{asset.name}")
     assert asset_response.status_code == 200
     assert "javascript" in asset_response.headers["content-type"]
+    assert asset_response.content == asset.read_bytes()
+
+    asset_head = client.head(f"/assets/{asset.name}")
+    assert asset_head.status_code == 200
+    assert asset_head.headers["content-length"] == str(asset.stat().st_size)
 
     missing_asset = client.get("/assets/missing-bundle.js")
     assert missing_asset.status_code == 404
