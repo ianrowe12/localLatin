@@ -51,14 +51,15 @@ export default function MatchPills({
             key={rank}
             type="button"
             onClick={() => handleRankClick(rank)}
-            className={`text-xs py-1.5 px-2 rounded-full text-center cursor-pointer transition-all focus:outline-none focus:ring-2 focus:ring-accent/40 ${
+            aria-label={`Match prediction #${rank}`}
+            className={`text-xs py-1.5 px-2 rounded-full text-center whitespace-nowrap cursor-pointer transition-all focus:outline-none focus:ring-2 focus:ring-accent/40 ${
               isSelected
                 ? 'bg-correct/15 text-correct ring-1 ring-correct/40 font-medium'
                 : 'bg-stone-100 dark:bg-stone-700 text-stone-600 dark:text-stone-300 hover:bg-stone-200 dark:hover:bg-stone-600'
             }`}
             aria-pressed={isSelected}
           >
-            Match #{rank}
+            #{rank}
           </button>
         )
       })}
