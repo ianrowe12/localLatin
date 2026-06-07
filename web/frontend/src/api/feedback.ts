@@ -2,7 +2,11 @@ import { apiFetch, apiUrl } from './client'
 
 export const FEEDBACK_UPDATED_EVENT = 'locallatin:feedback-updated'
 
-export type FeedbackOutcome = 'matched_rank' | 'none_of_top_k' | 'skipped'
+export type FeedbackOutcome =
+  | 'matched_rank'
+  | 'none_of_top_k'
+  | 'skipped'
+  | 'legacy_unresolved'
 
 export interface FeedbackPayload {
   query_id: number
@@ -10,7 +14,24 @@ export interface FeedbackPayload {
   outcome?: FeedbackOutcome
   correct_rank: number | null
   correct_dir: string | null
+  selected_ranks?: number[] | null
   notes: string
+}
+
+// Mirrors backend models.py FeedbackEntry.
+export interface FeedbackEntry {
+  id: number
+  query_id: number
+  timestamp: string
+  model_slug: string
+  outcome: FeedbackOutcome
+  correct_rank: number | null
+  correct_dir: string | null
+  selected_ranks: number[] | null
+  notes: string
+  reviewer: string
+  reviewer_account_id: number | null
+  schema_version: number
 }
 
 export async function submitFeedback(payload: FeedbackPayload): Promise<void> {
@@ -18,6 +39,18 @@ export async function submitFeedback(payload: FeedbackPayload): Promise<void> {
     method: 'POST',
     body: JSON.stringify(payload),
   })
+}
+
+// Latest feedback row for the current reviewer on this query/model, or null.
+export async function fetchLatestFeedback(
+  queryId: number,
+  model: string,
+): Promise<FeedbackEntry | null> {
+  const params = new URLSearchParams({
+    query_id: String(queryId),
+    model,
+  })
+  return apiFetch<FeedbackEntry | null>(`/api/feedback/latest?${params.toString()}`)
 }
 
 export function exportFeedbackCsv(): void {

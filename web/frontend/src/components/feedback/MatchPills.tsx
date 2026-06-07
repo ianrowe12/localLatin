@@ -1,17 +1,43 @@
-interface MatchPillsProps {
-  selectedRank: number | null
-  maxRank?: number
-  onChange: (rank: number | null) => void
+export interface MatchSelection {
+  selectedRanks: number[]
+  noneSelected: boolean
 }
 
-export default function MatchPills({ selectedRank, maxRank = 10, onChange }: MatchPillsProps) {
-  const handleClick = (rank: number) => {
-    // Toggle: if already selected, deselect; otherwise select
-    if (selectedRank === rank) {
-      onChange(null)
+interface MatchPillsProps {
+  multiSelect: boolean
+  selectedRanks: number[]
+  noneSelected: boolean
+  maxRank?: number
+  onChange: (next: MatchSelection) => void
+}
+
+export default function MatchPills({
+  multiSelect,
+  selectedRanks,
+  noneSelected,
+  maxRank = 10,
+  onChange,
+}: MatchPillsProps) {
+  const handleRankClick = (rank: number) => {
+    const isSelected = selectedRanks.includes(rank)
+    if (multiSelect) {
+      // Toggle the rank in/out; selecting any rank clears "None".
+      const nextRanks = isSelected
+        ? selectedRanks.filter((value) => value !== rank)
+        : [...selectedRanks, rank].sort((a, b) => a - b)
+      onChange({ selectedRanks: nextRanks, noneSelected: false })
     } else {
-      onChange(rank)
+      // Single select: clicking the active pill clears it; else select just it.
+      onChange({
+        selectedRanks: isSelected ? [] : [rank],
+        noneSelected: false,
+      })
     }
+  }
+
+  const handleNoneClick = () => {
+    // Mutually exclusive with rank selections.
+    onChange({ selectedRanks: [], noneSelected: !noneSelected })
   }
 
   const matchPills = Array.from({ length: maxRank }, (_, i) => i + 1)
@@ -19,12 +45,12 @@ export default function MatchPills({ selectedRank, maxRank = 10, onChange }: Mat
   return (
     <div className="grid grid-cols-5 gap-1.5">
       {matchPills.map((rank) => {
-        const isSelected = selectedRank === rank
+        const isSelected = selectedRanks.includes(rank)
         return (
           <button
             key={rank}
             type="button"
-            onClick={() => handleClick(rank)}
+            onClick={() => handleRankClick(rank)}
             className={`text-xs py-1.5 px-2 rounded-full text-center cursor-pointer transition-all focus:outline-none focus:ring-2 focus:ring-accent/40 ${
               isSelected
                 ? 'bg-correct/15 text-correct ring-1 ring-correct/40 font-medium'
@@ -40,13 +66,13 @@ export default function MatchPills({ selectedRank, maxRank = 10, onChange }: Mat
       {/* None correct pill */}
       <button
         type="button"
-        onClick={() => handleClick(0)}
+        onClick={handleNoneClick}
         className={`col-span-5 text-xs py-1.5 px-2 rounded-full text-center cursor-pointer transition-all focus:outline-none focus:ring-2 focus:ring-accent/40 ${
-          selectedRank === 0
+          noneSelected
             ? 'bg-incorrect/15 text-incorrect ring-1 ring-incorrect/40 font-medium'
             : 'bg-stone-100 dark:bg-stone-700 text-stone-600 dark:text-stone-300 hover:bg-stone-200 dark:hover:bg-stone-600'
         }`}
-        aria-pressed={selectedRank === 0}
+        aria-pressed={noneSelected}
       >
         None of top {maxRank}
       </button>
