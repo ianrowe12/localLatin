@@ -10,11 +10,13 @@ import {
 import {
   FEEDBACK_UPDATED_EVENT,
   submitFeedback as postFeedback,
+  type FeedbackPayload,
 } from '../api/feedback'
 import type { Prediction } from '../api/queries'
 
 export interface FeedbackDraft {
-  correctRank: number | null
+  correctRank: number | null // 0 = none-of-top-k, null = unset, >0 = single legacy
+  selectedRanks?: number[] // present ⇒ multi answer (ranks 1..10)
   notes: string
 }
 
@@ -22,6 +24,7 @@ export interface FeedbackContextValue {
   drafts: Map<string, FeedbackDraft>
   getDraft: (queryId: number, model: string) => FeedbackDraft
   updateDraft: (queryId: number, model: string, patch: Partial<FeedbackDraft>) => void
+  seedDraftIfEmpty: (queryId: number, model: string, seed: FeedbackDraft) => void
   submitFeedback: (queryId: number, model: string, predictions: Prediction[]) => Promise<void>
   skipFeedback: (queryId: number, model: string, notes: string) => Promise<void>
   undoLastSubmit: () => void
@@ -86,6 +89,19 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
     [],
   )
 
+  const seedDraftIfEmpty = useCallback(
+    (queryId: number, model: string, seed: FeedbackDraft) => {
+      setDrafts((prev) => {
+        const key = makeDraftKey(queryId, model)
+        if (prev.has(key)) return prev // never clobber an existing local draft
+        const next = new Map(prev)
+        next.set(key, seed)
+        return next
+      })
+    },
+    [],
+  )
+
   const submitFeedback = useCallback(
     async (
       queryId: number,
@@ -94,24 +110,54 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
     ): Promise<void> => {
       const key = makeDraftKey(queryId, model)
       const draft = drafts.get(key) ?? emptyDraft()
-      const selectedPrediction =
-        draft.correctRank && draft.correctRank > 0
-          ? predictions.find((prediction) => prediction.rank === draft.correctRank)
+      const dirForRank = (rank: number): string | null =>
+        predictions.find((prediction) => prediction.rank === rank)?.dir_name ?? null
+      const multiRanks =
+        draft.correctRank !== 0 && draft.selectedRanks && draft.selectedRanks.length > 0
+          ? draft.selectedRanks
           : null
 
-      await postFeedback({
-        query_id: queryId,
-        model_slug: model,
-        outcome:
-          draft.correctRank === 0
-            ? 'none_of_top_k'
-            : draft.correctRank
-              ? 'matched_rank'
-              : undefined,
-        correct_rank: draft.correctRank,
-        correct_dir: selectedPrediction?.dir_name ?? null,
-        notes: draft.notes,
-      })
+      let payload: FeedbackPayload
+      if (draft.correctRank === 0) {
+        payload = {
+          query_id: queryId,
+          model_slug: model,
+          outcome: 'none_of_top_k',
+          correct_rank: 0,
+          correct_dir: null,
+          notes: draft.notes,
+        }
+      } else if (multiRanks) {
+        // Multi-select (also covers length 1). Backend forces matched_rank,
+        // sets correct_rank = selected_ranks[0], and derives correct_dir.
+        payload = {
+          query_id: queryId,
+          model_slug: model,
+          correct_rank: multiRanks[0],
+          correct_dir: dirForRank(multiRanks[0]),
+          selected_ranks: multiRanks,
+          notes: draft.notes,
+        }
+      } else if (draft.correctRank && draft.correctRank > 0) {
+        payload = {
+          query_id: queryId,
+          model_slug: model,
+          outcome: 'matched_rank',
+          correct_rank: draft.correctRank,
+          correct_dir: dirForRank(draft.correctRank),
+          notes: draft.notes,
+        }
+      } else {
+        payload = {
+          query_id: queryId,
+          model_slug: model,
+          correct_rank: null,
+          correct_dir: null,
+          notes: draft.notes,
+        }
+      }
+
+      await postFeedback(payload)
 
       lastSubmittedDraft.current = { key, draft: { ...draft } }
       setLastSubmittedKey(key)
@@ -169,6 +215,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
     drafts,
     getDraft,
     updateDraft,
+    seedDraftIfEmpty,
     submitFeedback,
     skipFeedback,
     undoLastSubmit,

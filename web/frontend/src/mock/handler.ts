@@ -463,6 +463,9 @@ export function installMockHandler(): void {
     }
 
     // Feedback
+    if (url.includes('/api/feedback/latest')) {
+      return mockResponse(null)
+    }
     if (url.includes('/api/feedback') && init?.method === 'POST') {
       return mockResponse({ success: true })
     }
