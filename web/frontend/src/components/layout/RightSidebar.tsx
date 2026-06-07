@@ -2,6 +2,7 @@ import { useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useFeedback } from '../../contexts/FeedbackContext'
 import ModelSelector from '../predictions/ModelSelector'
+import ModelDiversityNudge from '../predictions/ModelDiversityNudge'
 import PredictionList from '../predictions/PredictionList'
 import FeedbackPanel from '../feedback/FeedbackPanel'
 import ViewModeToggle from '../common/ViewModeToggle'
@@ -66,6 +67,7 @@ export default function RightSidebar({ isOpen, onToggle }: RightSidebarProps) {
                 Model Selection
               </label>
               <ModelSelector />
+              <ModelDiversityNudge />
             </div>
 
             {/* Visualization mode */}
