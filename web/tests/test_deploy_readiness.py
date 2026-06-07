@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from fastapi.testclient import TestClient
+
+from web.app import create_app
 from web.config import load_settings
 
 
@@ -109,3 +112,24 @@ def test_nginx_template_scopes_locallatin_to_root_domain() -> None:
     assert "X-Forwarded-Proto $scheme" in nginx
     assert "locallatin/" not in nginx
     assert "X-Forwarded-Prefix" not in nginx
+
+
+def test_static_frontend_rewrites_spa_routes_without_masking_missing_assets() -> None:
+    client = TestClient(create_app())
+    index = (ROOT / "web" / "static" / "index.html").read_text(encoding="utf-8")
+
+    root = client.get("/")
+    assert root.status_code == 200
+    assert "LocalLatin" in root.text
+
+    review = client.get("/review")
+    assert review.status_code == 200
+    assert review.text == index
+
+    asset = next((ROOT / "web" / "static" / "assets").glob("index-*.js"))
+    asset_response = client.get(f"/assets/{asset.name}")
+    assert asset_response.status_code == 200
+    assert "javascript" in asset_response.headers["content-type"]
+
+    missing_asset = client.get("/assets/missing-bundle.js")
+    assert missing_asset.status_code == 404

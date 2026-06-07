@@ -5,10 +5,9 @@ from contextlib import asynccontextmanager
 import os
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, JSONResponse
 
 from web.config import Settings, load_settings
 from web.dependencies import set_db, set_store
@@ -107,9 +106,22 @@ def create_app(config_path: str | None = None) -> FastAPI:
     app.include_router(packets.router)
     app.include_router(stats.router)
 
-    # Serve frontend static files if they exist
+    # Serve the built frontend if it exists. API routers are registered above,
+    # so this catch-all only handles static files and client-side app routes.
     static_dir = Path(__file__).parent / "static"
     if static_dir.exists():
-        app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
+        static_root = static_dir.resolve()
+        index_file = static_root / "index.html"
+
+        @app.get("/{full_path:path}", include_in_schema=False)
+        async def serve_frontend(full_path: str):
+            requested = (static_root / full_path).resolve()
+            if requested.is_relative_to(static_root) and requested.is_file():
+                return FileResponse(requested)
+            if full_path.startswith("assets/"):
+                raise HTTPException(status_code=404, detail="Not Found")
+            if index_file.exists():
+                return FileResponse(index_file)
+            raise HTTPException(status_code=404, detail="Not Found")
 
     return app
