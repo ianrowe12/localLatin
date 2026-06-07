@@ -39,7 +39,7 @@ export default function ViewModeToggle() {
   }
 
   return (
-    <div className="flex items-center">
+    <div data-tour="evidence-view" className="flex items-center">
       <div
         className="flex bg-stone-100 dark:bg-stone-800 rounded-lg p-0.5"
         role="radiogroup"

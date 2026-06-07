@@ -66,17 +66,67 @@ export const REVIEW_TOUR_STEPS: TourStep[] = [
     placement: 'left',
   },
   {
-    target: 'predictions',
-    title: 'Prediction Rankings',
+    target: 'model-selector',
+    title: 'Choose a Model',
     description:
-      'The top 10 predicted matches, ranked by similarity score. Click any prediction to view its candidate text. Use number keys 1\u20139 or arrow keys to navigate.',
+      "Pick which model's predictions you want to review. Switching models reloads the ranked sources below.",
     placement: 'left',
   },
   {
-    target: 'feedback',
-    title: 'Your Assessment',
+    target: 'predictions',
+    title: 'Predicted Sources',
     description:
-      'Record which prediction rank you think is correct (if any), add notes, and submit your review. After submitting, the tool automatically advances to the next manuscript.',
+      'The model\u2019s top candidate sources for this fragment, ranked by similarity. Click any one to inspect it.',
+    placement: 'left',
+  },
+  {
+    target: 'evidence-view',
+    title: 'Evidence View',
+    description:
+      'Switch how matching words are shown between the two panels \u2014 as highlights or as connection lines.',
+    placement: 'right',
+  },
+  {
+    target: 'attribution-controls',
+    title: 'Attribution Controls',
+    description:
+      'Choose which attribution method and variant drive the evidence highlighting.',
+    placement: 'right',
+  },
+  {
+    target: 'match-options',
+    title: 'Record a Match',
+    description:
+      'Mark which predicted source is correct, or choose \u201cNone of top N\u201d if none fit.',
+    placement: 'left',
+  },
+  {
+    target: 'multi-select',
+    title: 'Selecting Multiple',
+    description:
+      'Turn this on when more than one source could be correct, then pick all that apply.',
+    placement: 'left',
+  },
+  {
+    target: 'notes',
+    title: 'Add Notes',
+    description:
+      'Leave a note explaining your decision. A note is required when you skip a fragment.',
+    placement: 'left',
+  },
+  {
+    target: 'submit-skip',
+    title: 'Submit or Skip',
+    description:
+      'Submit your assessment to save it and move to the next fragment, or skip if you can\u2019t decide.',
     placement: 'left',
   },
 ]
+
+// The attribution-controls step targets a PI/admin-only control; ordinary
+// reviewers never see it, so omit that step from their tour entirely.
+export function getReviewTourSteps(isPiAdmin: boolean): TourStep[] {
+  return REVIEW_TOUR_STEPS.filter(
+    (step) => isPiAdmin || step.target !== 'attribution-controls',
+  )
+}

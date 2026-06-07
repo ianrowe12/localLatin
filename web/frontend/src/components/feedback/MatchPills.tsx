@@ -43,7 +43,7 @@ export default function MatchPills({
   const matchPills = Array.from({ length: maxRank }, (_, i) => i + 1)
 
   return (
-    <div className="grid grid-cols-5 gap-1.5">
+    <div data-tour="match-options" className="grid grid-cols-5 gap-1.5">
       {matchPills.map((rank) => {
         const isSelected = selectedRanks.includes(rank)
         return (

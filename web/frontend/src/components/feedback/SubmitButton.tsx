@@ -23,7 +23,7 @@ export default function SubmitButton({
   }
 
   return (
-    <div className="flex gap-2">
+    <div data-tour="submit-skip" className="flex gap-2">
       <button
         type="button"
         onClick={handleSubmit}

@@ -15,6 +15,7 @@ export default function ModelSelector() {
 
   return (
     <select
+      data-tour="model-selector"
       value={activeModel}
       onChange={(e) => setActiveModel(e.target.value)}
       className="w-full h-9 px-2 rounded-lg border border-stone-200 dark:border-stone-700
