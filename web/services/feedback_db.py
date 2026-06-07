@@ -4,6 +4,7 @@ import csv
 import hashlib
 import hmac
 import io
+import json
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -22,6 +23,7 @@ CREATE TABLE IF NOT EXISTS feedback (
     outcome TEXT NOT NULL DEFAULT 'legacy_unresolved',
     correct_rank INTEGER,
     correct_dir TEXT,
+    selected_ranks_json TEXT,
     notes TEXT NOT NULL DEFAULT '',
     reviewer TEXT NOT NULL,
     reviewer_account_id INTEGER,
@@ -73,6 +75,7 @@ _EXPORT_COLUMNS = [
     "reviewer",
     "reviewer_account_id",
     "schema_version",
+    "selected_ranks_json",
 ]
 
 
@@ -107,18 +110,21 @@ class FeedbackDB:
         notes: str,
         reviewer: str,
         reviewer_account_id: int | None = None,
+        selected_ranks: list[int] | None = None,
     ) -> dict:
         assert self._db is not None
+        selected_ranks_json = json.dumps(selected_ranks) if selected_ranks else None
         cursor = await self._db.execute(
             """INSERT INTO feedback
-                   (query_id, model_slug, outcome, correct_rank, correct_dir, notes, reviewer, reviewer_account_id, schema_version)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 2)""",
+                   (query_id, model_slug, outcome, correct_rank, correct_dir, selected_ranks_json, notes, reviewer, reviewer_account_id, schema_version)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 2)""",
             (
                 query_id,
                 model_slug,
                 outcome,
                 correct_rank,
                 correct_dir,
+                selected_ranks_json,
                 notes,
                 reviewer,
                 reviewer_account_id,
@@ -128,7 +134,7 @@ class FeedbackDB:
         row = await (
             await self._db.execute("SELECT * FROM feedback WHERE id = ?", (cursor.lastrowid,))
         ).fetchone()
-        return dict(row)
+        return _feedback_row(row)
 
     async def _migrate(self) -> None:
         assert self._db is not None
@@ -140,6 +146,10 @@ class FeedbackDB:
         if "schema_version" not in columns:
             await self._db.execute(
                 "ALTER TABLE feedback ADD COLUMN schema_version INTEGER DEFAULT 1"
+            )
+        if "selected_ranks_json" not in columns:
+            await self._db.execute(
+                "ALTER TABLE feedback ADD COLUMN selected_ranks_json TEXT"
             )
 
         await self._db.execute(
@@ -185,6 +195,12 @@ class FeedbackDB:
             )
         await self._db.execute(
             "CREATE INDEX IF NOT EXISTS idx_feedback_reviewer_account ON feedback(reviewer_account_id)"
+        )
+        await self._db.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_feedback_latest
+                ON feedback(query_id, model_slug, reviewer_account_id, timestamp, id)
+            """
         )
 
         account_rows = await (
@@ -602,7 +618,30 @@ class FeedbackDB:
         query += " ORDER BY timestamp DESC, id DESC LIMIT ?"
         params.append(limit)
         rows = await (await self._db.execute(query, params)).fetchall()
-        return [dict(row) for row in rows]
+        return [_feedback_row(row) for row in rows]
+
+    async def get_latest_feedback(
+        self,
+        query_id: int,
+        model_slug: str,
+        reviewer_account_id: int,
+    ) -> dict | None:
+        assert self._db is not None
+        row = await (
+            await self._db.execute(
+                """
+                SELECT *
+                FROM feedback
+                WHERE query_id = ?
+                  AND model_slug = ?
+                  AND reviewer_account_id = ?
+                ORDER BY timestamp DESC, id DESC
+                LIMIT 1
+                """,
+                (query_id, model_slug, reviewer_account_id),
+            )
+        ).fetchone()
+        return _feedback_row(row) if row is not None else None
 
     async def get_next_unreviewed(self, all_file_ids: list[int], limit: int = 5) -> list[int]:
         statuses = await self.get_query_statuses()
@@ -699,6 +738,20 @@ def _verify_password(password: str, stored: str) -> bool:
         return hmac.compare_digest(digest, expected)
     except (ValueError, TypeError):
         return False
+
+
+def _feedback_row(row: aiosqlite.Row) -> dict:
+    values = dict(row)
+    selected_ranks_json = values.get("selected_ranks_json")
+    values["selected_ranks"] = None
+    if selected_ranks_json:
+        try:
+            selected_ranks = json.loads(selected_ranks_json)
+            if isinstance(selected_ranks, list):
+                values["selected_ranks"] = [int(rank) for rank in selected_ranks]
+        except (TypeError, ValueError, json.JSONDecodeError):
+            values["selected_ranks"] = None
+    return values
 
 
 def _public_account(row: aiosqlite.Row) -> dict:

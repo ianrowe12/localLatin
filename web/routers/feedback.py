@@ -26,17 +26,48 @@ async def create_feedback(
     if slug not in store.predictions:
         raise InvalidModelError(slug, store.model_slugs)
 
+    correct_dir = body.correct_dir
+    if body.selected_ranks:
+        # Legacy consumers still read correct_rank/correct_dir as a single choice.
+        # For multi-select submissions, the first selected rank is the canonical
+        # legacy choice while selected_ranks carries the full reviewer answer.
+        correct_dir = _dir_for_rank(store, slug, body.query_id, body.selected_ranks[0])
+
     row = await db.insert(
         query_id=body.query_id,
         model_slug=slug,
         outcome=body.outcome.value,
         correct_rank=body.correct_rank,
-        correct_dir=body.correct_dir,
+        correct_dir=correct_dir,
         notes=body.notes,
         reviewer=current_user.display_name,
         reviewer_account_id=current_user.id,
+        selected_ranks=body.selected_ranks,
     )
     return FeedbackEntry(**row)
+
+
+@router.get("/feedback/latest", response_model=FeedbackEntry | None)
+async def latest_feedback(
+    query_id: int,
+    model: str,
+    store: DataStore = Depends(get_store),
+    db: FeedbackDB = Depends(get_db),
+    current_user: UserPublic = Depends(get_current_user),
+) -> FeedbackEntry | None:
+    if query_id not in store.file_id_to_filename:
+        raise QueryNotFoundError(query_id)
+
+    slug = normalize_slug(model)
+    if slug not in store.predictions:
+        raise InvalidModelError(slug, store.model_slugs)
+
+    row = await db.get_latest_feedback(
+        query_id=query_id,
+        model_slug=slug,
+        reviewer_account_id=current_user.id,
+    )
+    return FeedbackEntry(**row) if row is not None else None
 
 
 @router.get("/feedback/export")
@@ -72,3 +103,18 @@ async def export_feedback(
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=feedback_export.csv"},
     )
+
+
+def _dir_for_rank(
+    store: DataStore,
+    model_slug: str,
+    query_id: int,
+    rank: int,
+) -> str | None:
+    for row in store.predictions.get(model_slug, []):
+        if row["file_id"] != query_id:
+            continue
+        for prediction in row["predictions"]:
+            if prediction["rank"] == rank:
+                return prediction["dir_name"]
+    return None
