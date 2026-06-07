@@ -132,9 +132,19 @@ def test_static_frontend_rewrites_spa_routes_without_masking_missing_assets() ->
     assert "javascript" in asset_response.headers["content-type"]
     assert asset_response.content == asset.read_bytes()
 
-    asset_head = client.head(f"/assets/{asset.name}")
+    asset_head = client.head(
+        f"/assets/{asset.name}", headers={"accept-encoding": "identity"}
+    )
     assert asset_head.status_code == 200
     assert asset_head.headers["content-length"] == str(asset.stat().st_size)
+
+    gzipped_asset = client.get(
+        f"/assets/{asset.name}", headers={"accept-encoding": "gzip"}
+    )
+    assert gzipped_asset.status_code == 200
+    assert gzipped_asset.headers["content-encoding"] == "gzip"
+    assert int(gzipped_asset.headers["content-length"]) < asset.stat().st_size
+    assert gzipped_asset.content == asset.read_bytes()
 
     missing_asset = client.get("/assets/missing-bundle.js")
     assert missing_asset.status_code == 404
