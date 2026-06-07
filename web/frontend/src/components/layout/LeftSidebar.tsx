@@ -9,6 +9,8 @@ import ProgressRing from '../sidebar/ProgressRing'
 import SearchBar from '../sidebar/SearchBar'
 import FilterChips from '../sidebar/FilterChips'
 import QueryCard from '../sidebar/QueryCard'
+import ViewModeToggle from '../common/ViewModeToggle'
+import AttributionMethodSelector from '../common/AttributionMethodSelector'
 
 interface LeftSidebarProps {
   isOpen: boolean
@@ -105,6 +107,24 @@ export default function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
             {/* Filter chips */}
             <div className="px-3 py-1 flex-shrink-0">
               <FilterChips active={filter} onChange={handleFilter} />
+            </div>
+
+            {/* Evidence / attribution controls */}
+            <div className="px-3 py-2 flex-shrink-0 space-y-2 border-t border-stone-200/60 dark:border-stone-700/60">
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-wider text-stone-400 mb-1.5 block">
+                  Evidence View
+                </label>
+                <ViewModeToggle />
+              </div>
+              {isPiAdmin && (
+                <div>
+                  <label className="text-xs font-semibold uppercase tracking-wider text-stone-400 mb-1.5 block">
+                    Attribution Controls
+                  </label>
+                  <AttributionMethodSelector />
+                </div>
+              )}
             </div>
 
             {/* Query list heading */}
