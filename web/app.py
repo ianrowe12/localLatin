@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+import mimetypes
 import os
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from web.config import Settings, load_settings
 from web.dependencies import set_db, set_store
@@ -113,15 +114,24 @@ def create_app(config_path: str | None = None) -> FastAPI:
         static_root = static_dir.resolve()
         index_file = static_root / "index.html"
 
-        @app.get("/{full_path:path}", include_in_schema=False)
+        def static_response(path: Path) -> Response:
+            media_type, _ = mimetypes.guess_type(path.name)
+            return Response(
+                content=path.read_bytes(),
+                media_type=media_type or "application/octet-stream",
+            )
+
+        @app.api_route(
+            "/{full_path:path}", methods=["GET", "HEAD"], include_in_schema=False
+        )
         async def serve_frontend(full_path: str):
             requested = (static_root / full_path).resolve()
             if requested.is_relative_to(static_root) and requested.is_file():
-                return FileResponse(requested)
+                return static_response(requested)
             if full_path.startswith("assets/"):
                 raise HTTPException(status_code=404, detail="Not Found")
             if index_file.exists():
-                return FileResponse(index_file)
+                return static_response(index_file)
             raise HTTPException(status_code=404, detail="Not Found")
 
     return app
