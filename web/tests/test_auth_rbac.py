@@ -8,6 +8,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from web.app import create_app
+from web.dependencies import get_db
 from web.services.feedback_db import FeedbackDB
 
 
@@ -110,6 +111,26 @@ def test_auth_session_persists_across_app_restart(tmp_path: Path) -> None:
         assert me.json()["display_name"] == "PI Scholar"
         assert me.json()["role"] == "pi_admin"
         assert me.json()["approval_status"] == "approved"
+
+
+def test_signin_recovers_from_a_stale_database_connection(tmp_path: Path) -> None:
+    config_path = _write_fixture_data(tmp_path)
+
+    with _client(config_path) as client:
+        _register_admin(client)
+        assert client.post("/api/auth/signout").status_code == 204
+
+        db = get_db()
+        assert db._db is not None
+        asyncio.run(db._db.close())
+
+        signed_in = client.post(
+            "/api/auth/signin",
+            json={"username": "pi", "password": "correct horse battery staple"},
+        )
+        assert signed_in.status_code == 200
+        assert signed_in.json()["username"] == "pi"
+        assert client.get("/api/auth/me").status_code == 200
 
 
 def test_reviewer_requires_pi_approval_before_access(tmp_path: Path) -> None:

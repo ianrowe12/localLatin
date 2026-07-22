@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import csv
 import hashlib
 import hmac
@@ -7,6 +8,7 @@ import io
 import json
 import logging
 import secrets
+import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -83,10 +85,15 @@ class FeedbackDB:
     def __init__(self, db_path: str | Path) -> None:
         self.db_path = Path(db_path)
         self._db: aiosqlite.Connection | None = None
+        self._connection_lock = asyncio.Lock()
 
     async def connect(self) -> None:
-        if self._db is not None:
-            return
+        async with self._connection_lock:
+            if self._db is not None:
+                return
+            await self._open_connection()
+
+    async def _open_connection(self) -> None:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._db = await aiosqlite.connect(str(self.db_path))
         self._db.row_factory = aiosqlite.Row
@@ -96,9 +103,46 @@ class FeedbackDB:
         logger.info("Feedback DB ready at %s", self.db_path)
 
     async def close(self) -> None:
-        if self._db:
-            await self._db.close()
+        async with self._connection_lock:
+            if self._db:
+                await self._db.close()
+                self._db = None
+
+    async def _ensure_auth_connection(self) -> None:
+        connection = self._db
+        try:
+            if connection is None:
+                raise ValueError("no active connection")
+            async with connection.execute(
+                """
+                SELECT accounts.approval_status,
+                       accounts.is_active,
+                       account_sessions.token_hash
+                  FROM accounts
+             LEFT JOIN account_sessions
+                    ON account_sessions.account_id = accounts.id
+                 LIMIT 0
+                """
+            ) as cursor:
+                await cursor.fetchone()
+            return
+        except (sqlite3.Error, ValueError, RuntimeError) as exc:
+            logger.warning(
+                "Auth database connection failed health check; reconnecting (%s)",
+                type(exc).__name__,
+            )
+
+        async with self._connection_lock:
+            # Another request may already have repaired the shared connection.
+            if self._db is not connection and self._db is not None:
+                return
             self._db = None
+            if connection is not None:
+                try:
+                    await connection.close()
+                except (sqlite3.Error, ValueError, RuntimeError):
+                    pass
+            await self._open_connection()
 
     async def insert(
         self,
@@ -240,6 +284,7 @@ class FeedbackDB:
         )
 
     async def account_count(self) -> int:
+        await self._ensure_auth_connection()
         assert self._db is not None
         row = await (await self._db.execute("SELECT COUNT(*) FROM accounts")).fetchone()
         return int(row[0])
@@ -254,6 +299,7 @@ class FeedbackDB:
         approved_by_account_id: int | None = None,
         approval_note: str = "",
     ) -> dict:
+        await self._ensure_auth_connection()
         assert self._db is not None
         password_hash = _hash_password(password)
         approved_at = "datetime('now')" if approval_status == "approved" else "NULL"
@@ -281,6 +327,7 @@ class FeedbackDB:
         return _public_account(row)
 
     async def verify_account(self, username: str, password: str) -> tuple[dict | None, str | None]:
+        await self._ensure_auth_connection()
         assert self._db is not None
         row = await (
             await self._db.execute(
@@ -306,6 +353,7 @@ class FeedbackDB:
         return _public_account(row), None
 
     async def list_accounts(self, approval_status: str | None = None) -> list[dict]:
+        await self._ensure_auth_connection()
         assert self._db is not None
         query = "SELECT * FROM accounts"
         params: list[str] = []
@@ -323,6 +371,7 @@ class FeedbackDB:
         approver_account_id: int,
         note: str = "",
     ) -> dict | None:
+        await self._ensure_auth_connection()
         assert self._db is not None
         if approval_status == "approved":
             await self._db.execute(
@@ -370,6 +419,7 @@ class FeedbackDB:
         return _account_public(row) if row is not None else None
 
     async def create_session(self, account_id: int, session_days: int) -> str:
+        await self._ensure_auth_connection()
         assert self._db is not None
         token = secrets.token_urlsafe(32)
         expires_at = _utc_now() + timedelta(days=session_days)
@@ -384,9 +434,10 @@ class FeedbackDB:
         return token
 
     async def get_account_by_session(self, token: str | None) -> dict | None:
-        assert self._db is not None
         if not token:
             return None
+        await self._ensure_auth_connection()
+        assert self._db is not None
         row = await (
             await self._db.execute(
                 """
@@ -412,9 +463,10 @@ class FeedbackDB:
         return _public_account(row)
 
     async def revoke_session(self, token: str | None) -> None:
-        assert self._db is not None
         if not token:
             return
+        await self._ensure_auth_connection()
+        assert self._db is not None
         await self._db.execute(
             """
             UPDATE account_sessions

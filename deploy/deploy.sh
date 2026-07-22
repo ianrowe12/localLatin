@@ -119,6 +119,21 @@ else
     exit 1
 fi
 
+# Exercise a real auth database read without needing or modifying a production
+# account. An unknown user must be rejected normally, never crash the route.
+info "Checking authentication database path..."
+auth_status="$(curl -sS -o /dev/null -w '%{http_code}' \
+    -X POST "${LOCAL_BASE_URL}/api/auth/signin" \
+    -H "Content-Type: application/json" \
+    --data '{"username":"__deployment_healthcheck__","password":"not-a-real-password"}')"
+if [[ "${auth_status}" == "401" ]]; then
+    info "Authentication database path is healthy."
+else
+    error "Authentication health check returned HTTP ${auth_status}; expected 401"
+    journalctl --user -u "${SERVICE_NAME}" -n 50 --no-pager >&2 || true
+    exit 1
+fi
+
 if [[ -n "${LOCALLATIN_SMOKE_USERNAME:-}" && -n "${LOCALLATIN_SMOKE_PASSWORD:-}" ]]; then
     info "Running authenticated reviewer-pilot smoke checks..."
     "${PYTHON_BIN}" "${REPO_DIR}/scripts/webapp/smoke_reviewer_pilot.py" \

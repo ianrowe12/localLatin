@@ -44,6 +44,8 @@ def test_deploy_script_installs_dependencies_and_fails_health_checks() -> None:
     assert 'VITE_BASE_PATH="${PUBLIC_BASE_PATH}" npm run build' in deploy
     assert "http://127.0.0.1:8080" in deploy
     assert "/api/models" in deploy
+    assert "/api/auth/signin" in deploy
+    assert '[[ "${auth_status}" == "401" ]]' in deploy
     assert "API did not become healthy" in deploy
     assert "exit 1" in deploy
     assert "smoke_reviewer_pilot.py" in deploy
