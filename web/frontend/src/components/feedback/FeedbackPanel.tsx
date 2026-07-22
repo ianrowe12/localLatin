@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useApp } from '../../contexts/AppContext'
 import { useFeedback, type FeedbackDraft } from '../../contexts/FeedbackContext'
+import { isFeedbackDraftEmpty } from '../../contexts/feedbackDraft'
 import { useReviewer } from '../../contexts/ReviewerContext'
 import { fetchNextQuery, usePredictions } from '../../api/queries'
 import { fetchLatestFeedback, type FeedbackEntry } from '../../api/feedback'
@@ -25,15 +26,6 @@ function draftFromEntry(entry: FeedbackEntry): FeedbackDraft {
   }
   // skipped / legacy_unresolved → seed the notes only, leave selection unset.
   return { correctRank: null, notes }
-}
-
-function isDraftEmpty(draft: FeedbackDraft | undefined): boolean {
-  if (!draft) return true
-  return (
-    draft.correctRank === null &&
-    (!draft.selectedRanks || draft.selectedRanks.length === 0) &&
-    draft.notes.trim() === ''
-  )
 }
 
 function draftsEqual(a: FeedbackDraft, b: FeedbackDraft): boolean {
@@ -82,7 +74,7 @@ export default function FeedbackPanel() {
     fetchLatestFeedback(activeQueryId, activeModel)
       .then((entry) => {
         if (cancelled || entry === null) return
-        if (!isDraftEmpty(draftsRef.current.get(key))) return
+        if (!isFeedbackDraftEmpty(draftsRef.current.get(key))) return
         const seededDraft = draftFromEntry(entry)
         seedDraftIfEmpty(activeQueryId, activeModel, seededDraft)
         setSeeded({ key, draft: seededDraft })

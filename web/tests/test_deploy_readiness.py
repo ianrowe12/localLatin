@@ -94,6 +94,7 @@ def test_github_actions_workflow_tests_then_deploys_after_main_push() -> None:
     assert "push:" in workflow
     assert "main" in workflow
     assert "python -m pytest web/tests" in workflow
+    assert "npm test" in workflow
     assert "npm run build" in workflow
     assert "needs: test" in workflow
     assert "self-hosted" in workflow

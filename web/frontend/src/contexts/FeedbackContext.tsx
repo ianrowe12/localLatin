@@ -13,6 +13,7 @@ import {
   type FeedbackPayload,
 } from '../api/feedback'
 import type { Prediction } from '../api/queries'
+import { seedDraftMapIfEmpty } from './feedbackDraft'
 
 export interface FeedbackDraft {
   correctRank: number | null // 0 = none-of-top-k, null = unset, >0 = single legacy
@@ -93,10 +94,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
     (queryId: number, model: string, seed: FeedbackDraft) => {
       setDrafts((prev) => {
         const key = makeDraftKey(queryId, model)
-        if (prev.has(key)) return prev // never clobber an existing local draft
-        const next = new Map(prev)
-        next.set(key, seed)
-        return next
+        return seedDraftMapIfEmpty(prev, key, seed)
       })
     },
     [],
