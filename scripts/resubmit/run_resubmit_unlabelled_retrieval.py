@@ -1,9 +1,68 @@
 """Cross-dataset retrieval: predict directory labels for unlabelled files.
 
-For each model, loads labelled embeddings as database and unlabelled as queries.
-Reads the evaluation results CSV to find the best layer+method per model.
-Applies ABTT post-processing (fitted on labelled train), computes cosine similarity,
-and outputs top-K directory predictions per unlabelled file.
+For each model, loads labelled embeddings as database and unlabelled as queries,
+computes cosine similarity, and outputs top-K directory predictions per
+unlabelled file.
+
+Variants (``--variant``)
+------------------------
+Each variant is a different embedding pipeline. The variant alone decides which
+embedding files are read and whether ABTT (All-But-The-Top / principal-component
+removal) is applied:
+
+===========  ============  ==========  ====================================
+variant      pooling       ABTT        embedding file loaded
+===========  ============  ==========  ====================================
+``raw``      mean          no          ``hidden_layer{N}_embeddings.npy``
+``abtt``     mean          yes         ``hidden_layer{N}_embeddings.npy``
+``sif``      SIF           no          ``hidden_layer{N}_embeddings_sif.npy``
+``sif_abtt`` SIF           yes         ``hidden_layer{N}_embeddings_sif.npy``
+===========  ============  ==========  ====================================
+
+Layer selection
+---------------
+The per-model layer is read from the evaluation results CSV
+(``runs/active/resubmit/results/phase_resubmit_results.csv``), picking the row
+with the highest ``overall_assignment_acc`` *among the methods that correspond
+to the requested variant*:
+
+* ``raw``      -> ``baseline`` rows
+* ``abtt``     -> ``abtt_fixed`` / ``abtt_optimal`` rows
+* ``sif``      -> ``sif_only`` rows
+* ``sif_abtt`` -> ``sif_abtt_fixed`` / ``sif_abtt_optimal`` rows
+
+So every variant runs at the best layer *for that variant*, which makes the four
+output CSVs directly comparable. ``--layer_overrides`` pins a layer per model
+(e.g. ``"Qwen/Qwen3-Embedding-0.6B=5"``) for reproducing an older run.
+
+Note: the ``pooling`` column of the results CSV is deliberately ignored. It is
+implied by the variant, and trusting it used to mis-pair the two (the previous
+version forced SIF files whenever the winning method was ``abtt_*``, which are
+mean-pooled rows).
+
+Leak-free protocol
+------------------
+``EmbeddingCleaner`` is fitted on the *train* split only (per ``--split_csv``)
+and then applied to the labelled database and the unlabelled queries. The D
+value is swept over ``D_VALUES`` and chosen by assignment accuracy on train.
+
+Output schema
+-------------
+``{out_dir}/unlabelled_predictions_{variant}.csv`` (all models concatenated) and
+``{out_dir}/unlabelled_predictions_{variant}_{model_slug}.csv`` (per model), with
+one row per (model, query):
+
+    file_id, filename, file_path,
+    rank1_dir, rank1_score, ..., rank{K}_dir, rank{K}_score,
+    model, variant, layer, pooling
+
+``rank{i}_dir`` is the labelled directory name, ``rank{i}_score`` the max cosine
+similarity between the query and any file in that directory.
+
+The legacy ``unlabelled_predictions.csv`` / ``unlabelled_predictions_{slug}.csv``
+files (no ``variant`` column) are the frozen webapp input and are no longer
+written by this script; every output filename now carries the variant. To refresh
+the webapp input, copy ``unlabelled_predictions_sif_abtt.csv`` over it.
 """
 from __future__ import annotations
 
@@ -20,30 +79,41 @@ sys.path.append(str(Path(__file__).resolve().parents[2] / "src"))
 from canon_retrieval import l2_normalize, upper_triangle, upper_triangle_labels, sweep_thresholds, similarity_matrix
 from sif_abtt import EmbeddingCleaner
 
-# Fallback configs if results CSV is missing a model
+# Fallback layers if the results CSV is missing a model (repr is always "hidden").
 FALLBACK_CONFIGS = [
-    ("bowphs/LaTa", 6, "hidden", "sif"),
-    ("bowphs/PhilTa", 1, "hidden", "sif"),
-    ("sentence-transformers/LaBSE", 12, "hidden", "sif"),
-    ("Qwen/Qwen3-Embedding-0.6B", 21, "hidden", "sif"),
-    ("KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5", 1, "hidden", "sif"),
-    ("google/mt5-base", 1, "hidden", "sif"),
+    ("bowphs/LaTa", 6, "hidden"),
+    ("bowphs/PhilTa", 1, "hidden"),
+    ("sentence-transformers/LaBSE", 12, "hidden"),
+    ("Qwen/Qwen3-Embedding-0.6B", 21, "hidden"),
+    ("KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5", 1, "hidden"),
+    ("google/mt5-base", 1, "hidden"),
 ]
 
 ALL_MODELS = [c[0] for c in FALLBACK_CONFIGS]
 D_VALUES = [1, 2, 3, 5, 7, 10]
 TOP_K = 10
 
+# variant -> (pooling, apply_abtt, results-CSV methods used for layer selection)
+VARIANTS: Dict[str, Tuple[str, bool, Tuple[str, ...]]] = {
+    "raw": ("mean", False, ("baseline",)),
+    "abtt": ("mean", True, ("abtt_fixed", "abtt_optimal")),
+    "sif": ("sif", False, ("sif_only",)),
+    "sif_abtt": ("sif", True, ("sif_abtt_fixed", "sif_abtt_optimal")),
+}
+
 
 def model_slug(name: str) -> str:
     return name.replace("/", "_")
 
 
-def find_best_config_from_results(results_csv: str) -> Dict[str, Tuple[int, str, str]]:
-    """Read results CSV and find best layer+method per model by overall_assignment_acc."""
+def find_best_config_from_results(results_csv: str, methods: Tuple[str, ...]) -> Dict[str, Tuple[int, str]]:
+    """Best layer per model by overall_assignment_acc, restricted to `methods`.
+
+    Returns {model_name: (layer, repr)}. The results-CSV `pooling` column is not
+    consulted: pooling is determined by the variant (see module docstring).
+    """
     df = pd.read_csv(results_csv)
-    # Exclude whitening (consistently fails)
-    df = df[df["method"] != "whitening"]
+    df = df[df["method"].isin(methods)]
     best = {}
     for model_name in ALL_MODELS:
         mdf = df[df["model"] == model_name]
@@ -51,9 +121,24 @@ def find_best_config_from_results(results_csv: str) -> Dict[str, Tuple[int, str,
             continue
         idx = mdf["overall_assignment_acc"].idxmax()
         row = mdf.loc[idx]
-        pooling = "sif" if row["method"] in ("abtt_fixed", "abtt_optimal") else row["pooling"]
-        best[model_name] = (int(row["layer"]), row["repr"], pooling)
+        best[model_name] = (int(row["layer"]), row["repr"])
     return best
+
+
+def parse_layer_overrides(spec: str) -> Dict[str, int]:
+    """Parse 'model=layer,model=layer' into {model: layer}."""
+    overrides: Dict[str, int] = {}
+    if not spec:
+        return overrides
+    for item in spec.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        if "=" not in item:
+            raise ValueError(f"Bad --layer_overrides entry {item!r}; expected 'model=layer'.")
+        name, layer = item.rsplit("=", 1)
+        overrides[name.strip()] = int(layer)
+    return overrides
 
 
 def find_optimal_D(train_emb, train_folder_ids, D_values):
@@ -145,38 +230,53 @@ def parse_args():
     parser.add_argument("--split_csv", default="runs/active/resubmit/data/phase_resubmit_split.csv")
     parser.add_argument("--unlabelled_meta", default="runs/active/resubmit/data/unlabelled_meta.csv")
     parser.add_argument("--results_csv", default="runs/active/resubmit/results/phase_resubmit_results.csv",
-                        help="Evaluation results CSV for finding best model+layer+method.")
+                        help="Evaluation results CSV for finding the best layer per model.")
     parser.add_argument("--out_dir", default="runs/active/resubmit/unlabelled")
-    parser.add_argument("--top_k", type=int, default=10)
+    parser.add_argument("--top_k", type=int, default=TOP_K)
     parser.add_argument("--models", default="all", help="Comma-separated model names or 'all'")
+    parser.add_argument("--variant", default="sif_abtt", choices=sorted(VARIANTS),
+                        help="Embedding pipeline: raw | abtt | sif | sif_abtt (see module docstring).")
+    parser.add_argument("--layer_overrides", default="",
+                        help="Pin layers, e.g. 'Qwen/Qwen3-Embedding-0.6B=5,google/mt5-base=1'.")
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
+    variant = args.variant
+    pooling, apply_abtt, sel_methods = VARIANTS[variant]
+    print(f"Variant: {variant} (pooling={pooling}, abtt={apply_abtt}, "
+          f"layer selected from methods {list(sel_methods)})")
+
     # Load metadata
     split_meta = pd.read_csv(args.split_csv)
     unlabelled_meta = pd.read_csv(args.unlabelled_meta)
 
-    # Find best configs from results CSV
+    # Find best layer per model from results CSV, restricted to this variant's methods
     results_path = Path(args.results_csv)
     if results_path.exists():
-        print(f"Reading best configs from {results_path}")
-        best_configs = find_best_config_from_results(args.results_csv)
+        print(f"Reading best layers from {results_path}")
+        best_configs = find_best_config_from_results(args.results_csv, sel_methods)
     else:
         print("Results CSV not found, using fallback configs.")
         best_configs = {}
 
+    layer_overrides = parse_layer_overrides(args.layer_overrides)
+
     # Build model configs list
     model_configs = []
-    for model_name, fallback_layer, fallback_repr, fallback_pooling in FALLBACK_CONFIGS:
+    for model_name, fallback_layer, fallback_repr in FALLBACK_CONFIGS:
         if model_name in best_configs:
-            layer, repr_name, pooling = best_configs[model_name]
-            print(f"  {model_name}: layer={layer}, repr={repr_name}, pooling={pooling} (from results)")
+            layer, repr_name = best_configs[model_name]
+            source = "from results"
         else:
-            layer, repr_name, pooling = fallback_layer, fallback_repr, fallback_pooling
-            print(f"  {model_name}: layer={layer}, repr={repr_name}, pooling={pooling} (fallback)")
-        model_configs.append((model_name, layer, repr_name, pooling))
+            layer, repr_name = fallback_layer, fallback_repr
+            source = "fallback"
+        if model_name in layer_overrides:
+            layer = layer_overrides[model_name]
+            source = "override"
+        print(f"  {model_name}: layer={layer}, repr={repr_name}, pooling={pooling} ({source})")
+        model_configs.append((model_name, layer, repr_name))
 
     # Filter to selected models
     if args.models != "all":
@@ -185,10 +285,10 @@ def main():
 
     all_predictions_dfs = []
 
-    for model_name, opt_layer, repr_name, pooling in model_configs:
+    for model_name, opt_layer, repr_name in model_configs:
         slug = model_slug(model_name)
         print(f"\n{'='*60}")
-        print(f"Model: {model_name} (layer {opt_layer}, {pooling})")
+        print(f"Model: {model_name} (layer {opt_layer}, {pooling}, variant {variant})")
 
         # Determine suffix based on pooling
         suffix = "_sif" if pooling == "sif" else ""
@@ -217,21 +317,24 @@ def main():
             print(f"  Shape mismatch: {unlab_emb.shape[0]} vs {len(unlabelled_meta)} files, skipping.")
             continue
 
-        # ABTT: fit on train, apply to all
-        train_mask = split_meta["split"].values == "train"
-        train_emb = lab_emb[train_mask]
-        train_folder_ids = split_meta.loc[train_mask, "folder_id"].values
+        if apply_abtt:
+            # ABTT: fit the cleaner on the train split only, then apply to all.
+            train_mask = split_meta["split"].values == "train"
+            train_emb = lab_emb[train_mask]
+            train_folder_ids = split_meta.loc[train_mask, "folder_id"].values
 
-        best_D = find_optimal_D(train_emb, train_folder_ids, D_VALUES)
-        print(f"  Optimal D: {best_D}")
+            best_D = find_optimal_D(train_emb, train_folder_ids, D_VALUES)
+            print(f"  Optimal D: {best_D}")
 
-        cleaner = EmbeddingCleaner(num_components=best_D, center=True)
-        cleaner.fit(train_emb)
-        lab_cleaned = cleaner.transform(lab_emb)
-        unlab_cleaned = cleaner.transform(unlab_emb)
+            cleaner = EmbeddingCleaner(num_components=best_D, center=True)
+            cleaner.fit(train_emb)
+            lab_emb = cleaner.transform(lab_emb)
+            unlab_emb = cleaner.transform(unlab_emb)
+        else:
+            print("  No ABTT for this variant (cosine on raw pooled vectors).")
 
-        lab_norm = l2_normalize(lab_cleaned)
-        unlab_norm = l2_normalize(unlab_cleaned)
+        lab_norm = l2_normalize(lab_emb)
+        unlab_norm = l2_normalize(unlab_emb)
 
         # Predict top-K directories
         folder_ids = split_meta["folder_id"].values
@@ -248,26 +351,25 @@ def main():
             for rank, (dir_name, score) in enumerate(preds, 1):
                 row[f"rank{rank}_dir"] = dir_name
                 row[f"rank{rank}_score"] = round(float(score), 6)
+            row["model"] = model_name
+            row["variant"] = variant
+            row["layer"] = opt_layer
+            row["pooling"] = pooling
             rows.append(row)
 
         # Save per-model predictions
-        per_model_path = Path(args.out_dir) / f"unlabelled_predictions_{slug}.csv"
+        per_model_path = Path(args.out_dir) / f"unlabelled_predictions_{variant}_{slug}.csv"
         per_model_path.parent.mkdir(parents=True, exist_ok=True)
         model_df = pd.DataFrame(rows)
         model_df.to_csv(per_model_path, index=False)
         print(f"  Saved {len(rows)} predictions -> {per_model_path}")
 
-        # Also collect for combined output
-        for row in rows:
-            row["model"] = model_name
-            row["layer"] = opt_layer
-            row["pooling"] = pooling
-        all_predictions_dfs.append(pd.DataFrame(rows))
+        all_predictions_dfs.append(model_df)
 
     # Save combined predictions
     if all_predictions_dfs:
         combined = pd.concat(all_predictions_dfs, ignore_index=True)
-        combined_path = Path(args.out_dir) / "unlabelled_predictions.csv"
+        combined_path = Path(args.out_dir) / f"unlabelled_predictions_{variant}.csv"
         combined.to_csv(combined_path, index=False)
         print(f"\nCombined predictions ({len(combined)} rows) -> {combined_path}")
 
