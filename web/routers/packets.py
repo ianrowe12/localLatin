@@ -9,7 +9,7 @@ from fastapi.responses import Response
 from web.dependencies import get_db, get_store, require_pi_admin
 from web.exceptions import QueryNotFoundError
 from web.models import PredictionVariant, UserPublic
-from web.routers.predictions import resolve_variant_rows
+from web.routers.predictions import resolve_variant, resolve_variant_rows
 from web.services.data_store import DataStore, normalize_slug
 from web.services.feedback_db import FeedbackDB
 from web.services.pdf_packets import build_review_packet_pdf
@@ -33,9 +33,20 @@ def _get_prediction_row(rows: list[dict], file_id: int) -> dict | None:
 async def get_review_packet(
     file_id: int,
     model: str = Query(..., description="Model slug"),
-    variant: PredictionVariant = Query(
-        PredictionVariant.SIF_ABTT,
-        description="Post-processing variant the packet documents",
+    variant: PredictionVariant | None = Query(
+        None,
+        description=(
+            "Post-processing variant whose predictions the packet documents. "
+            "Defaults to the deployment's configured default variant."
+        ),
+    ),
+    feedback_variant: PredictionVariant | None = Query(
+        None,
+        description=(
+            "Restrict the reviewer-feedback section to one variant. By default "
+            "every review for this query and model is included, each labelled "
+            "with the variant it was recorded against."
+        ),
     ),
     top_k: int = Query(10, ge=1, le=10),
     store: DataStore = Depends(get_store),
@@ -43,19 +54,30 @@ async def get_review_packet(
     current_user: UserPublic = Depends(require_pi_admin),
 ) -> Response:
     slug = normalize_slug(model)
-    rows = resolve_variant_rows(store, slug, variant.value, file_id)
+    resolved = resolve_variant(store, variant)
+    rows = await resolve_variant_rows(store, slug, resolved, file_id)
 
     row = _get_prediction_row(rows, file_id)
     if row is None:
         raise QueryNotFoundError(file_id)
 
+    # The feedback section is variant-agnostic by default. Filtering it by the
+    # requested variant would silently drop every pre-variant review (those rows
+    # have variant NULL by design), quietly emptying the PI's record of the
+    # pilot. Each row is labelled with its variant instead, and a caller who
+    # genuinely wants one variant asks for it explicitly.
     feedback_rows = await db.get_feedback_for_query(
-        file_id, model=slug, limit=10, variant=variant.value
+        file_id,
+        model=slug,
+        limit=10,
+        variant=feedback_variant.value if feedback_variant else None,
     )
     pdf_data = build_review_packet_pdf(
         store=store,
         query_id=file_id,
         model_slug=slug,
+        variant=resolved,
+        feedback_variant=feedback_variant.value if feedback_variant else None,
         predictions=row["predictions"],
         feedback_rows=feedback_rows,
         actor=current_user.display_name,
@@ -69,7 +91,7 @@ async def get_review_packet(
         current_user.username,
         file_id,
         slug,
-        variant.value,
+        resolved,
         top_k,
         len(pdf_data),
     )

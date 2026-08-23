@@ -7,9 +7,10 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from starlette.concurrency import run_in_threadpool
 
 from web.config import Settings
-from web.models import DEFAULT_VARIANT
+from web.variants import DEFAULT_VARIANT
 
 logger = logging.getLogger(__name__)
 
@@ -70,8 +71,9 @@ class DataStore:
     labelled_dir_files: dict[str, list[str]] = field(default_factory=dict)
 
     # Predictions: (slug, variant) -> list of dicts (one per file_id).
-    # Only the default variant is loaded at startup; the rest are read on first
-    # use so a single uvicorn worker does not hold all four CSVs at once.
+    # Only the default variant is read at startup; the others are read on first
+    # request. This defers the cost (~35 MB and ~2s per variant) rather than
+    # capping it -- once a worker has served all four, all four stay resident.
     predictions: dict[tuple[str, str], list[dict]] = field(default_factory=dict)
 
     # Model metadata, also keyed by (slug, variant)
@@ -94,7 +96,12 @@ class DataStore:
     # --- Variant-aware prediction access ---
 
     def ensure_variant(self, variant: str) -> bool:
-        """Load a variant's predictions if not loaded yet. False if unavailable."""
+        """Load a variant's predictions if not loaded yet. False if unavailable.
+
+        Blocking (pandas). Async callers must use `ensure_variant_async`, which
+        hands this to a worker thread -- reading a variant takes ~2s, long
+        enough to stall every other request on the single uvicorn worker.
+        """
         if variant in self.loaded_variants:
             return True
         if variant not in self.variant_paths:
@@ -102,16 +109,35 @@ class DataStore:
         with self._load_lock:
             # Another request may have loaded it while we waited for the lock.
             if variant not in self.loaded_variants:
-                _load_variant(self, variant)
+                try:
+                    _load_variant(self, variant)
+                except Exception:
+                    # An unreadable or malformed CSV must not take the app down
+                    # or leave half a variant in the cache: drop whatever was
+                    # inserted and report the variant as unavailable (400).
+                    logger.exception(
+                        "Failed to load predictions for variant '%s' from %s",
+                        variant,
+                        self.variant_paths[variant],
+                    )
+                    self._discard_variant(variant)
+                    return False
         return variant in self.loaded_variants
 
-    def get_predictions(self, slug: str, variant: str) -> list[dict] | None:
-        if not self.ensure_variant(variant):
-            return None
-        return self.predictions.get((slug, variant))
+    async def ensure_variant_async(self, variant: str) -> bool:
+        """`ensure_variant` off the event loop."""
+        if variant in self.loaded_variants:
+            return True
+        if variant not in self.variant_paths:
+            return False
+        return await run_in_threadpool(self.ensure_variant, variant)
 
-    def has_model(self, slug: str, variant: str) -> bool:
-        return self.get_predictions(slug, variant) is not None
+    def _discard_variant(self, variant: str) -> None:
+        for key in [key for key in self.predictions if key[1] == variant]:
+            del self.predictions[key]
+        for key in [key for key in self.model_meta if key[1] == variant]:
+            del self.model_meta[key]
+        self.loaded_variants.discard(variant)
 
 
 def _load_text(path: Path) -> str:

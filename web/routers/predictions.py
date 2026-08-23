@@ -15,17 +15,27 @@ from web.services.data_store import DataStore, normalize_slug
 
 router = APIRouter(prefix="/api", tags=["predictions"])
 
+# Deliberately defaults to None rather than a hardcoded variant: the served
+# default is `PathsConfig.default_variant`, which deployments can change.
 VariantParam = Query(
-    PredictionVariant.SIF_ABTT,
-    description="Post-processing variant of the predictions to serve",
+    None,
+    description=(
+        "Post-processing variant of the predictions to serve. "
+        "Defaults to the deployment's configured default variant."
+    ),
 )
 
 
-def resolve_variant_rows(
+def resolve_variant(store: DataStore, variant: PredictionVariant | None) -> str:
+    """The requested variant, or the deployment's configured default."""
+    return variant.value if variant is not None else store.default_variant
+
+
+async def resolve_variant_rows(
     store: DataStore, slug: str, variant: str, file_id: int
 ) -> list[dict]:
     """Prediction rows for (slug, variant), raising the right API error."""
-    if not store.ensure_variant(variant):
+    if not await store.ensure_variant_async(variant):
         raise VariantUnavailableError(variant, store.variants)
     rows = store.predictions.get((slug, variant))
     if rows is None:
@@ -51,13 +61,14 @@ def _get_prediction_row(rows: list[dict], file_id: int) -> dict | None:
 async def get_predictions(
     file_id: int,
     model: str = Query(..., description="Model slug"),
-    variant: PredictionVariant = VariantParam,
+    variant: PredictionVariant | None = VariantParam,
     top_k: int = Query(10, ge=1, le=10),
     store: DataStore = Depends(get_store),
     current_user: UserPublic = Depends(get_current_user),
 ) -> PredictionResponse:
     slug = normalize_slug(model)
-    rows = resolve_variant_rows(store, slug, variant.value, file_id)
+    resolved = resolve_variant(store, variant)
+    rows = await resolve_variant_rows(store, slug, resolved, file_id)
 
     row = _get_prediction_row(rows, file_id)
     if row is None:
@@ -90,7 +101,7 @@ async def get_predictions(
         file_id=file_id,
         filename=store.file_id_to_filename[file_id],
         model=slug,
-        variant=variant,
+        variant=resolved,
         predictions=predictions,
     )
 
@@ -100,12 +111,13 @@ async def get_candidates(
     file_id: int,
     rank: int,
     model: str = Query(..., description="Model slug"),
-    variant: PredictionVariant = VariantParam,
+    variant: PredictionVariant | None = VariantParam,
     store: DataStore = Depends(get_store),
     current_user: UserPublic = Depends(get_current_user),
 ) -> list[CandidateFile]:
     slug = normalize_slug(model)
-    rows = resolve_variant_rows(store, slug, variant.value, file_id)
+    resolved = resolve_variant(store, variant)
+    rows = await resolve_variant_rows(store, slug, resolved, file_id)
 
     row = _get_prediction_row(rows, file_id)
     if row is None:

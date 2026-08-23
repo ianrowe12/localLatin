@@ -7,7 +7,7 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, field_validator, model_validator
 
-from web.models import DEFAULT_VARIANT, VARIANTS
+from web.variants import DEFAULT_VARIANT, VARIANTS
 
 
 class AppConfig(BaseModel):

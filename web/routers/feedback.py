@@ -6,14 +6,15 @@ from fastapi.responses import PlainTextResponse
 from web.dependencies import get_current_user, get_db, get_store, require_pi_admin
 from web.exceptions import InvalidModelError, QueryNotFoundError, VariantUnavailableError
 from web.models import FeedbackCreate, FeedbackEntry, PredictionVariant, UserPublic
+from web.routers.predictions import resolve_variant
 from web.services.data_store import DataStore, normalize_slug
 from web.services.feedback_db import FeedbackDB
 
 router = APIRouter(prefix="/api", tags=["feedback"])
 
 
-def _check_model_variant(store: DataStore, slug: str, variant: str) -> None:
-    if not store.ensure_variant(variant):
+async def _check_model_variant(store: DataStore, slug: str, variant: str) -> None:
+    if not await store.ensure_variant_async(variant):
         raise VariantUnavailableError(variant, store.variants)
     if (slug, variant) not in store.predictions:
         raise InvalidModelError(slug, store.model_slugs)
@@ -30,8 +31,8 @@ async def create_feedback(
         raise QueryNotFoundError(body.query_id)
 
     slug = normalize_slug(body.model_slug)
-    variant = body.variant.value
-    _check_model_variant(store, slug, variant)
+    variant = resolve_variant(store, body.variant)
+    await _check_model_variant(store, slug, variant)
 
     correct_dir = body.correct_dir
     if body.selected_ranks:
@@ -61,9 +62,12 @@ async def create_feedback(
 async def latest_feedback(
     query_id: int,
     model: str,
-    variant: PredictionVariant = Query(
-        PredictionVariant.SIF_ABTT,
-        description="Only prefill from feedback saved for this variant",
+    variant: PredictionVariant | None = Query(
+        None,
+        description=(
+            "Only prefill from feedback saved for this variant. "
+            "Defaults to the deployment's configured default variant."
+        ),
     ),
     store: DataStore = Depends(get_store),
     db: FeedbackDB = Depends(get_db),
@@ -73,13 +77,14 @@ async def latest_feedback(
         raise QueryNotFoundError(query_id)
 
     slug = normalize_slug(model)
-    _check_model_variant(store, slug, variant.value)
+    resolved = resolve_variant(store, variant)
+    await _check_model_variant(store, slug, resolved)
 
     row = await db.get_latest_feedback(
         query_id=query_id,
         model_slug=slug,
         reviewer_account_id=current_user.id,
-        variant=variant.value,
+        variant=resolved,
     )
     return FeedbackEntry(**row) if row is not None else None
 

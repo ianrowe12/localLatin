@@ -14,7 +14,7 @@ from pathlib import Path
 
 import aiosqlite
 
-from web.models import DEFAULT_VARIANT
+from web.variants import DEFAULT_VARIANT
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +75,6 @@ _EXPORT_COLUMNS = [
     "filename",
     "timestamp",
     "model_slug",
-    "variant",
     "outcome",
     "correct_rank",
     "correct_dir",
@@ -84,6 +83,9 @@ _EXPORT_COLUMNS = [
     "reviewer_account_id",
     "schema_version",
     "selected_ranks_json",
+    # Appended, not inserted: anything parsing the export positionally keeps
+    # working. Empty for rows written before the variant column existed.
+    "variant",
 ]
 
 

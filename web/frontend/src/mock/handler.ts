@@ -299,7 +299,9 @@ function handlePredictions(
   variant: PredictionVariant = DEFAULT_VARIANT,
 ): ReturnType<typeof MOCK_PREDICTIONS.get> | { error: { message: string } } {
   const pred = MOCK_PREDICTIONS.get(queryId)
-  if (pred) return pred
+  // Echo back the requested variant: the canned entries are all sif_abtt, and
+  // returning them unchanged would report the wrong variant under #48.
+  if (pred) return { ...pred, variant }
 
   // Return a minimal prediction set for synthetic queries
   const item = ALL_QUERIES.find((q) => q.file_id === queryId)

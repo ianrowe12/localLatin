@@ -5,24 +5,9 @@ from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
-
-# --- Prediction variants ---
-
-class PredictionVariant(StrEnum):
-    """Post-processing variant a set of predictions was computed with.
-
-    Each variant has its own predictions CSV (see PathsConfig.resolve_variant).
-    Anything outside this set is rejected by FastAPI/pydantic with a 422.
-    """
-
-    RAW = "raw"
-    ABTT = "abtt"
-    SIF = "sif"
-    SIF_ABTT = "sif_abtt"
-
-
-VARIANTS: tuple[str, ...] = tuple(variant.value for variant in PredictionVariant)
-DEFAULT_VARIANT: str = PredictionVariant.SIF_ABTT.value
+# Re-exported so API consumers can keep importing the variant vocabulary from
+# web.models; the canonical definition lives in web/variants.py.
+from web.variants import DEFAULT_VARIANT, PredictionVariant
 
 
 # --- Queries ---
@@ -82,7 +67,7 @@ class PredictionResponse(BaseModel):
     file_id: int
     filename: str
     model: str
-    variant: PredictionVariant = PredictionVariant.SIF_ABTT
+    variant: PredictionVariant
     predictions: List[Prediction]
 
 
@@ -228,7 +213,8 @@ class AccountCreateResponse(BaseModel):
 class FeedbackCreate(BaseModel):
     query_id: int
     model_slug: str
-    variant: PredictionVariant = PredictionVariant.SIF_ABTT
+    # None means "the deployment's configured default", resolved in the router.
+    variant: Optional[PredictionVariant] = None
     outcome: Optional[FeedbackOutcome] = None
     correct_rank: Optional[int] = Field(None, ge=0, le=10)
     correct_dir: Optional[str] = None

@@ -24,9 +24,24 @@ export interface FeedbackDraft {
 
 export interface FeedbackContextValue {
   drafts: Map<string, FeedbackDraft>
-  getDraft: (queryId: number, model: string) => FeedbackDraft
-  updateDraft: (queryId: number, model: string, patch: Partial<FeedbackDraft>) => void
-  seedDraftIfEmpty: (queryId: number, model: string, seed: FeedbackDraft) => void
+  makeDraftKey: (queryId: number, model: string, variant?: PredictionVariant) => string
+  getDraft: (
+    queryId: number,
+    model: string,
+    variant?: PredictionVariant,
+  ) => FeedbackDraft
+  updateDraft: (
+    queryId: number,
+    model: string,
+    patch: Partial<FeedbackDraft>,
+    variant?: PredictionVariant,
+  ) => void
+  seedDraftIfEmpty: (
+    queryId: number,
+    model: string,
+    seed: FeedbackDraft,
+    variant?: PredictionVariant,
+  ) => void
   submitFeedback: (
     queryId: number,
     model: string,
@@ -47,8 +62,14 @@ const FeedbackContext = createContext<FeedbackContextValue | null>(null)
 
 const STORAGE_KEY = 'locallatin-feedback-drafts'
 
-function makeDraftKey(queryId: number, model: string): string {
-  return `${queryId}-${model}`
+// The variant is part of the key: the same query/model ranks differently per
+// variant, so drafts must not bleed across them once the selector lands (#48).
+function makeDraftKey(
+  queryId: number,
+  model: string,
+  variant: PredictionVariant = DEFAULT_VARIANT,
+): string {
+  return `${queryId}-${model}-${variant}`
 }
 
 function emptyDraft(): FeedbackDraft {
@@ -81,17 +102,26 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
   }, [drafts])
 
   const getDraft = useCallback(
-    (queryId: number, model: string): FeedbackDraft => {
-      const key = makeDraftKey(queryId, model)
+    (
+      queryId: number,
+      model: string,
+      variant: PredictionVariant = DEFAULT_VARIANT,
+    ): FeedbackDraft => {
+      const key = makeDraftKey(queryId, model, variant)
       return drafts.get(key) ?? emptyDraft()
     },
     [drafts],
   )
 
   const updateDraft = useCallback(
-    (queryId: number, model: string, patch: Partial<FeedbackDraft>) => {
+    (
+      queryId: number,
+      model: string,
+      patch: Partial<FeedbackDraft>,
+      variant: PredictionVariant = DEFAULT_VARIANT,
+    ) => {
       setDrafts((prev) => {
-        const key = makeDraftKey(queryId, model)
+        const key = makeDraftKey(queryId, model, variant)
         const existing = prev.get(key) ?? emptyDraft()
         const next = new Map(prev)
         next.set(key, { ...existing, ...patch })
@@ -102,9 +132,14 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
   )
 
   const seedDraftIfEmpty = useCallback(
-    (queryId: number, model: string, seed: FeedbackDraft) => {
+    (
+      queryId: number,
+      model: string,
+      seed: FeedbackDraft,
+      variant: PredictionVariant = DEFAULT_VARIANT,
+    ) => {
       setDrafts((prev) => {
-        const key = makeDraftKey(queryId, model)
+        const key = makeDraftKey(queryId, model, variant)
         return seedDraftMapIfEmpty(prev, key, seed)
       })
     },
@@ -118,7 +153,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
       predictions: Prediction[],
       variant: PredictionVariant = DEFAULT_VARIANT,
     ): Promise<void> => {
-      const key = makeDraftKey(queryId, model)
+      const key = makeDraftKey(queryId, model, variant)
       const draft = drafts.get(key) ?? emptyDraft()
       const dirForRank = (rank: number): string | null =>
         predictions.find((prediction) => prediction.rank === rank)?.dir_name ?? null
@@ -193,7 +228,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
       notes: string,
       variant: PredictionVariant = DEFAULT_VARIANT,
     ): Promise<void> => {
-      const key = makeDraftKey(queryId, model)
+      const key = makeDraftKey(queryId, model, variant)
       const draft = drafts.get(key) ?? emptyDraft()
 
       await postFeedback({
@@ -233,6 +268,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
 
   const value: FeedbackContextValue = {
     drafts,
+    makeDraftKey,
     getDraft,
     updateDraft,
     seedDraftIfEmpty,
