@@ -119,8 +119,8 @@ export default function FeedbackPanel() {
           activeQueryId,
           activeModel,
           {
-          selectedRanks: pruned.length > 0 ? pruned : undefined,
-          correctRank: pruned.length > 0 ? pruned[0] : null,
+            selectedRanks: pruned.length > 0 ? pruned : undefined,
+            correctRank: pruned.length > 0 ? pruned[0] : null,
           },
           activeVariant,
         )
@@ -137,8 +137,8 @@ export default function FeedbackPanel() {
         activeQueryId,
         activeModel,
         {
-        correctRank: null,
-        selectedRanks: undefined,
+          correctRank: null,
+          selectedRanks: undefined,
         },
         activeVariant,
       )
@@ -161,8 +161,8 @@ export default function FeedbackPanel() {
           activeQueryId,
           activeModel,
           {
-          correctRank: 0,
-          selectedRanks: undefined,
+            correctRank: 0,
+            selectedRanks: undefined,
           },
           activeVariant,
         )
@@ -171,8 +171,8 @@ export default function FeedbackPanel() {
           activeQueryId,
           activeModel,
           {
-          correctRank: null,
-          selectedRanks: undefined,
+            correctRank: null,
+            selectedRanks: undefined,
           },
           activeVariant,
         )
@@ -181,8 +181,8 @@ export default function FeedbackPanel() {
           activeQueryId,
           activeModel,
           {
-          correctRank: next.selectedRanks[0],
-          selectedRanks: next.selectedRanks,
+            correctRank: next.selectedRanks[0],
+            selectedRanks: next.selectedRanks,
           },
           activeVariant,
         )
@@ -191,8 +191,8 @@ export default function FeedbackPanel() {
           activeQueryId,
           activeModel,
           {
-          correctRank: next.selectedRanks[0],
-          selectedRanks: undefined,
+            correctRank: next.selectedRanks[0],
+            selectedRanks: undefined,
           },
           activeVariant,
         )
@@ -212,8 +212,8 @@ export default function FeedbackPanel() {
             activeQueryId,
             activeModel,
             {
-            correctRank: current.selectedRanks[0],
-            selectedRanks: undefined,
+              correctRank: current.selectedRanks[0],
+              selectedRanks: undefined,
             },
             activeVariant,
           )

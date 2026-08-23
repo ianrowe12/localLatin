@@ -16,7 +16,7 @@ import { VARIANT_OPTIONS, type PredictionVariant } from '../../api/variants'
  * feedback submitted afterwards.
  */
 export default function VariantSelector() {
-  const { activeModel, activeVariant, setActiveVariant, applyDefaultVariant } = useApp()
+  const { activeModel, activeVariant, setActiveVariant, resolveVariant } = useApp()
   const { data: models } = useModels()
 
   const model = useMemo(
@@ -24,27 +24,28 @@ export default function VariantSelector() {
     [models, activeModel],
   )
 
-  // Variants this deployment can actually serve. Before /api/models resolves,
-  // treat every variant as available so the control is never briefly empty.
-  const available = model?.available_variants ?? null
+  // Variants this deployment can actually serve. Empty until /api/models
+  // resolves, which is also the signal not to resolve anything yet.
+  const available = useMemo(
+    () => model?.available_variants ?? [],
+    [model],
+  )
+  const serverDefault = model?.default_variant ?? null
 
-  // Adopt the deployment's default once, unless the reviewer already chose.
-  const serverDefault = model?.default_variant
+  // ONE resolution point. Deliberately a single effect rather than an
+  // "adopt the default" effect plus an "is it available" effect: two effects
+  // commit together and the second would read the pre-default activeVariant
+  // from the same render closure, so its fallback would win over the
+  // deployment's default. AppContext.resolveVariant does the whole ordering
+  // (reviewer's choice -> server default -> first served) in one pass and
+  // never persists what it picks.
   useEffect(() => {
-    if (serverDefault) applyDefaultVariant(serverDefault)
-  }, [serverDefault, applyDefaultVariant])
-
-  // If the selected variant is not served here (e.g. a stale localStorage
-  // value, or a deployment that ships fewer CSVs), fall back to the first
-  // variant that is.
-  useEffect(() => {
-    if (!available || available.length === 0) return
-    if (available.includes(activeVariant)) return
-    setActiveVariant(available[0])
-  }, [available, activeVariant, setActiveVariant])
+    if (!models) return
+    resolveVariant(serverDefault, available)
+  }, [models, serverDefault, available, resolveVariant])
 
   const isAvailable = (key: PredictionVariant): boolean =>
-    available === null || available.length === 0 || available.includes(key)
+    available.length === 0 || available.includes(key)
 
   return (
     <div

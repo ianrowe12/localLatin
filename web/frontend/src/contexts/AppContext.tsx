@@ -31,11 +31,14 @@ export interface AppContextValue {
   /** Records an explicit reviewer choice: persisted and never overridden. */
   setActiveVariant: (variant: PredictionVariant) => void
   /**
-   * Adopt the deployment's default variant (from GET /api/models). A no-op
-   * once the reviewer has picked a variant themselves, in this session or a
-   * previous one, so the server default never clobbers their choice.
+   * Machine resolution of which variant to *display*, given what
+   * GET /api/models says this deployment serves. Never persists and never
+   * counts as a reviewer choice. See the implementation for the ordering.
    */
-  applyDefaultVariant: (variant: PredictionVariant) => void
+  resolveVariant: (
+    serverDefault: PredictionVariant | null,
+    available: PredictionVariant[],
+  ) => void
   activePredictionRank: number
   setActivePredictionRank: (rank: number) => void
   navigateToQuery: (fileId: number) => void
@@ -81,14 +84,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [activeQueryId, setActiveQueryId] = useState<number | null>(null)
   const [activeModel, setActiveModel] = useState<string>('')
   const [activePredictionRank, setActivePredictionRank] = useState<number>(1)
-  // Seeded from localStorage so a reviewer's variant survives a reload; falls
-  // back to the compile-time default until GET /api/models reports the
-  // deployment's own default (see applyDefaultVariant).
-  const storedVariant = useRef<PredictionVariant | null>(getStoredVariant())
+  // The reviewer's own choice, or null if they have never made one. Seeded
+  // from localStorage so it survives a reload, and updated by
+  // setActiveVariant. This is the ONLY thing resolveVariant treats as a
+  // preference, which is what keeps a machine fallback from masquerading as
+  // one. Until GET /api/models reports what this deployment serves,
+  // activeVariant shows the stored choice or the compile-time default.
+  const chosenVariant = useRef<PredictionVariant | null>(getStoredVariant())
   const [activeVariant, setActiveVariantState] = useState<PredictionVariant>(
-    () => storedVariant.current ?? DEFAULT_VARIANT,
+    () => chosenVariant.current ?? DEFAULT_VARIANT,
   )
-  const variantChosen = useRef(storedVariant.current !== null)
   const [overrideCandidateDir, setOverrideCandidateDirState] = useState<
     string | null
   >(null)
@@ -129,7 +134,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const setActiveVariant = useCallback((variant: PredictionVariant) => {
-    variantChosen.current = true
+    chosenVariant.current = variant
     setActiveVariantState(variant)
     // Every variant re-ranks the candidates, so rank 1 of the old variant is
     // meaningless under the new one -- restart at the new top hit.
@@ -141,12 +146,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  // Deliberately does NOT persist: the deployment default is not the
-  // reviewer's decision, so it must not look like one on the next reload.
-  const applyDefaultVariant = useCallback((variant: PredictionVariant) => {
-    if (variantChosen.current) return
-    setActiveVariantState(variant)
-  }, [])
+  /**
+   * Decide what to display once the deployment has described itself, in one
+   * ordered pass: the reviewer's own choice if it is served here, else the
+   * deployment's declared `default_variant`, else the first variant served.
+   *
+   * Two invariants this exists to protect, both of which a separate
+   * "adopt the default" / "fall back to available[0]" pair got wrong:
+   *
+   *  - The server default beats "first served". Picking available[0] when the
+   *    compile-time default is unserved would strand a reviewer on Raw in a
+   *    deployment that declared, say, sif as its default.
+   *  - A machine fallback is never persisted and never becomes
+   *    `chosenVariant`. A stored preference therefore survives its variant
+   *    being temporarily unserved and comes back when the CSV returns.
+   *
+   * Idempotent: re-running it after an explicit choice re-picks that choice.
+   */
+  const resolveVariant = useCallback(
+    (serverDefault: PredictionVariant | null, available: PredictionVariant[]) => {
+      const isServed = (variant: PredictionVariant | null | undefined): boolean =>
+        variant != null && (available.length === 0 || available.includes(variant))
+      const target = [chosenVariant.current, serverDefault, available[0]].find(isServed)
+      if (target) setActiveVariantState(target)
+    },
+    [],
+  )
 
   const navigateToQuery = useCallback((fileId: number) => {
     setActiveQueryId(fileId)
@@ -177,7 +202,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setActiveModel,
     activeVariant,
     setActiveVariant,
-    applyDefaultVariant,
+    resolveVariant,
     activePredictionRank,
     setActivePredictionRank,
     navigateToQuery,

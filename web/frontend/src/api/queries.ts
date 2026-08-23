@@ -291,7 +291,13 @@ export function usePredictions(
     }
 
     let cancelled = false
-    setState((prev) => ({ ...prev, loading: true, error: null }))
+    // Drop the previous key's data rather than keeping it under `loading`.
+    // Holding it would let one paint pair the OLD variant's rank-1 candidate
+    // with the NEW variant: a wasted token-map fetch for a candidate that is
+    // about to change, the previous variant's text under the new variant's
+    // label, and a submit in that window posting the old ranking under the new
+    // variant name.
+    setState({ data: null, loading: true, error: null })
 
     apiFetch<PredictionResponse>(
       `/api/query/${queryId}/predictions?model=${encodeURIComponent(model)}&variant=${variant}`,

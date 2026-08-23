@@ -109,6 +109,37 @@ interface HookState<T> {
   error: string | null
 }
 
+// Token-map responses run to several MB each even filtered, and the cache key
+// now includes method and variant -- so a day-long session toggling variants
+// across many pairs would grow without bound. Map preserves insertion order,
+// so re-inserting on read gives least-recently-used eviction for free.
+const TOKEN_MAP_CACHE_LIMIT = 8
+
+function cacheGet(
+  cache: Map<string, TokenMapResponse>,
+  key: string,
+): TokenMapResponse | undefined {
+  const hit = cache.get(key)
+  if (hit === undefined) return undefined
+  cache.delete(key)
+  cache.set(key, hit)
+  return hit
+}
+
+function cachePut(
+  cache: Map<string, TokenMapResponse>,
+  key: string,
+  value: TokenMapResponse,
+): void {
+  cache.delete(key)
+  cache.set(key, value)
+  while (cache.size > TOKEN_MAP_CACHE_LIMIT) {
+    const oldest = cache.keys().next().value
+    if (oldest === undefined) break
+    cache.delete(oldest)
+  }
+}
+
 /**
  * Fetch the token map for one (query, candidate) pair.
  *
@@ -142,7 +173,7 @@ export function useTokenMap(
     }
 
     const key = `${queryId}:${candidateId}:${model ?? ''}:${method ?? ''}:${variant ?? ''}`
-    const cached = cache.current.get(key)
+    const cached = cacheGet(cache.current, key)
     if (cached) {
       setState({ data: cached, loading: false, error: null })
       return
@@ -160,7 +191,7 @@ export function useTokenMap(
     )
       .then((data) => {
         if (cancelled) return
-        cache.current.set(key, data)
+        cachePut(cache.current, key, data)
         setState({ data, loading: false, error: null })
       })
       .catch((err: Error) => {

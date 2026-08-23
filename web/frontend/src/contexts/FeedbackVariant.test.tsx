@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { render, waitFor } from '@testing-library/react'
+import { act, render, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FeedbackProvider, useFeedback } from './FeedbackContext'
 import type { Prediction } from '../api/queries'
@@ -79,7 +79,9 @@ describe('feedback carries the active variant', () => {
     })
   })
 
-  it('keys drafts per variant so answers never bleed across them', () => {
+  it('keys drafts per variant so answers never bleed across them', async () => {
+    // Asserts the behaviour rather than the key format, so a key-format
+    // refactor cannot quietly break isolation while the test still passes.
     let api: ReturnType<typeof useFeedback> | null = null
     function Capture() {
       api = useFeedback()
@@ -91,11 +93,18 @@ describe('feedback carries the active variant', () => {
       </FeedbackProvider>,
     )
 
-    const ctx = api!
-    expect(ctx.makeDraftKey(QUERY_ID, MODEL, 'raw')).toBe(`${QUERY_ID}-${MODEL}-raw`)
-    expect(ctx.makeDraftKey(QUERY_ID, MODEL, 'sif')).toBe(`${QUERY_ID}-${MODEL}-sif`)
-    expect(ctx.makeDraftKey(QUERY_ID, MODEL, 'raw')).not.toBe(
-      ctx.makeDraftKey(QUERY_ID, MODEL, 'sif'),
-    )
+    await act(async () => {
+      api!.updateDraft(QUERY_ID, MODEL, { correctRank: 4, notes: 'raw answer' }, 'raw')
+    })
+
+    expect(api!.getDraft(QUERY_ID, MODEL, 'raw')).toMatchObject({
+      correctRank: 4,
+      notes: 'raw answer',
+    })
+    // A different variant of the same query/model is a clean slate.
+    expect(api!.getDraft(QUERY_ID, MODEL, 'sif')).toEqual({
+      correctRank: null,
+      notes: '',
+    })
   })
 })

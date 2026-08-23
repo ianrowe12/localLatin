@@ -11,17 +11,25 @@ import VariantSelector from './VariantSelector'
 const MODEL = 'bowphs_LaTa'
 const QUERY_ID = 7
 
-const MODELS_PAYLOAD = [
-  {
-    slug: MODEL,
-    display_name: 'LaTa (T5)',
-    layer: 4,
-    pooling: 'mean',
-    prediction_count: 2238,
-    available_variants: ['raw', 'abtt', 'sif', 'sif_abtt'],
-    default_variant: 'sif_abtt',
-  },
-]
+/** What `GET /api/models` reports for the test currently running. */
+function modelsPayload(
+  availableVariants: string[] = ['raw', 'abtt', 'sif', 'sif_abtt'],
+  defaultVariant = 'sif_abtt',
+) {
+  return [
+    {
+      slug: MODEL,
+      display_name: 'LaTa (T5)',
+      layer: 4,
+      pooling: 'mean',
+      prediction_count: 2238,
+      available_variants: availableVariants,
+      default_variant: defaultVariant,
+    },
+  ]
+}
+
+let models = modelsPayload()
 
 function predictionsPayload(variant: string) {
   return {
@@ -56,7 +64,7 @@ function installFetch(): void {
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input)
     requested.push(url)
-    if (url.includes('/api/models')) return jsonResponse(MODELS_PAYLOAD)
+    if (url.includes('/api/models')) return jsonResponse(models)
     if (url.includes('/predictions')) {
       const variant = new URL(url, 'http://localhost').searchParams.get('variant') ?? ''
       return jsonResponse(predictionsPayload(variant))
@@ -95,6 +103,7 @@ function Harness() {
 }
 
 beforeEach(() => {
+  models = modelsPayload()
   installFetch()
 })
 
@@ -127,13 +136,19 @@ describe('VariantSelector', () => {
     )
   })
 
-  it('is not gated on the reviewer role: no auth call is needed to render it', () => {
+  it('is not gated on the reviewer role: renders without consulting auth', async () => {
     render(
       <AppProvider>
         <VariantSelector />
       </AppProvider>,
     )
     expect(screen.getAllByRole('radio')).toHaveLength(4)
+    await waitFor(() => {
+      expect(requested.some((url) => url.includes('/api/models'))).toBe(true)
+    })
+    // No role lookup anywhere in this component's tree — the PI gate applies
+    // to the attribution *method* picker, not to this control.
+    expect(requested.some((url) => url.includes('/api/auth'))).toBe(false)
   })
 
   it('refetches predictions with the selected variant and persists the choice', async () => {
@@ -174,6 +189,64 @@ describe('VariantSelector', () => {
     })
     // The server default (sif_abtt) must not clobber the reviewer's choice.
     expect(predictionRequests().every((p) => p.get('variant') === 'sif')).toBe(true)
+  })
+
+  // --- regression: default-resolution vs availability fallback -------------
+
+  it("honours the deployment default when the compile-time default is unserved", async () => {
+    // The reviewer's repro. Before the fix, two effects committed together:
+    // applyDefaultVariant queued 'sif' while the fallback effect, reading the
+    // pre-default activeVariant ('sif_abtt', unserved here), queued
+    // available[0] = 'raw' and won the batch. The reviewer landed on the
+    // uncorrected variant in a deployment that declared 'sif'.
+    models = modelsPayload(['raw', 'abtt', 'sif'], 'sif')
+    render(
+      <AppProvider>
+        <Harness />
+      </AppProvider>,
+    )
+
+    await waitFor(() => {
+      expect(predictionRequests().length).toBeGreaterThan(0)
+    })
+    await waitFor(() => {
+      expect(
+        screen.getByRole('radio', { name: /^SIF —/ }).getAttribute('aria-checked'),
+      ).toBe('true')
+    })
+    // Settles on the deployment default. The first request necessarily uses
+    // the compile-time default, since /api/models has not answered yet — but
+    // 'raw' (available[0], what the buggy fallback picked) is never requested.
+    expect(lastPredictionRequest()?.get('variant')).toBe('sif')
+    expect(predictionRequests().some((p) => p.get('variant') === 'raw')).toBe(false)
+    // Nothing here was a reviewer choice, so nothing may be recorded as one.
+    expect(localStorage.getItem('locallatin-variant')).toBeNull()
+  })
+
+  it('keeps a stored choice on disk while its variant is unserved', async () => {
+    // A machine fallback is display-level only: when the missing CSV lands,
+    // the reviewer's real preference must come back.
+    localStorage.setItem('locallatin-variant', 'sif_abtt')
+    models = modelsPayload(['raw', 'abtt'], 'abtt')
+    render(
+      <AppProvider>
+        <Harness />
+      </AppProvider>,
+    )
+
+    await waitFor(() => {
+      expect(predictionRequests().length).toBeGreaterThan(0)
+    })
+    // Displays the deployment default, since the stored choice is unserved...
+    await waitFor(() => {
+      expect(lastPredictionRequest()?.get('variant')).toBe('abtt')
+    })
+    // ...but the stored preference is untouched.
+    expect(localStorage.getItem('locallatin-variant')).toBe('sif_abtt')
+    // And the unserved variant is offered as disabled, not silently missing.
+    expect(
+      screen.getByRole('radio', { name: /^SIF\+ABTT/ }).hasAttribute('disabled'),
+    ).toBe(true)
   })
 })
 

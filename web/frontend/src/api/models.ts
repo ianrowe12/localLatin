@@ -69,6 +69,16 @@ interface HookState<T> {
 // variant selector), which would otherwise each fetch it.
 let modelsCache: ModelInfo[] | null = null
 
+/**
+ * Test-only. Without this, the first `/api/models` payload a test file fetches
+ * would be silently reused by every later test in that file, so a test that
+ * needs different `available_variants` would quietly assert against the wrong
+ * deployment. Called from src/test/setup.ts after each test.
+ */
+export function __resetModelsCache(): void {
+  modelsCache = null
+}
+
 export function useModels(): HookState<ModelInfo[]> {
   const [state, setState] = useState<HookState<ModelInfo[]>>({
     data: modelsCache,
