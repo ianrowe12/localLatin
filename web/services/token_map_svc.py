@@ -205,7 +205,22 @@ def resolve_example_id(
     return eid if eid in store.ig_artifact_paths else None
 
 
-def load_token_map(store: DataStore, example_id: int) -> TokenMapResponse | None:
+def load_token_map(
+    store: DataStore,
+    example_id: int,
+    method: str | None = None,
+    variant: str | None = None,
+) -> TokenMapResponse | None:
+    """Build the token-map payload for one example.
+
+    ``method`` / ``variant`` narrow which ``pair_matrices`` and ``top_highlights``
+    entries are serialised. An unfiltered response carries every persisted
+    method x variant matrix (7 x 4 dense QxC float grids, tens of MB on long
+    pairs), which the UI never renders all at once -- it shows exactly one cell
+    of that grid. ``available_methods`` / ``available_variants`` always report
+    the artifact's full contents regardless of the filters, so a client can
+    still discover what else it may request (issue #72).
+    """
     if example_id not in store.ig_artifact_paths:
         return None
 
@@ -267,35 +282,40 @@ def load_token_map(store: DataStore, example_id: int) -> TokenMapResponse | None
         cos = np.array(sim_matrix)
         ig_weighted = (cos * weight * sign).tolist()
 
-    # Load every persisted method x variant matrix defensively (skip missing keys)
+    # What this artifact actually holds. Reported in full even when the request
+    # narrows the payload, so the client can discover the other combinations.
+    available_methods = [
+        m for m in ATTRIBUTION_METHODS
+        if any(f"pair_matrix_{m}_{v}" in data for v in ATTRIBUTION_VARIANTS)
+    ]
+    available_variants = [
+        v for v in ATTRIBUTION_VARIANTS
+        if any(f"pair_matrix_{m}_{v}" in data for m in ATTRIBUTION_METHODS)
+    ]
+
+    wanted_methods = [m for m in available_methods if method is None or m == method]
+    wanted_variants = [v for v in available_variants if variant is None or v == variant]
+
+    # Load the requested method x variant matrices defensively (skip missing keys)
     pair_matrices: dict[str, dict[str, list[list[float]]]] = {}
     top_highlights: dict[str, dict[str, dict[str, list[int]]]] = {}
-    available_methods: list[str] = []
-    variants_seen: set[str] = set()
 
-    for method in ATTRIBUTION_METHODS:
-        method_present = False
-        for variant in ATTRIBUTION_VARIANTS:
-            mkey = f"pair_matrix_{method}_{variant}"
-            qk = f"topk_{method}_{variant}_query"
-            ck = f"topk_{method}_{variant}_candidate"
+    for m in wanted_methods:
+        for v in wanted_variants:
+            mkey = f"pair_matrix_{m}_{v}"
+            qk = f"topk_{m}_{v}_query"
+            ck = f"topk_{m}_{v}_candidate"
             if mkey not in data:
                 continue
             mat = np.asarray(data[mkey], dtype=np.float32)
             # Trim to actual sequence lengths so the response never reports padding cells
             mat = mat[:q_len, :c_len]
-            pair_matrices.setdefault(method, {})[variant] = mat.tolist()
+            pair_matrices.setdefault(m, {})[v] = mat.tolist()
             if qk in data and ck in data:
-                top_highlights.setdefault(method, {})[variant] = {
+                top_highlights.setdefault(m, {})[v] = {
                     "query": np.asarray(data[qk]).astype(int).tolist(),
                     "candidate": np.asarray(data[ck]).astype(int).tolist(),
                 }
-            variants_seen.add(variant)
-            method_present = True
-        if method_present:
-            available_methods.append(method)
-
-    available_variants = [v for v in ATTRIBUTION_VARIANTS if v in variants_seen]
 
     # Top matches (sparse format for frontend connection lines)
     top_matches: dict[str, list[TopMatch]] = {}

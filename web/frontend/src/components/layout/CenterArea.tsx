@@ -12,6 +12,7 @@ import DocumentPanel from '../document/DocumentPanel'
 import DraggableDivider from './DraggableDivider'
 import { buildWordMatchMap } from '../../utils/wordSimilarity'
 import { useTokenMap, type TokenMapResponse, type TopMatch } from '../../api/tokenMap'
+import { toAttributionVariant } from '../../api/variants'
 import { useTokens } from '../../contexts/TokenContext'
 
 export default function CenterArea() {
@@ -24,6 +25,7 @@ export default function CenterArea() {
     activeQueryId,
     activePredictionRank,
     activeModel,
+    activeVariant,
     overrideCandidateDir,
     setOverrideCandidateDir,
   } = useApp()
@@ -32,7 +34,7 @@ export default function CenterArea() {
   const queryDetail = useQueryDetail(activeQueryId)
 
   // Fetch predictions
-  const predictions = usePredictions(activeQueryId, activeModel)
+  const predictions = usePredictions(activeQueryId, activeModel, activeVariant)
 
   // Derive current prediction
   const currentPrediction = useMemo(() => {
@@ -74,18 +76,21 @@ export default function CenterArea() {
     return buildWordMatchMap(queryDetail.data.tokens, candidateTokens)
   }, [queryDetail.data?.tokens, candidateTokens])
 
-  const {
-    selectedMethod,
-    selectedVariant,
-    viewMode,
-    setAvailableMethods,
-    clearAllPins,
-  } = useTokens()
+  const { selectedMethod, viewMode, setAvailableMethods, clearAllPins } = useTokens()
+
+  // The reviewer's post-processing choice drives the highlights too, so the
+  // evidence they read always belongs to the ranking they are judging. The
+  // artifacts call the uncorrected variant "baseline" where the prediction
+  // CSVs call it "raw" -- toAttributionVariant is the one place that bridges
+  // the two vocabularies.
+  const attributionVariant = toAttributionVariant(activeVariant)
 
   const tokenMapResult = useTokenMap(
     activeQueryId,
     candidateDir,
     activeModel || undefined,
+    selectedMethod,
+    attributionVariant,
   )
 
   // Keep the AttributionMethodSelector's available list in sync with whatever
@@ -112,7 +117,7 @@ export default function CenterArea() {
     if (!data) return wordMatchMap
     const selected =
       selectedMethod && data.pair_matrices
-        ? data.pair_matrices[selectedMethod]?.[selectedVariant]
+        ? data.pair_matrices[selectedMethod]?.[attributionVariant]
         : undefined
     if (!selected) return data
 
@@ -148,7 +153,7 @@ export default function CenterArea() {
       top_matches: topMatches,
     }
     return swapped
-  }, [tokenMapResult.data, selectedMethod, selectedVariant, wordMatchMap])
+  }, [tokenMapResult.data, selectedMethod, attributionVariant, wordMatchMap])
 
   // Note: we deliberately do NOT auto-pin top-attribution tokens on pair entry.
   // Connection lines are drawn purely on hover (see useConnectionState). Token

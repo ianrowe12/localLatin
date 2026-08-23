@@ -8,12 +8,13 @@ export default function PredictionList() {
   const {
     activeQueryId,
     activeModel,
+    activeVariant,
     activePredictionRank,
     setActivePredictionRank,
     overrideCandidateDir,
     setOverrideCandidateDir,
   } = useApp()
-  const { data, loading } = usePredictions(activeQueryId, activeModel)
+  const { data, loading } = usePredictions(activeQueryId, activeModel, activeVariant)
 
   // If a gallery override candidate happens to be in the current model's
   // top-10, sync the prediction list selection and release the override so

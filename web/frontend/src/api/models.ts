@@ -64,17 +64,21 @@ interface HookState<T> {
   error: string | null
 }
 
+// Module-level rather than per-hook: the model list is immutable for the life
+// of a deployment and has more than one consumer (ModelSelector and the
+// variant selector), which would otherwise each fetch it.
+let modelsCache: ModelInfo[] | null = null
+
 export function useModels(): HookState<ModelInfo[]> {
   const [state, setState] = useState<HookState<ModelInfo[]>>({
-    data: null,
+    data: modelsCache,
     loading: false,
     error: null,
   })
-  const cache = useRef<ModelInfo[] | null>(null)
 
   useEffect(() => {
-    if (cache.current) {
-      setState({ data: cache.current, loading: false, error: null })
+    if (modelsCache) {
+      setState({ data: modelsCache, loading: false, error: null })
       return
     }
 
@@ -84,7 +88,7 @@ export function useModels(): HookState<ModelInfo[]> {
     apiFetch<ModelInfo[]>('/api/models')
       .then((data) => {
         if (cancelled) return
-        cache.current = data
+        modelsCache = data
         setState({ data, loading: false, error: null })
       })
       .catch((err: Error) => {

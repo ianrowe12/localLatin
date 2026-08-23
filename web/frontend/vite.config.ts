@@ -1,8 +1,16 @@
+/// <reference types="vitest" />
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
+  test: {
+    // Component tests (VariantSelector, feedback wiring) need a DOM; the pure
+    // helper tests run happily under jsdom too.
+    environment: 'jsdom',
+    globals: false,
+    setupFiles: ['./src/test/setup.ts'],
+  },
   base: process.env.VITE_BASE_PATH || '/',
   build: {
     rollupOptions: {

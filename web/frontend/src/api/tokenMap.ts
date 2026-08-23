@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { apiFetch } from './client'
+import type { AttributionVariant } from './variants'
+
+// The attribution variant vocabulary lives in ./variants next to the
+// prediction variants and the single raw<->baseline mapping
+// (`toAttributionVariant`). Re-exported here so existing importers of
+// `AttributionVariant` from this module keep working.
+export type { AttributionVariant } from './variants'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -31,8 +38,6 @@ export type AttributionMethod =
   | 'attention_standalone'
   | 'retrieval_mark'
 
-export type AttributionVariant = 'baseline' | 'abtt'
-
 export interface AttributionTopHighlights {
   query: number[]
   candidate: number[]
@@ -57,6 +62,11 @@ export interface TokenMapResponse {
   candidate_ig_abtt: number[]
   auto_highlights: AutoHighlight[] | null
   available_methods?: AttributionMethod[]
+  // Every variant present in the artifact, regardless of the ?variant= filter
+  // applied to this particular response.
+  available_variants?: AttributionVariant[]
+  query_sif_weights?: number[] | null
+  candidate_sif_weights?: number[] | null
   pair_matrices?: Partial<
     Record<AttributionMethod, Partial<Record<AttributionVariant, number[][]>>>
   >
@@ -78,6 +88,7 @@ export interface TokenMapExampleCard {
   candidate_folder_id: string
   candidate_label: string
   methods_available: AttributionMethod[]
+  variants_available?: AttributionVariant[]
   gold_similar: number
   baseline_pred: number
   abtt_pred: number
@@ -98,10 +109,24 @@ interface HookState<T> {
   error: string | null
 }
 
+/**
+ * Fetch the token map for one (query, candidate) pair.
+ *
+ * `method` and `variant` are forwarded as `?method=&variant=` so the backend
+ * serialises only the single matrix the evidence view renders. Unfiltered, the
+ * response carries every persisted method x variant grid — tens of megabytes
+ * on long pairs (issue #72). `available_methods` / `available_variants` still
+ * describe the whole artifact, so narrowing the fetch never hides options.
+ *
+ * `variant` is an *attribution* variant: callers holding the reviewer's
+ * prediction variant must map it through `toAttributionVariant`.
+ */
 export function useTokenMap(
   queryId: number | null,
   candidateId: string | null,
   model?: string,
+  method?: AttributionMethod | null,
+  variant?: AttributionVariant,
 ): HookState<TokenMapResponse> {
   const [state, setState] = useState<HookState<TokenMapResponse>>({
     data: null,
@@ -116,7 +141,7 @@ export function useTokenMap(
       return
     }
 
-    const key = `${queryId}:${candidateId}:${model ?? ''}`
+    const key = `${queryId}:${candidateId}:${model ?? ''}:${method ?? ''}:${variant ?? ''}`
     const cached = cache.current.get(key)
     if (cached) {
       setState({ data: cached, loading: false, error: null })
@@ -128,6 +153,8 @@ export function useTokenMap(
 
     const params = new URLSearchParams({ candidate_dir: candidateId })
     if (model) params.set('model', model)
+    if (method) params.set('method', method)
+    if (variant) params.set('variant', variant)
     apiFetch<TokenMapResponse>(
       `/api/query/${queryId}/token_map?${params}`,
     )
@@ -144,7 +171,7 @@ export function useTokenMap(
     return () => {
       cancelled = true
     }
-  }, [queryId, candidateId, model])
+  }, [queryId, candidateId, model, method, variant])
 
   return state
 }

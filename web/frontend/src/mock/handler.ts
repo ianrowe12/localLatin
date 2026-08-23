@@ -346,12 +346,13 @@ function handlePredictions(
 function handleTokenMap(
   url: string,
 ): TokenMapResponse | { error: { message: string } } {
-  // URL pattern: /api/query/{queryId}/token-map/{candidateId}
-  const match = url.match(/\/api\/query\/(\d+)\/token-map\/([^?]+)/)
+  // URL pattern: /api/query/{queryId}/token_map?candidate_dir=...&method=&variant=
+  const match = url.match(/\/api\/query\/(\d+)\/token_map\?(.*)$/)
   if (!match) return { error: { message: 'Invalid token map URL' } }
 
   const queryId = match[1]
-  const candidateId = decodeURIComponent(match[2])
+  const params = new URLSearchParams(match[2])
+  const candidateId = params.get('candidate_dir') ?? ''
   const key = `${queryId}-${candidateId}`
 
   const data = MOCK_TOKEN_MAPS.get(key)
@@ -455,8 +456,8 @@ export function installMockHandler(): void {
       return mockResponse(result)
     }
 
-    // Token map: /api/query/{id}/token-map/{candidateId}
-    if (url.match(/\/api\/query\/\d+\/token-map\//)) {
+    // Token map: /api/query/{id}/token_map?candidate_dir=...
+    if (url.match(/\/api\/query\/\d+\/token_map\?/)) {
       const result = handleTokenMap(url)
       if ('error' in result) {
         return mockResponse(result, 404)
