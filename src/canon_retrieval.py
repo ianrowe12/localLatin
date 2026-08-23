@@ -93,8 +93,145 @@ def last_token_pool(hidden: np.ndarray, attention_mask: np.ndarray) -> np.ndarra
 
 
 def l2_normalize(x: np.ndarray, axis: int = 1, eps: float = 1e-12) -> np.ndarray:
+    """L2-normalize along ``axis``.
+
+    Note on degenerate rows: the ``eps`` floor means a zero vector is mapped to
+    a zero vector (``0 / eps == 0``), *not* to NaN. Cosine scores against such a
+    row are therefore 0.0 rather than undefined, which silently hides the fact
+    that the row carries no signal. Worse, if principal-component removal with
+    ``center=True`` runs first (see :class:`sif_abtt.EmbeddingCleaner`), every
+    zero vector becomes the same non-zero vector ``-mean_vec``, so two unrelated
+    empty documents normalize to *identical* directions and score a spurious
+    cosine of exactly 1.0. Callers must therefore detect degenerate rows on the
+    **pre-ABTT** embeddings with :func:`zero_norm_mask` and exclude them; see
+    :func:`build_directory_index` and :func:`top_k_directories`.
+    """
     norm = np.linalg.norm(x, axis=axis, keepdims=True)
     return x / np.maximum(norm, eps)
+
+
+# --- Degenerate-embedding guards (issue #66) --------------------------------
+
+ZERO_NORM_EPS = 1e-8
+
+
+def zero_norm_mask(embeddings: np.ndarray, eps: float = ZERO_NORM_EPS) -> np.ndarray:
+    """Boolean mask of rows that carry no usable direction.
+
+    ``True`` where a row's L2 norm is <= ``eps`` or is not finite (NaN / inf).
+    Such rows must never take part in cosine retrieval: normalizing them yields
+    either the zero vector or NaN, and after mean-centering they all collapse
+    onto a single shared direction (spurious cosine 1.0).
+
+    Works on 1-D (single vector) and 2-D (n_rows, dim) input; a 1-D input
+    returns a 1-element mask.
+    """
+    arr = np.asarray(embeddings, dtype=np.float64)
+    if arr.ndim == 1:
+        arr = arr[None, :]
+    if arr.ndim != 2:
+        raise ValueError(f"zero_norm_mask expects a 1-D or 2-D array, got ndim={arr.ndim}.")
+    nonfinite = ~np.isfinite(arr).all(axis=1)
+    norms = np.linalg.norm(np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0), axis=1)
+    return nonfinite | (norms <= eps)
+
+
+def blank_text_mask(texts: Sequence) -> np.ndarray:
+    """Boolean mask of entries that are empty, whitespace-only, or missing.
+
+    Source-level companion to :func:`zero_norm_mask`: an empty ``.txt`` file has
+    no content to embed, so whatever vector the model emits for it is an artefact
+    of the tokenizer's special tokens rather than of the document. Two such files
+    can be byte-identical after tokenization and score a genuine-looking cosine of
+    1.0 even under mean pooling, where the norm is not zero.
+    """
+    out = np.zeros(len(texts), dtype=bool)
+    for i, t in enumerate(texts):
+        if t is None:
+            out[i] = True
+            continue
+        if isinstance(t, float) and np.isnan(t):  # pandas NaN for a missing cell
+            out[i] = True
+            continue
+        out[i] = not str(t).strip()
+    return out
+
+
+def build_directory_index(
+    folder_ids: Sequence,
+    exclude_refs: np.ndarray = None,
+) -> Tuple[dict, List[str], List[str]]:
+    """Group reference indices by directory, dropping excluded reference files.
+
+    Parameters
+    ----------
+    folder_ids:
+        Directory label per reference file, positionally aligned with the
+        reference embedding matrix.
+    exclude_refs:
+        Optional boolean mask (same length) marking reference files to exclude.
+
+    Returns
+    -------
+    (dir_to_indices, dropped_dirs, excluded_files_by_dir_order)
+        ``dir_to_indices`` maps directory name -> usable reference row indices,
+        containing only directories with at least one usable file.
+        ``dropped_dirs`` lists, in first-seen order, directories that lost every
+        one of their files and are therefore not retrievable at all.
+        The third element lists the directory of each excluded reference file,
+        in reference order, for logging.
+    """
+    n = len(folder_ids)
+    if exclude_refs is None:
+        exclude_refs = np.zeros(n, dtype=bool)
+    else:
+        exclude_refs = np.asarray(exclude_refs, dtype=bool)
+        if exclude_refs.shape != (n,):
+            raise ValueError(
+                f"exclude_refs has shape {exclude_refs.shape}, expected ({n},)."
+            )
+
+    all_dirs: List[str] = []
+    dir_to_indices: dict = {}
+    excluded_dirs: List[str] = []
+    for i, fid in enumerate(folder_ids):
+        name = str(fid)
+        if name not in dir_to_indices:
+            dir_to_indices[name] = []
+            all_dirs.append(name)
+        if exclude_refs[i]:
+            excluded_dirs.append(name)
+            continue
+        dir_to_indices[name].append(i)
+
+    dropped_dirs = [d for d in all_dirs if not dir_to_indices[d]]
+    for d in dropped_dirs:
+        del dir_to_indices[d]
+    return dir_to_indices, dropped_dirs, excluded_dirs
+
+
+def top_k_directories(
+    query_sims: np.ndarray,
+    dir_to_indices: dict,
+    top_k: int = 10,
+) -> List[Tuple[str, float]]:
+    """Top-``top_k`` (directory, max-cosine) pairs for one query.
+
+    ``dir_to_indices`` must already have excluded reference rows removed (see
+    :func:`build_directory_index`), so every listed directory has >= 1 usable
+    file and ``np.max`` is well defined.
+
+    Ties are broken by ``dir_to_indices`` insertion order (Python's sort is
+    stable). This is deliberate: it reproduces the pre-guard ordering byte for
+    byte on queries the guard does not touch.
+    """
+    dir_scores: List[Tuple[str, float]] = []
+    for dir_name, file_indices in dir_to_indices.items():
+        if not file_indices:
+            continue
+        dir_scores.append((dir_name, float(np.max(query_sims[file_indices]))))
+    dir_scores.sort(key=lambda x: x[1], reverse=True)
+    return dir_scores[:top_k]
 
 
 def similarity_matrix(embeddings_norm: np.ndarray) -> np.ndarray:
