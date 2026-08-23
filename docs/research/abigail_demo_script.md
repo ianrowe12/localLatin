@@ -24,18 +24,22 @@ the ranking."
 Model **LaTa**. Type `C1525.56v.3` into the sidebar search and open it (file_id 1147).
 The text is Serdica canon XVII, `Osius episcopus dixit`.
 
-| Variant | Top-1 | Score | Runner-up |
-|---|---|---|---|
-| Raw | CANT.328.12 | 0.854 | CANT.328.5 at 0.854, CANT.328.25 at 0.853 |
-| ABTT | CSAR.347.17 | 0.725 | Can.apost.45 at 0.405 |
-| SIF | CSAR.347.17 | 0.928 | CANT.328.25 at 0.758 |
-| SIF+ABTT | CSAR.347.17 | 0.790 | CVAI.442.8 at 0.342 |
+| Variant | Top-1 | Score | Runner-up | Gap to runner-up |
+|---|---|---|---|---|
+| Raw | CANT.328.12 | 0.8541 | CANT.328.5 at 0.8535 | **0.0006** |
+| ABTT | CSAR.347.17 | 0.7246 | Can.apost.45 at 0.4053 | 0.319 |
+| SIF | CSAR.347.17 | 0.9277 | CANT.328.25 at 0.7579 | 0.170 |
+| SIF+ABTT | CSAR.347.17 | 0.7899 | CVAI.442.8 at 0.3422 | 0.448 |
 
-This is the paper's argument in one screen. Under **Raw** the top three candidates sit inside
-0.001 of each other, so the ranking is effectively a coin flip and it lands on Antioch. Every
-corrected variant puts Serdica canon 17 first, and separates it from the field by 0.4 or more.
-`CSAR` is the Serdica collection, and the query is a Serdica canon, so the corrected variants are
-also right.
+This is the paper's argument in one screen. Under **Raw** the top three candidates span
+0.0014 in total (rank 1 to rank 2 is 0.0006), so the ranking is effectively a coin flip and it
+lands on Antioch. Every corrected variant instead puts Serdica canon 17 first, and pulls it clear
+of the runner-up: by 0.17 under SIF, 0.32 under ABTT and 0.45 under SIF+ABTT. `CSAR` is the
+Serdica collection, and the query is a Serdica canon, so the corrected variants are also right.
+
+Worth saying plainly: the size of that gap is variant-specific. SIF alone reorders correctly but
+still leaves the field bunched; it takes ABTT, which removes the dominant embedding directions, to
+open real distance.
 
 Point at the score column while switching the toggle. The collapse of the Raw scores into a narrow
 band near the top is the anisotropy the post-processing removes.
@@ -76,10 +80,15 @@ means, made visible.
 
 Caveat to state out loud: the third view mode, **Attribution** (integrated gradients and the other
 six attribution methods, per variant), is PI-only and needs a precomputed artifact for the exact
-query/candidate pair. Those 120 artifacts cover the labelled canon pairs used in the paper, not the
-unlabelled review queue, so the Attribution toggle will not appear on the queries above. Do not
-promise it on a live query. If Abigail asks for token-level attribution, describe it from the paper
-figures rather than hunting for it in the app.
+query/candidate pair. The 120 artifacts cover the labelled canon pairs used in the paper, not the
+unlabelled review queue, so they almost never line up with a live query.
+
+Measured against the deployed data: across all 2,238 queries, all six models and the full top 10,
+exactly **6 (query, candidate) pairs** have an artifact, and which of them are reachable depends on
+the variant selected (6 under Raw, 4 under SIF, 2 under ABTT, 1 under SIF+ABTT). None of them is
+under LaTa or PhilTa with SIF+ABTT selected, and none is on any of the demo queries above. So the
+Attribution toggle will not appear during this demo. Do not promise it on a live query; if Abigail
+asks for token-level attribution, describe it from the paper figures instead.
 
 ## 6. Notes reload and multi-select
 

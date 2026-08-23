@@ -33,9 +33,27 @@ if [[ ! -d "${REPO_DIR}" ]]; then
 fi
 
 # --- Data release sync -------------------------------------------------------
-# Idempotent: an already-installed tag is a no-op, and a cached tarball whose
-# checksum still matches is not re-downloaded.
+# NOTE ON ERROR HANDLING: this function is invoked from a conditional context
+# (`sync_data_release || ...`), which suppresses `set -e` for everything it
+# calls. Nothing in here may rely on errexit. Every command whose failure
+# matters is therefore checked explicitly and turned into `return 1`, and the
+# installed-state file is written only after the install is verified complete.
+# The realistic failure this guards against is ENOSPC part-way through the
+# extract of a ~224 MB tarball into a ~350 MB staging tree.
+#
+# Idempotent: a release already installed byte-for-byte is a no-op, and a
+# cached tarball whose checksum still matches is not re-downloaded.
 sync_data_release() {
+    local rc=0
+    _sync_data_release_impl || rc=$?
+    # Always prune staging, on success and on failure, including stages left
+    # behind by an earlier crashed run. This is the ~350 MB that must not
+    # accumulate on a small VM.
+    rm -rf "${DATA_CACHE_DIR}"/stage-* 2>/dev/null || true
+    return "${rc}"
+}
+
+_sync_data_release_impl() {
     if [[ -z "${DATA_RELEASE_TAG}" ]]; then
         info "DATA_RELEASE_TAG not set — skipping data sync (using data already on disk)."
         return 0
@@ -47,14 +65,14 @@ sync_data_release() {
     local base_url="${DATA_RELEASE_BASE_URL:-https://github.com/${DATA_RELEASE_REPO}/releases/download/${DATA_RELEASE_TAG}}"
     local tarball="${DATA_CACHE_DIR}/${asset}"
     local checksum="${tarball}.sha256"
-    local marker="${DATA_CACHE_DIR}/installed-${DATA_RELEASE_TAG}"
+    # ONE state file describing what is currently on disk, as "<tag> <sha256>".
+    # Deliberately not one marker per tag: a per-tag marker makes rolling back
+    # to a previously installed tag a silent no-op that leaves the newer data
+    # in place. Keying on the content hash also makes re-publishing the same
+    # tag with new bytes reinstall instead of skip.
+    local state_file="${DATA_CACHE_DIR}/installed.state"
 
-    if [[ -f "${marker}" ]]; then
-        info "Data release ${DATA_RELEASE_TAG} already installed — skipping."
-        return 0
-    fi
-
-    mkdir -p "${DATA_CACHE_DIR}"
+    mkdir -p "${DATA_CACHE_DIR}" || { error "Cannot create ${DATA_CACHE_DIR}"; return 1; }
 
     info "Fetching data release ${DATA_RELEASE_TAG} from ${DATA_RELEASE_REPO}..."
     if ! curl -sSfL --retry 3 --retry-delay 5 -o "${checksum}.part" "${base_url}/${asset}.sha256"; then
@@ -62,7 +80,19 @@ sync_data_release() {
         error "Check that release ${DATA_RELEASE_TAG} exists and carries both assets."
         return 1
     fi
-    mv -f "${checksum}.part" "${checksum}"
+    mv -f "${checksum}.part" "${checksum}" || { error "Could not install checksum file"; return 1; }
+
+    local want_sha
+    want_sha="$(awk '{print $1}' "${checksum}")"
+    if [[ ! "${want_sha}" =~ ^[0-9a-f]{64}$ ]]; then
+        error "Published checksum for ${asset} is not a sha256: ${want_sha}"
+        return 1
+    fi
+
+    if [[ -f "${state_file}" ]] && [[ "$(cat "${state_file}")" == "${DATA_RELEASE_TAG} ${want_sha}" ]]; then
+        info "Data release ${DATA_RELEASE_TAG} (${want_sha:0:12}) already installed — skipping."
+        return 0
+    fi
 
     local have_valid_tarball=0
     if [[ -f "${tarball}" ]] && ( cd "${DATA_CACHE_DIR}" && sha256sum -c --status "$(basename "${checksum}")" ); then
@@ -73,9 +103,10 @@ sync_data_release() {
     if [[ "${have_valid_tarball}" -eq 0 ]]; then
         if ! curl -sSfL --retry 3 --retry-delay 5 -o "${tarball}.part" "${base_url}/${asset}"; then
             error "Could not download ${base_url}/${asset}"
+            rm -f "${tarball}.part"
             return 1
         fi
-        mv -f "${tarball}.part" "${tarball}"
+        mv -f "${tarball}.part" "${tarball}" || { error "Could not install ${asset}"; return 1; }
         if ! ( cd "${DATA_CACHE_DIR}" && sha256sum -c "$(basename "${checksum}")" ); then
             error "sha256 verification failed for ${asset} — refusing to unpack."
             rm -f "${tarball}"
@@ -87,9 +118,15 @@ sync_data_release() {
     # Every member must live under runs/active/. This is what keeps the payload
     # from ever reaching the reviewer feedback database, which the production
     # config puts at data/feedback.db — outside this prefix and never touched.
+    # The listing is also the expected-file count the install is checked against.
     info "Validating archive member paths..."
-    local entry
+    local listing entry expected=0
+    if ! listing="$(tar -tzf "${tarball}")"; then
+        error "Could not list ${asset} — the cached tarball is unreadable."
+        return 1
+    fi
     while IFS= read -r entry; do
+        [[ -z "${entry}" ]] && continue
         case "${entry}" in
             runs/active/*) ;;
             *) error "Refusing archive: member outside runs/active/: ${entry}"; return 1 ;;
@@ -97,35 +134,99 @@ sync_data_release() {
         case "${entry}" in
             *..*) error "Refusing archive: path traversal member: ${entry}"; return 1 ;;
         esac
-    done < <(tar -tzf "${tarball}")
+        # Directory members end in '/'; only files are installed and counted.
+        case "${entry}" in
+            */) ;;
+            *) expected=$((expected + 1)) ;;
+        esac
+    done <<< "${listing}"
 
-    local stage="${DATA_CACHE_DIR}/stage-${DATA_RELEASE_TAG}"
-    rm -rf "${stage}"
-    mkdir -p "${stage}"
-    info "Unpacking to staging directory..."
-    tar -xzf "${tarball}" -C "${stage}"
-
-    # Install file by file with an atomic rename, so a reviewer hitting the
-    # still-running old service never reads a half-written CSV.
-    info "Installing data payload into ${REPO_DIR}..."
-    local installed=0 src rel dest
-    while IFS= read -r -d '' src; do
-        rel="${src#"${stage}/"}"
-        dest="${REPO_DIR}/${rel}"
-        mkdir -p "$(dirname "${dest}")"
-        cp -f "${src}" "${dest}.deploy-tmp"
-        mv -f "${dest}.deploy-tmp" "${dest}"
-        installed=$((installed + 1))
-    done < <(find "${stage}" -type f -print0)
-    rm -rf "${stage}"
-
-    if [[ "${installed}" -eq 0 ]]; then
-        error "Data release ${DATA_RELEASE_TAG} contained no files."
+    if [[ "${expected}" -eq 0 ]]; then
+        error "Data release ${DATA_RELEASE_TAG} contains no files."
         return 1
     fi
 
-    printf '%s\n' "${DATA_RELEASE_TAG}" > "${marker}"
-    info "Installed ${installed} data files from ${DATA_RELEASE_TAG}."
+    # Cheap ENOSPC preflight: the staging copy plus the installed copy roughly
+    # doubles the uncompressed payload, and the tarball is already on disk.
+    local tar_kb avail_kb need_kb
+    tar_kb="$(du -k "${tarball}" | cut -f1)"
+    avail_kb="$(df -Pk "${DATA_CACHE_DIR}" | awk 'NR==2 {print $4}')"
+    need_kb=$((tar_kb * 4))
+    if [[ -n "${avail_kb}" ]] && [[ "${avail_kb}" -lt "${need_kb}" ]]; then
+        error "Not enough free space to unpack ${asset}: need ~$((need_kb / 1024)) MB, have $((avail_kb / 1024)) MB."
+        error "Free space under ${DATA_CACHE_DIR} (old cached tarballs are safe to delete) and re-run."
+        return 1
+    fi
+
+    local stage="${DATA_CACHE_DIR}/stage-${DATA_RELEASE_TAG}"
+    rm -rf "${stage}"
+    mkdir -p "${stage}" || { error "Cannot create staging dir ${stage}"; return 1; }
+    info "Unpacking ${expected} files to staging directory..."
+    if ! tar -xzf "${tarball}" -C "${stage}"; then
+        error "Extraction of ${asset} failed (disk full? corrupt cache?) — nothing was installed."
+        return 1
+    fi
+
+    local staged
+    staged="$(find "${stage}" -type f | wc -l | tr -d ' ')"
+    if [[ "${staged}" -ne "${expected}" ]]; then
+        error "Extraction incomplete: staged ${staged} files, archive lists ${expected} — nothing was installed."
+        return 1
+    fi
+
+    # Install file by file with an atomic rename, so a reviewer hitting the
+    # still-running old service never reads a half-written CSV. A failure here
+    # aborts before the state file is written, so the next deploy retries.
+    info "Installing data payload into ${REPO_DIR}..."
+    local installed=0 src rel dest src_size dest_size
+    while IFS= read -r -d '' src; do
+        rel="${src#"${stage}/"}"
+        dest="${REPO_DIR}/${rel}"
+        if ! mkdir -p "$(dirname "${dest}")"; then
+            error "Could not create $(dirname "${dest}")"
+            return 1
+        fi
+        if ! cp -f "${src}" "${dest}.deploy-tmp"; then
+            error "Could not write ${dest}.deploy-tmp (disk full?) — install aborted part-way."
+            rm -f "${dest}.deploy-tmp"
+            return 1
+        fi
+        src_size="$(stat -c '%s' "${src}")"
+        dest_size="$(stat -c '%s' "${dest}.deploy-tmp")"
+        if [[ "${src_size}" != "${dest_size}" ]]; then
+            error "Truncated copy of ${rel}: ${dest_size} bytes, expected ${src_size} — install aborted."
+            rm -f "${dest}.deploy-tmp"
+            return 1
+        fi
+        if ! mv -f "${dest}.deploy-tmp" "${dest}"; then
+            error "Could not install ${dest}"
+            rm -f "${dest}.deploy-tmp"
+            return 1
+        fi
+        installed=$((installed + 1))
+    done < <(find "${stage}" -type f -print0)
+
+    if [[ "${installed}" -ne "${expected}" ]]; then
+        error "Install incomplete: ${installed} of ${expected} files — not recording the release as installed."
+        return 1
+    fi
+
+    # Only now, with every archived file verified onto disk at full size, is the
+    # release recorded as installed.
+    printf '%s %s\n' "${DATA_RELEASE_TAG}" "${want_sha}" > "${state_file}" || {
+        error "Could not write ${state_file}"
+        return 1
+    }
+    info "Installed ${installed}/${expected} data files from ${DATA_RELEASE_TAG} (${want_sha:0:12})."
+
+    # Keep the cache bounded: any other release's tarball is re-downloadable.
+    local stale
+    while IFS= read -r stale; do
+        [[ -z "${stale}" ]] && continue
+        [[ "${stale}" == "${tarball}" || "${stale}" == "${checksum}" ]] && continue
+        info "Pruning stale cache entry $(basename "${stale}")"
+        rm -f "${stale}"
+    done < <(find "${DATA_CACHE_DIR}" -maxdepth 1 -type f -name 'locallatin-*.tar.gz*' 2>/dev/null)
 }
 
 # Ensure node is available
@@ -274,13 +375,28 @@ else
     exit 1
 fi
 
+# LOCALLATIN_SMOKE_WRITE gates a real write into the reviewer feedback DB, so
+# it is parsed explicitly rather than tested for non-emptiness: `=0` and
+# `=false` are the obvious ways an operator says "no", and `${VAR:+...}` would
+# have read both as yes. Anything unrecognised is a hard error rather than a
+# guess in either direction.
+SMOKE_WRITE_ARGS=()
+case "${LOCALLATIN_SMOKE_WRITE:-}" in
+    ""|0|false|FALSE|False|no|NO|off|OFF) ;;
+    1|true|TRUE|True|yes|YES|on|ON) SMOKE_WRITE_ARGS=(--write-check) ;;
+    *)
+        error "Unrecognised LOCALLATIN_SMOKE_WRITE=${LOCALLATIN_SMOKE_WRITE}; use 1/true or 0/false."
+        exit 1
+        ;;
+esac
+
 if [[ -n "${LOCALLATIN_SMOKE_USERNAME:-}" && -n "${LOCALLATIN_SMOKE_PASSWORD:-}" ]]; then
     info "Running authenticated reviewer-pilot smoke checks..."
     "${PYTHON_BIN}" "${REPO_DIR}/scripts/webapp/smoke_reviewer_pilot.py" \
         --base-url "${LOCAL_BASE_URL}" \
         --username "${LOCALLATIN_SMOKE_USERNAME}" \
         --password "${LOCALLATIN_SMOKE_PASSWORD}" \
-        ${LOCALLATIN_SMOKE_WRITE:+--write-check}
+        "${SMOKE_WRITE_ARGS[@]+"${SMOKE_WRITE_ARGS[@]}"}"
 else
     info "Skipping authenticated smoke checks. Set LOCALLATIN_SMOKE_USERNAME and LOCALLATIN_SMOKE_PASSWORD to enable them."
 fi

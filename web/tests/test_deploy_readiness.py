@@ -66,12 +66,88 @@ def test_deploy_script_syncs_the_data_release_idempotently() -> None:
     assert "runs/active/*) ;;" in deploy
     assert "member outside runs/active/" in deploy
     assert "path traversal member" in deploy
-    # Idempotence: an installed tag is a no-op and a good cached tarball is not
-    # re-downloaded.
+    # Idempotence: an installed release is a no-op and a good cached tarball is
+    # not re-downloaded.
     assert "already installed" in deploy
     assert "already matches the published checksum" in deploy
     # Atomic per-file install so the running service never reads a half file.
     assert ".deploy-tmp" in deploy
+
+
+def test_data_sync_failures_propagate_rather_than_recording_success() -> None:
+    """sync_data_release runs in a `|| ...` context, which suppresses errexit.
+
+    Every failure that matters must therefore be checked explicitly, and the
+    installed-state file must be written only after the install is verified
+    complete. The realistic trigger is ENOSPC part-way through unpacking a
+    224 MB tarball into a ~350 MB staging tree.
+    """
+    deploy = (ROOT / "deploy" / "deploy.sh").read_text(encoding="utf-8")
+
+    # The suppression is called out so nobody reintroduces a bare command.
+    assert "suppresses `set -e`" in deploy
+    # tar's exit status is checked rather than assumed.
+    assert 'if ! tar -xzf "${tarball}" -C "${stage}"; then' in deploy
+    assert "nothing was installed" in deploy
+    # Extract and install are both reconciled against the archive listing.
+    assert "Extraction incomplete: staged" in deploy
+    assert "Install incomplete:" in deploy
+    assert 'if [[ "${staged}" -ne "${expected}" ]]; then' in deploy
+    assert 'if [[ "${installed}" -ne "${expected}" ]]; then' in deploy
+    # A short copy must not pass as installed.
+    assert "Truncated copy of" in deploy
+    # The state file is written after those checks, never before.
+    install_ok = deploy.index('if [[ "${installed}" -ne "${expected}" ]]; then')
+    state_write = deploy.index('printf \'%s %s\\n\' "${DATA_RELEASE_TAG}" "${want_sha}"')
+    assert install_ok < state_write
+    # Staging is pruned on both the success and the failure path.
+    assert 'rm -rf "${DATA_CACHE_DIR}"/stage-*' in deploy
+    assert "_sync_data_release_impl || rc=$?" in deploy
+    # Cheap ENOSPC preflight before committing to the extract.
+    assert "Not enough free space to unpack" in deploy
+
+
+def test_installed_state_is_keyed_on_tag_and_content_hash() -> None:
+    """A per-tag marker would make rollback a silent no-op."""
+    deploy = (ROOT / "deploy" / "deploy.sh").read_text(encoding="utf-8")
+
+    assert 'state_file="${DATA_CACHE_DIR}/installed.state"' in deploy
+    assert '"${DATA_RELEASE_TAG} ${want_sha}"' in deploy
+    assert "rolling back" in deploy
+    # The published checksum is fetched before the skip decision, so the skip
+    # can compare content and not just the tag.
+    sha_fetch = deploy.index('want_sha="$(awk')
+    skip_check = deploy.index('already installed — skipping')
+    assert sha_fetch < skip_check
+    # The old per-tag marker path must be gone.
+    assert "installed-${DATA_RELEASE_TAG}" not in deploy
+
+
+def test_smoke_write_flag_is_parsed_not_tested_for_emptiness() -> None:
+    """`${VAR:+--write-check}` reads LOCALLATIN_SMOKE_WRITE=0 as enabled."""
+    deploy = (ROOT / "deploy" / "deploy.sh").read_text(encoding="utf-8")
+
+    assert "${LOCALLATIN_SMOKE_WRITE:+--write-check}" not in deploy
+    assert 'case "${LOCALLATIN_SMOKE_WRITE:-}" in' in deploy
+    assert '""|0|false|FALSE|False|no|NO|off|OFF) ;;' in deploy
+    assert "1|true|TRUE|True|yes|YES|on|ON) SMOKE_WRITE_ARGS=(--write-check) ;;" in deploy
+    assert "Unrecognised LOCALLATIN_SMOKE_WRITE" in deploy
+
+
+def test_data_contract_rejects_present_but_empty_files() -> None:
+    """Existence is not enough: a truncated sync leaves zero-byte CSVs."""
+    contract = (ROOT / "scripts" / "webapp" / "export_webapp_data.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'if [ "$kind" = "file" ] && [ ! -s "$path" ]; then' in contract
+    assert "zero bytes" in contract
+    assert "no usable content" in contract
+    # Every predictions CSV is checked as a file with a data-row count.
+    assert 'unlabelled_predictions_${variant}.csv" file' in contract
+    assert 'phase12f_examples.csv" file' in contract
+    # An artifacts directory of zero-byte NPZ files must not count.
+    assert "-name '*.npz' -size +0" in contract
 
 
 def test_deploy_script_preserves_the_feedback_database() -> None:
@@ -147,6 +223,13 @@ def test_smoke_script_checks_every_variant_and_the_notes_reload_path() -> None:
     assert "/api/feedback/latest" in source
     assert "selected_ranks" in source
     assert "leaked into the" in source
+    # The write path must cost the production DB exactly one row per run:
+    # one POST site, reached from one call.
+    assert source.count('"/api/feedback",') == 1
+    assert source.count("check_notes_round_trip") == 2  # the def and one call
+    assert "DEPLOY SMOKE legacy_unresolved" not in source
+    # The dropped throwaway row's coverage is folded into the same row.
+    assert "write-check CSV export" in source
 
 
 def test_feedback_backup_script_is_valid_and_change_aware() -> None:

@@ -46,9 +46,22 @@ gh variable set DATA_RELEASE_TAG --body data-YYYYMMDD
 On the host, `deploy.sh` then downloads the asset and its `.sha256`, verifies the checksum, and installs it. The stage is opt-in and idempotent:
 
 - No `DATA_RELEASE_TAG` — nothing is downloaded and nothing on disk changes. A host that already carries the payload, and local development, are unaffected.
-- An already-installed tag is a no-op (marker at `.deploy-cache/installed-<tag>`).
+- A release already installed byte-for-byte is a no-op. The installed state lives in a single file, `.deploy-cache/installed.state`, holding `<tag> <sha256>`. Keying it on the content hash rather than the tag alone is what lets you **roll back to an earlier tag** (the state file names a different release, so it reinstalls) and **re-publish the same tag with new bytes** (the hash differs, so it reinstalls). A per-tag marker would silently skip both.
 - A cached tarball whose checksum still matches is not re-downloaded.
 - Each file is installed with an atomic rename, so the still-running old service never reads a half-written CSV.
+
+### Failure handling
+
+`sync_data_release` is called from a `|| ...` context, which suppresses `set -e` for everything inside it. Nothing in the function relies on errexit: every command whose failure matters is checked explicitly and turned into a non-zero return. In particular
+
+- `tar`'s exit status is checked, and the extracted file count is reconciled against the archive listing;
+- each copy is checked for a short write, and the installed count is reconciled against the same listing;
+- `installed.state` is written **only after** both reconciliations pass, so a part-way failure is retried on the next deploy rather than recorded as success;
+- staging is pruned on the success and the failure path, including stages left by an earlier crashed run, so the roughly 350 MB extract never accumulates;
+- other releases' cached tarballs are pruned after a successful install (they are re-downloadable);
+- a `df` preflight refuses to start the extract without roughly 4x the tarball size free.
+
+The failure this chain is built around is ENOSPC part-way through unpacking a 224 MB tarball into a ~350 MB tree.
 
 ### Feedback database safety
 
@@ -58,7 +71,7 @@ The canon text corpora are deliberately *not* in the payload: keeping `data/` ou
 
 ### Fail-fast contract check
 
-After the sync, `deploy.sh` runs `scripts/webapp/export_webapp_data.sh <root> --strict`, which exits non-zero if any required path is absent. Without it a missing CSV surfaces as an opaque uvicorn `FileNotFoundError` behind the health check. Set `DEPLOY_SKIP_DATA_CHECK=1` to bypass.
+After the sync, `deploy.sh` runs `scripts/webapp/export_webapp_data.sh <root> --strict`, which exits non-zero if any required path is absent **or present but empty**: a predictions CSV must be non-zero bytes and carry at least one data row, and `artifacts/` must contain at least one non-empty `.npz`. Existence alone is not a useful check, because what a truncated sync leaves behind is a zero-byte file that `[ -e ]` accepts and the CSV parser then rejects at startup. Without this gate a missing or empty CSV surfaces as an opaque uvicorn traceback behind the health check. Set `DEPLOY_SKIP_DATA_CHECK=1` to bypass.
 
 ## Smoke Checks
 
@@ -94,6 +107,8 @@ To verify DB write/read intentionally, add:
 LOCALLATIN_SMOKE_WRITE=1
 ```
 
-That writes one `legacy_unresolved` smoke feedback row and verifies it through CSV export, then round-trips notes and a multi-select answer through `POST /api/feedback` + `GET /api/feedback/latest?variant=` for two variants — the reviewer's reload path — and checks that a note saved under one variant does not leak into another variant's prefill.
+Accepted values are `1`/`true`/`yes`/`on` to enable and `0`/`false`/`no`/`off`/unset to disable; anything else is a hard error. (It is parsed rather than tested for non-emptiness, because `LOCALLATIN_SMOKE_WRITE=0` is the obvious way to say no and a `${VAR:+...}` test would have read it as yes.)
+
+Enabled, the run writes **exactly one row** into the reviewer feedback DB, and that single row carries every write-path assertion: the DB accepts the write, `/api/feedback/export` reads it back, `GET /api/feedback/latest?variant=` prefills both the notes and the multi-select answer (the reviewer's reload path), and the note does not leak into a different variant's prefill.
 
 In GitHub Actions the deploy job passes `LOCALLATIN_SMOKE_USERNAME` / `LOCALLATIN_SMOKE_PASSWORD` from repository secrets. When they are unset, `deploy.sh` skips the authenticated checks instead of failing.

@@ -213,7 +213,13 @@ def check_notes_round_trip(
         raise RuntimeError(
             f"note saved for {variant!r} leaked into the {other_variant!r} prefill"
         )
-    print(f"  notes + multi-select round-tripped for variant {variant!r}")
+
+    # The same single row also proves the DB write reaches the CSV export, so
+    # no second throwaway row is needed for that.
+    exported, _ = client.request("GET", f"/api/feedback/export?{urlencode({'model': model})}")
+    assert_text(exported, note, "write-check CSV export")
+
+    print(f"  notes + multi-select round-tripped for variant {variant!r} (1 row written)")
 
 
 def main() -> int:
@@ -336,30 +342,15 @@ def main() -> int:
         raise RuntimeError("PDF packet response did not start with a PDF header")
 
     if args.write_check:
-        note = "DEPLOY SMOKE legacy_unresolved write/read check"
-        client.request(
-            "POST",
-            "/api/feedback",
-            json_body={
-                "query_id": query_id,
-                "model_slug": model,
-                "correct_rank": None,
-                "correct_dir": None,
-                "notes": note,
-            },
-            expect=201,
-        )
-        filtered, _ = client.request(
-            "GET",
-            f"/api/feedback/export?{urlencode({'model': model})}",
-        )
-        assert_text(filtered, note, "write-check CSV export")
-
-        # The reviewer-facing reload path, per variant. Writes, so it lives
-        # behind --write-check with the other DB mutations.
+        # Exactly ONE row is written into the production feedback DB, and it
+        # carries every write-path assertion: the DB accepts a write, the CSV
+        # export reads it back, the reviewer's reload path prefills notes and
+        # a multi-select answer, and a note saved under one variant does not
+        # leak into another variant's prefill. Each smoke run leaving three
+        # rows behind was three times the reviewer-visible litter for no
+        # additional coverage.
         other = next(v for v in variants if v != default_variant)
         check_notes_round_trip(client, query_id, model, default_variant, other)
-        check_notes_round_trip(client, query_id, model, other, default_variant)
 
     print("Reviewer pilot smoke checks passed.")
     return 0
