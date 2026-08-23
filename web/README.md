@@ -68,10 +68,33 @@ The webapp reads these files from `data_root` at startup:
 | `canon_labelled/` | 859 directories of candidate .txt files |
 | `runs/active/resubmit/unlabelled/unlabelled_predictions.csv` | Combined model predictions |
 | `runs/active/ig_examples/phase12f_examples.csv` | IG example index |
-| `runs/active/ig_examples/artifacts/` | 40 NPZ files for token map visualization |
+| `runs/active/ig_examples/artifacts/` | Per-model NPZ files for token map visualization (6 model slugs x 20 pair examples) |
 | `runs/active/resubmit/webapp/feedback.db` | Auto-created SQLite feedback storage |
 
 All paths are configurable in `config.yaml` or via `LOCALLATIN_DATA_ROOT` env var.
+
+### Token map artifacts
+
+`/api/token_map/{example_id}` returns `pair_matrices[method][variant]`. Methods
+are `ig`, `bertscore`, `ot`, `attention_weighted`, `dla`,
+`attention_standalone` and `retrieval_mark`; the four variants are:
+
+| Variant | Hidden states | Token aggregation |
+|---------|---------------|-------------------|
+| `baseline` | raw | unweighted |
+| `abtt` | top-D principal components removed | unweighted |
+| `sif` | raw | SIF weights `a / (a + p(t))`, `a = 1e-3` |
+| `sif_abtt` | top-D principal components removed | SIF weights `a / (a + p(t))`, `a = 1e-3` |
+
+`available_variants` on the response (and `variants_available` on each grouped
+example card) lists what a given artifact actually carries, so the UI can drive
+its selector from the data rather than a hardcoded list. Older two-variant
+artifacts keep working unchanged.
+
+Token text comes from the `query_token_strings` / `candidate_token_strings`
+arrays stored in the NPZ; the HuggingFace tokenizer is only a fallback for
+artifacts generated before those arrays existed. `query_sif_weights` /
+`candidate_sif_weights` expose the mean-1 normalised SIF weight per token.
 
 ## API Endpoints
 

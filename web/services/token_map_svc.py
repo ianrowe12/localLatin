@@ -20,22 +20,59 @@ ATTRIBUTION_METHODS = (
     "attention_weighted", "dla", "attention_standalone",
     "retrieval_mark",
 )
-ATTRIBUTION_VARIANTS = ("baseline", "abtt")
+# Order matters: the frontend renders the variant control in this order and
+# falls back to the first available entry. "baseline" and "abtt" predate the
+# SIF variants, so they stay first and keep their existing semantics.
+ATTRIBUTION_VARIANTS = ("baseline", "abtt", "sif", "sif_abtt")
 BUCKET_ORDER = ["correct_similar", "correct_not_similar", "wrong_similar", "wrong_not_similar"]
+
+# Fallback only. Artifacts built after issue #47 carry
+# query_token_strings / candidate_token_strings, so no tokenizer is needed at
+# serve time. Kept in sync with scripts/ig/persist_decoded_tokens.py.
+SLUG_TO_HF = {
+    "bowphs_LaTa": "bowphs/LaTa",
+    "bowphs_PhilTa": "bowphs/PhilTa",
+    "google_mt5-base": "google/mt5-base",
+    "sentence-transformers_LaBSE": "sentence-transformers/LaBSE",
+    "Qwen_Qwen3-Embedding-0.6B": "Qwen/Qwen3-Embedding-0.6B",
+    "Qwen_Qwen3-Embedding-8B": "Qwen/Qwen3-Embedding-8B",
+    "KaLM-Embedding_KaLM-embedding-multilingual-mini-instruct-v2.5": (
+        "KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5"
+    ),
+}
+
+
+def _stored_tokens(data: dict[str, np.ndarray], key: str, count: int) -> list[str] | None:
+    """Read decoded token strings persisted in the artifact, if present."""
+    arr = data.get(key)
+    if arr is None:
+        return None
+    try:
+        tokens = [str(t) for t in np.asarray(arr).ravel().tolist()]
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Malformed %s in artifact: %s", key, e)
+        return None
+    if len(tokens) < count:
+        logger.warning("%s has %d entries for %d tokens", key, len(tokens), count)
+        return None
+    return tokens[:count]
+
+
+def _optional_vector(data: dict[str, np.ndarray], key: str, count: int) -> list[float] | None:
+    arr = data.get(key)
+    if arr is None:
+        return None
+    return np.asarray(arr, dtype=np.float32).ravel()[:count].tolist()
 
 
 def _try_decode_tokens(input_ids: np.ndarray, model_slug: str) -> list[str] | None:
     """Try to decode token IDs using HuggingFace tokenizer. Returns None if unavailable."""
     try:
-        from transformers import AutoTokenizer
+        from transformers import AutoTokenizer  # noqa: F401
     except ImportError:
         return None
 
-    slug_to_hf = {
-        "bowphs_LaTa": "bowphs/LaTa",
-        "bowphs_PhilTa": "bowphs/PhilTa",
-    }
-    hf_id = slug_to_hf.get(model_slug)
+    hf_id = SLUG_TO_HF.get(model_slug)
     if hf_id is None:
         return None
 
@@ -48,10 +85,10 @@ def _try_decode_tokens(input_ids: np.ndarray, model_slug: str) -> list[str] | No
         return None
 
 
-@lru_cache(maxsize=4)
+@lru_cache(maxsize=8)
 def _get_tokenizer(hf_id: str):
     from transformers import AutoTokenizer
-    return AutoTokenizer.from_pretrained(hf_id)
+    return AutoTokenizer.from_pretrained(hf_id, trust_remote_code=True)
 
 
 @lru_cache(maxsize=64)
@@ -109,6 +146,10 @@ def list_examples_grouped(store: DataStore) -> dict:
             m for m in ATTRIBUTION_METHODS
             if any(f"pair_matrix_{m}_{v}" in data for v in ATTRIBUTION_VARIANTS)
         ]
+        variants = [
+            v for v in ATTRIBUTION_VARIANTS
+            if any(f"pair_matrix_{m}_{v}" in data for m in ATTRIBUTION_METHODS)
+        ]
 
         slug = normalize_slug(npz_path.parent.name)
         query_path = str(row.get("query_path", ""))
@@ -122,6 +163,7 @@ def list_examples_grouped(store: DataStore) -> dict:
             "candidate_folder_id": str(row.get("candidate_folder_id", "")),
             "candidate_label": str(row.get("candidate_label", "")),
             "methods_available": methods,
+            "variants_available": variants,
             "gold_similar": int(row.get("gold_similar", 0) or 0),
             "baseline_pred": int(row.get("baseline_pred", 0) or 0),
             "abtt_pred": int(row.get("abtt_pred", 0) or 0),
@@ -221,10 +263,11 @@ def load_token_map(store: DataStore, example_id: int) -> TokenMapResponse | None
         cos = np.array(sim_matrix)
         ig_weighted = (cos * weight * sign).tolist()
 
-    # Load all 12 attribution matrices defensively (skip any missing keys)
+    # Load every persisted method x variant matrix defensively (skip missing keys)
     pair_matrices: dict[str, dict[str, list[list[float]]]] = {}
     top_highlights: dict[str, dict[str, dict[str, list[int]]]] = {}
     available_methods: list[str] = []
+    variants_seen: set[str] = set()
 
     for method in ATTRIBUTION_METHODS:
         method_present = False
@@ -243,9 +286,12 @@ def load_token_map(store: DataStore, example_id: int) -> TokenMapResponse | None
                     "query": np.asarray(data[qk]).astype(int).tolist(),
                     "candidate": np.asarray(data[ck]).astype(int).tolist(),
                 }
+            variants_seen.add(variant)
             method_present = True
         if method_present:
             available_methods.append(method)
+
+    available_variants = [v for v in ATTRIBUTION_VARIANTS if v in variants_seen]
 
     # Top matches (sparse format for frontend connection lines)
     top_matches: dict[str, list[TopMatch]] = {}
@@ -278,12 +324,17 @@ def load_token_map(store: DataStore, example_id: int) -> TokenMapResponse | None
                     matches=[TopMatch(candidate_idx=int(ci), score=float(row[ci])) for ci in top_ci],
                 ))
 
-    # Decode tokens
+    # Tokens: prefer the strings persisted into the artifact (issue #47), fall
+    # back to decoding the ids with a tokenizer, and finally to "[i]" markers.
     query_input_ids = data.get("query_input_ids")
     cand_input_ids = data.get("candidate_input_ids")
 
-    q_token_strs = _try_decode_tokens(query_input_ids, model_slug) if query_input_ids is not None else None
-    c_token_strs = _try_decode_tokens(cand_input_ids, model_slug) if cand_input_ids is not None else None
+    q_token_strs = _stored_tokens(data, "query_token_strings", q_len)
+    c_token_strs = _stored_tokens(data, "candidate_token_strings", c_len)
+    if q_token_strs is None and query_input_ids is not None:
+        q_token_strs = _try_decode_tokens(query_input_ids, model_slug)
+    if c_token_strs is None and cand_input_ids is not None:
+        c_token_strs = _try_decode_tokens(cand_input_ids, model_slug)
 
     def _make_token_entries(count: int, decoded: list[str] | None) -> list[TokenEntry]:
         entries = []
@@ -312,6 +363,9 @@ def load_token_map(store: DataStore, example_id: int) -> TokenMapResponse | None
         candidate_ig_abtt=c_ig_abtt[:c_len].tolist(),
         auto_highlights=auto_highlights,
         available_methods=available_methods,
+        available_variants=available_variants,
         pair_matrices=pair_matrices,
         top_highlights=top_highlights,
+        query_sif_weights=_optional_vector(data, "query_sif_weights", q_len),
+        candidate_sif_weights=_optional_vector(data, "candidate_sif_weights", c_len),
     )

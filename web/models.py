@@ -104,8 +104,15 @@ class TokenMapResponse(BaseModel):
     candidate_ig_abtt: List[float]
     auto_highlights: Optional[List[AutoHighlight]] = None
     available_methods: List[str] = Field(default_factory=list)
+    # Attribution variants actually present in this artifact, in render order:
+    # a subset of {"baseline", "abtt", "sif", "sif_abtt"}.
+    available_variants: List[str] = Field(default_factory=list)
     pair_matrices: Dict[str, Dict[str, List[List[float]]]] = Field(default_factory=dict)
     top_highlights: Dict[str, Dict[str, Dict[str, List[int]]]] = Field(default_factory=dict)
+    # Mean-1 normalised SIF token weights (present once the sif variants are
+    # persisted); useful for explaining why a token was down-weighted.
+    query_sif_weights: Optional[List[float]] = None
+    candidate_sif_weights: Optional[List[float]] = None
 
 
 class TokenMapExampleSummary(BaseModel):
@@ -126,6 +133,7 @@ class TokenMapExampleCard(BaseModel):
     candidate_folder_id: str
     candidate_label: str
     methods_available: List[str]
+    variants_available: List[str] = Field(default_factory=list)
     gold_similar: int
     baseline_pred: int
     abtt_pred: int
