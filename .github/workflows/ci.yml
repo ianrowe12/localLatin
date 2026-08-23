@@ -21,10 +21,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  python:
-    name: Python tests
+  python-matrix:
+    name: Python tests (${{ matrix.python-version }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 3.10 is the HPC conda env (localLatin). It covers the research code
+          # in src/ only: web/models.py uses enum.StrEnum, so the webapp suite
+          # cannot import on 3.10 at all.
+          - python-version: "3.10"
+            pytest-paths: tests
+          # 3.12 matches the production webapp venv and deploy.yml, and runs the
+          # full subset.
+          - python-version: "3.12"
+            pytest-paths: tests web/tests
 
     steps:
       - name: Check out source paths
@@ -39,12 +53,15 @@ jobs:
             tests
             web
 
-      - name: Set up Python
+      - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
           cache: pip
-          cache-dependency-path: web/requirements.txt
+          # Both files feed the cache key, so a pin bump in either invalidates it.
+          cache-dependency-path: |
+            web/requirements.txt
+            .github/ci-requirements.txt
 
       - name: Install dependencies
         # Deliberately NOT requirements.txt at the repo root: that pulls torch,
@@ -52,15 +69,37 @@ jobs:
         # and are only needed by the GPU extraction pipelines.
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r web/requirements.txt pytest httpx ruff
+          python -m pip install -r web/requirements.txt -r .github/ci-requirements.txt
 
       - name: Lint (syntax and undefined names)
+        # ruff is version-pinned, so one run is enough; no need to repeat per leg.
+        if: matrix.python-version == '3.12'
         run: ruff check --select E9,F63,F7,F82 src scripts tests web
 
       - name: Run tests
         # tests/       -- data-free smoke tests for src/ helpers
         # web/tests/   -- webapp suite, self-contained via tmp_path fixtures
-        run: python -m pytest tests web/tests -q
+        run: python -m pytest ${{ matrix.pytest-paths }} -q
+
+  python:
+    # Stable check name for the branch ruleset: matrix legs report as
+    # "Python tests (3.10)" / "Python tests (3.12)", which a required context
+    # named "Python tests" would never match. always() + an explicit result
+    # assertion means this can never be reported as a passing "skipped" check.
+    name: Python tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: python-matrix
+    if: always()
+
+    steps:
+      - name: Assert every Python leg passed
+        env:
+          RESULT: ${{ needs.python-matrix.result }}
+        run: |
+          set -euo pipefail
+          echo "python-matrix result: ${RESULT}"
+          [ "${RESULT}" = "success" ] || exit 1
 
   frontend:
     name: Frontend build

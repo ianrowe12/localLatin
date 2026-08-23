@@ -103,29 +103,59 @@ def test_accuracy_at_k_scores_only_winnable_queries() -> None:
 # --- src/sif_abtt.py --------------------------------------------------------
 
 
-def test_weighted_mean_pool_downweights_a_frequent_token() -> None:
-    tokens = np.array([[[0.0, 0.0], [4.0, 4.0]]], dtype=np.float32)
-    mask = np.array([[1, 1]], dtype=np.int64)
-    weights = np.array([[0.1, 0.9]], dtype=np.float32)
-    np.testing.assert_allclose(weighted_mean_pool(tokens, mask, weights), [[3.6, 3.6]])
+def test_weighted_mean_pool_normalises_by_masked_weight_mass() -> None:
+    # Weights deliberately do not sum to 1 and the third position is padding:
+    # dropping the mask or the /denom normalisation both change the result.
+    tokens = np.array([[[1.0, 2.0], [3.0, 4.0], [100.0, 100.0]]], dtype=np.float32)
+    mask = np.array([[1, 1, 0]], dtype=np.int64)
+    weights = np.array([[0.5, 1.5, 2.0]], dtype=np.float32)
+
+    # (0.5 * [1, 2] + 1.5 * [3, 4]) / (0.5 + 1.5) = [5, 7] / 2
+    np.testing.assert_allclose(
+        weighted_mean_pool(tokens, mask, weights), [[2.5, 3.5]], rtol=1e-6
+    )
 
 
-def test_embedding_cleaner_removes_fitted_components_from_unseen_data() -> None:
+def test_weighted_mean_pool_returns_zeros_when_everything_is_masked() -> None:
+    # Denominator is clamped to >= 1.0, so an all-padding row must not divide by 0.
+    tokens = np.array([[[7.0, 9.0]]], dtype=np.float32)
+    mask = np.array([[0]], dtype=np.int64)
+    weights = np.array([[0.75]], dtype=np.float32)
+    np.testing.assert_allclose(weighted_mean_pool(tokens, mask, weights), [[0.0, 0.0]])
+
+
+def test_embedding_cleaner_removes_the_dominant_direction_and_keeps_the_rest() -> None:
+    # Axis 0 carries ~20x the standard deviation of every other axis, so the top
+    # principal direction is axis 0. Removing any *other* component (a random
+    # direction, or the least significant PC) leaves axis-0 variance intact and
+    # destroys variance elsewhere, so both assertions below are direction-specific.
     rng = np.random.default_rng(0)
-    signal = rng.normal(size=(64, 8)).astype(np.float32)
-    dominant = np.zeros(8, dtype=np.float32)
-    dominant[0] = 1.0
-    train = signal + 25.0 * dominant  # strong shared direction, ABTT should kill it
+    scales = np.array([20.0, 1.0, 0.9, 0.8, 0.7, 0.6], dtype=np.float32)
+    offset = np.array([3.0, -2.0, 1.0, 0.0, 0.5, -0.5], dtype=np.float32)
 
+    train = (rng.normal(size=(512, 6)) * scales + offset).astype(np.float32)
     cleaner = EmbeddingCleaner(num_components=1).fit(train)
-    assert cleaner.pcs is not None and cleaner.pcs.shape == (1, 8)
+    assert cleaner.pcs is not None and cleaner.pcs.shape == (1, 6)
+    # The fitted component really is the dominant axis, not some other direction.
+    assert abs(float(cleaner.pcs[0, 0])) > 0.99
 
-    held_out = rng.normal(size=(16, 8)).astype(np.float32) + 25.0 * dominant
+    held_out = (rng.normal(size=(256, 6)) * scales + offset).astype(np.float32)
     cleaned = cleaner.transform(held_out)
 
-    # No residual projection onto the removed component.
-    residual = cleaned @ cleaner.pcs.T
-    assert np.abs(residual).max() < 1e-3
-    # Fitting is a no-op-free transform: the cleaner must be fit before use.
+    var_before = held_out.var(axis=0)
+    var_after = cleaned.var(axis=0)
+
+    # Dominant direction collapses ...
+    assert var_after[0] / var_before[0] < 1e-3
+    # ... while the remaining directions survive essentially untouched.
+    np.testing.assert_allclose(var_after[1:], var_before[1:], rtol=0.05)
+
+    # No residual projection onto the removed component, and centering happened.
+    assert np.abs(cleaned @ cleaner.pcs.T).max() < 1e-2
+    assert np.abs(cleaned.mean(axis=0)).max() < 0.5
+
+
+def test_embedding_cleaner_requires_fit_before_transform() -> None:
+    X = np.eye(4, dtype=np.float32)
     with pytest.raises(ValueError):
-        EmbeddingCleaner(num_components=1).transform(held_out)
+        EmbeddingCleaner(num_components=1).transform(X)

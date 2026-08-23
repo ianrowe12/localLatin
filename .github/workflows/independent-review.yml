@@ -1,8 +1,19 @@
 name: Independent Review
 
 # Required status check on main (see the branch ruleset). It passes only once a
-# fresh-context review agent has approved the PR, which the orchestrator records
-# by applying the `review-passed` label. Re-runs automatically when labels change.
+# fresh-context review agent has approved the *current head*, which the
+# orchestrator records by applying the `review-passed` label.
+#
+# Approval is head-specific: when new commits arrive (`synchronize`) the label is
+# stripped first, then the gate re-evaluates and fails, so an approved-then-
+# amended PR cannot coast through on a stale approval. Stripping the label emits
+# an `unlabeled` event, which re-runs this workflow; that second run simply fails
+# again on the (now unlabelled) head, which is the intended state.
+#
+# Known limitation, on the record: a same-repo branch can edit this workflow file
+# and ship its own always-passing `Independent Review` job, so this gate is not a
+# defence against a hostile author. Only trusted agents and the repo owner have
+# write access, which is the assumption this whole merge gate rests on.
 
 on:
   pull_request:
@@ -21,15 +32,46 @@ jobs:
     name: Independent Review
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      APPROVAL_LABEL: review-passed
 
     steps:
-      - name: Require review-passed label
-        env:
-          APPROVED: ${{ contains(github.event.pull_request.labels.*.name, 'review-passed') }}
+      # Both steps live in one job on purpose. Splitting them would let the gate
+      # be reported as "skipped" if the stripping job failed, and GitHub counts a
+      # skipped required check as satisfied.
+      - name: Strip stale approval when new commits arrive
+        if: github.event.action == 'synchronize'
         run: |
-          if [ "${APPROVED}" = "true" ]; then
-            echo "Label 'review-passed' is present -- independent review approved."
+          set -uo pipefail
+          if out=$(gh api -X DELETE \
+              "repos/${REPO}/issues/${PR_NUMBER}/labels/${APPROVAL_LABEL}" 2>&1); then
+            echo "New commits pushed: removed stale '${APPROVAL_LABEL}' label."
+          elif printf '%s' "${out}" | grep -q 'HTTP 404'; then
+            echo "No '${APPROVAL_LABEL}' label present; nothing to strip."
+          else
+            echo "::error::could not strip '${APPROVAL_LABEL}': ${out}"
+            exit 1
+          fi
+
+      - name: Require review-passed label
+        run: |
+          set -euo pipefail
+          # Query live label state rather than github.event.pull_request.labels:
+          # the event payload is a snapshot taken before the strip step above ran.
+          labels=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/labels" --jq '.[].name')
+          echo "Labels currently on PR #${PR_NUMBER}: ${labels:-<none>}"
+
+          if printf '%s\n' "${labels}" | grep -Fxq "${APPROVAL_LABEL}"; then
+            echo "Independent review approved for this head."
             exit 0
           fi
-          echo "::error::awaiting independent review agent approval (label 'review-passed' not applied)"
+
+          echo "::error::awaiting independent review agent approval ('${APPROVAL_LABEL}' label not present on the current head)"
           exit 1
