@@ -1,0 +1,95 @@
+name: CI
+
+# Pull-request gate. Everything here must pass on a clean GitHub-hosted runner:
+# no conda env, no GPU, and no access to the large embedding artifacts. Both jobs
+# use a sparse, blob-filtered checkout so the ~1.1 GB `runs/` tree is never
+# fetched -- only the source paths the checks actually read.
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Python tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out source paths
+        uses: actions/checkout@v6
+        with:
+          filter: blob:none
+          sparse-checkout: |
+            .github
+            deploy
+            scripts
+            src
+            tests
+            web
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: web/requirements.txt
+
+      - name: Install dependencies
+        # Deliberately NOT requirements.txt at the repo root: that pulls torch,
+        # transformers, datasets and umap-learn, which are far too heavy for CI
+        # and are only needed by the GPU extraction pipelines.
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r web/requirements.txt pytest httpx ruff
+
+      - name: Lint (syntax and undefined names)
+        run: ruff check --select E9,F63,F7,F82 src scripts tests web
+
+      - name: Run tests
+        # tests/       -- data-free smoke tests for src/ helpers
+        # web/tests/   -- webapp suite, self-contained via tmp_path fixtures
+        run: python -m pytest tests web/tests -q
+
+  frontend:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out frontend
+        uses: actions/checkout@v6
+        with:
+          filter: blob:none
+          sparse-checkout: web/frontend
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: web/frontend
+        run: npm ci
+
+      - name: Typecheck and build
+        # `npm run build` is `tsc -b && vite build`, so this is the typecheck too.
+        working-directory: web/frontend
+        run: npm run build
+
+      - name: Unit tests
+        working-directory: web/frontend
+        run: npm test

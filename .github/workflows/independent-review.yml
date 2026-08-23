@@ -1,0 +1,35 @@
+name: Independent Review
+
+# Required status check on main (see the branch ruleset). It passes only once a
+# fresh-context review agent has approved the PR, which the orchestrator records
+# by applying the `review-passed` label. Re-runs automatically when labels change.
+
+on:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - labeled
+      - unlabeled
+
+permissions:
+  contents: read
+
+jobs:
+  independent-review:
+    name: Independent Review
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Require review-passed label
+        env:
+          APPROVED: ${{ contains(github.event.pull_request.labels.*.name, 'review-passed') }}
+        run: |
+          if [ "${APPROVED}" = "true" ]; then
+            echo "Label 'review-passed' is present -- independent review approved."
+            exit 0
+          fi
+          echo "::error::awaiting independent review agent approval (label 'review-passed' not applied)"
+          exit 1
