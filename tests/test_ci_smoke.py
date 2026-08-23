@@ -20,9 +20,13 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from canon_retrieval import (  # noqa: E402
     accuracy_at_k,
+    blank_text_mask,
+    build_directory_index,
     l2_normalize,
     last_token_pool,
     similarity_matrix,
+    top_k_directories,
+    zero_norm_mask,
 )
 from cli_utils import extract_layer_numbers, parse_layers  # noqa: E402
 from sif_abtt import EmbeddingCleaner, weighted_mean_pool  # noqa: E402
@@ -159,3 +163,130 @@ def test_embedding_cleaner_requires_fit_before_transform() -> None:
     X = np.eye(4, dtype=np.float32)
     with pytest.raises(ValueError):
         EmbeddingCleaner(num_components=1).transform(X)
+
+
+# --- src/canon_retrieval.py: zero-norm guard (issue #66) ---------------------
+
+
+def test_zero_norm_mask_flags_zero_and_nonfinite_rows() -> None:
+    emb = np.array(
+        [
+            [1.0, 0.0, 0.0],       # fine
+            [0.0, 0.0, 0.0],       # exactly zero -> flagged
+            [1e-12, 0.0, 0.0],     # below eps -> flagged
+            [np.nan, 1.0, 0.0],    # NaN -> flagged
+            [np.inf, 1.0, 0.0],    # inf -> flagged
+            [0.0, -3.0, 4.0],      # fine
+        ],
+        dtype=np.float64,
+    )
+    np.testing.assert_array_equal(
+        zero_norm_mask(emb), [False, True, True, True, True, False]
+    )
+
+
+def test_zero_norm_mask_accepts_a_single_vector() -> None:
+    assert zero_norm_mask(np.zeros(5)).tolist() == [True]
+    assert zero_norm_mask(np.array([0.0, 1.0])).tolist() == [False]
+
+
+def test_zero_norm_mask_rejects_3d_input() -> None:
+    with pytest.raises(ValueError):
+        zero_norm_mask(np.zeros((2, 2, 2)))
+
+
+def test_blank_text_mask_flags_empty_whitespace_and_missing() -> None:
+    texts = ["salue", "", "   ", "\n\t \r\n", None, float("nan"), " x "]
+    np.testing.assert_array_equal(
+        blank_text_mask(texts), [False, True, True, True, True, True, False]
+    )
+
+
+def test_l2_normalize_maps_zero_rows_to_zero_not_nan() -> None:
+    """The documented pitfall the guard exists for: no NaN to trip over."""
+    out = l2_normalize(np.array([[0.0, 0.0], [3.0, 4.0]]))
+    assert np.isfinite(out).all()
+    np.testing.assert_allclose(out[0], [0.0, 0.0])
+    np.testing.assert_allclose(out[1], [0.6, 0.8])
+
+
+def test_centering_makes_two_zero_rows_collinear() -> None:
+    """Reproduces the root cause of issue #66 without touching data/.
+
+    Two independently-empty documents are both the zero vector. Mean-centring
+    (what ``EmbeddingCleaner(center=True)`` does before PC removal) maps them
+    both to ``-mean_vec``, so they normalize to the *same* direction and score a
+    cosine of exactly 1.0 despite sharing no content.
+    """
+    emb = np.array([[1.0, 2.0], [3.0, 1.0], [0.0, 0.0], [0.0, 0.0]])
+    centered = emb - emb.mean(axis=0)
+    norm = l2_normalize(centered)
+    assert float(norm[2] @ norm[3]) == pytest.approx(1.0)
+    # The guard catches both offenders on the pre-centering vectors.
+    np.testing.assert_array_equal(zero_norm_mask(emb), [False, False, True, True])
+
+
+def test_build_directory_index_drops_excluded_refs_and_emptied_dirs() -> None:
+    folder_ids = ["A", "A", "B", "C", "C"]
+    exclude = np.array([False, True, True, False, False])
+
+    dir_to_indices, dropped, excluded_dirs = build_directory_index(
+        folder_ids, exclude_refs=exclude
+    )
+
+    # "A" keeps its one surviving file; "B" loses its only file and disappears.
+    assert dir_to_indices == {"A": [0], "C": [3, 4]}
+    assert dropped == ["B"]
+    assert excluded_dirs == ["A", "B"]
+
+
+def test_build_directory_index_without_exclusions_keeps_everything() -> None:
+    dir_to_indices, dropped, excluded_dirs = build_directory_index(["A", "B", "A"])
+    assert dir_to_indices == {"A": [0, 2], "B": [1]}
+    assert dropped == []
+    assert excluded_dirs == []
+
+
+def test_build_directory_index_rejects_mismatched_mask() -> None:
+    with pytest.raises(ValueError):
+        build_directory_index(["A", "B"], exclude_refs=np.array([True]))
+
+
+def test_top_k_directories_never_scores_an_excluded_reference() -> None:
+    """The end-to-end guard: an excluded ref's 1.0 must not reach the output."""
+    folder_ids = ["A", "B", "B"]
+    # Query is identical to ref 0 (the degenerate one), mildly similar to ref 2.
+    query_sims = np.array([1.0, 0.2, 0.5])
+
+    unguarded, _, _ = build_directory_index(folder_ids)
+    assert top_k_directories(query_sims, unguarded, top_k=2)[0] == ("A", 1.0)
+
+    guarded, dropped, _ = build_directory_index(
+        folder_ids, exclude_refs=np.array([True, False, False])
+    )
+    assert dropped == ["A"]
+    scored = top_k_directories(query_sims, guarded, top_k=2)
+    assert scored == [("B", 0.5)]
+    assert all(score < 1.0 for _, score in scored)
+    assert "A" not in dict(scored)
+
+
+def test_top_k_directories_takes_the_max_over_surviving_files_only() -> None:
+    folder_ids = ["A", "A", "A"]
+    query_sims = np.array([1.0, 0.9, 0.3])
+    guarded, dropped, _ = build_directory_index(
+        folder_ids, exclude_refs=np.array([True, False, False])
+    )
+    assert dropped == []
+    assert top_k_directories(query_sims, guarded, top_k=1) == [("A", 0.9)]
+
+
+def test_top_k_directories_truncates_and_breaks_ties_by_insertion_order() -> None:
+    dir_to_indices = {"first": [0], "second": [1], "third": [2]}
+    query_sims = np.array([0.5, 0.5, 0.1])
+    # Stable sort: equal scores keep dict order, which is what makes the guarded
+    # run byte-identical to the unguarded one on untouched queries.
+    assert top_k_directories(query_sims, dir_to_indices, top_k=2) == [
+        ("first", 0.5),
+        ("second", 0.5),
+    ]

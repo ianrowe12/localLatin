@@ -26,6 +26,7 @@ for VARIANT in raw abtt sif sif_abtt; do
     --unlabelled_bases "$REPO_ROOT/runs/active/resubmit/unlabelled/bases" \
     --unlabelled_meta "$REPO_ROOT/runs/active/resubmit/data/unlabelled_meta.csv" \
     --results_csv "$REPO_ROOT/runs/active/resubmit/results/phase_resubmit_results.csv" \
+    --data_root "$REPO_ROOT/data" \
     --out_dir "$REPO_ROOT/runs/active/resubmit/unlabelled" || exit 1
 done
 

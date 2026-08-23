@@ -46,6 +46,32 @@ Leak-free protocol
 and then applied to the labelled database and the unlabelled queries. The D
 value is swept over ``D_VALUES`` and chosen by assignment accuracy on train.
 
+Degenerate-file guard (issue #66)
+---------------------------------
+A handful of corpus files are empty or whitespace-only. They carry no text to
+embed, and the vector the model emits for them is an artefact of the tokenizer's
+special tokens. Two failure modes follow:
+
+* Under SIF pooling the weighted sum has no terms, so the embedding is exactly
+  zero. ``l2_normalize`` floors the norm at ``eps`` and maps such a row back to
+  zero, which looks like "cosine 0.0 with everything" (``sif`` variant). If ABTT
+  runs first, mean-centering turns *every* zero row into the same vector
+  ``-mean_vec``, so an empty query and an empty reference normalize to identical
+  directions and score a spurious cosine of exactly **1.0** (``sif_abtt``).
+* Under mean pooling the norm is non-zero, but two empty files tokenize to the
+  same special-token sequence and can still score a genuine 1.0 (seen for LaBSE
+  and mt5-base in the ``raw`` and ``abtt`` variants).
+
+So the guard is applied at the **source** level, before any embedding is read:
+any file whose ``.txt`` is empty or whitespace-only is excluded, and
+:func:`canon_retrieval.zero_norm_mask` runs on the pre-ABTT embeddings as a
+numeric backstop for anything the text check misses. Excluded *references* are
+dropped from their directory's max-cosine; a directory that loses all of its
+files is dropped from the candidate set entirely (warned about, and it can no
+longer be predicted for any query). Excluded *queries* still get a row, with
+every ``rank*`` cell left blank. Every exclusion is logged. Pass
+``--no_degenerate_guard`` to reproduce the old, unguarded behaviour.
+
 Output schema
 -------------
 ``{out_dir}/unlabelled_predictions_{variant}.csv`` (all models concatenated) and
@@ -54,10 +80,14 @@ one row per (model, query):
 
     file_id, filename, file_path,
     rank1_dir, rank1_score, ..., rank{K}_dir, rank{K}_score,
-    model, variant, layer, pooling
+    model, variant, layer, pooling, status
 
 ``rank{i}_dir`` is the labelled directory name, ``rank{i}_score`` the max cosine
 similarity between the query and any file in that directory.
+
+``status`` is ``ok`` for a scored query, or ``excluded_blank_source`` /
+``excluded_zero_norm`` for a query the guard dropped (all ``rank*`` cells blank).
+The row count is unchanged by the guard: one row per (model, query) either way.
 
 The legacy ``unlabelled_predictions.csv`` / ``unlabelled_predictions_{slug}.csv``
 files (no ``variant`` column) are the frozen webapp input and are no longer
@@ -69,15 +99,29 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
 
 sys.path.append(str(Path(__file__).resolve().parents[2] / "src"))
 
-from canon_retrieval import l2_normalize, upper_triangle, upper_triangle_labels, sweep_thresholds, similarity_matrix
+from canon_retrieval import (
+    blank_text_mask,
+    build_directory_index,
+    l2_normalize,
+    similarity_matrix,
+    sweep_thresholds,
+    top_k_directories,
+    upper_triangle,
+    upper_triangle_labels,
+    zero_norm_mask,
+)
 from sif_abtt import EmbeddingCleaner
+
+STATUS_OK = "ok"
+STATUS_BLANK_SOURCE = "excluded_blank_source"
+STATUS_ZERO_NORM = "excluded_zero_norm"
 
 # Fallback layers if the results CSV is missing a model (repr is always "hidden").
 FALLBACK_CONFIGS = [
@@ -193,30 +237,78 @@ def find_optimal_D(train_emb, train_folder_ids, D_values):
     return best_D
 
 
+def resolve_source_path(path: str, data_root: Path) -> Path:
+    """Locate a meta-CSV ``path`` entry on disk.
+
+    The two meta CSVs disagree on their root: ``unlabelled_meta.csv`` stores
+    ``canon_unlabelled/x.txt`` (relative to ``data/``) while
+    ``phase_resubmit_split.csv`` stores ``data/canon_labelled/y/z.txt``
+    (relative to the repo root). Try both, plus the path as given.
+
+    Raises ``FileNotFoundError`` if none of the candidates exists. This is
+    deliberately fatal: a silently unresolvable path would make the guard a
+    no-op and quietly reintroduce the bug it exists to prevent.
+    """
+    p = str(path)
+    for candidate in (data_root / p, data_root.parent / p, Path(p)):
+        if candidate.is_file():
+            return candidate
+    raise FileNotFoundError(
+        f"Could not locate source file {p!r} under {data_root} or {data_root.parent}."
+    )
+
+
+def read_blank_source_mask(paths: Sequence[str], data_root: Path) -> np.ndarray:
+    """Boolean mask of files whose .txt is empty or whitespace-only."""
+    texts: List[str] = []
+    for p in paths:
+        texts.append(
+            resolve_source_path(p, data_root).read_text(encoding="utf-8", errors="replace")
+        )
+    return blank_text_mask(texts)
+
+
 def predict_directories(
     labelled_emb_norm: np.ndarray,
     unlabelled_emb_norm: np.ndarray,
     folder_ids: np.ndarray,
     top_k: int = 10,
+    exclude_labelled: np.ndarray = None,
+    exclude_unlabelled: np.ndarray = None,
 ) -> List[List[Tuple[str, float]]]:
-    """For each unlabelled file, find top-K directories by max cosine similarity."""
-    # Build directory -> file indices mapping
-    dir_to_indices: Dict[str, List[int]] = {}
-    for i, fid in enumerate(folder_ids):
-        dir_to_indices.setdefault(str(fid), []).append(i)
+    """For each unlabelled file, find top-K directories by max cosine similarity.
+
+    Reference files flagged in ``exclude_labelled`` are removed from their
+    directory's max; a directory left with no usable file is removed from the
+    candidate set. Queries flagged in ``exclude_unlabelled`` get an empty
+    prediction list instead of a score. See :func:`build_directory_index`.
+    """
+    dir_to_indices, dropped_dirs, _ = build_directory_index(
+        folder_ids, exclude_refs=exclude_labelled
+    )
+    if dropped_dirs:
+        print(
+            f"  WARNING: {len(dropped_dirs)} labelled director"
+            f"{'y is' if len(dropped_dirs) == 1 else 'ies are'} unusable "
+            "(every file excluded) and cannot be predicted:"
+        )
+        for d in dropped_dirs:
+            print(f"    - {d}")
+    print(f"  Candidate directories: {len(dir_to_indices)} usable")
 
     # Cross-similarity: (n_unlabelled, n_labelled)
     cross_sim = unlabelled_emb_norm @ labelled_emb_norm.T
 
-    predictions = []
-    for q_idx in range(cross_sim.shape[0]):
-        q_sims = cross_sim[q_idx]
-        dir_scores = []
-        for dir_name, file_indices in dir_to_indices.items():
-            max_sim = float(np.max(q_sims[file_indices]))
-            dir_scores.append((dir_name, max_sim))
-        dir_scores.sort(key=lambda x: x[1], reverse=True)
-        predictions.append(dir_scores[:top_k])
+    n_queries = cross_sim.shape[0]
+    if exclude_unlabelled is None:
+        exclude_unlabelled = np.zeros(n_queries, dtype=bool)
+
+    predictions: List[List[Tuple[str, float]]] = []
+    for q_idx in range(n_queries):
+        if exclude_unlabelled[q_idx]:
+            predictions.append([])
+            continue
+        predictions.append(top_k_directories(cross_sim[q_idx], dir_to_indices, top_k))
 
     return predictions
 
@@ -238,6 +330,10 @@ def parse_args():
                         help="Embedding pipeline: raw | abtt | sif | sif_abtt (see module docstring).")
     parser.add_argument("--layer_overrides", default="",
                         help="Pin layers, e.g. 'Qwen/Qwen3-Embedding-0.6B=5,google/mt5-base=1'.")
+    parser.add_argument("--data_root", default="data",
+                        help="Root the `path` columns of the meta CSVs are relative to.")
+    parser.add_argument("--no_degenerate_guard", action="store_true",
+                        help="Disable the empty-file / zero-norm guard (reproduces pre-#66 output).")
     return parser.parse_args()
 
 
@@ -251,6 +347,30 @@ def main():
     # Load metadata
     split_meta = pd.read_csv(args.split_csv)
     unlabelled_meta = pd.read_csv(args.unlabelled_meta)
+
+    # --- Source-level degenerate-file guard (issue #66) ---------------------
+    # Computed once: it depends only on the .txt files, not on the model.
+    data_root = Path(args.data_root)
+    if args.no_degenerate_guard:
+        print("\nDegenerate-file guard DISABLED (--no_degenerate_guard).")
+        lab_blank = np.zeros(len(split_meta), dtype=bool)
+        unlab_blank = np.zeros(len(unlabelled_meta), dtype=bool)
+    else:
+        lab_blank = read_blank_source_mask(split_meta["path"].tolist(), data_root)
+        unlab_blank = read_blank_source_mask(unlabelled_meta["path"].tolist(), data_root)
+        print(f"\nDegenerate-file guard: scanning sources under {data_root.resolve()}")
+        if lab_blank.any():
+            print(f"  WARNING: {int(lab_blank.sum())} labelled file(s) are empty/whitespace-only "
+                  "and are excluded from their directory's max-cosine:")
+            for _, r in split_meta[lab_blank].iterrows():
+                print(f"    - {r['path']}  (dir: {r['folder_id']})")
+        if unlab_blank.any():
+            print(f"  WARNING: {int(unlab_blank.sum())} unlabelled quer(y/ies) are "
+                  "empty/whitespace-only and will be emitted with no predictions:")
+            for _, r in unlabelled_meta[unlab_blank].iterrows():
+                print(f"    - file_id={r['file_id']}  {r['path']}")
+        if not lab_blank.any() and not unlab_blank.any():
+            print("  No empty/whitespace-only source files found.")
 
     # Find best layer per model from results CSV, restricted to this variant's methods
     results_path = Path(args.results_csv)
@@ -317,12 +437,40 @@ def main():
             print(f"  Shape mismatch: {unlab_emb.shape[0]} vs {len(unlabelled_meta)} files, skipping.")
             continue
 
+        # Numeric backstop, evaluated on the PRE-ABTT vectors. After ABTT with
+        # center=True every zero row becomes -mean_vec, so they stop looking
+        # degenerate and start looking identical to one another -- which is the
+        # spurious cosine 1.0 of issue #66. Detect them before that happens.
+        if args.no_degenerate_guard:
+            lab_zero = np.zeros(lab_emb.shape[0], dtype=bool)
+            unlab_zero = np.zeros(unlab_emb.shape[0], dtype=bool)
+        else:
+            lab_zero = zero_norm_mask(lab_emb)
+            unlab_zero = zero_norm_mask(unlab_emb)
+            extra_lab = int((lab_zero & ~lab_blank).sum())
+            extra_unlab = int((unlab_zero & ~unlab_blank).sum())
+            if extra_lab or extra_unlab:
+                print(f"  WARNING: zero-norm backstop caught {extra_lab} labelled and "
+                      f"{extra_unlab} unlabelled row(s) not flagged by the source check.")
+            if lab_zero.any() or unlab_zero.any():
+                print(f"  Zero-norm rows: labelled={int(lab_zero.sum())}, "
+                      f"unlabelled={int(unlab_zero.sum())}")
+
+        lab_exclude = lab_blank | lab_zero
+        unlab_exclude = unlab_blank | unlab_zero
+        if lab_exclude.any() or unlab_exclude.any():
+            print(f"  Excluding {int(lab_exclude.sum())} labelled reference file(s) and "
+                  f"{int(unlab_exclude.sum())} quer(y/ies).")
+
         if apply_abtt:
             # ABTT: fit the cleaner on the train split only, then apply to all.
             train_mask = split_meta["split"].values == "train"
             train_emb = lab_emb[train_mask]
             train_folder_ids = split_meta.loc[train_mask, "folder_id"].values
 
+            # Degenerate rows are deliberately left in the cleaner's fit: they are
+            # 2 of 1,705 and dropping them would perturb mean_vec/pcs, hence every
+            # query's scores. The guard acts at scoring time, not at fit time.
             best_D = find_optimal_D(train_emb, train_folder_ids, D_VALUES)
             print(f"  Optimal D: {best_D}")
 
@@ -338,7 +486,14 @@ def main():
 
         # Predict top-K directories
         folder_ids = split_meta["folder_id"].values
-        predictions = predict_directories(lab_norm, unlab_norm, folder_ids, top_k=args.top_k)
+        predictions = predict_directories(
+            lab_norm,
+            unlab_norm,
+            folder_ids,
+            top_k=args.top_k,
+            exclude_labelled=lab_exclude,
+            exclude_unlabelled=unlab_exclude,
+        )
 
         # Build output DataFrame
         rows = []
@@ -355,6 +510,12 @@ def main():
             row["variant"] = variant
             row["layer"] = opt_layer
             row["pooling"] = pooling
+            if unlab_blank[i]:
+                row["status"] = STATUS_BLANK_SOURCE
+            elif unlab_zero[i]:
+                row["status"] = STATUS_ZERO_NORM
+            else:
+                row["status"] = STATUS_OK
             rows.append(row)
 
         # Save per-model predictions
