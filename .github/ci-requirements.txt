@@ -1,0 +1,6 @@
+# Pinned CI-only tooling (test + lint). Kept out of web/requirements.txt because
+# these are not runtime dependencies of the webapp. This file is part of the pip
+# cache key in .github/workflows/ci.yml, so bumping a pin invalidates the cache.
+httpx==0.28.1
+pytest==9.1.1
+ruff==0.16.4
