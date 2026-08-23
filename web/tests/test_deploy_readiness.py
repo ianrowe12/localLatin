@@ -52,10 +52,101 @@ def test_deploy_script_installs_dependencies_and_fails_health_checks() -> None:
     assert "npm ci --prefer-offline --include=dev" in deploy
 
 
+def test_deploy_script_syncs_the_data_release_idempotently() -> None:
+    deploy = (ROOT / "deploy" / "deploy.sh").read_text(encoding="utf-8")
+
+    # Opt-in: with no tag the script must not touch data on disk, which is what
+    # keeps a host that already carries the payload deployable unchanged.
+    assert 'DATA_RELEASE_TAG="${DATA_RELEASE_TAG:-}"' in deploy
+    assert "DATA_RELEASE_TAG not set" in deploy
+    assert "sync_data_release" in deploy
+    # Integrity, then path confinement, then install.
+    assert "sha256sum -c" in deploy
+    assert "refusing to unpack" in deploy
+    assert "runs/active/*) ;;" in deploy
+    assert "member outside runs/active/" in deploy
+    assert "path traversal member" in deploy
+    # Idempotence: an installed tag is a no-op and a good cached tarball is not
+    # re-downloaded.
+    assert "already installed" in deploy
+    assert "already matches the published checksum" in deploy
+    # Atomic per-file install so the running service never reads a half file.
+    assert ".deploy-tmp" in deploy
+
+
+def test_deploy_script_preserves_the_feedback_database() -> None:
+    deploy = (ROOT / "deploy" / "deploy.sh").read_text(encoding="utf-8")
+
+    # Nothing may delete the reviewer feedback DB. Only web/static/ is removed,
+    # and the data payload is confined to runs/active/ so it cannot reach
+    # data/feedback.db.
+    assert 'rm -rf "${STATIC_DIR}"' in deploy
+    assert 'rm -rf "${DATA_DIR}"' not in deploy
+    assert 'rm -rf "${FEEDBACK_DB}"' not in deploy
+    assert 'FEEDBACK_DB="${FEEDBACK_DB:-${DATA_DIR}/feedback.db}"' in deploy
+    assert "feedback_fingerprint" in deploy
+    assert "Feedback DB changed during the data sync" in deploy
+
+
+def test_deploy_script_fails_fast_when_required_data_is_absent() -> None:
+    deploy = (ROOT / "deploy" / "deploy.sh").read_text(encoding="utf-8")
+    contract = (ROOT / "scripts" / "webapp" / "export_webapp_data.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "export_webapp_data.sh" in deploy
+    assert "--strict" in deploy
+    assert "DEPLOY_SKIP_DATA_CHECK" in deploy
+    # The contract script is the single place the required paths are listed.
+    assert "--strict" in contract
+    assert "unlabelled_predictions_${variant}.csv" in contract
+    assert "phase12f_examples.csv" in contract
+    assert "ig_examples/artifacts" in contract
+    assert "exit 1" in contract
+
+
+def test_data_release_builder_confines_the_payload_to_runs_active() -> None:
+    script = ROOT / "scripts" / "webapp" / "make_data_release.sh"
+    source = script.read_text(encoding="utf-8")
+
+    for variant in ("raw", "abtt", "sif", "sif_abtt"):
+        assert f"unlabelled_predictions_${{variant}}.csv" in source or variant in source
+    assert "runs/active/ig_examples/artifacts" in source
+    assert "runs/active/ig_examples/phase12f_examples.csv" in source
+    # data/feedback.db lives outside this prefix and can never be in the payload.
+    assert "Payload member outside runs/active/" in source
+    assert "member outside runs/active/" in source
+    assert "sha256sum" in source
+    # Asset name must match what deploy.sh derives from DATA_RELEASE_TAG.
+    assert "locallatin-${TAG}.tar.gz" in source
+    deploy = (ROOT / "deploy" / "deploy.sh").read_text(encoding="utf-8")
+    assert 'asset="locallatin-${DATA_RELEASE_TAG}.tar.gz"' in deploy
+
+
 def test_smoke_script_is_valid_python() -> None:
     script = ROOT / "scripts" / "webapp" / "smoke_reviewer_pilot.py"
 
     compile(script.read_text(encoding="utf-8"), str(script), "exec")
+
+
+def test_smoke_script_checks_every_variant_and_the_notes_reload_path() -> None:
+    source = (ROOT / "scripts" / "webapp" / "smoke_reviewer_pilot.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'EXPECTED_VARIANTS = ("raw", "abtt", "sif", "sif_abtt")' in source
+    assert "check_models_advertise_variants" in source
+    assert "does not advertise variants" in source
+    assert "check_predictions_per_variant" in source
+    # Omitting ?variant= must serve the deployment's configured default.
+    assert "expected the configured default" in source
+    assert "check_token_map_per_variant" in source
+    # The artifacts spell the uncorrected variant "baseline", the CSVs "raw".
+    assert '"raw": "baseline"' in source
+    assert "check_notes_round_trip" in source
+    assert "/api/feedback/latest" in source
+    assert "selected_ranks" in source
+    assert "leaked into the" in source
 
 
 def test_feedback_backup_script_is_valid_and_change_aware() -> None:
@@ -104,7 +195,15 @@ def test_github_actions_workflow_tests_then_deploys_after_main_push() -> None:
     assert "DEPLOY_PATH" in workflow
     assert "PUBLIC_BASE_PATH" in workflow
     assert "git pull --ff-only origin main" in workflow
-    assert 'PUBLIC_BASE_PATH="${PUBLIC_BASE_PATH}" bash deploy/deploy.sh' in workflow
+    assert 'PUBLIC_BASE_PATH="${PUBLIC_BASE_PATH}" \\' in workflow
+    assert "bash deploy/deploy.sh" in workflow
+    # The gitignored data payload rides in as a release asset, not via git.
+    assert "DATA_RELEASE_TAG: ${{ vars.DATA_RELEASE_TAG }}" in workflow
+    assert 'DATA_RELEASE_TAG="${DATA_RELEASE_TAG:-}"' in workflow
+    # Smoke credentials are optional: unset, deploy.sh skips the authenticated
+    # checks rather than failing the deploy.
+    assert "LOCALLATIN_SMOKE_USERNAME: ${{ secrets.LOCALLATIN_SMOKE_USERNAME }}" in workflow
+    assert "LOCALLATIN_SMOKE_PASSWORD: ${{ secrets.LOCALLATIN_SMOKE_PASSWORD }}" in workflow
 
 
 def test_nginx_template_scopes_locallatin_to_root_domain() -> None:

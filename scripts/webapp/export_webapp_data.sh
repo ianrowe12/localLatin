@@ -1,9 +1,23 @@
 #!/bin/bash
 # Verify and report data files required by the localLatin webapp.
-# Usage: bash scripts/export_webapp_data.sh [repo_root]
+# Usage: bash scripts/webapp/export_webapp_data.sh [repo_root] [--strict]
+#
+# --strict exits 1 if anything is MISSING. deploy/deploy.sh runs it that way so
+# a host with no data payload fails with a readable message instead of an
+# opaque uvicorn FileNotFoundError behind the health check.
 set -euo pipefail
 
-ROOT="${1:-.}"
+ROOT="."
+STRICT=0
+for arg in "$@"; do
+    case "$arg" in
+        --strict) STRICT=1 ;;
+        *) ROOT="$arg" ;;
+    esac
+done
+
+MISSING=0
+
 echo "=== localLatin Webapp Data Contract ==="
 echo ""
 
@@ -19,6 +33,7 @@ check() {
         fi
     else
         echo "  MISSING  $label: $path"
+        MISSING=$((MISSING + 1))
     fi
 }
 
@@ -48,3 +63,13 @@ check "IG artifacts" \
 
 echo ""
 echo "Set data_root in web/config.yaml to: $(cd "$ROOT" && pwd)"
+
+if [ "$MISSING" -gt 0 ]; then
+    echo ""
+    echo "$MISSING required data path(s) missing."
+    if [ "$STRICT" -eq 1 ]; then
+        echo "Publish and install a data release: scripts/webapp/make_data_release.sh," \
+             "then set DATA_RELEASE_TAG."
+        exit 1
+    fi
+fi

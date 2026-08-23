@@ -16,6 +16,14 @@ VENV_DIR="${REPO_DIR}/.venv"
 LOCAL_BASE_URL="${LOCAL_BASE_URL:-http://127.0.0.1:8080}"
 PUBLIC_BASE_PATH="${PUBLIC_BASE_PATH:-/}"
 
+# Gitignored data payload (prediction CSVs + IG attribution artifacts), shipped
+# as a GitHub Release asset because this host is only reachable through the
+# Actions runner and the step above only git-pulls. Unset => no data sync,
+# which keeps a checkout with the data already in place working unchanged.
+DATA_RELEASE_TAG="${DATA_RELEASE_TAG:-}"
+DATA_RELEASE_REPO="${DATA_RELEASE_REPO:-ianrowe12/localLatin}"
+DATA_CACHE_DIR="${DATA_CACHE_DIR:-${REPO_DIR}/.deploy-cache}"
+
 info()  { printf '\033[1;34m[deploy]\033[0m %s\n' "$*"; }
 error() { printf '\033[1;31m[deploy]\033[0m %s\n' "$*" >&2; }
 
@@ -23,6 +31,102 @@ if [[ ! -d "${REPO_DIR}" ]]; then
     error "Repo not found at ${REPO_DIR}"
     exit 1
 fi
+
+# --- Data release sync -------------------------------------------------------
+# Idempotent: an already-installed tag is a no-op, and a cached tarball whose
+# checksum still matches is not re-downloaded.
+sync_data_release() {
+    if [[ -z "${DATA_RELEASE_TAG}" ]]; then
+        info "DATA_RELEASE_TAG not set — skipping data sync (using data already on disk)."
+        return 0
+    fi
+
+    local asset="locallatin-${DATA_RELEASE_TAG}.tar.gz"
+    # Overridable so the sync can be exercised against a local directory
+    # (file://...) without publishing a release.
+    local base_url="${DATA_RELEASE_BASE_URL:-https://github.com/${DATA_RELEASE_REPO}/releases/download/${DATA_RELEASE_TAG}}"
+    local tarball="${DATA_CACHE_DIR}/${asset}"
+    local checksum="${tarball}.sha256"
+    local marker="${DATA_CACHE_DIR}/installed-${DATA_RELEASE_TAG}"
+
+    if [[ -f "${marker}" ]]; then
+        info "Data release ${DATA_RELEASE_TAG} already installed — skipping."
+        return 0
+    fi
+
+    mkdir -p "${DATA_CACHE_DIR}"
+
+    info "Fetching data release ${DATA_RELEASE_TAG} from ${DATA_RELEASE_REPO}..."
+    if ! curl -sSfL --retry 3 --retry-delay 5 -o "${checksum}.part" "${base_url}/${asset}.sha256"; then
+        error "Could not download ${base_url}/${asset}.sha256"
+        error "Check that release ${DATA_RELEASE_TAG} exists and carries both assets."
+        return 1
+    fi
+    mv -f "${checksum}.part" "${checksum}"
+
+    local have_valid_tarball=0
+    if [[ -f "${tarball}" ]] && ( cd "${DATA_CACHE_DIR}" && sha256sum -c --status "$(basename "${checksum}")" ); then
+        info "Cached ${asset} already matches the published checksum."
+        have_valid_tarball=1
+    fi
+
+    if [[ "${have_valid_tarball}" -eq 0 ]]; then
+        if ! curl -sSfL --retry 3 --retry-delay 5 -o "${tarball}.part" "${base_url}/${asset}"; then
+            error "Could not download ${base_url}/${asset}"
+            return 1
+        fi
+        mv -f "${tarball}.part" "${tarball}"
+        if ! ( cd "${DATA_CACHE_DIR}" && sha256sum -c "$(basename "${checksum}")" ); then
+            error "sha256 verification failed for ${asset} — refusing to unpack."
+            rm -f "${tarball}"
+            return 1
+        fi
+        info "Checksum verified."
+    fi
+
+    # Every member must live under runs/active/. This is what keeps the payload
+    # from ever reaching the reviewer feedback database, which the production
+    # config puts at data/feedback.db — outside this prefix and never touched.
+    info "Validating archive member paths..."
+    local entry
+    while IFS= read -r entry; do
+        case "${entry}" in
+            runs/active/*) ;;
+            *) error "Refusing archive: member outside runs/active/: ${entry}"; return 1 ;;
+        esac
+        case "${entry}" in
+            *..*) error "Refusing archive: path traversal member: ${entry}"; return 1 ;;
+        esac
+    done < <(tar -tzf "${tarball}")
+
+    local stage="${DATA_CACHE_DIR}/stage-${DATA_RELEASE_TAG}"
+    rm -rf "${stage}"
+    mkdir -p "${stage}"
+    info "Unpacking to staging directory..."
+    tar -xzf "${tarball}" -C "${stage}"
+
+    # Install file by file with an atomic rename, so a reviewer hitting the
+    # still-running old service never reads a half-written CSV.
+    info "Installing data payload into ${REPO_DIR}..."
+    local installed=0 src rel dest
+    while IFS= read -r -d '' src; do
+        rel="${src#"${stage}/"}"
+        dest="${REPO_DIR}/${rel}"
+        mkdir -p "$(dirname "${dest}")"
+        cp -f "${src}" "${dest}.deploy-tmp"
+        mv -f "${dest}.deploy-tmp" "${dest}"
+        installed=$((installed + 1))
+    done < <(find "${stage}" -type f -print0)
+    rm -rf "${stage}"
+
+    if [[ "${installed}" -eq 0 ]]; then
+        error "Data release ${DATA_RELEASE_TAG} contained no files."
+        return 1
+    fi
+
+    printf '%s\n' "${DATA_RELEASE_TAG}" > "${marker}"
+    info "Installed ${installed} data files from ${DATA_RELEASE_TAG}."
+}
 
 # Ensure node is available
 export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
@@ -46,6 +150,42 @@ cd "${REPO_DIR}"
 if git rev-parse --is-inside-work-tree &>/dev/null; then
     info "Pulling latest changes..."
     git pull --ff-only || { error "git pull failed — resolve manually"; exit 1; }
+fi
+
+# Reviewer feedback must survive every deploy. The production config resolves
+# paths.feedback_db ("data/feedback.db") against data_root, i.e.
+# ${REPO_DIR}/data/feedback.db. Nothing below deletes it: the data payload is
+# confined to runs/active/, and only web/static/ is ever removed. Fingerprint
+# it anyway so a regression shows up here rather than as lost reviewer work.
+FEEDBACK_DB="${FEEDBACK_DB:-${DATA_DIR}/feedback.db}"
+feedback_fingerprint() {
+    if [[ -f "${FEEDBACK_DB}" ]]; then
+        stat -c '%i:%s' "${FEEDBACK_DB}"
+    else
+        printf 'absent\n'
+    fi
+}
+FEEDBACK_BEFORE="$(feedback_fingerprint)"
+info "Feedback DB before deploy: ${FEEDBACK_DB} (${FEEDBACK_BEFORE})"
+
+# Gitignored data (prediction CSVs, IG artifacts) does not arrive via git.
+sync_data_release || { error "Data release sync failed."; exit 1; }
+
+FEEDBACK_AFTER="$(feedback_fingerprint)"
+if [[ "${FEEDBACK_BEFORE}" != "${FEEDBACK_AFTER}" ]]; then
+    error "Feedback DB changed during the data sync: ${FEEDBACK_BEFORE} -> ${FEEDBACK_AFTER}"
+    error "The data payload must never touch ${FEEDBACK_DB}."
+    exit 1
+fi
+
+if [[ "${DEPLOY_SKIP_DATA_CHECK:-0}" == "1" ]]; then
+    info "DEPLOY_SKIP_DATA_CHECK=1 — not verifying the webapp data contract."
+else
+    info "Verifying webapp data contract..."
+    bash "${REPO_DIR}/scripts/webapp/export_webapp_data.sh" "${REPO_DIR}" --strict || {
+        error "Required webapp data is missing — the service would fail to start."
+        exit 1
+    }
 fi
 
 info "Installing backend dependencies..."

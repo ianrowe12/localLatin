@@ -69,6 +69,14 @@ jobs:
         env:
           DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
           PUBLIC_BASE_PATH: ${{ vars.PUBLIC_BASE_PATH }}
+          # Gitignored prediction CSVs and IG artifacts ride in as a GitHub
+          # Release asset (scripts/webapp/make_data_release.sh builds it).
+          # Unset => deploy.sh keeps whatever data is already on the host.
+          DATA_RELEASE_TAG: ${{ vars.DATA_RELEASE_TAG }}
+          # Optional: when both are set, deploy.sh runs the authenticated
+          # reviewer-pilot smoke checks against the freshly restarted service.
+          LOCALLATIN_SMOKE_USERNAME: ${{ secrets.LOCALLATIN_SMOKE_USERNAME }}
+          LOCALLATIN_SMOKE_PASSWORD: ${{ secrets.LOCALLATIN_SMOKE_PASSWORD }}
         run: |
           set -euo pipefail
           DEPLOY_PATH="${DEPLOY_PATH:-/homes/ipro222/localLatin}"
@@ -78,4 +86,6 @@ jobs:
           git fetch origin main
           git checkout main
           git pull --ff-only origin main
-          PUBLIC_BASE_PATH="${PUBLIC_BASE_PATH}" bash deploy/deploy.sh
+          PUBLIC_BASE_PATH="${PUBLIC_BASE_PATH}" \
+          DATA_RELEASE_TAG="${DATA_RELEASE_TAG:-}" \
+            bash deploy/deploy.sh
