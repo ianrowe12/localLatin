@@ -13,6 +13,7 @@ import {
   type FeedbackPayload,
 } from '../api/feedback'
 import type { Prediction } from '../api/queries'
+import { DEFAULT_VARIANT, type PredictionVariant } from '../api/variants'
 import { seedDraftMapIfEmpty } from './feedbackDraft'
 
 export interface FeedbackDraft {
@@ -26,8 +27,18 @@ export interface FeedbackContextValue {
   getDraft: (queryId: number, model: string) => FeedbackDraft
   updateDraft: (queryId: number, model: string, patch: Partial<FeedbackDraft>) => void
   seedDraftIfEmpty: (queryId: number, model: string, seed: FeedbackDraft) => void
-  submitFeedback: (queryId: number, model: string, predictions: Prediction[]) => Promise<void>
-  skipFeedback: (queryId: number, model: string, notes: string) => Promise<void>
+  submitFeedback: (
+    queryId: number,
+    model: string,
+    predictions: Prediction[],
+    variant?: PredictionVariant,
+  ) => Promise<void>
+  skipFeedback: (
+    queryId: number,
+    model: string,
+    notes: string,
+    variant?: PredictionVariant,
+  ) => Promise<void>
   undoLastSubmit: () => void
   lastSubmittedKey: string | null
 }
@@ -105,6 +116,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
       queryId: number,
       model: string,
       predictions: Prediction[],
+      variant: PredictionVariant = DEFAULT_VARIANT,
     ): Promise<void> => {
       const key = makeDraftKey(queryId, model)
       const draft = drafts.get(key) ?? emptyDraft()
@@ -120,6 +132,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
         payload = {
           query_id: queryId,
           model_slug: model,
+          variant,
           outcome: 'none_of_top_k',
           correct_rank: 0,
           correct_dir: null,
@@ -131,6 +144,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
         payload = {
           query_id: queryId,
           model_slug: model,
+          variant,
           correct_rank: multiRanks[0],
           correct_dir: dirForRank(multiRanks[0]),
           selected_ranks: multiRanks,
@@ -140,6 +154,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
         payload = {
           query_id: queryId,
           model_slug: model,
+          variant,
           outcome: 'matched_rank',
           correct_rank: draft.correctRank,
           correct_dir: dirForRank(draft.correctRank),
@@ -149,6 +164,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
         payload = {
           query_id: queryId,
           model_slug: model,
+          variant,
           correct_rank: null,
           correct_dir: null,
           notes: draft.notes,
@@ -171,13 +187,19 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
   )
 
   const skipFeedback = useCallback(
-    async (queryId: number, model: string, notes: string): Promise<void> => {
+    async (
+      queryId: number,
+      model: string,
+      notes: string,
+      variant: PredictionVariant = DEFAULT_VARIANT,
+    ): Promise<void> => {
       const key = makeDraftKey(queryId, model)
       const draft = drafts.get(key) ?? emptyDraft()
 
       await postFeedback({
         query_id: queryId,
         model_slug: model,
+        variant,
         outcome: 'skipped',
         correct_rank: null,
         correct_dir: null,

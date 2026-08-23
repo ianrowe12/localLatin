@@ -8,6 +8,7 @@ const PREDICTIONS_1: PredictionResponse = {
   file_id: 1,
   filename: 'BAV1341.13v.1.txt',
   model: 'bowphs_LaTa',
+  variant: 'sif_abtt',
   predictions: [
     {
       rank: 1,
@@ -97,6 +98,7 @@ const PREDICTIONS_2: PredictionResponse = {
   file_id: 2,
   filename: 'BAV1341.14r.2.txt',
   model: 'bowphs_LaTa',
+  variant: 'sif_abtt',
   predictions: [
     {
       rank: 1,
@@ -182,6 +184,7 @@ const PREDICTIONS_3: PredictionResponse = {
   file_id: 3,
   filename: 'Hat42.148v.3.txt',
   model: 'bowphs_LaTa',
+  variant: 'sif_abtt',
   predictions: [
     {
       rank: 1,

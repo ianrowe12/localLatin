@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -8,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 from web.config import Settings
+from web.models import DEFAULT_VARIANT
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +54,7 @@ class ModelMeta:
     layer: int | None
     pooling: str | None
     prediction_count: int
+    variant: str = DEFAULT_VARIANT
 
 
 @dataclass
@@ -66,16 +69,49 @@ class DataStore:
     labelled_texts: dict[str, dict[str, str]] = field(default_factory=dict)
     labelled_dir_files: dict[str, list[str]] = field(default_factory=dict)
 
-    # Predictions: slug -> list of dicts (one per file_id)
-    predictions: dict[str, list[dict]] = field(default_factory=dict)
+    # Predictions: (slug, variant) -> list of dicts (one per file_id).
+    # Only the default variant is loaded at startup; the rest are read on first
+    # use so a single uvicorn worker does not hold all four CSVs at once.
+    predictions: dict[tuple[str, str], list[dict]] = field(default_factory=dict)
 
-    # Model metadata
-    model_meta: dict[str, ModelMeta] = field(default_factory=dict)
+    # Model metadata, also keyed by (slug, variant)
+    model_meta: dict[tuple[str, str], ModelMeta] = field(default_factory=dict)
     model_slugs: list[str] = field(default_factory=list)
+
+    # Variant wiring
+    variants: list[str] = field(default_factory=list)
+    default_variant: str = DEFAULT_VARIANT
+    variant_paths: dict[str, Path] = field(default_factory=dict)
+    loaded_variants: set[str] = field(default_factory=set)
+    _load_lock: threading.Lock = field(
+        default_factory=threading.Lock, repr=False, compare=False
+    )
 
     # IG examples
     ig_examples: pd.DataFrame | None = None
     ig_artifact_paths: dict[int, Path] = field(default_factory=dict)
+
+    # --- Variant-aware prediction access ---
+
+    def ensure_variant(self, variant: str) -> bool:
+        """Load a variant's predictions if not loaded yet. False if unavailable."""
+        if variant in self.loaded_variants:
+            return True
+        if variant not in self.variant_paths:
+            return False
+        with self._load_lock:
+            # Another request may have loaded it while we waited for the lock.
+            if variant not in self.loaded_variants:
+                _load_variant(self, variant)
+        return variant in self.loaded_variants
+
+    def get_predictions(self, slug: str, variant: str) -> list[dict] | None:
+        if not self.ensure_variant(variant):
+            return None
+        return self.predictions.get((slug, variant))
+
+    def has_model(self, slug: str, variant: str) -> bool:
+        return self.get_predictions(slug, variant) is not None
 
 
 def _load_text(path: Path) -> str:
@@ -101,18 +137,22 @@ def _parse_predictions_row(row: pd.Series) -> dict:
     }
 
 
-def build_store(settings: Settings) -> DataStore:
-    """Build the in-memory DataStore at startup."""
-    store = DataStore()
-    paths = settings.paths
-    root = Path(paths.data_root)
+def _load_variant(store: DataStore, variant: str) -> None:
+    """Read one variant's predictions CSV into the store. Caller holds the lock."""
+    path = store.variant_paths[variant]
+    logger.info("Loading '%s' predictions from %s", variant, path)
+    df = pd.read_csv(path)
 
-    # --- Load combined predictions CSV ---
-    combined_path = paths.resolve(paths.predictions_combined)
-    logger.info("Loading predictions from %s", combined_path)
-    df = pd.read_csv(combined_path)
+    if "variant" in df.columns:
+        declared = {str(value) for value in df["variant"].dropna().unique()}
+        if declared and declared != {variant}:
+            logger.warning(
+                "Predictions file %s declares variant(s) %s but is wired as '%s'",
+                path,
+                sorted(declared),
+                variant,
+            )
 
-    # Build per-model prediction indices
     for hf_id, group in df.groupby("model"):
         slug = normalize_slug(str(hf_id))
         rows = []
@@ -126,22 +166,66 @@ def build_store(settings: Settings) -> DataStore:
                 pooling = str(row["pooling"])
 
         # Index by file_id for O(1) lookup
-        store.predictions[slug] = sorted(rows, key=lambda r: r["file_id"])
-        store.model_meta[slug] = ModelMeta(
+        store.predictions[(slug, variant)] = sorted(rows, key=lambda r: r["file_id"])
+        store.model_meta[(slug, variant)] = ModelMeta(
             slug=slug,
             display_name=_DISPLAY_NAMES.get(slug, slug),
             hf_id=str(hf_id),
             layer=layer,
             pooling=pooling,
             prediction_count=len(rows),
+            variant=variant,
         )
 
-    store.model_slugs = sorted(store.model_meta.keys())
-    logger.info("Loaded %d models: %s", len(store.model_slugs), store.model_slugs)
+    store.loaded_variants.add(variant)
 
-    # Build file_id -> filename mapping from first model's predictions
+
+def build_store(settings: Settings) -> DataStore:
+    """Build the in-memory DataStore at startup."""
+    store = DataStore()
+    paths = settings.paths
+    root = Path(paths.data_root)
+
+    # --- Discover per-variant predictions CSVs ---
+    # There is no fallback to the pre-variant frozen unlabelled_predictions.csv:
+    # it predates the current Task B split and would serve stale rankings (#45).
+    store.default_variant = paths.default_variant
+    for variant in paths.variants:
+        variant_path = paths.resolve_variant(variant)
+        if variant_path.exists():
+            store.variant_paths[variant] = variant_path
+        else:
+            logger.warning(
+                "Predictions CSV for variant '%s' not found at %s; not served",
+                variant,
+                variant_path,
+            )
+    store.variants = [v for v in paths.variants if v in store.variant_paths]
+
+    if store.default_variant not in store.variant_paths:
+        raise FileNotFoundError(
+            "Default prediction variant "
+            f"'{store.default_variant}' has no CSV at "
+            f"{paths.resolve_variant(store.default_variant)}"
+        )
+
+    # Eagerly load the default variant only; the rest load on first request.
+    _load_variant(store, store.default_variant)
+
+    store.model_slugs = sorted(
+        {slug for slug, _variant in store.model_meta if _variant == store.default_variant}
+    )
+    logger.info(
+        "Loaded %d models for variant '%s': %s (variants available: %s)",
+        len(store.model_slugs),
+        store.default_variant,
+        store.model_slugs,
+        store.variants,
+    )
+
+    # Build file_id -> filename mapping from first model's default-variant rows
     first_slug = store.model_slugs[0]
-    for row in store.predictions[first_slug]:
+    for row in store.predictions[(first_slug, store.default_variant)]:
         fid = row["file_id"]
         store.file_ids.append(fid)
         store.file_id_to_filename[fid] = row["filename"]

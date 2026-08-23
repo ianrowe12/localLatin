@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { apiFetch } from './client'
 import { FEEDBACK_UPDATED_EVENT } from './feedback'
+import type { PredictionVariant } from './variants'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -12,6 +13,9 @@ export interface ModelInfo {
   layer: number | null
   pooling: string | null
   prediction_count: number
+  // Populated by GET /api/models; consumed by the variant selector (#48).
+  available_variants: PredictionVariant[]
+  default_variant: PredictionVariant
 }
 
 export interface RecentReview {

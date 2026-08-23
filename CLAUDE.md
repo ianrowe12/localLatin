@@ -190,7 +190,9 @@ git subtree push --prefix=web webapp main
 The webapp reads these files (relative to `data_root` in `web/config.yaml`):
 - `data/canon_unlabelled/` — 2,238 query .txt files
 - `data/canon_labelled/` — 840 directories of candidate .txt files
-- `runs/active/resubmit/unlabelled/unlabelled_predictions.csv` — model predictions
+- `runs/active/resubmit/unlabelled/unlabelled_predictions_<variant>.csv` — model predictions,
+  one file per post-processing variant (`raw`, `abtt`, `sif`, `sif_abtt`; `sif_abtt` is the
+  default). The pre-variant `unlabelled_predictions.csv` is stale and is never served.
 - `runs/active/ig_examples/` — IG visualization artifacts (CSV + NPZ)
 - `runs/active/resubmit/webapp/feedback.db` — auto-created SQLite
 

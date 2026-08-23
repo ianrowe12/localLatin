@@ -16,6 +16,18 @@ class InvalidModelError(Exception):
         super().__init__(self.message)
 
 
+class VariantUnavailableError(Exception):
+    """A known variant that this deployment has no predictions CSV for."""
+
+    def __init__(self, variant: str, available: list[str]) -> None:
+        self.variant = variant
+        self.available = available
+        self.message = (
+            f"Prediction variant '{variant}' is not available. Available: {available}"
+        )
+        super().__init__(self.message)
+
+
 class ExampleNotFoundError(Exception):
     def __init__(self, example_id: int) -> None:
         self.example_id = example_id

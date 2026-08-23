@@ -6,6 +6,25 @@ from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, Field, model_validator
 
 
+# --- Prediction variants ---
+
+class PredictionVariant(StrEnum):
+    """Post-processing variant a set of predictions was computed with.
+
+    Each variant has its own predictions CSV (see PathsConfig.resolve_variant).
+    Anything outside this set is rejected by FastAPI/pydantic with a 422.
+    """
+
+    RAW = "raw"
+    ABTT = "abtt"
+    SIF = "sif"
+    SIF_ABTT = "sif_abtt"
+
+
+VARIANTS: tuple[str, ...] = tuple(variant.value for variant in PredictionVariant)
+DEFAULT_VARIANT: str = PredictionVariant.SIF_ABTT.value
+
+
 # --- Queries ---
 
 class QueryListItem(BaseModel):
@@ -63,6 +82,7 @@ class PredictionResponse(BaseModel):
     file_id: int
     filename: str
     model: str
+    variant: PredictionVariant = PredictionVariant.SIF_ABTT
     predictions: List[Prediction]
 
 
@@ -208,6 +228,7 @@ class AccountCreateResponse(BaseModel):
 class FeedbackCreate(BaseModel):
     query_id: int
     model_slug: str
+    variant: PredictionVariant = PredictionVariant.SIF_ABTT
     outcome: Optional[FeedbackOutcome] = None
     correct_rank: Optional[int] = Field(None, ge=0, le=10)
     correct_dir: Optional[str] = None
@@ -289,6 +310,9 @@ class FeedbackEntry(BaseModel):
     query_id: int
     timestamp: str
     model_slug: str
+    # None only for rows written before the variant column existed; those
+    # predate the variant CSVs and are never attributed to one retroactively.
+    variant: Optional[str] = None
     outcome: FeedbackOutcome
     correct_rank: Optional[int]
     correct_dir: Optional[str]
@@ -345,6 +369,10 @@ class ModelInfo(BaseModel):
     layer: Optional[int] = None
     pooling: Optional[str] = None
     prediction_count: int
+    # Variants this deployment can actually serve for this model, plus the one
+    # used when a client omits ?variant=.
+    available_variants: List[str] = Field(default_factory=list)
+    default_variant: str = DEFAULT_VARIANT
 
 
 # --- Errors ---

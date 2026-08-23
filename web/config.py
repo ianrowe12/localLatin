@@ -5,7 +5,9 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator, model_validator
+
+from web.models import DEFAULT_VARIANT, VARIANTS
 
 
 class AppConfig(BaseModel):
@@ -20,14 +22,43 @@ class PathsConfig(BaseModel):
     data_root: str = os.environ.get("LOCALLATIN_DATA_ROOT", ".")
     canon_unlabelled: str = "data/canon_unlabelled"
     canon_labelled: str = "data/canon_labelled"
-    predictions_combined: str = "runs/active/resubmit/unlabelled/unlabelled_predictions.csv"
+    # One predictions CSV per post-processing variant. The pre-variant frozen
+    # file (unlabelled_predictions.csv) predates the 2026-04-07 Task B split
+    # redesign and is deliberately NOT a fallback -- see issue #45.
+    predictions_variant_pattern: str = (
+        "runs/active/resubmit/unlabelled/unlabelled_predictions_{variant}.csv"
+    )
+    variants: list[str] = list(VARIANTS)
+    default_variant: str = DEFAULT_VARIANT
     predictions_dir: str = "runs/active/resubmit/unlabelled"
     ig_artifacts_dir: str = "runs/active/ig_examples/artifacts"
     ig_examples_csv: str = "runs/active/ig_examples/phase12f_examples.csv"
     feedback_db: str = "runs/active/resubmit/webapp/feedback.db"
 
+    @field_validator("variants")
+    @classmethod
+    def _known_variants(cls, value: list[str]) -> list[str]:
+        unknown = [v for v in value if v not in VARIANTS]
+        if unknown:
+            raise ValueError(f"Unknown prediction variants: {unknown}")
+        if not value:
+            raise ValueError("At least one prediction variant must be configured")
+        return value
+
+    @model_validator(mode="after")
+    def _default_variant_is_configured(self) -> "PathsConfig":
+        if self.default_variant not in self.variants:
+            raise ValueError(
+                f"default_variant '{self.default_variant}' is not in variants {self.variants}"
+            )
+        return self
+
     def resolve(self, relative: str) -> Path:
         return Path(self.data_root) / relative
+
+    def resolve_variant(self, variant: str) -> Path:
+        """Path to the predictions CSV for one post-processing variant."""
+        return self.resolve(self.predictions_variant_pattern.format(variant=variant))
 
 
 class CorsConfig(BaseModel):

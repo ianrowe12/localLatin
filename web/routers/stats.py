@@ -78,6 +78,14 @@ async def get_stats(
 async def list_models(
     store: DataStore = Depends(get_store),
 ) -> list[ModelInfo]:
+    # One entry per model, described by its default-variant metadata. The
+    # variant CSVs cover the same models, so available_variants is the set of
+    # variants this deployment found on disk.
+    metas = [
+        meta
+        for (_slug, variant), meta in store.model_meta.items()
+        if variant == store.default_variant
+    ]
     return [
         ModelInfo(
             slug=meta.slug,
@@ -85,6 +93,8 @@ async def list_models(
             layer=meta.layer,
             pooling=meta.pooling,
             prediction_count=meta.prediction_count,
+            available_variants=list(store.variants),
+            default_variant=store.default_variant,
         )
-        for meta in sorted(store.model_meta.values(), key=lambda m: m.display_name)
+        for meta in sorted(metas, key=lambda m: m.display_name)
     ]

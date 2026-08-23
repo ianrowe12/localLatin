@@ -14,6 +14,8 @@ from pathlib import Path
 
 import aiosqlite
 
+from web.models import DEFAULT_VARIANT
+
 logger = logging.getLogger(__name__)
 
 _SCHEMA = """
@@ -22,6 +24,7 @@ CREATE TABLE IF NOT EXISTS feedback (
     query_id INTEGER NOT NULL,
     timestamp TEXT NOT NULL DEFAULT (datetime('now')),
     model_slug TEXT NOT NULL,
+    variant TEXT,
     outcome TEXT NOT NULL DEFAULT 'legacy_unresolved',
     correct_rank INTEGER,
     correct_dir TEXT,
@@ -33,6 +36,8 @@ CREATE TABLE IF NOT EXISTS feedback (
 );
 CREATE INDEX IF NOT EXISTS idx_feedback_query ON feedback(query_id);
 CREATE INDEX IF NOT EXISTS idx_feedback_model ON feedback(model_slug);
+-- idx_feedback_variant is created in _migrate(), after the additive ALTER that
+-- gives pre-variant databases the column.
 CREATE INDEX IF NOT EXISTS idx_feedback_reviewer ON feedback(reviewer);
 
 CREATE TABLE IF NOT EXISTS accounts (
@@ -70,6 +75,7 @@ _EXPORT_COLUMNS = [
     "filename",
     "timestamp",
     "model_slug",
+    "variant",
     "outcome",
     "correct_rank",
     "correct_dir",
@@ -155,16 +161,18 @@ class FeedbackDB:
         reviewer: str,
         reviewer_account_id: int | None = None,
         selected_ranks: list[int] | None = None,
+        variant: str = DEFAULT_VARIANT,
     ) -> dict:
         assert self._db is not None
         selected_ranks_json = json.dumps(selected_ranks) if selected_ranks else None
         cursor = await self._db.execute(
             """INSERT INTO feedback
-                   (query_id, model_slug, outcome, correct_rank, correct_dir, selected_ranks_json, notes, reviewer, reviewer_account_id, schema_version)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 2)""",
+                   (query_id, model_slug, variant, outcome, correct_rank, correct_dir, selected_ranks_json, notes, reviewer, reviewer_account_id, schema_version)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 2)""",
             (
                 query_id,
                 model_slug,
+                variant,
                 outcome,
                 correct_rank,
                 correct_dir,
@@ -195,6 +203,12 @@ class FeedbackDB:
             await self._db.execute(
                 "ALTER TABLE feedback ADD COLUMN selected_ranks_json TEXT"
             )
+        if "variant" not in columns:
+            # Additive only, and deliberately NOT backfilled: rows written before
+            # this column existed were reviewed against the pre-variant frozen
+            # predictions CSV, so stamping them 'sif_abtt' would misattribute
+            # them. They keep variant NULL and simply never prefill a variant.
+            await self._db.execute("ALTER TABLE feedback ADD COLUMN variant TEXT")
 
         await self._db.execute(
             """
@@ -244,6 +258,15 @@ class FeedbackDB:
             """
             CREATE INDEX IF NOT EXISTS idx_feedback_latest
                 ON feedback(query_id, model_slug, reviewer_account_id, timestamp, id)
+            """
+        )
+        await self._db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_feedback_variant ON feedback(variant)"
+        )
+        await self._db.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_feedback_latest_variant
+                ON feedback(query_id, model_slug, variant, reviewer_account_id, timestamp, id)
             """
         )
 
@@ -659,7 +682,11 @@ class FeedbackDB:
         ]
 
     async def get_feedback_for_query(
-        self, query_id: int, model: str | None = None, limit: int = 10
+        self,
+        query_id: int,
+        model: str | None = None,
+        limit: int = 10,
+        variant: str | None = None,
     ) -> list[dict]:
         assert self._db is not None
         query = "SELECT * FROM feedback WHERE query_id = ?"
@@ -667,6 +694,9 @@ class FeedbackDB:
         if model:
             query += " AND model_slug = ?"
             params.append(model)
+        if variant:
+            query += " AND variant = ?"
+            params.append(variant)
         query += " ORDER BY timestamp DESC, id DESC LIMIT ?"
         params.append(limit)
         rows = await (await self._db.execute(query, params)).fetchall()
@@ -677,7 +707,13 @@ class FeedbackDB:
         query_id: int,
         model_slug: str,
         reviewer_account_id: int,
+        variant: str = DEFAULT_VARIANT,
     ) -> dict | None:
+        """Latest row for this reviewer on (query, model, variant).
+
+        Keyed by variant so a note saved while reviewing sif_abtt never prefills
+        the form for raw -- different rankings, different answers.
+        """
         assert self._db is not None
         row = await (
             await self._db.execute(
@@ -686,11 +722,12 @@ class FeedbackDB:
                 FROM feedback
                 WHERE query_id = ?
                   AND model_slug = ?
+                  AND variant = ?
                   AND reviewer_account_id = ?
                 ORDER BY timestamp DESC, id DESC
                 LIMIT 1
                 """,
-                (query_id, model_slug, reviewer_account_id),
+                (query_id, model_slug, variant, reviewer_account_id),
             )
         ).fetchone()
         return _feedback_row(row) if row is not None else None
@@ -708,6 +745,7 @@ class FeedbackDB:
     async def export_csv(
         self,
         model: str | None = None,
+        variant: str | None = None,
         reviewer: str | None = None,
         outcome: str | None = None,
         status: str | None = None,
@@ -721,6 +759,9 @@ class FeedbackDB:
         if model:
             query += " AND model_slug = ?"
             params.append(model)
+        if variant:
+            query += " AND variant = ?"
+            params.append(variant)
         if reviewer:
             query += " AND reviewer = ?"
             params.append(reviewer)

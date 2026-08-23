@@ -4,12 +4,19 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import PlainTextResponse
 
 from web.dependencies import get_current_user, get_db, get_store, require_pi_admin
-from web.exceptions import InvalidModelError, QueryNotFoundError
-from web.models import FeedbackCreate, FeedbackEntry, UserPublic
+from web.exceptions import InvalidModelError, QueryNotFoundError, VariantUnavailableError
+from web.models import FeedbackCreate, FeedbackEntry, PredictionVariant, UserPublic
 from web.services.data_store import DataStore, normalize_slug
 from web.services.feedback_db import FeedbackDB
 
 router = APIRouter(prefix="/api", tags=["feedback"])
+
+
+def _check_model_variant(store: DataStore, slug: str, variant: str) -> None:
+    if not store.ensure_variant(variant):
+        raise VariantUnavailableError(variant, store.variants)
+    if (slug, variant) not in store.predictions:
+        raise InvalidModelError(slug, store.model_slugs)
 
 
 @router.post("/feedback", response_model=FeedbackEntry, status_code=201)
@@ -23,19 +30,22 @@ async def create_feedback(
         raise QueryNotFoundError(body.query_id)
 
     slug = normalize_slug(body.model_slug)
-    if slug not in store.predictions:
-        raise InvalidModelError(slug, store.model_slugs)
+    variant = body.variant.value
+    _check_model_variant(store, slug, variant)
 
     correct_dir = body.correct_dir
     if body.selected_ranks:
         # Legacy consumers still read correct_rank/correct_dir as a single choice.
         # For multi-select submissions, the first selected rank is the canonical
         # legacy choice while selected_ranks carries the full reviewer answer.
-        correct_dir = _dir_for_rank(store, slug, body.query_id, body.selected_ranks[0])
+        correct_dir = _dir_for_rank(
+            store, slug, variant, body.query_id, body.selected_ranks[0]
+        )
 
     row = await db.insert(
         query_id=body.query_id,
         model_slug=slug,
+        variant=variant,
         outcome=body.outcome.value,
         correct_rank=body.correct_rank,
         correct_dir=correct_dir,
@@ -51,6 +61,10 @@ async def create_feedback(
 async def latest_feedback(
     query_id: int,
     model: str,
+    variant: PredictionVariant = Query(
+        PredictionVariant.SIF_ABTT,
+        description="Only prefill from feedback saved for this variant",
+    ),
     store: DataStore = Depends(get_store),
     db: FeedbackDB = Depends(get_db),
     current_user: UserPublic = Depends(get_current_user),
@@ -59,13 +73,13 @@ async def latest_feedback(
         raise QueryNotFoundError(query_id)
 
     slug = normalize_slug(model)
-    if slug not in store.predictions:
-        raise InvalidModelError(slug, store.model_slugs)
+    _check_model_variant(store, slug, variant.value)
 
     row = await db.get_latest_feedback(
         query_id=query_id,
         model_slug=slug,
         reviewer_account_id=current_user.id,
+        variant=variant.value,
     )
     return FeedbackEntry(**row) if row is not None else None
 
@@ -73,6 +87,9 @@ async def latest_feedback(
 @router.get("/feedback/export")
 async def export_feedback(
     model: str | None = None,
+    variant: PredictionVariant | None = Query(
+        None, description="Restrict the export to one prediction variant"
+    ),
     reviewer: str | None = None,
     outcome: str | None = Query(
         None,
@@ -91,6 +108,7 @@ async def export_feedback(
     slug = normalize_slug(model) if model else None
     csv_data = await db.export_csv(
         model=slug,
+        variant=variant.value if variant else None,
         reviewer=reviewer,
         outcome=outcome,
         status=status,
@@ -108,10 +126,11 @@ async def export_feedback(
 def _dir_for_rank(
     store: DataStore,
     model_slug: str,
+    variant: str,
     query_id: int,
     rank: int,
 ) -> str | None:
-    for row in store.predictions.get(model_slug, []):
+    for row in store.predictions.get((model_slug, variant), []):
         if row["file_id"] != query_id:
             continue
         for prediction in row["predictions"]:

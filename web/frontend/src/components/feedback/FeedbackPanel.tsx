@@ -5,6 +5,7 @@ import { isFeedbackDraftEmpty } from '../../contexts/feedbackDraft'
 import { useReviewer } from '../../contexts/ReviewerContext'
 import { fetchNextQuery, usePredictions } from '../../api/queries'
 import { fetchLatestFeedback, type FeedbackEntry } from '../../api/feedback'
+import { DEFAULT_VARIANT } from '../../api/variants'
 import MatchPills, { type MatchSelection } from './MatchPills'
 import NotesTextarea from './NotesTextarea'
 import SubmitButton from './SubmitButton'
@@ -46,7 +47,13 @@ export default function FeedbackPanel() {
     skipFeedback,
   } = useFeedback()
   const { reviewerName, clearReviewer } = useReviewer()
-  const { data: predictionData } = usePredictions(activeQueryId, activeModel)
+  // Issue #48 replaces this constant with the reviewer's selected variant.
+  const activeVariant = DEFAULT_VARIANT
+  const { data: predictionData } = usePredictions(
+    activeQueryId,
+    activeModel,
+    activeVariant,
+  )
   const [skipNeedsNote, setSkipNeedsNote] = useState(false)
   const [multiSelect, setMultiSelect] = useState(false)
   const [seeded, setSeeded] = useState<{ key: string; draft: FeedbackDraft } | null>(null)
@@ -71,7 +78,7 @@ export default function FeedbackPanel() {
     if (activeQueryId === null || !activeModel) return
     const key = `${activeQueryId}-${activeModel}`
     let cancelled = false
-    fetchLatestFeedback(activeQueryId, activeModel)
+    fetchLatestFeedback(activeQueryId, activeModel, activeVariant)
       .then((entry) => {
         if (cancelled || entry === null) return
         if (!isFeedbackDraftEmpty(draftsRef.current.get(key))) return
@@ -88,7 +95,7 @@ export default function FeedbackPanel() {
     return () => {
       cancelled = true
     }
-  }, [activeQueryId, activeModel, seedDraftIfEmpty])
+  }, [activeQueryId, activeModel, activeVariant, seedDraftIfEmpty])
 
   // Drop any selected ranks that are no longer part of the current predictions.
   useEffect(() => {
@@ -189,11 +196,18 @@ export default function FeedbackPanel() {
 
   const handleSubmit = useCallback(async () => {
     if (activeQueryId === null) return
-    await submitFeedback(activeQueryId, activeModel, predictions)
+    await submitFeedback(activeQueryId, activeModel, predictions, activeVariant)
     setTimeout(() => {
       void advanceToNextActionable(activeQueryId)
     }, 500)
-  }, [activeQueryId, activeModel, predictions, submitFeedback, advanceToNextActionable])
+  }, [
+    activeQueryId,
+    activeModel,
+    activeVariant,
+    predictions,
+    submitFeedback,
+    advanceToNextActionable,
+  ])
 
   const handleSkip = useCallback(async () => {
     if (activeQueryId === null) return
@@ -202,11 +216,18 @@ export default function FeedbackPanel() {
       setSkipNeedsNote(true)
       return
     }
-    await skipFeedback(activeQueryId, activeModel, notes)
+    await skipFeedback(activeQueryId, activeModel, notes, activeVariant)
     setTimeout(() => {
       void advanceToNextActionable(activeQueryId)
     }, 500)
-  }, [activeQueryId, activeModel, draft?.notes, skipFeedback, advanceToNextActionable])
+  }, [
+    activeQueryId,
+    activeModel,
+    activeVariant,
+    draft?.notes,
+    skipFeedback,
+    advanceToNextActionable,
+  ])
 
   if (activeQueryId === null) {
     return (
