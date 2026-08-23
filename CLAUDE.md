@@ -106,9 +106,52 @@ data/canon_labelled/ (1,705 .txt files, 840 dirs)
 - **Datasets**: `data/canon/` (1,278 raw files), `data/canon_labelled/` (1,705 labeled candidates in 840 dirs), `data/canon_unlabelled/` (2,238 unlabeled queries)
 - **Active experiment outputs**: `runs/active/resubmit/`, `runs/active/encoder_bases/`, `runs/active/ig_examples/`, `runs/active/resubmit_bases/`
 - **Off-repo archive** (old phases, reproducibility-sensitive): `/projects/beto/irowerojas/localLatin_archive/`
-- **Paper drafts**: `overleaf_drafts/`
+- **Paper drafts**: `overleaf_drafts/` — any agent editing prose here MUST follow `docs/research/paper_writing_guidelines.md` (skimmability, crisp contributions, grouped related work, self-contained captions, no em-dashes).
 - **Project docs**: `docs/meetings/`, `docs/analyses/`, `docs/research/`
 - **Stale code preserved for grep-ability**: `scripts/_archive/`, `slurm/_archive/`, `src/_archive/`
+
+## PR & Merge Workflow
+
+Every implementation change goes through a pull request. No direct commits to `main`.
+
+**Branch naming**: `issue-<N>-<slug>`, e.g. `issue-47-taskb-rerun`. One branch per issue, unless
+several issues touch the same files (docs bundles), in which case name it after all of them
+(`issue-35-55-57-docs`).
+
+**Pull requests**: always target `main`. The PR body must contain `Closes #N` for every issue the
+branch resolves, so merging closes them automatically.
+
+**Merge gate**: a PR may only be merged once both of these hold.
+
+1. **CI is green** on the head commit (workflow added in issue #54).
+2. **An independent code-review agent has passed the PR** — a fresh-context reviewer, never the
+   agent that wrote the code. The implementer marks the PR ready; the reviewer approves or
+   requests changes. Enable auto-merge only after both conditions hold.
+
+**Commit messages**: NEVER add a `Co-Authored-By:` trailer (standing preference from Ian). This
+applies to every commit in this repo, agent-authored or not. Use conventional-commit style
+subjects (`feat:`, `fix:`, `docs:`, `chore:`) and keep the body focused on what changed and why.
+
+## GPU Budget
+
+Allocation balances as of **2026-08-23**:
+
+| Account | Partition | Balance |
+|---------|-----------|---------|
+| `beto-delta-gpu` | `gpuA100x4` | **54 h** |
+| `beto-delta-cpu` | `cpu` | **338 h** |
+
+Rules:
+
+- **Every sbatch must set a realistic `--time`.** SLURM charges against the *reserved* wall time,
+  not the elapsed run time, so an oversized `--time` burns budget even when the job finishes in
+  minutes. Estimate from a previous run of the same job and add a modest margin.
+- **Prefer the CPU partition** (`--partition=cpu`, `--account=beto-delta-cpu`) whenever the job
+  does not need a GPU. In particular, anything that only reads existing embeddings from
+  `runs/active/` (evaluation, threshold sweeps, clustering, figures, split verification) is CPU
+  work and must not request `--gpus-per-node`.
+- **GPU submissions for the current push are limited to issue #47.** Any other GPU job needs
+  explicit approval from Ian before submission.
 
 ## Webapp (Git Subtree)
 
