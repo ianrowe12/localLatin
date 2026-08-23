@@ -66,7 +66,7 @@ The webapp reads these files from `data_root` at startup:
 |------|-------------|
 | `canon_unlabelled/` | 2,238 query .txt files |
 | `canon_labelled/` | 859 directories of candidate .txt files |
-| `runs/active/resubmit/unlabelled/unlabelled_predictions.csv` | Combined model predictions |
+| `runs/active/resubmit/unlabelled/unlabelled_predictions_<variant>.csv` | Model predictions per post-processing variant (`raw`, `abtt`, `sif`, `sif_abtt`) |
 | `runs/active/ig_examples/phase12f_examples.csv` | IG example index |
 | `runs/active/ig_examples/artifacts/` | Per-model NPZ files for token map visualization (6 model slugs x 20 pair examples) |
 | `runs/active/resubmit/webapp/feedback.db` | Auto-created SQLite feedback storage |

@@ -1,4 +1,5 @@
 import { apiFetch, apiUrl } from './client'
+import { DEFAULT_VARIANT, type PredictionVariant } from './variants'
 
 export const FEEDBACK_UPDATED_EVENT = 'locallatin:feedback-updated'
 
@@ -11,6 +12,7 @@ export type FeedbackOutcome =
 export interface FeedbackPayload {
   query_id: number
   model_slug: string
+  variant?: PredictionVariant
   outcome?: FeedbackOutcome
   correct_rank: number | null
   correct_dir: string | null
@@ -24,6 +26,7 @@ export interface FeedbackEntry {
   query_id: number
   timestamp: string
   model_slug: string
+  variant: PredictionVariant | null
   outcome: FeedbackOutcome
   correct_rank: number | null
   correct_dir: string | null
@@ -45,10 +48,12 @@ export async function submitFeedback(payload: FeedbackPayload): Promise<void> {
 export async function fetchLatestFeedback(
   queryId: number,
   model: string,
+  variant: PredictionVariant = DEFAULT_VARIANT,
 ): Promise<FeedbackEntry | null> {
   const params = new URLSearchParams({
     query_id: String(queryId),
     model,
+    variant,
   })
   return apiFetch<FeedbackEntry | null>(`/api/feedback/latest?${params.toString()}`)
 }

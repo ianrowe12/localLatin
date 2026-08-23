@@ -30,9 +30,13 @@ check "data/canon_labelled/" \
     "$ROOT/data/canon_labelled" "" \
     "find '$ROOT/data/canon_labelled' -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' '"
 
-check "predictions CSV" \
-    "$ROOT/runs/active/resubmit/unlabelled/unlabelled_predictions.csv" "" \
-    "tail -n +2 '$ROOT/runs/active/resubmit/unlabelled/unlabelled_predictions.csv' | wc -l | tr -d ' '"
+# One predictions CSV per post-processing variant. The pre-variant frozen file
+# (unlabelled_predictions.csv) is stale and is no longer read by the webapp.
+for variant in raw abtt sif sif_abtt; do
+    check "predictions CSV ($variant)" \
+        "$ROOT/runs/active/resubmit/unlabelled/unlabelled_predictions_${variant}.csv" "" \
+        "tail -n +2 '$ROOT/runs/active/resubmit/unlabelled/unlabelled_predictions_${variant}.csv' | wc -l | tr -d ' '"
+done
 
 check "IG examples CSV" \
     "$ROOT/runs/active/ig_examples/phase12f_examples.csv" "" \

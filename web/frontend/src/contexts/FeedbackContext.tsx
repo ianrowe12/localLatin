@@ -13,6 +13,7 @@ import {
   type FeedbackPayload,
 } from '../api/feedback'
 import type { Prediction } from '../api/queries'
+import { DEFAULT_VARIANT, type PredictionVariant } from '../api/variants'
 import { seedDraftMapIfEmpty } from './feedbackDraft'
 
 export interface FeedbackDraft {
@@ -23,11 +24,36 @@ export interface FeedbackDraft {
 
 export interface FeedbackContextValue {
   drafts: Map<string, FeedbackDraft>
-  getDraft: (queryId: number, model: string) => FeedbackDraft
-  updateDraft: (queryId: number, model: string, patch: Partial<FeedbackDraft>) => void
-  seedDraftIfEmpty: (queryId: number, model: string, seed: FeedbackDraft) => void
-  submitFeedback: (queryId: number, model: string, predictions: Prediction[]) => Promise<void>
-  skipFeedback: (queryId: number, model: string, notes: string) => Promise<void>
+  makeDraftKey: (queryId: number, model: string, variant?: PredictionVariant) => string
+  getDraft: (
+    queryId: number,
+    model: string,
+    variant?: PredictionVariant,
+  ) => FeedbackDraft
+  updateDraft: (
+    queryId: number,
+    model: string,
+    patch: Partial<FeedbackDraft>,
+    variant?: PredictionVariant,
+  ) => void
+  seedDraftIfEmpty: (
+    queryId: number,
+    model: string,
+    seed: FeedbackDraft,
+    variant?: PredictionVariant,
+  ) => void
+  submitFeedback: (
+    queryId: number,
+    model: string,
+    predictions: Prediction[],
+    variant?: PredictionVariant,
+  ) => Promise<void>
+  skipFeedback: (
+    queryId: number,
+    model: string,
+    notes: string,
+    variant?: PredictionVariant,
+  ) => Promise<void>
   undoLastSubmit: () => void
   lastSubmittedKey: string | null
 }
@@ -36,8 +62,14 @@ const FeedbackContext = createContext<FeedbackContextValue | null>(null)
 
 const STORAGE_KEY = 'locallatin-feedback-drafts'
 
-function makeDraftKey(queryId: number, model: string): string {
-  return `${queryId}-${model}`
+// The variant is part of the key: the same query/model ranks differently per
+// variant, so drafts must not bleed across them once the selector lands (#48).
+function makeDraftKey(
+  queryId: number,
+  model: string,
+  variant: PredictionVariant = DEFAULT_VARIANT,
+): string {
+  return `${queryId}-${model}-${variant}`
 }
 
 function emptyDraft(): FeedbackDraft {
@@ -70,17 +102,26 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
   }, [drafts])
 
   const getDraft = useCallback(
-    (queryId: number, model: string): FeedbackDraft => {
-      const key = makeDraftKey(queryId, model)
+    (
+      queryId: number,
+      model: string,
+      variant: PredictionVariant = DEFAULT_VARIANT,
+    ): FeedbackDraft => {
+      const key = makeDraftKey(queryId, model, variant)
       return drafts.get(key) ?? emptyDraft()
     },
     [drafts],
   )
 
   const updateDraft = useCallback(
-    (queryId: number, model: string, patch: Partial<FeedbackDraft>) => {
+    (
+      queryId: number,
+      model: string,
+      patch: Partial<FeedbackDraft>,
+      variant: PredictionVariant = DEFAULT_VARIANT,
+    ) => {
       setDrafts((prev) => {
-        const key = makeDraftKey(queryId, model)
+        const key = makeDraftKey(queryId, model, variant)
         const existing = prev.get(key) ?? emptyDraft()
         const next = new Map(prev)
         next.set(key, { ...existing, ...patch })
@@ -91,9 +132,14 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
   )
 
   const seedDraftIfEmpty = useCallback(
-    (queryId: number, model: string, seed: FeedbackDraft) => {
+    (
+      queryId: number,
+      model: string,
+      seed: FeedbackDraft,
+      variant: PredictionVariant = DEFAULT_VARIANT,
+    ) => {
       setDrafts((prev) => {
-        const key = makeDraftKey(queryId, model)
+        const key = makeDraftKey(queryId, model, variant)
         return seedDraftMapIfEmpty(prev, key, seed)
       })
     },
@@ -105,8 +151,9 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
       queryId: number,
       model: string,
       predictions: Prediction[],
+      variant: PredictionVariant = DEFAULT_VARIANT,
     ): Promise<void> => {
-      const key = makeDraftKey(queryId, model)
+      const key = makeDraftKey(queryId, model, variant)
       const draft = drafts.get(key) ?? emptyDraft()
       const dirForRank = (rank: number): string | null =>
         predictions.find((prediction) => prediction.rank === rank)?.dir_name ?? null
@@ -120,6 +167,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
         payload = {
           query_id: queryId,
           model_slug: model,
+          variant,
           outcome: 'none_of_top_k',
           correct_rank: 0,
           correct_dir: null,
@@ -131,6 +179,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
         payload = {
           query_id: queryId,
           model_slug: model,
+          variant,
           correct_rank: multiRanks[0],
           correct_dir: dirForRank(multiRanks[0]),
           selected_ranks: multiRanks,
@@ -140,6 +189,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
         payload = {
           query_id: queryId,
           model_slug: model,
+          variant,
           outcome: 'matched_rank',
           correct_rank: draft.correctRank,
           correct_dir: dirForRank(draft.correctRank),
@@ -149,6 +199,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
         payload = {
           query_id: queryId,
           model_slug: model,
+          variant,
           correct_rank: null,
           correct_dir: null,
           notes: draft.notes,
@@ -171,13 +222,19 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
   )
 
   const skipFeedback = useCallback(
-    async (queryId: number, model: string, notes: string): Promise<void> => {
-      const key = makeDraftKey(queryId, model)
+    async (
+      queryId: number,
+      model: string,
+      notes: string,
+      variant: PredictionVariant = DEFAULT_VARIANT,
+    ): Promise<void> => {
+      const key = makeDraftKey(queryId, model, variant)
       const draft = drafts.get(key) ?? emptyDraft()
 
       await postFeedback({
         query_id: queryId,
         model_slug: model,
+        variant,
         outcome: 'skipped',
         correct_rank: null,
         correct_dir: null,
@@ -211,6 +268,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
 
   const value: FeedbackContextValue = {
     drafts,
+    makeDraftKey,
     getDraft,
     updateDraft,
     seedDraftIfEmpty,

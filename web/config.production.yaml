@@ -9,7 +9,11 @@ paths:
   data_root: "/homes/ipro222/localLatin"
   canon_unlabelled: "data/canon_unlabelled"
   canon_labelled: "data/canon_labelled"
-  predictions_combined: "runs/active/resubmit/unlabelled/unlabelled_predictions.csv"
+  # One CSV per post-processing variant. The pre-variant frozen file
+  # (unlabelled_predictions.csv) is stale and deliberately not used.
+  predictions_variant_pattern: "runs/active/resubmit/unlabelled/unlabelled_predictions_{variant}.csv"
+  variants: ["raw", "abtt", "sif", "sif_abtt"]
+  default_variant: "sif_abtt"
   predictions_dir: "runs/active/resubmit/unlabelled"
   ig_artifacts_dir: "runs/active/ig_examples/artifacts"
   ig_examples_csv: "runs/active/ig_examples/phase12f_examples.csv"

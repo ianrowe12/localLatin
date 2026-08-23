@@ -5,6 +5,10 @@ from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
+# Re-exported so API consumers can keep importing the variant vocabulary from
+# web.models; the canonical definition lives in web/variants.py.
+from web.variants import DEFAULT_VARIANT, PredictionVariant
+
 
 # --- Queries ---
 
@@ -63,6 +67,7 @@ class PredictionResponse(BaseModel):
     file_id: int
     filename: str
     model: str
+    variant: PredictionVariant
     predictions: List[Prediction]
 
 
@@ -216,6 +221,8 @@ class AccountCreateResponse(BaseModel):
 class FeedbackCreate(BaseModel):
     query_id: int
     model_slug: str
+    # None means "the deployment's configured default", resolved in the router.
+    variant: Optional[PredictionVariant] = None
     outcome: Optional[FeedbackOutcome] = None
     correct_rank: Optional[int] = Field(None, ge=0, le=10)
     correct_dir: Optional[str] = None
@@ -297,6 +304,9 @@ class FeedbackEntry(BaseModel):
     query_id: int
     timestamp: str
     model_slug: str
+    # None only for rows written before the variant column existed; those
+    # predate the variant CSVs and are never attributed to one retroactively.
+    variant: Optional[str] = None
     outcome: FeedbackOutcome
     correct_rank: Optional[int]
     correct_dir: Optional[str]
@@ -353,6 +363,10 @@ class ModelInfo(BaseModel):
     layer: Optional[int] = None
     pooling: Optional[str] = None
     prediction_count: int
+    # Variants this deployment can actually serve for this model, plus the one
+    # used when a client omits ?variant=.
+    available_variants: List[str] = Field(default_factory=list)
+    default_variant: str = DEFAULT_VARIANT
 
 
 # --- Errors ---

@@ -5,6 +5,7 @@ import { isFeedbackDraftEmpty } from '../../contexts/feedbackDraft'
 import { useReviewer } from '../../contexts/ReviewerContext'
 import { fetchNextQuery, usePredictions } from '../../api/queries'
 import { fetchLatestFeedback, type FeedbackEntry } from '../../api/feedback'
+import { DEFAULT_VARIANT } from '../../api/variants'
 import MatchPills, { type MatchSelection } from './MatchPills'
 import NotesTextarea from './NotesTextarea'
 import SubmitButton from './SubmitButton'
@@ -39,6 +40,7 @@ export default function FeedbackPanel() {
   const { activeQueryId, activeModel, setActiveQueryId } = useApp()
   const {
     drafts,
+    makeDraftKey,
     getDraft,
     updateDraft,
     seedDraftIfEmpty,
@@ -46,7 +48,13 @@ export default function FeedbackPanel() {
     skipFeedback,
   } = useFeedback()
   const { reviewerName, clearReviewer } = useReviewer()
-  const { data: predictionData } = usePredictions(activeQueryId, activeModel)
+  // Issue #48 replaces this constant with the reviewer's selected variant.
+  const activeVariant = DEFAULT_VARIANT
+  const { data: predictionData } = usePredictions(
+    activeQueryId,
+    activeModel,
+    activeVariant,
+  )
   const [skipNeedsNote, setSkipNeedsNote] = useState(false)
   const [multiSelect, setMultiSelect] = useState(false)
   const [seeded, setSeeded] = useState<{ key: string; draft: FeedbackDraft } | null>(null)
@@ -55,10 +63,13 @@ export default function FeedbackPanel() {
   const draftsRef = useRef(drafts)
   draftsRef.current = drafts
 
-  const draft = activeQueryId !== null ? getDraft(activeQueryId, activeModel) : null
+  const draft =
+    activeQueryId !== null ? getDraft(activeQueryId, activeModel, activeVariant) : null
   const predictions = predictionData?.predictions?.slice(0, 10) ?? []
   const draftKey =
-    activeQueryId !== null ? `${activeQueryId}-${activeModel}` : null
+    activeQueryId !== null
+      ? makeDraftKey(activeQueryId, activeModel, activeVariant)
+      : null
 
   // Requirement: multi-select is OFF by default and resets for every new query.
   useEffect(() => {
@@ -69,14 +80,14 @@ export default function FeedbackPanel() {
   // clobber a local unsaved draft (or a late typed draft via the resolve re-check).
   useEffect(() => {
     if (activeQueryId === null || !activeModel) return
-    const key = `${activeQueryId}-${activeModel}`
+    const key = makeDraftKey(activeQueryId, activeModel, activeVariant)
     let cancelled = false
-    fetchLatestFeedback(activeQueryId, activeModel)
+    fetchLatestFeedback(activeQueryId, activeModel, activeVariant)
       .then((entry) => {
         if (cancelled || entry === null) return
         if (!isFeedbackDraftEmpty(draftsRef.current.get(key))) return
         const seededDraft = draftFromEntry(entry)
-        seedDraftIfEmpty(activeQueryId, activeModel, seededDraft)
+        seedDraftIfEmpty(activeQueryId, activeModel, seededDraft, activeVariant)
         setSeeded({ key, draft: seededDraft })
         if (entry.selected_ranks && entry.selected_ranks.length > 1) {
           setMultiSelect(true)
@@ -88,7 +99,7 @@ export default function FeedbackPanel() {
     return () => {
       cancelled = true
     }
-  }, [activeQueryId, activeModel, seedDraftIfEmpty])
+  }, [activeQueryId, activeModel, activeVariant, makeDraftKey, seedDraftIfEmpty])
 
   // Drop any selected ranks that are no longer part of the current predictions.
   useEffect(() => {
@@ -98,10 +109,15 @@ export default function FeedbackPanel() {
     if (draft.selectedRanks && draft.selectedRanks.length > 0) {
       const pruned = draft.selectedRanks.filter((rank) => validRanks.has(rank))
       if (pruned.length !== draft.selectedRanks.length) {
-        updateDraft(activeQueryId, activeModel, {
+        updateDraft(
+          activeQueryId,
+          activeModel,
+          {
           selectedRanks: pruned.length > 0 ? pruned : undefined,
           correctRank: pruned.length > 0 ? pruned[0] : null,
-        })
+          },
+          activeVariant,
+        )
         return
       }
     }
@@ -111,14 +127,20 @@ export default function FeedbackPanel() {
       draft.correctRank > 0 &&
       !validRanks.has(draft.correctRank)
     ) {
-      updateDraft(activeQueryId, activeModel, {
+      updateDraft(
+        activeQueryId,
+        activeModel,
+        {
         correctRank: null,
         selectedRanks: undefined,
-      })
+        },
+        activeVariant,
+      )
     }
   }, [
     activeQueryId,
     activeModel,
+    activeVariant,
     draft?.correctRank,
     draft?.selectedRanks,
     predictions,
@@ -129,28 +151,48 @@ export default function FeedbackPanel() {
     (next: MatchSelection) => {
       if (activeQueryId === null) return
       if (next.noneSelected) {
-        updateDraft(activeQueryId, activeModel, {
+        updateDraft(
+          activeQueryId,
+          activeModel,
+          {
           correctRank: 0,
           selectedRanks: undefined,
-        })
+          },
+          activeVariant,
+        )
       } else if (next.selectedRanks.length === 0) {
-        updateDraft(activeQueryId, activeModel, {
+        updateDraft(
+          activeQueryId,
+          activeModel,
+          {
           correctRank: null,
           selectedRanks: undefined,
-        })
+          },
+          activeVariant,
+        )
       } else if (multiSelect) {
-        updateDraft(activeQueryId, activeModel, {
+        updateDraft(
+          activeQueryId,
+          activeModel,
+          {
           correctRank: next.selectedRanks[0],
           selectedRanks: next.selectedRanks,
-        })
+          },
+          activeVariant,
+        )
       } else {
-        updateDraft(activeQueryId, activeModel, {
+        updateDraft(
+          activeQueryId,
+          activeModel,
+          {
           correctRank: next.selectedRanks[0],
           selectedRanks: undefined,
-        })
+          },
+          activeVariant,
+        )
       }
     },
-    [activeQueryId, activeModel, multiSelect, updateDraft],
+    [activeQueryId, activeModel, activeVariant, multiSelect, updateDraft],
   )
 
   const handleMultiSelectToggle = useCallback(
@@ -158,25 +200,30 @@ export default function FeedbackPanel() {
       setMultiSelect(checked)
       if (!checked && activeQueryId !== null) {
         // Collapse a multi answer down to its first rank for single mode.
-        const current = getDraft(activeQueryId, activeModel)
+        const current = getDraft(activeQueryId, activeModel, activeVariant)
         if (current.selectedRanks && current.selectedRanks.length > 0) {
-          updateDraft(activeQueryId, activeModel, {
+          updateDraft(
+            activeQueryId,
+            activeModel,
+            {
             correctRank: current.selectedRanks[0],
             selectedRanks: undefined,
-          })
+            },
+            activeVariant,
+          )
         }
       }
     },
-    [activeQueryId, activeModel, getDraft, updateDraft],
+    [activeQueryId, activeModel, activeVariant, getDraft, updateDraft],
   )
 
   const handleNotesChange = useCallback(
     (notes: string) => {
       if (activeQueryId === null) return
-      updateDraft(activeQueryId, activeModel, { notes })
+      updateDraft(activeQueryId, activeModel, { notes }, activeVariant)
       if (notes.trim()) setSkipNeedsNote(false)
     },
-    [activeQueryId, activeModel, updateDraft],
+    [activeQueryId, activeModel, activeVariant, updateDraft],
   )
 
   const advanceToNextActionable = useCallback(
@@ -189,11 +236,18 @@ export default function FeedbackPanel() {
 
   const handleSubmit = useCallback(async () => {
     if (activeQueryId === null) return
-    await submitFeedback(activeQueryId, activeModel, predictions)
+    await submitFeedback(activeQueryId, activeModel, predictions, activeVariant)
     setTimeout(() => {
       void advanceToNextActionable(activeQueryId)
     }, 500)
-  }, [activeQueryId, activeModel, predictions, submitFeedback, advanceToNextActionable])
+  }, [
+    activeQueryId,
+    activeModel,
+    activeVariant,
+    predictions,
+    submitFeedback,
+    advanceToNextActionable,
+  ])
 
   const handleSkip = useCallback(async () => {
     if (activeQueryId === null) return
@@ -202,11 +256,18 @@ export default function FeedbackPanel() {
       setSkipNeedsNote(true)
       return
     }
-    await skipFeedback(activeQueryId, activeModel, notes)
+    await skipFeedback(activeQueryId, activeModel, notes, activeVariant)
     setTimeout(() => {
       void advanceToNextActionable(activeQueryId)
     }, 500)
-  }, [activeQueryId, activeModel, draft?.notes, skipFeedback, advanceToNextActionable])
+  }, [
+    activeQueryId,
+    activeModel,
+    activeVariant,
+    draft?.notes,
+    skipFeedback,
+    advanceToNextActionable,
+  ])
 
   if (activeQueryId === null) {
     return (
