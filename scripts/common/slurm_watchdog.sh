@@ -5,10 +5,11 @@
 # Monitor provides the cadence):
 #   1. squeue: flags jobs PENDING longer than WATCHDOG_PENDING_MAX minutes,
 #      RUNNING jobs whose StdOut log has not been written to for more than
-#      WATCHDOG_STALL_MAX minutes, and RUNNING jobs within
-#      WATCHDOG_WALL_WARN minutes of their wallclock limit.
+#      WATCHDOG_STALL_MAX minutes, and RUNNING jobs close to their wallclock
+#      limit (see NEAR_WALLCLOCK below).
 #   2. sacct: flags jobs that finished in the last WATCHDOG_LOOKBACK_HOURS
-#      hours with state FAILED, TIMEOUT, OUT_OF_MEMORY or NODE_FAIL.
+#      hours with state FAILED, TIMEOUT, OUT_OF_MEMORY, NODE_FAIL, BOOT_FAIL
+#      or DEADLINE.
 #
 # OUTPUT:
 #   - human-readable "ALERT ..." lines on stdout
@@ -17,8 +18,29 @@
 #     default: <repo_root>/runs/active/slurm_watchdog_status.log
 #   - when nothing is flagged: exactly one no-op line and no status-log write.
 #
-# EXIT CODES: 0 = nothing to flag, 1 = at least one alert raised (so callers
-# can react), 2 = usage/environment error.
+# EXIT CODES:
+#   0  nothing to flag
+#   1  job alerts raised (so callers can react)
+#   2  usage / configuration error (no squeue on PATH, bad env override)
+#   3  DEGRADED -- the watchdog could not see part of the picture (squeue or
+#      sacct failed or timed out). This code takes precedence over 1: an
+#      incomplete pass must never be reported as a clean one. The script
+#      FAILS CLOSED -- it never prints the "OK" line or exits 0 when blind.
+#
+# NEAR_WALLCLOCK: fires only when a RUNNING job has used > 0 seconds, has
+# consumed more than half its limit, and has <= WATCHDOG_WALL_WARN minutes
+# left. The half-of-limit guard stops jobs whose *total* limit is shorter than
+# the warn window (common here, since time limits are kept realistic) from
+# alerting the instant they start.
+#
+# DEDUP: an alert is appended to the status log only if that exact
+# jobid|state pair is not already present, so the log stays idempotent under a
+# repeating cron. Repeats are still printed on stdout, marked
+# "(previously reported)", and still produce exit 1 -- the condition is
+# unresolved until the operator acts on it. Watchdog-health records use a
+# source-qualified pseudo job id ("WATCHDOG:squeue", "WATCHDOG:sacct",
+# "WATCHDOG:config") so distinct blind spots dedup independently. The log is
+# rolled over to <log>.1 once it exceeds WATCHDOG_LOG_MAX_BYTES.
 #
 # USAGE:
 #   bash scripts/common/slurm_watchdog.sh
@@ -31,14 +53,25 @@
 # ARMING IT FROM AN ORCHESTRATION SESSION:
 #   While an orchestration session is live it can poll this script directly
 #   instead of using cron -- run it after each sbatch submission and on a
-#   Monitor cadence, e.g.
-#       until ! squeue -u irowerojas -h | grep -q .; do \
-#         bash scripts/common/slurm_watchdog.sh; sleep 600; done
-#   Exit status 1 means new alerts were printed, so the session should read the
-#   stdout lines (or tail runs/active/slurm_watchdog_status.log) and react.
-#   Tear the loop down once squeue is empty -- the script itself is stateless.
+#   Monitor cadence. Branch on squeue's OWN exit status, never on whether its
+#   output is empty: a failed or timed-out squeue also produces no rows, and a
+#   loop that cannot tell those apart disarms itself during an outage.
 #
-# ENV OVERRIDES:
+#       while :; do
+#         if ! rows="$(timeout 30 squeue -u irowerojas -h -o '%i')"; then
+#           echo "squeue unavailable -- staying armed"   # do NOT tear down
+#           sleep 60; continue
+#         fi
+#         [ -n "$rows" ] || break                        # queue genuinely empty
+#         bash scripts/common/slurm_watchdog.sh          # exit 1 = job alert,
+#         sleep 600                                      # exit 3 = watchdog blind
+#       done
+#
+#   Tear the loop down only on that verified-empty branch -- the script itself
+#   is stateless, so there is nothing else to clean up.
+#
+# ENV OVERRIDES (all the numeric ones are validated; a bad value is a hard
+# error, never a silently skipped check):
 #   WATCHDOG_USER            SLURM user to watch      (default: $USER, else irowerojas)
 #   WATCHDOG_PENDING_MAX     minutes                  (default: 30)
 #   WATCHDOG_STALL_MAX       minutes                  (default: 20)
@@ -46,6 +79,7 @@
 #   WATCHDOG_LOOKBACK_HOURS  hours of sacct history   (default: 2)
 #   WATCHDOG_STATUS_LOG      status-log path          (default: see above)
 #   WATCHDOG_CMD_TIMEOUT     seconds per slurm call   (default: 30)
+#   WATCHDOG_LOG_MAX_BYTES   rotate log above this    (default: 5242880)
 
 set -uo pipefail
 
@@ -55,30 +89,80 @@ WATCHDOG_STALL_MAX="${WATCHDOG_STALL_MAX:-20}"
 WATCHDOG_WALL_WARN="${WATCHDOG_WALL_WARN:-15}"
 WATCHDOG_LOOKBACK_HOURS="${WATCHDOG_LOOKBACK_HOURS:-2}"
 WATCHDOG_CMD_TIMEOUT="${WATCHDOG_CMD_TIMEOUT:-30}"
+WATCHDOG_LOG_MAX_BYTES="${WATCHDOG_LOG_MAX_BYTES:-5242880}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 STATUS_LOG="${WATCHDOG_STATUS_LOG:-${REPO_ROOT}/runs/active/slurm_watchdog_status.log}"
 
-command -v squeue >/dev/null 2>&1 || { echo "slurm_watchdog: squeue not found (not on a SLURM host?)" >&2; exit 2; }
-
 ALERT_COUNT=0
+DEGRADED=0
 NOW_EPOCH="$(date +%s)"
 
-# Append one structured record; create the log directory on first use.
+# Roll the status log over once it gets large; keep a single previous copy.
+rotate_status_log() {
+    [ -f "$STATUS_LOG" ] || return 0
+    # May run before validation (config errors log an alert too), so re-check.
+    [[ "$WATCHDOG_LOG_MAX_BYTES" =~ ^[0-9]+$ ]] || return 0
+    local size
+    size="$(stat -c %s "$STATUS_LOG" 2>/dev/null || echo 0)"
+    if [ "$size" -gt "$WATCHDOG_LOG_MAX_BYTES" ]; then
+        mv -f "$STATUS_LOG" "${STATUS_LOG}.1" 2>/dev/null || true
+    fi
+}
+
+# Append one structured record unless this jobid|state pair is already logged.
+# Always prints a human-readable line and counts towards ALERT_COUNT.
 log_alert() {  # jobid, state, reason
-    local jobid="$1" state="$2" reason="$3"
+    local jobid="$1" state="$2" reason="$3" repeat=""
     mkdir -p "$(dirname "$STATUS_LOG")" 2>/dev/null || true
-    printf '%s|%s|%s|%s\n' "$(date '+%Y-%m-%dT%H:%M:%S')" "$jobid" "$state" "$reason" >> "$STATUS_LOG" 2>/dev/null || \
-        echo "slurm_watchdog: WARNING could not write $STATUS_LOG" >&2
-    echo "ALERT [$state] job $jobid: $reason"
+    rotate_status_log
+    if [ -f "$STATUS_LOG" ] && grep -qF "|${jobid}|${state}|" "$STATUS_LOG" 2>/dev/null; then
+        repeat=" (previously reported)"
+    else
+        printf '%s|%s|%s|%s\n' "$(date '+%Y-%m-%dT%H:%M:%S')" "$jobid" "$state" "$reason" >> "$STATUS_LOG" 2>/dev/null || \
+            echo "slurm_watchdog: WARNING could not write $STATUS_LOG" >&2
+    fi
+    echo "ALERT [$state] job $jobid: ${reason}${repeat}"
     ALERT_COUNT=$((ALERT_COUNT + 1))
 }
 
+# The watchdog itself is impaired: say so loudly and remember it. The pseudo
+# job id carries the source ("WATCHDOG:squeue", "WATCHDOG:sacct", ...) so that
+# two different blind spots in one pass are not deduped into one record.
+log_blind() {  # source, reason
+    DEGRADED=1
+    echo "slurm_watchdog: WARNING $2" >&2
+    log_alert "WATCHDOG:$1" "WATCHDOG_BLIND" "$2"
+}
+
+die_config() {  # message
+    echo "slurm_watchdog: ERROR $1" >&2
+    log_alert "WATCHDOG:config" "WATCHDOG_BLIND" "configuration error: $1"
+    exit 2
+}
+
+require_uint() {  # var name, value
+    case "$2" in
+        ''|*[!0-9]*) die_config "$1 must be a non-negative integer, got '$2'" ;;
+    esac
+}
+
+require_uint WATCHDOG_PENDING_MAX "$WATCHDOG_PENDING_MAX"
+require_uint WATCHDOG_STALL_MAX "$WATCHDOG_STALL_MAX"
+require_uint WATCHDOG_WALL_WARN "$WATCHDOG_WALL_WARN"
+require_uint WATCHDOG_LOOKBACK_HOURS "$WATCHDOG_LOOKBACK_HOURS"
+require_uint WATCHDOG_CMD_TIMEOUT "$WATCHDOG_CMD_TIMEOUT"
+require_uint WATCHDOG_LOG_MAX_BYTES "$WATCHDOG_LOG_MAX_BYTES"
+
+command -v squeue >/dev/null 2>&1 || die_config "squeue not found (not on a SLURM host?)"
+
 # Convert a SLURM duration ([DD-]HH:MM:SS | MM:SS | UNLIMITED) to seconds.
-# Prints -1 for values that carry no finite duration.
+# Prints -1 for anything that carries no finite duration, without leaking
+# arithmetic errors on unexpected input.
 slurm_dur_to_sec() {
     local raw="${1:-}" days=0 rest secs=0
+    local parts IFS
     case "$raw" in
         ""|UNLIMITED|INVALID|NOT_SET|N/A|Unknown) echo -1; return 0 ;;
     esac
@@ -88,7 +172,11 @@ slurm_dur_to_sec() {
     else
         rest="$raw"
     fi
-    local IFS=':'
+    # Reject anything that is not purely digits and colons before doing math.
+    if [[ ! "$days" =~ ^[0-9]+$ ]] || [[ ! "$rest" =~ ^[0-9]+(:[0-9]+)*$ ]]; then
+        echo -1; return 0
+    fi
+    IFS=':'
     read -r -a parts <<< "$rest"
     case "${#parts[@]}" in
         3) secs=$((10#${parts[0]} * 3600 + 10#${parts[1]} * 60 + 10#${parts[2]})) ;;
@@ -101,9 +189,11 @@ slurm_dur_to_sec() {
 
 # ---------------------------------------------------------------- squeue pass
 QUEUE_ROWS=""
+QUEUE_OK=1
 if ! QUEUE_ROWS="$(timeout "$WATCHDOG_CMD_TIMEOUT" squeue -u "$WATCHDOG_USER" -h -o '%i|%T|%j|%M|%l|%V|%r' 2>/dev/null)"; then
-    echo "slurm_watchdog: WARNING squeue failed or timed out after ${WATCHDOG_CMD_TIMEOUT}s" >&2
+    QUEUE_OK=0
     QUEUE_ROWS=""
+    log_blind "squeue" "squeue failed or timed out after ${WATCHDOG_CMD_TIMEOUT}s -- queue state unknown"
 fi
 
 QUEUE_JOBS=0
@@ -127,21 +217,22 @@ while IFS='|' read -r jobid state name used limit submit reason; do
         used_s="$(slurm_dur_to_sec "$used")"
         limit_s="$(slurm_dur_to_sec "$limit")"
 
-        # Near wallclock limit?
-        if [ "$used_s" -ge 0 ] && [ "$limit_s" -gt 0 ]; then
+        # Near wallclock limit? Require real elapsed time and more than half
+        # the limit consumed, so short-limit jobs do not alert at t=0.
+        if [ "$used_s" -gt 0 ] && [ "$limit_s" -gt 0 ] && [ $((used_s * 2)) -ge "$limit_s" ]; then
             remaining_s=$((limit_s - used_s))
             if [ "$remaining_s" -le $((WATCHDOG_WALL_WARN * 60)) ]; then
                 rem_min=$((remaining_s / 60))
                 [ "$rem_min" -lt 0 ] && rem_min=0
                 log_alert "$jobid" "NEAR_WALLCLOCK" \
-                    "$name has ${rem_min}m left of ${limit} wallclock (warn <= ${WATCHDOG_WALL_WARN}m)"
+                    "$name has ${rem_min}m left of ${limit} wallclock (used ${used}, warn <= ${WATCHDOG_WALL_WARN}m)"
             fi
         fi
 
-        # Stalled log?
+        # Stalled log? Parse StdOut line-anchored so paths with spaces survive.
         stdout_path=""
         if job_detail="$(timeout "$WATCHDOG_CMD_TIMEOUT" scontrol show job "$jobid" 2>/dev/null)"; then
-            stdout_path="$(printf '%s\n' "$job_detail" | tr ' ' '\n' | sed -n 's/^StdOut=//p' | head -n1)"
+            stdout_path="$(printf '%s\n' "$job_detail" | sed -n 's/^[[:space:]]*StdOut=//p' | head -n1)"
         fi
         if [ -n "$stdout_path" ] && [ -f "$stdout_path" ]; then
             mtime="$(stat -c %Y "$stdout_path" 2>/dev/null || echo 0)"
@@ -159,33 +250,42 @@ while IFS='|' read -r jobid state name used limit submit reason; do
 done <<< "$QUEUE_ROWS"
 
 # ----------------------------------------------------------------- sacct pass
-SINCE="$(date -d "${WATCHDOG_LOOKBACK_HOURS} hours ago" '+%Y-%m-%dT%H:%M:%S' 2>/dev/null || echo "")"
-SACCT_ROWS=""
-if [ -n "$SINCE" ] && command -v sacct >/dev/null 2>&1; then
-    if ! SACCT_ROWS="$(timeout "$WATCHDOG_CMD_TIMEOUT" sacct -u "$WATCHDOG_USER" -S "$SINCE" -X -n -P \
-            -o JobID,JobName,State,ExitCode,End 2>/dev/null)"; then
-        echo "slurm_watchdog: WARNING sacct failed or timed out after ${WATCHDOG_CMD_TIMEOUT}s" >&2
+if ! command -v sacct >/dev/null 2>&1; then
+    log_blind "sacct" "sacct not found -- recently finished jobs not checked"
+else
+    SINCE="$(date -d "${WATCHDOG_LOOKBACK_HOURS} hours ago" '+%Y-%m-%dT%H:%M:%S' 2>/dev/null || echo "")"
+    if [ -z "$SINCE" ]; then
+        log_blind "sacct" "could not compute sacct start time from WATCHDOG_LOOKBACK_HOURS='${WATCHDOG_LOOKBACK_HOURS}'"
+    else
         SACCT_ROWS=""
+        if ! SACCT_ROWS="$(timeout "$WATCHDOG_CMD_TIMEOUT" sacct -u "$WATCHDOG_USER" -S "$SINCE" -X -n -P \
+                -o JobID,JobName,State,ExitCode,End 2>/dev/null)"; then
+            log_blind "sacct" "sacct failed or timed out after ${WATCHDOG_CMD_TIMEOUT}s -- recent failures unknown"
+            SACCT_ROWS=""
+        fi
+        while IFS='|' read -r jobid name state exitcode endtime; do
+            [ -n "${jobid:-}" ] || continue
+            # sacct states can carry a suffix, e.g. "CANCELLED by 12345".
+            base_state="${state%% *}"
+            case "$base_state" in
+                FAILED|TIMEOUT|OUT_OF_MEMORY|NODE_FAIL|BOOT_FAIL|DEADLINE)
+                    log_alert "$jobid" "$base_state" \
+                        "$name finished ${endtime:-?} with exit ${exitcode:-?} (last ${WATCHDOG_LOOKBACK_HOURS}h)"
+                    ;;
+            esac
+        done <<< "$SACCT_ROWS"
     fi
 fi
 
-FAILED_JOBS=0
-while IFS='|' read -r jobid name state exitcode endtime; do
-    [ -n "${jobid:-}" ] || continue
-    # sacct states can carry a suffix, e.g. "CANCELLED by 12345".
-    base_state="${state%% *}"
-    case "$base_state" in
-        FAILED|TIMEOUT|OUT_OF_MEMORY|NODE_FAIL)
-            FAILED_JOBS=$((FAILED_JOBS + 1))
-            log_alert "$jobid" "$base_state" \
-                "$name finished ${endtime:-?} with exit ${exitcode:-?} (last ${WATCHDOG_LOOKBACK_HOURS}h)"
-            ;;
-    esac
-done <<< "$SACCT_ROWS"
-
 # ---------------------------------------------------------------------- result
+if [ "$DEGRADED" -ne 0 ]; then
+    echo "DEGRADED: watchdog could not see the full picture -- treat this pass as INCONCLUSIVE, not healthy"
+    echo "slurm_watchdog: ${ALERT_COUNT} alert(s) recorded in $STATUS_LOG"
+    exit 3
+fi
+
 if [ "$ALERT_COUNT" -eq 0 ]; then
-    if [ "$QUEUE_JOBS" -eq 0 ]; then
+    if [ "$QUEUE_JOBS" -eq 0 ] && [ "$QUEUE_OK" -eq 1 ]; then
         echo "OK: queue empty, no recent failures (user=$WATCHDOG_USER, last ${WATCHDOG_LOOKBACK_HOURS}h)"
     else
         echo "OK: ${QUEUE_JOBS} job(s) in queue healthy, no recent failures (user=$WATCHDOG_USER)"
@@ -193,5 +293,5 @@ if [ "$ALERT_COUNT" -eq 0 ]; then
     exit 0
 fi
 
-echo "slurm_watchdog: ${ALERT_COUNT} alert(s) written to $STATUS_LOG"
+echo "slurm_watchdog: ${ALERT_COUNT} alert(s) recorded in $STATUS_LOG"
 exit 1
