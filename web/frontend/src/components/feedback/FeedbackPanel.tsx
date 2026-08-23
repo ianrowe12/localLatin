@@ -5,7 +5,6 @@ import { isFeedbackDraftEmpty } from '../../contexts/feedbackDraft'
 import { useReviewer } from '../../contexts/ReviewerContext'
 import { fetchNextQuery, usePredictions } from '../../api/queries'
 import { fetchLatestFeedback, type FeedbackEntry } from '../../api/feedback'
-import { DEFAULT_VARIANT } from '../../api/variants'
 import MatchPills, { type MatchSelection } from './MatchPills'
 import NotesTextarea from './NotesTextarea'
 import SubmitButton from './SubmitButton'
@@ -37,7 +36,12 @@ function draftsEqual(a: FeedbackDraft, b: FeedbackDraft): boolean {
 }
 
 export default function FeedbackPanel() {
-  const { activeQueryId, activeModel, setActiveQueryId } = useApp()
+  const {
+    activeQueryId,
+    activeModel,
+    activeVariant,
+    setActiveQueryId,
+  } = useApp()
   const {
     drafts,
     makeDraftKey,
@@ -48,8 +52,9 @@ export default function FeedbackPanel() {
     skipFeedback,
   } = useFeedback()
   const { reviewerName, clearReviewer } = useReviewer()
-  // Issue #48 replaces this constant with the reviewer's selected variant.
-  const activeVariant = DEFAULT_VARIANT
+  // Drafts, the latest-feedback prefill and the submitted row are all keyed on
+  // the reviewer's active variant, so switching variants shows the assessment
+  // that belongs to the ranking now on screen (issue #48).
   const { data: predictionData } = usePredictions(
     activeQueryId,
     activeModel,
@@ -72,9 +77,10 @@ export default function FeedbackPanel() {
       : null
 
   // Requirement: multi-select is OFF by default and resets for every new query.
+  // A variant switch swaps in a different draft too, so it resets as well.
   useEffect(() => {
     setMultiSelect(false)
-  }, [activeQueryId, activeModel])
+  }, [activeQueryId, activeModel, activeVariant])
 
   // Seed notes/selection from the reviewer's last submitted feedback, but never
   // clobber a local unsaved draft (or a late typed draft via the resolve re-check).
@@ -113,8 +119,8 @@ export default function FeedbackPanel() {
           activeQueryId,
           activeModel,
           {
-          selectedRanks: pruned.length > 0 ? pruned : undefined,
-          correctRank: pruned.length > 0 ? pruned[0] : null,
+            selectedRanks: pruned.length > 0 ? pruned : undefined,
+            correctRank: pruned.length > 0 ? pruned[0] : null,
           },
           activeVariant,
         )
@@ -131,8 +137,8 @@ export default function FeedbackPanel() {
         activeQueryId,
         activeModel,
         {
-        correctRank: null,
-        selectedRanks: undefined,
+          correctRank: null,
+          selectedRanks: undefined,
         },
         activeVariant,
       )
@@ -155,8 +161,8 @@ export default function FeedbackPanel() {
           activeQueryId,
           activeModel,
           {
-          correctRank: 0,
-          selectedRanks: undefined,
+            correctRank: 0,
+            selectedRanks: undefined,
           },
           activeVariant,
         )
@@ -165,8 +171,8 @@ export default function FeedbackPanel() {
           activeQueryId,
           activeModel,
           {
-          correctRank: null,
-          selectedRanks: undefined,
+            correctRank: null,
+            selectedRanks: undefined,
           },
           activeVariant,
         )
@@ -175,8 +181,8 @@ export default function FeedbackPanel() {
           activeQueryId,
           activeModel,
           {
-          correctRank: next.selectedRanks[0],
-          selectedRanks: next.selectedRanks,
+            correctRank: next.selectedRanks[0],
+            selectedRanks: next.selectedRanks,
           },
           activeVariant,
         )
@@ -185,8 +191,8 @@ export default function FeedbackPanel() {
           activeQueryId,
           activeModel,
           {
-          correctRank: next.selectedRanks[0],
-          selectedRanks: undefined,
+            correctRank: next.selectedRanks[0],
+            selectedRanks: undefined,
           },
           activeVariant,
         )
@@ -206,8 +212,8 @@ export default function FeedbackPanel() {
             activeQueryId,
             activeModel,
             {
-            correctRank: current.selectedRanks[0],
-            selectedRanks: undefined,
+              correctRank: current.selectedRanks[0],
+              selectedRanks: undefined,
             },
             activeVariant,
           )

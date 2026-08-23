@@ -169,7 +169,12 @@ def main() -> int:
     if not examples:
         raise RuntimeError("/api/token_map_examples returned no token-map artifacts")
     example_id = examples[0]["example_id"]
-    token_map = client.json("GET", f"/api/token_map/{example_id}")
+    # Filtered exactly as the webapp fetches it: unfiltered, this response
+    # carries all 7 x 4 attribution matrices (20+ MB on the largest artifact)
+    # and would dominate the smoke run. This also exercises the ?method=
+    # /?variant= params on the deployed instance.
+    token_map_query = urlencode({"method": "ig", "variant": "sif_abtt"})
+    token_map = client.json("GET", f"/api/token_map/{example_id}?{token_map_query}")
     if "query_tokens" not in token_map:
         raise RuntimeError("/api/token_map/{id} response missing query_tokens")
 
