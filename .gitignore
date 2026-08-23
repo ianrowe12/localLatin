@@ -59,6 +59,11 @@ localLatin_archive/
 # PDFs here get summarized into docs/research/ rather than committed.
 docs/New resources April 7/
 
+# Data-release build output (scripts/webapp/make_data_release.sh) and the
+# deploy host's download/staging cache (deploy/deploy.sh)
+dist/
+.deploy-cache/
+
 # Overleaf binary figures
 overleaf_drafts/figures/*.pdf
 overleaf_drafts/figures/*.png

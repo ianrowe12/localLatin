@@ -70,6 +70,158 @@ def assert_text(body: bytes, needle: str, label: str) -> None:
         raise RuntimeError(f"{label} did not include {needle!r}")
 
 
+# Mirrors web/variants.py. A deployment that serves fewer than these four has a
+# missing predictions CSV, which is exactly the failure the data release is
+# meant to prevent, so the smoke run treats it as fatal rather than degraded.
+EXPECTED_VARIANTS = ("raw", "abtt", "sif", "sif_abtt")
+
+# The attribution artifacts call the no-post-processing variant "baseline"
+# while the prediction CSVs call it "raw" (see web/routers/token_map.py and the
+# frontend's toAttributionVariant).
+ATTRIBUTION_VARIANT = {
+    "raw": "baseline",
+    "abtt": "abtt",
+    "sif": "sif",
+    "sif_abtt": "sif_abtt",
+}
+
+
+def check_models_advertise_variants(models: list) -> tuple[list[str], str]:
+    """Every model must advertise all four variants. Returns (variants, default)."""
+    for entry in models:
+        advertised = entry.get("available_variants") or []
+        missing = [v for v in EXPECTED_VARIANTS if v not in advertised]
+        if missing:
+            raise RuntimeError(
+                f"/api/models: {entry.get('slug')} does not advertise variants {missing} "
+                f"(advertised: {advertised}) — a predictions CSV is missing on the host"
+            )
+        if entry.get("default_variant") not in advertised:
+            raise RuntimeError(
+                f"/api/models: {entry.get('slug')} default_variant "
+                f"{entry.get('default_variant')!r} is not among {advertised}"
+            )
+    return list(models[0]["available_variants"]), models[0]["default_variant"]
+
+
+def check_predictions_per_variant(
+    client: SmokeClient,
+    query_id: int,
+    model: str,
+    variants: list[str],
+    default_variant: str,
+) -> None:
+    """Each variant serves its own ranked list, and omitting ?variant= uses the default."""
+    top1: dict[str, str] = {}
+    for variant in variants:
+        params = urlencode({"model": model, "variant": variant, "top_k": 3})
+        payload = client.json("GET", f"/api/query/{query_id}/predictions?{params}")
+        predictions = payload.get("predictions") or []
+        if not predictions:
+            raise RuntimeError(f"predictions for variant {variant!r} came back empty")
+        if payload.get("variant") != variant:
+            raise RuntimeError(
+                f"predictions echoed variant {payload.get('variant')!r}, asked for {variant!r}"
+            )
+        top1[variant] = predictions[0]["dir_name"]
+
+    implicit = client.json(
+        "GET",
+        f"/api/query/{query_id}/predictions?{urlencode({'model': model, 'top_k': 1})}",
+    )
+    if implicit.get("variant") != default_variant:
+        raise RuntimeError(
+            f"predictions without ?variant= served {implicit.get('variant')!r}, "
+            f"expected the configured default {default_variant!r}"
+        )
+    print(f"  variants OK for query {query_id} ({model}): {top1}")
+
+
+def check_token_map_per_variant(client: SmokeClient, example_id: int, variants: list[str]) -> None:
+    """The filtered token-map fetch the webapp makes must be non-empty per variant.
+
+    Filtered exactly as the frontend fetches it: unfiltered, this response
+    carries all 7 x 4 attribution matrices (20+ MB on the largest artifact) and
+    would dominate the smoke run.
+    """
+    for variant in variants:
+        attribution = ATTRIBUTION_VARIANT.get(variant, variant)
+        params = urlencode({"method": "ig", "variant": attribution})
+        token_map = client.json("GET", f"/api/token_map/{example_id}?{params}")
+        if not token_map.get("query_tokens"):
+            raise RuntimeError(f"token_map {example_id} variant {attribution!r} has no query_tokens")
+        if attribution not in (token_map.get("available_variants") or []):
+            raise RuntimeError(
+                f"token_map {example_id} does not carry attribution variant {attribution!r} "
+                f"(has {token_map.get('available_variants')}) — stale IG artifacts on the host"
+            )
+        matrix = (token_map.get("pair_matrices") or {}).get("ig", {}).get(attribution)
+        if not matrix:
+            raise RuntimeError(
+                f"token_map {example_id} returned no ig/{attribution} matrix for the filtered fetch"
+            )
+    print(f"  token maps OK for example {example_id} across {len(variants)} variants")
+
+
+def check_notes_round_trip(
+    client: SmokeClient,
+    query_id: int,
+    model: str,
+    variant: str,
+    other_variant: str,
+) -> None:
+    """POST feedback with notes + multi-select, then read it back through /feedback/latest.
+
+    This is the reload path the reviewer sees: reopening a query must prefill
+    the notes and the selected ranks saved for *that* variant, and must not
+    leak a note saved under a different variant.
+    """
+    note = f"DEPLOY SMOKE notes round-trip {variant} {int(time.time())}"
+    created = client.json(
+        "POST",
+        "/api/feedback",
+        json_body={
+            "query_id": query_id,
+            "model_slug": model,
+            "variant": variant,
+            "selected_ranks": [1, 2],
+            "notes": note,
+        },
+        expect=201,
+    )
+    if created.get("variant") != variant:
+        raise RuntimeError(f"feedback saved under variant {created.get('variant')!r}, sent {variant!r}")
+
+    params = urlencode({"query_id": query_id, "model": model, "variant": variant})
+    latest = client.json("GET", f"/api/feedback/latest?{params}")
+    if not latest:
+        raise RuntimeError(f"/api/feedback/latest returned nothing for variant {variant!r}")
+    if latest.get("notes") != note:
+        raise RuntimeError(
+            f"/api/feedback/latest notes did not round-trip: {latest.get('notes')!r} != {note!r}"
+        )
+    if latest.get("selected_ranks") != [1, 2]:
+        raise RuntimeError(
+            f"/api/feedback/latest selected_ranks did not round-trip: {latest.get('selected_ranks')!r}"
+        )
+    if latest.get("variant") != variant:
+        raise RuntimeError(f"/api/feedback/latest returned variant {latest.get('variant')!r}")
+
+    other_params = urlencode({"query_id": query_id, "model": model, "variant": other_variant})
+    other = client.json("GET", f"/api/feedback/latest?{other_params}")
+    if other and other.get("notes") == note:
+        raise RuntimeError(
+            f"note saved for {variant!r} leaked into the {other_variant!r} prefill"
+        )
+
+    # The same single row also proves the DB write reaches the CSV export, so
+    # no second throwaway row is needed for that.
+    exported, _ = client.request("GET", f"/api/feedback/export?{urlencode({'model': model})}")
+    assert_text(exported, note, "write-check CSV export")
+
+    print(f"  notes + multi-select round-tripped for variant {variant!r} (1 row written)")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Smoke check the deployed LocalLatin reviewer pilot.")
     parser.add_argument("--base-url", required=True, help="Origin to check, e.g. https://ai.csr.uky.edu")
@@ -93,6 +245,8 @@ def main() -> int:
     if not models:
         raise RuntimeError("/api/models returned no models")
     model = models[0]["slug"]
+    variants, default_variant = check_models_advertise_variants(models)
+    print(f"  /api/models advertises {variants}, default {default_variant!r}")
 
     signed_in = client.json(
         "POST",
@@ -165,18 +319,13 @@ def main() -> int:
     if not predictions.get("predictions"):
         raise RuntimeError("/api/query/{id}/predictions returned no predictions")
 
+    check_predictions_per_variant(client, query_id, model, variants, default_variant)
+
     examples = client.json("GET", "/api/token_map_examples")
     if not examples:
         raise RuntimeError("/api/token_map_examples returned no token-map artifacts")
     example_id = examples[0]["example_id"]
-    # Filtered exactly as the webapp fetches it: unfiltered, this response
-    # carries all 7 x 4 attribution matrices (20+ MB on the largest artifact)
-    # and would dominate the smoke run. This also exercises the ?method=
-    # /?variant= params on the deployed instance.
-    token_map_query = urlencode({"method": "ig", "variant": "sif_abtt"})
-    token_map = client.json("GET", f"/api/token_map/{example_id}?{token_map_query}")
-    if "query_tokens" not in token_map:
-        raise RuntimeError("/api/token_map/{id} response missing query_tokens")
+    check_token_map_per_variant(client, example_id, variants)
 
     csv_body, csv_headers = client.request("GET", "/api/feedback/export")
     if "text/csv" not in csv_headers.get("Content-Type", ""):
@@ -193,24 +342,15 @@ def main() -> int:
         raise RuntimeError("PDF packet response did not start with a PDF header")
 
     if args.write_check:
-        note = "DEPLOY SMOKE legacy_unresolved write/read check"
-        client.request(
-            "POST",
-            "/api/feedback",
-            json_body={
-                "query_id": query_id,
-                "model_slug": model,
-                "correct_rank": None,
-                "correct_dir": None,
-                "notes": note,
-            },
-            expect=201,
-        )
-        filtered, _ = client.request(
-            "GET",
-            f"/api/feedback/export?{urlencode({'model': model})}",
-        )
-        assert_text(filtered, note, "write-check CSV export")
+        # Exactly ONE row is written into the production feedback DB, and it
+        # carries every write-path assertion: the DB accepts a write, the CSV
+        # export reads it back, the reviewer's reload path prefills notes and
+        # a multi-select answer, and a note saved under one variant does not
+        # leak into another variant's prefill. Each smoke run leaving three
+        # rows behind was three times the reviewer-visible litter for no
+        # additional coverage.
+        other = next(v for v in variants if v != default_variant)
+        check_notes_round_trip(client, query_id, model, default_variant, other)
 
     print("Reviewer pilot smoke checks passed.")
     return 0
