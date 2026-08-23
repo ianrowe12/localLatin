@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sys
+import types
 from pathlib import Path
 
 import numpy as np
@@ -167,3 +169,37 @@ def test_slug_to_hf_covers_every_model_with_artifacts() -> None:
     assert expected <= set(token_map_svc.SLUG_TO_HF.values())
     for slug, hf_id in token_map_svc.SLUG_TO_HF.items():
         assert slug == hf_id.replace("/", "_")
+
+
+def test_serving_path_never_executes_remote_tokenizer_code(monkeypatch) -> None:
+    """The tokenizer fallback must not opt into remote code execution.
+
+    Every model in SLUG_TO_HF resolves to a built-in fast tokenizer
+    (T5TokenizerFast / BertTokenizerFast / Qwen2TokenizerFast), so the fallback
+    decoder has no reason to run unpinned code fetched from the Hub. A stub
+    ``transformers`` module records the kwargs the service actually passes,
+    which keeps the check honest without installing transformers in CI.
+    """
+    seen: list[dict] = []
+
+    class _StubAutoTokenizer:
+        @staticmethod
+        def from_pretrained(hf_id, **kwargs):
+            seen.append(kwargs)
+            return object()
+
+    stub = types.ModuleType("transformers")
+    stub.AutoTokenizer = _StubAutoTokenizer
+    monkeypatch.setitem(sys.modules, "transformers", stub)
+
+    token_map_svc._get_tokenizer.cache_clear()
+    try:
+        for hf_id in token_map_svc.SLUG_TO_HF.values():
+            token_map_svc._get_tokenizer(hf_id)
+    finally:
+        token_map_svc._get_tokenizer.cache_clear()
+
+    assert len(seen) == len(token_map_svc.SLUG_TO_HF)
+    for kwargs in seen:
+        assert "trust_remote_code" not in kwargs
+        assert kwargs == {}

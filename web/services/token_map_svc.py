@@ -87,8 +87,12 @@ def _try_decode_tokens(input_ids: np.ndarray, model_slug: str) -> list[str] | No
 
 @lru_cache(maxsize=8)
 def _get_tokenizer(hf_id: str):
+    # No trust_remote_code: every model in SLUG_TO_HF resolves to a built-in
+    # fast tokenizer (Qwen2TokenizerFast / T5TokenizerFast / BertTokenizerFast),
+    # so the serving path never needs to execute unpinned code from the Hub.
+    # This is only a fallback anyway -- artifacts carry decoded token strings.
     from transformers import AutoTokenizer
-    return AutoTokenizer.from_pretrained(hf_id, trust_remote_code=True)
+    return AutoTokenizer.from_pretrained(hf_id)
 
 
 @lru_cache(maxsize=64)
