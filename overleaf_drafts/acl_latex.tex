@@ -38,7 +38,7 @@
 \maketitle
 
 \begin{abstract}
-Medieval canon law survives through manuscript families shaped by spelling variation, fragmentary copying, and editorial change. Scholars need strict semantic matching to consolidate duplicate passages and link related witnesses. We introduce a Medieval Latin benchmark with 1,705 canon-law fragments grouped into 840 meaning-equivalent families, and we evaluate pairwise duplicate detection plus open-set directory routing. A layerwise analysis shows a geometric failure mode in Latin T5 representations: several intermediate layers collapse into low-rank cones where cosine scores lose class separation. We use All-but-the-Top post-processing, fit only on training embeddings, as a train-free repair after pooling. ABTT reduces top-principal-component dominance, raises effective rank, and improves retrieval separability in the headline layer grid. We then evaluate local attributions for the same retrieval score with integrated gradients and retrieval-adapted MaRC. The strongest attribution result is narrow: ABTT improves leave-one-out rank faithfulness across all LaTa, PhilTa, and mT5-base model-method cells, while ERASER-style rationale metrics show mixed effects.
+Medieval canon law survives through manuscript families shaped by spelling variation, fragmentary copying, and editorial change. Scholars need strict semantic matching to consolidate duplicate passages and link related witnesses. We introduce a Medieval Latin benchmark with 1,705 canon-law fragments grouped into 840 meaning-equivalent families, and we evaluate pairwise duplicate detection plus open-set directory routing on six pre-trained encoders from three architecture families. A layerwise analysis separates two effects that are easy to conflate. Anisotropy is universal: every model has a layer where the mean cosine between arbitrary passages reaches 0.23 to 0.95, and no baseline layer in any model separates equivalent from non-equivalent passages by more than 0.29 in mean cosine. Catastrophic mid-depth collapse is not universal: the Latin and multilingual T5 encoders fall to AUROC 0.497, 0.539, and 0.654 in their middle layers, while LaBSE, Qwen3-0.6B, and KaLM-mini improve close to monotonically with depth. All-but-the-Top post-processing, fit only on training embeddings, repairs all six models. Best-layer AUROC moves into a 0.971 to 0.984 band, the cosine gap rises to between 0.525 and 0.610, and five-seed top-1 routing accuracy tightens from a 36.6-point spread across models to a 1.0-point spread. SIF pooling supplies a weaker frequency-based correction that helps only the collapsed T5 encoders. We then evaluate local attributions for the same retrieval score with integrated gradients and retrieval-adapted MaRC. The strongest attribution result is narrow: ABTT improves leave-one-out rank faithfulness across all LaTa, PhilTa, and mT5-base model-method cells, while ERASER-style rationale metrics show mixed effects.
 \end{abstract}
 
 \section{Introduction}
@@ -56,18 +56,20 @@ Medieval canon law preserves early records of legal reasoning in Western Europe.
 
 We study this problem as strict semantic matching. The benchmark contains 1,705 Medieval Latin canon-law fragments arranged into 840 families of meaning-equivalent variants. We evaluate two tasks. Task A asks whether two passages express the same meaning. Task B turns the same embeddings into an open-set workflow: a system either routes a new passage to an existing directory or marks the passage as new.
 
-A simple retrieval system embeds each passage and ranks candidates by cosine similarity. This setup leaves a key modeling issue open. A transformer has many internal layers, and a final-layer sentence embedding does not reveal whether useful retrieval signal appears, disappears, or collapses inside the network. We inspect layers because the failure mode is geometric. Several middle layers form low-rank spaces where cosine scores concentrate and no longer separate equivalent from non-equivalent passages.
+A simple retrieval system embeds each passage and ranks candidates by cosine similarity. This setup leaves a key modeling issue open. A transformer has many internal layers, and a final-layer sentence embedding does not reveal whether useful retrieval signal appears, disappears, or collapses inside the network. We inspect layers because the failure mode is geometric.
 
-This diagnosis motivates our use of All-but-the-Top (ABTT) post-processing \citep{mu2018allbutthetop}. ABTT is not a new method. Here, ABTT serves as a train-free repair after pooling: fit the dominant principal components on training embeddings, remove those directions from train and test embeddings, then score passages with cosine similarity. On the headline models, ABTT repairs much of the low-rank collapse and makes intermediate layers usable for retrieval.
+Our layerwise view of six encoders separates two effects that are often reported together. The first is anisotropy, and it is universal. Every model we test has a layer where pooled passages crowd into a narrow cone: the mean cosine between arbitrary passages reaches 0.23 to 0.95, and no baseline layer of any model separates equivalent from non-equivalent passages by more than 0.29 in mean cosine. The second is a catastrophic mid-depth collapse of retrieval, and it is not universal. LaTa, PhilTa, and mT5-base lose almost all pairwise separation in their middle layers, while LaBSE, Qwen3-0.6B, and KaLM-mini improve close to monotonically with depth. The collapse is therefore a symptom of the T5 encoder family on this corpus, not a property of pre-trained encoders in general.
 
-The layer analysis also gives readers a more careful selection story. Intrinsic geometry diagnoses collapse and recovery, but geometry does not select the best retrieval layer by itself. For operational retrieval and attribution, we use a train-only rule: choose the earliest layer within 0.5 percentage points of the best training-set directory accuracy at rank 1 under ABTT. This locks LaTa layer 7, PhilTa layer 1, and mT5-base layer 1 before attribution metrics are computed.
+Anisotropy motivates our use of All-but-the-Top (ABTT) post-processing \citep{mu2018allbutthetop}. ABTT is not a new method. Here, ABTT serves as a train-free repair after pooling: fit the dominant principal components on training embeddings, remove those directions from train and test embeddings, then score passages with cosine similarity. The repair, unlike the collapse, is universal. ABTT lifts every model into a narrow high-accuracy band on both tasks, and at each T5 encoder's worst baseline layer it recovers pairwise AUROC to within 1.0 point of that same model's best ABTT layer. We also report SIF weighting \citep{arora2017sif}, which reweights tokens by frequency before pooling. SIF corrects part of the same dominant direction, but it only helps the models whose retrieval has collapsed, and it never matches ABTT.
 
-We also evaluate local explanations for the retrieval score. Integrated gradients \citep{sundararajan2017axiomatic} gives a standard gradient view of token importance. Retrieval-adapted MaRC \citep{brinnerzarriess2023marc} gives a learned-mask view after replacing MaRC's classification target with pairwise retrieval cosine. These two views sit at the same level in the paper: both explain a fixed query-candidate score, and both remain local diagnostics rather than global accounts of model behavior.
+Geometry diagnoses collapse and recovery, but it does not select the best retrieval layer. For operational retrieval and attribution we use a train-only rule, described in Section~\ref{sec:layers}, which locks LaTa layer 7, PhilTa layer 1, and mT5-base layer 1 before attribution metrics are computed.
+
+We also evaluate local explanations for the retrieval score. Integrated gradients \citep{sundararajan2017axiomatic} gives a gradient view of token importance, and retrieval-adapted MaRC \citep{brinnerzarriess2023marc} gives a learned-mask view after replacing MaRC's classification target with pairwise retrieval cosine. Both explain a fixed query-candidate score, and both remain local diagnostics rather than global accounts of model behavior.
 
 This paper makes four contributions:
 (1) we introduce a benchmark for strict semantic matching in Medieval Latin canon law, with pairwise and open-set retrieval tasks;
-(2) we show through a layerwise geometric analysis where intermediate Latin T5 representations suffer from top-PC dominance, low effective rank, and cosine concentration;
-(3) we show ABTT repairs much of this collapse and improves retrieval separability without updating model parameters; and
+(2) we separate universal anisotropy from the T5-specific mid-depth retrieval collapse in a layerwise analysis of six encoders, and we measure both with top-PC dominance, effective rank, and cosine concentration;
+(3) we show that ABTT repairs all six models without updating parameters, compressing a 36.6-point spread in five-seed top-1 routing accuracy to 1.0 point, and that SIF gives a weaker frequency-based correction that helps only the collapsed models; and
 (4) we adapt MaRC-style mask optimization to bi-encoder retrieval and compare the method with integrated gradients at predeclared retrieval-selected layers, finding leave-one-out rank faithfulness gains and mixed ERASER-style rationale metrics.
 
 \section{Task and Dataset}
@@ -134,6 +136,7 @@ We evaluate six pre-trained models from three architecture families:
 \end{itemize}
 
 \subsection{Embedding Extraction and Layer Selection}
+\label{sec:layers}
 
 We extract hidden-state representations from every transformer block, starting at layer 1 and skipping layer 0, the static embedding table. Token representations at each layer are pooled into one passage vector by plain mean pooling or SIF weighting \citep{arora2017sif}. For decoder-only models, last-token pooling is another common option; Appendix~\ref{app:lasttok} compares last-token pooling with mean pooling under ABTT.
 
@@ -141,11 +144,11 @@ The paper-facing pooling baseline removes only tokenizer artifacts with no lexic
 
 Layer geometry and layer selection serve different roles. We use label-free geometry diagnostics, including top-PC dominance, effective rank, and cosine concentration, to identify collapsed layers and test whether ABTT repairs them. For operational retrieval and attribution, we then apply a predeclared train-only retrieval rule. The rule chooses the earliest layer within 0.5 percentage points of the best training-set directory accuracy at rank 1 under ABTT. The rule uses no test attribution outcome. This rule selects LaTa layer 7, PhilTa layer 1, and mT5-base layer 1 for attribution, with $D=10$ ABTT components. The strongest diagnostic collapse layers are LaTa layer 8, PhilTa layer 6, and mT5-base layer 5, and we keep those as mechanism checks rather than attribution layers.
 
-\subsection{Post-Processing: ABTT}
+\subsection{Post-Processing}
 
 Our main post-processing method is All-but-the-Top (ABTT) \citep{mu2018allbutthetop}. For each model and layer, we center the pooled training embeddings, compute the top $D$ principal components by SVD, and remove those components from both train and test embeddings. We search $D \in \{1,2,3,5,7,10\}$ and choose $D$ by training-set Task B directory accuracy at rank 1. ABTT itself is borrowed from prior work; our use case is a retrieval-specific repair for anisotropic Latin manuscript representations.
 
-We also compare against two simpler alternatives. SIF weighting changes the pooling weights before passage vectors are formed. PCA whitening \citep{su2021whitening} rescales principal directions rather than only removing the top components.
+The main comparison also includes SIF weighting \citep{arora2017sif}, which divides each token weight by its estimated corpus frequency and so down-weights high-frequency tokens before the passage vector is formed. SIF and ABTT act on the same problem at different stages. SIF reweights tokens before pooling; ABTT removes dominant directions after pooling. Token probabilities for SIF come from training files only. We report four settings throughout: baseline mean pooling, SIF alone, ABTT alone, and SIF followed by ABTT. As a third alternative, PCA whitening \citep{su2021whitening} rescales principal directions rather than only removing the top components. It leaves the different-directory cosine mean at or below 0.014, so the learned threshold degenerates: across all 100 whitening cells every file is routed to an existing directory, existing accuracy is 1.000, new accuracy never exceeds one file in 323, and assignment accuracy sits at the 62.4 percent class prior. That prior beats baseline in 60 of 100 cells while directory accuracy at rank 1 never exceeds 0.415, so the apparent gain is a thresholding artifact and we exclude whitening from the main tables.
 
 \subsection{Local Attribution Methods}
 
@@ -172,64 +175,59 @@ where $\tilde{\mathbf{z}}_q(\mathbf{m}) = \mathrm{pool}(E_{>0}(\mathrm{diag}(\ma
 Both Task A metrics come from the test $n \times n$ pairwise cosine matrix. AUROC treats same-directory test pairs as positives and different-directory pairs as negatives. Cosine gap is the mean same-directory cosine minus the mean different-directory cosine.
 
 \paragraph{Task B.}
-For autonomous routing, we report overall assignment accuracy, existing accuracy, and new accuracy. Overall accuracy requires the existing-vs-new decision to match the ground truth, plus a correct directory when the query enters an existing directory. For top-$k$ ranking, cumulative top-$K$ accuracy is the fraction of test queries whose labelled directory appears among the top $K$ options.
+For autonomous routing, we report overall assignment accuracy, existing accuracy, and new accuracy. Assignment accuracy scores only the existing-versus-new decision: a file with a partner in test is correct when its maximum cosine to another test file is at least $\tau$, and a file without one is correct when that maximum falls below $\tau$. It never checks which directory the file would enter, so a degenerate threshold that routes everything as existing already attains the 62.4 percent class prior. Read it next to directory accuracy at rank 1, which does require the correct directory. For top-$k$ ranking, cumulative top-$K$ accuracy is the fraction of test queries whose labelled directory appears among the top $K$ options.
 
 \paragraph{Attribution.}
 For attribution, we adapt ERASER-style sufficiency and comprehensiveness metrics \citep{deyoung2020eraser} to retrieval cosine. Sufficiency keeps the top-ranked query tokens and measures how much of the full pair cosine remains. Comprehensiveness removes those tokens and measures the score drop. MinFrac reports the smallest retained query-token fraction needed to recover a fixed share of the full cosine. We also report $\rho_{\mathrm{LOO}}$, the Spearman correlation between attribution magnitude and the leave-one-out drop in the same retrieval score.
 
 \section{Results}
 
-The results move from diagnosis to use. First, layerwise geometry exposes representation collapse. Next, ABTT repairs much of the collapse and improves retrieval separability. Then Task B supplies the train-only layer rule used for operational attribution. Finally, we compare integrated gradients and retrieval-adapted MaRC at those locked layers.
+The results move from diagnosis to use: Task A per model and correction, then the layerwise view separating universal anisotropy from the T5-specific collapse, then Task B routing and the train-only layer rule, then attribution at those locked layers.
 
 \subsection{Task A: Pairwise Duplicate Detection}
 
-\input{tables/retrieval_summary_main}
+\input{tables/taskA_headline}
 
-Table~\ref{tab:retrieval_summary_main} compresses the retrieval evidence used by the main attribution experiment. At the predeclared attribution layers, ABTT improves both pairwise duplicate detection and directory ranking for the three headline models. The expanded per-layer Task A and Task B grids are reported in Appendix~\ref{app:per_layer_headline}; the main text uses the compact table so the retrieval results support, rather than crowd out, the attribution analysis.
+Table~\ref{tab:taskA_headline} gives the best-layer Task A result for every model under the four post-processing settings. Two patterns matter. First, baseline quality is uneven: AUROC ranges from 0.839 for mT5-base to 0.970 for KaLM-mini. Second, ABTT removes most of that unevenness. Every model lands between 0.971 and 0.984, and the cosine gap rises from a baseline range of 0.056 to 0.238 up to a range of 0.525 to 0.610. The gain is largest where the baseline is weakest: mT5-base gains 0.140 AUROC, LaTa 0.032, and KaLM-mini 0.011.
+
+The cosine gap column shows why. AUROC and gap disagree: KaLM-mini has the best baseline AUROC at 0.970 but the smallest gap at 0.056, so its ranking is right while its score carries almost no margin for a threshold. ABTT raises every model's gap by at least 0.28, which is what makes a single learned threshold usable in Task B.
+
+\paragraph{SIF as a frequency-based complement.}
+SIF and ABTT act on the same dominant direction from different sides, and Tables~\ref{tab:taskA_headline} and~\ref{tab:taskB_headline} show how far the frequency-based side gets. On Task B assignment accuracy, SIF alone adds 9.4 points for LaTa, 8.2 for PhilTa, and 7.3 for mT5-base, the three models whose retrieval collapses. It adds 0.1 point for LaBSE and subtracts 1.9 for KaLM-mini and 6.3 for Qwen3-0.6B. This fits the mechanism: a common component built mostly from frequent tokens can be attenuated by reweighting those tokens before pooling, but one that survives that reweighting needs the geometric step after pooling. SIF alone never matches ABTT on either task for any model, and adding SIF before ABTT moves best-layer assignment accuracy by at most 1.8 points either way. We read SIF as a partial account of the anisotropy rather than a competing repair, and keep the full sweeps in Appendix~\ref{app:sif_variants}.
 
 \subsection{Layerwise Geometry Diagnosis}
 
 \begin{figure*}[t]
 \centering
-\includegraphics[width=\textwidth]{fig_release_aucroc_per_model.pdf}
-\caption{AUCROC across normalized layer depth for the six models. LaTa and PhilTa show the clearest mid-layer dip before post-processing. ABTT reduces this dip more reliably than SIF or whitening.}
+\includegraphics[width=\textwidth]{fig_release_aucroc_6model.pdf}
+\caption{Task A AUROC against normalized layer depth for all six models. The three T5 encoders in the top row lose almost all pairwise separation in their middle layers, with LaTa reaching chance. The three sentence-embedding models in the bottom row improve close to monotonically with depth and never dip below 0.80. ABTT holds every model near its ceiling at every depth, so the repair does not depend on the collapse being present.}
 \label{fig:dip}
 \end{figure*}
 
 \begin{figure*}[!t]
 \centering
-\includegraphics[width=\textwidth]{fig_release_gap_per_model.pdf}
-\caption{Cosine gap across normalized layer depth for the six models. In the Latin T5 models, the baseline gap nearly vanishes in the middle layers. ABTT restores positive separation across more of the depth profile.}
+\includegraphics[width=\textwidth]{fig_release_gap_6model.pdf}
+\caption{Cosine gap against normalized layer depth for all six models. The baseline gap stays under 0.29 at every layer of every model, and under 0.11 at every layer of Qwen3-0.6B, so raw cosine carries almost no decision margin anywhere. ABTT lifts all six models to a gap near 0.5 across the whole depth profile. SIF raises the gap for LaTa and PhilTa and leaves the remaining four models close to baseline.}
 \label{fig:gap}
 \end{figure*}
 
-Figures~\ref{fig:dip} and~\ref{fig:gap} show the layerwise retrieval profile. LaTa and PhilTa suffer the largest middle-layer drops under baseline mean pooling. Their AUROC and cosine gap recover toward later layers, so a final-layer-only report would miss the failure mode. mT5-base shows a milder version of the same pattern. LaBSE, Qwen3-0.6B, and KaLM-mini vary less across depth.
+Figures~\ref{fig:dip} and~\ref{fig:gap} show the layerwise retrieval profile, and they separate the two effects. The retrieval collapse belongs to the T5 family. Baseline AUROC bottoms out at 0.497 for LaTa at layer 6, which is chance, at 0.539 for PhilTa at layer 10, and at 0.654 for mT5-base at layer 5. ABTT at those same layers gives 0.963, 0.982, and 0.977. The other three behave differently: baseline AUROC rises with depth, from 0.807 to 0.957 for LaBSE, from 0.859 to 0.958 for Qwen3-0.6B, and from 0.888 to 0.954 for KaLM-mini, and their layer minima are 0.807, 0.859, and 0.862.
 
-The geometry diagnostics explain this behavior. At the diagnostic collapse layers, PC1 variance shares for LaTa, PhilTa, and mT5-base are 0.956, 0.862, and 1.000 before correction. After ABTT-D10, those shares fall to 0.036, 0.039, and 0.044. Effective rank rises from 1.34, 1.83, and 1.00 to 168.40, 155.02, and 151.74. This supports the repair interpretation: ABTT removes dominant global directions which were suppressing cosine separation. ABTT does not add supervision or retrain the encoders.
+Anisotropy, in contrast, is present in all six. At each model's most collapsed layer, meaning the layer with the largest top-PC variance share, the mean pairwise cosine on the test split is 0.230 for LaTa, 0.584 for PhilTa, 0.314 for mT5-base, 0.878 for LaBSE, 0.953 for Qwen3-0.6B, and 0.887 for KaLM-mini. ABTT with $D=10$ drives all six to within 0.002 of zero and raises effective rank from as low as 1.00 to between 147.50 and 176.36 (Appendix~\ref{app:layer_diagnostics}). The two families arrive there by different routes. The T5 encoders concentrate variance in one direction, with top-PC shares of 0.956, 0.862, and 1.000, so the cone is low-rank and retrieval dies with it. The sentence-embedding models hold top-PC shares of 0.506, 0.167, and 0.396 but still carry a large common component, so passages sit close together without losing their relative order. ABTT removes that common component in both cases, which is why the repair generalizes even though the symptom does not.
 
 Figure~\ref{fig:density} gives the same diagnosis at the score-distribution level. At PhilTa's collapsed layer, positive and negative cosine scores overlap heavily before ABTT. After ABTT, the distributions separate more clearly.
 
-\subsection{Cluster Geometry}
-
-Two-dimensional projections give a visual check on the same geometric change. Figures~\ref{fig:tsne} and~\ref{fig:umap} show t-SNE \citep{vandermaaten2008tsne} and UMAP \citep{mcinnes2018umap} projections for the six most-populated directories. Under baseline mean pooling, points from different directories often overlap. Under pure ABTT with $D=10$, same-directory points form tighter groups, with winnable-fragment silhouette scores rising by 0.09 to 0.75 on the three headline models. We treat these plots as supporting evidence for the geometry story, not as the layer-selection rule.
-
-\begin{figure*}[!t]
-\centering
-\includegraphics[width=\textwidth]{fig_tsne_main.pdf}
-\caption{t-SNE projections of the 1,705 labelled fragments at each model's selected layer for LaTa, PhilTa, and mT5-base. Columns compare baseline mean pooling with pure ABTT using $D=10$. Colors mark the six most-populated directories.}
-\label{fig:tsne}
-\end{figure*}
-
-\begin{figure*}[!t]
-\centering
-\includegraphics[width=\textwidth]{fig_umap_main.pdf}
-\caption{UMAP projections with the same configuration as Figure~\ref{fig:tsne}. The same cluster-tightening pattern appears under a different projection method.}
-\label{fig:umap}
-\end{figure*}
+Two-dimensional projections give a visual check on the same change. Under baseline mean pooling, points from different directories overlap; under pure ABTT with $D=10$, same-directory points form tighter groups, with winnable-fragment silhouette scores rising by 0.09 to 0.75 on the three headline models. Appendix~\ref{app:cluster_geometry} shows t-SNE \citep{vandermaaten2008tsne} and UMAP \citep{mcinnes2018umap} projections for all six models.
 
 \subsection{Task B: Directory Routing}
 
 Task B connects the layerwise analysis to the retrieval workflow. We evaluate autonomous routing, where a learned threshold decides between an existing directory and the new class, and top-$k$ ranking, where the system presents directory options to a simulated expert. The full per-layer routing and ranking tables for the headline models are in Appendix~\ref{app:per_layer_headline}; Appendix~\ref{app:per_layer_extra} reports the remaining models.
+
+\input{tables/taskB_headline}
+
+Table~\ref{tab:taskB_headline} reports best-layer autonomous routing. Directory accuracy at rank 1, the column that requires the correct directory, spans 39.3 points under the baseline, from 46.6 for mT5-base to 85.9 for KaLM-mini, so the encoder choice dominates. ABTT compresses that to 3.3 points, from 86.1 to 89.4. Assignment accuracy tracks it, moving from a 40.3-point spread to the range 88.5 to 91.7, with every ABTT cell above every baseline cell.
+
+Table~\ref{tab:taskb} repeats the top-1 comparison under five query and reference reseedings, so the compression is not an artifact of one draw. The baseline spread of 36.6 points, from 50.6 for mT5-base to 87.3 for KaLM-mini, falls to 1.0 point under the best per-model SIF plus ABTT configuration, from 89.4 to 90.4, with standard deviations of at most 1.1 points.
 
 The same training signal also selects attribution layers. We choose the earliest layer within 0.5 percentage points of the best training-set directory accuracy at rank 1 under ABTT. This rule selects LaTa layer 7, PhilTa layer 1, and mT5-base layer 1. The choice is locked before attribution metrics are computed, so the attribution results do not choose their own layer.
 
@@ -249,45 +247,37 @@ KaLM-mini  & 89.4 $\pm$ 0.5 & 95.1 $\pm$ 0.4 & 96.4 $\pm$ 0.2 & 96.9 $\pm$ 0.3 &
 mT5-base   & 89.8 $\pm$ 0.4 & 95.6 $\pm$ 0.5 & 96.6 $\pm$ 0.3 & 96.9 $\pm$ 0.2 & 97.2 $\pm$ 0.2 \\
 \bottomrule
 \end{tabular}
-\caption{Cumulative top-$K$ accuracy for Task B across the six models, reported as mean $\pm$ standard deviation over five query/reference reseedings at a fixed v2 split. Each cell gives the percentage of test queries whose labelled directory appears within the top $K$ options. This variance-aware table uses the SIF+ABTT configurations from the multi-seed sweep; expanded pure-ABTT top-$k$ rankings are reported per layer in Appendix Tables~\ref{tab:taskB_ranking_main} and~\ref{tab:taskB_ranking_appendix}, with corresponding layerwise retrieval curves in Figures~\ref{fig:dip} and~\ref{fig:gap}.}
+\caption{Cumulative top-$K$ accuracy for Task B across the six models, as mean $\pm$ standard deviation over five query/reference reseedings at a fixed v2 split, using the best per-model SIF+ABTT configuration. Each cell gives the percentage of test queries whose labelled directory appears within the top $K$ options. Per-layer top-$k$ rankings are in Appendix Tables~\ref{tab:taskB_ranking_main}, \ref{tab:taskB_ranking_appendix}, and~\ref{tab:taskB_ranking_appendix_mseed}.}
 \label{tab:taskb}
 \end{table*}
 
-The cumulative top-$K$ view describes the scholar-facing shortlist. All six models place the labelled directory first at least 89.4\% of the time averaged over five seeds. By Top-2, every model exceeds 95\%. Gains after Top-3 are small, so two or three options cover nearly all successful cases in this split.
+The cumulative view also describes the scholar-facing shortlist. By Top-2, every model exceeds 95\%. Gains after Top-3 are small, so two or three options cover nearly all successful cases in this split.
 
 \subsection{Attribution at Retrieval-Selected Layers}
 
 \input{tables/attribution_metrics_main}
-\input{figures/fig_attribution_rho_loo_main}
 
-Table~\ref{tab:attribution_metrics_main} and Figure~\ref{fig:attribution_rho_loo_main} report the main attribution comparison. The experiment uses 200 positive query-candidate pairs per model for LaTa, PhilTa, and mT5-base. Each model has baseline and ABTT variants for both integrated gradients and retrieval-adapted MaRC.
+Table~\ref{tab:attribution_metrics_main} reports the main attribution comparison, and Figure~\ref{fig:attribution_rho_loo_main} in Appendix~\ref{app:attribution_sweeps} plots the same rank-faithfulness column. The experiment uses 200 positive query-candidate pairs per model for LaTa, PhilTa, and mT5-base. Each model has baseline and ABTT variants for both integrated gradients and retrieval-adapted MaRC. The scores being explained are repaired at these layers: LaTa layer 7 moves from AUROC 0.499 to 0.961 and directory accuracy 0.302 to 0.868, PhilTa layer 1 from 0.939 to 0.976 and 0.693 to 0.883, and mT5-base layer 1 from 0.823 to 0.979 and 0.451 to 0.885.
 
 The clearest quantitative result is rank faithfulness. ABTT improves $\rho_{\mathrm{LOO}}$ in all six model-method cells: LaTa IG $-0.001 \rightarrow 0.396$, LaTa MaRC $0.042 \rightarrow 0.401$, PhilTa IG $0.182 \rightarrow 0.607$, PhilTa MaRC $0.190 \rightarrow 0.331$, mT5-base IG $0.164 \rightarrow 0.597$, and mT5-base MaRC $0.250 \rightarrow 0.392$. In those cases, tokens with higher attribution align more closely with leave-one-out drops in the same retrieval score.
 
-The ERASER-style metrics qualify this result. At the global headline thresholds, ABTT improves only 6 of 18 Sufficiency, Comprehensiveness, and MinFrac comparisons. MinFrac@0.80 worsens in all six cells. We therefore interpret attribution as support for the ABTT repair story through leave-one-out rank faithfulness, not as a uniform gain across every rationale metric.
+The ERASER-style metrics qualify this result. At the global headline thresholds, ABTT improves only 6 of 18 Sufficiency, Comprehensiveness, and MinFrac comparisons. MinFrac@0.80 worsens in all six cells. We therefore read the attribution evidence as support for the repair through rank faithfulness, not as a uniform gain across rationale metrics.
 
-\subsection{Example-Level View}
-
-The main text keeps one example-level view to show what the local explanations look like for a PhilTa retrieval case. Figure~\ref{fig:pairmatrix} shows the integrated-gradient pair matrix before and after ABTT. Companion self-attention and retrieval-adapted MaRC visualizations for the same pair are reported in Appendix~\ref{app:qual_attribution}.
-
-\begin{figure*}[!t]
-\centering
-\includegraphics[width=0.94\textwidth]{fig_pair_matrix_philta.pdf}
-\caption{Derived pairwise heatmap for one PhilTa retrieval case. The left panel shows the baseline representation and the right panel shows the same example after ABTT. Both axes use original decoded tokens. Cell values combine token-token cosine similarity with single-sequence integrated-gradient scores.}
-\label{fig:pairmatrix}
-\end{figure*}
+Appendix~\ref{app:qual_attribution} shows example-level views for one PhilTa retrieval case, including the integrated-gradient pair matrix before and after ABTT.
 
 \section{Discussion}
 
-The results point to representation geometry as a major source of retrieval failure in this corpus. The Latin T5 encoders do not only vary by depth; several middle layers collapse into spaces dominated by one direction. ABTT removes those dominant directions after pooling and recovers much of the separation needed for cosine retrieval.
+The six-model view supports a narrower claim than the usual one. Anisotropy is universal on this corpus and so is the repair, but the dramatic mid-depth collapse is not. Every model has a layer where passages crowd into a cone, and no model produces a cosine margin above 0.29 at any layer without correction. ABTT then moves all six into a 0.971 to 0.984 AUROC band and a 3.3-point routing band. Only the T5 encoders turn their anisotropy into a retrieval collapse. A study of one architecture family could easily report that collapse as the general finding; three families show that the general finding is the geometry and the correction, while the collapse is a family-level symptom.
 
-Layer diagnostics help explain the failure mode, but they are not a standalone layer selector. This distinction matters for practice. A reader should inspect geometry to find collapse and recovery, then choose retrieval layers with a train-only task signal. In our attribution experiment, this produces layers different from the strongest diagnostic collapse layers.
+The practical reading depends on the family. With a T5 encoder the middle layers are unusable without correction and layer choice matters a great deal. With a sentence-embedding model the final layers are already usable, and the correction still buys 3.5 to 9.1 points of directory accuracy at rank 1 for one SVD per layer fit on 847 training files.
 
-The attribution results also require a narrow reading. Baseline attribution explains raw cosine. ABTT attribution explains ABTT-corrected cosine. Since the scalar score changes, cross-variant comparisons are descriptive. The stable result is improved leave-one-out rank faithfulness across the six headline model-method cells. Sufficiency, Comprehensiveness, and MinFrac show threshold-dependent tradeoffs.
+Geometry diagnoses the failure mode but does not select layers. A reader should inspect geometry to find collapse and recovery, then choose retrieval layers with a train-only task signal; in our attribution experiment this gives layers different from the strongest diagnostic collapse layers.
+
+The attribution results need a narrow reading. Because ABTT changes the cosine function being explained, cross-variant comparisons are descriptive: the stable result is improved leave-one-out rank faithfulness in all six cells, while ERASER-style metrics show threshold-dependent tradeoffs.
 
 \section*{Limitations}
 
-The study covers one domain, medieval canon law, and one language, Latin. The 1,705-fragment corpus is large for this field, but small by current NLP standards. We test six models, and models outside this set might behave differently. ABTT also needs enough text to estimate principal components, so smaller archives need separate study.
+The study covers one domain, medieval canon law, and one language, Latin. The 1,705-fragment corpus is large for this field, but small by current NLP standards. We test six models, and models outside this set might behave differently. The mid-depth retrieval collapse we document holds for the three T5 encoders in our set, and our evidence cannot separate the architecture, the pre-training objective, and the particular checkpoints as its cause. ABTT also needs enough text to estimate principal components, so smaller archives need separate study.
 
 Task B simulates a human-in-the-loop workflow by counting a query as successful when its labelled directory appears in the shortlist. This measures ranking quality, not the full judgment load for a working scholar. The attribution analysis is also local to fixed query-candidate scores. This analysis does not give a global explanation of model behavior or replace expert reading of retrieved passages. The consistent attribution effect is improved leave-one-out rank faithfulness; other rationale metrics remain threshold-dependent and should not be reported as a broad attribution-quality gain.
 
@@ -321,7 +311,7 @@ Across the main-model layer grid, PC1 dominance and low effective rank are stron
 \section{Expanded Per-Layer Results for Headline Models}
 \label{app:per_layer_headline}
 
-The main text compresses the headline retrieval results into Table~\ref{tab:retrieval_summary_main}. This appendix provides the expanded per-layer Task A duplicate-detection, Task B autonomous-routing, and Task B top-$k$ ranking tables for LaTa, PhilTa, and mT5-base.
+The main text compresses the headline retrieval results into Tables~\ref{tab:taskA_headline} and~\ref{tab:taskB_headline}, which report one train-selected layer per model and method. This appendix provides the expanded per-layer Task A duplicate-detection, Task B autonomous-routing, and Task B top-$k$ ranking tables for LaTa, PhilTa, and mT5-base.
 
 \onecolumn
 \input{tables/taskA_main}
@@ -361,7 +351,9 @@ The main text uses pure ABTT as the paper-facing repair. This appendix reports S
 \section{Attribution Metric Sweeps}
 \label{app:attribution_sweeps}
 
-This appendix expands the main attribution table across Sufficiency and Comprehensiveness thresholds of 10\%, 25\%, and 50\%, and MinFrac recovery thresholds of 0.70, 0.80, 0.90, and 0.95. The main text uses one global midpoint setting rather than selecting thresholds per model or per method.
+Figure~\ref{fig:attribution_rho_loo_main} plots the rank-faithfulness column of Table~\ref{tab:attribution_metrics_main}. The rest of this appendix expands the main attribution table across Sufficiency and Comprehensiveness thresholds of 10\%, 25\%, and 50\%, and MinFrac recovery thresholds of 0.70, 0.80, 0.90, and 0.95. The main text uses one global midpoint setting rather than selecting thresholds per model or per method. Table~\ref{tab:attribution_sweep_main_methods} gives the sweep for integrated gradients and retrieval-adapted MaRC, and Table~\ref{tab:attribution_sweep_supplemental_methods} gives it for the supplemental attribution methods.
+
+\input{figures/fig_attribution_rho_loo_main}
 
 \input{tables/attribution_metrics_sweep_main_methods}
 \input{tables/attribution_metrics_sweep_supplemental_methods}
@@ -369,7 +361,14 @@ This appendix expands the main attribution table across Sufficiency and Comprehe
 \section{Qualitative Attribution Examples}
 \label{app:qual_attribution}
 
-This appendix keeps the example-level companion views for the PhilTa pair shown in Figure~\ref{fig:pairmatrix}. The attention map is context only, since ABTT is applied after encoding. The retrieval-adapted MaRC masks show the learned-mask view for the same pair.
+This appendix keeps the example-level views for one PhilTa retrieval pair. Figure~\ref{fig:pairmatrix} gives the integrated-gradient pair matrix before and after ABTT. The attention map in Figure~\ref{fig:attention} is context only, since ABTT is applied after encoding. The retrieval-adapted MaRC masks in Figure~\ref{fig:retrieval_mark} show the learned-mask view for the same pair.
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=0.94\textwidth]{fig_pair_matrix_philta.pdf}
+\caption{Derived pairwise heatmap for one PhilTa retrieval case. The left panel shows the baseline representation and the right panel shows the same example after ABTT. Both axes use original decoded tokens. Cell values combine token-token cosine similarity with single-sequence integrated-gradient scores.}
+\label{fig:pairmatrix}
+\end{figure*}
 
 \begin{figure*}[!t]
 \centering
@@ -385,10 +384,24 @@ This appendix keeps the example-level companion views for the PhilTa pair shown 
 \label{fig:retrieval_mark}
 \end{figure*}
 
-\section{Cluster Geometry: Additional Models}
+\section{Cluster Geometry}
 \label{app:cluster_geometry}
 
-Figures~\ref{fig:tsne_appendix} and~\ref{fig:umap_appendix} extend the cluster-geometry panels to LaBSE, Qwen3-0.6B, and KaLM-mini. They use the same six directories and the same baseline versus pure ABTT comparison.
+Figures~\ref{fig:tsne} and~\ref{fig:umap} give the t-SNE and UMAP panels for LaTa, PhilTa, and mT5-base, and Figures~\ref{fig:tsne_appendix} and~\ref{fig:umap_appendix} extend them to LaBSE, Qwen3-0.6B, and KaLM-mini. All four use the same six directories and the same baseline versus pure ABTT comparison.
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=\textwidth]{fig_tsne_main.pdf}
+\caption{t-SNE projections of the 1,705 labelled fragments at each model's selected layer for LaTa, PhilTa, and mT5-base. Columns compare baseline mean pooling with pure ABTT using $D=10$. Colors mark the six most-populated directories.}
+\label{fig:tsne}
+\end{figure*}
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=\textwidth]{fig_umap_main.pdf}
+\caption{UMAP projections with the same configuration as Figure~\ref{fig:tsne}. The same cluster-tightening pattern appears under a different projection method.}
+\label{fig:umap}
+\end{figure*}
 
 \begin{figure*}[!t]
 \centering
