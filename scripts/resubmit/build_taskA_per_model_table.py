@@ -95,7 +95,7 @@ def write_outputs(table: pd.DataFrame, out_csv: Path, out_tex: Path, select_on: 
             "D": "D",
             "dir_acc_at_1": "Acc@1",
             "overall_assignment_acc": "AssignAcc",
-            "aucroc": "AUCROC",
+            "aucroc": "AUROC",
             "existing_acc": "Exist.Acc",
             "new_acc": "New.Acc",
         }
