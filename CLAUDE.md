@@ -46,6 +46,7 @@ Grouped by purpose:
 - **`scripts/ig/`**: IG artifact regeneration for the webapp (`run_ig_examples_pipeline.sh`, `run_phase12f_select_pair_examples.py`, `run_phase12f_visualize.py`).
 - **`scripts/webapp/`**: Webapp data export (`export_webapp_data.sh`), deploy data packaging (`make_data_release.sh`), deployment smoke checks (`smoke_reviewer_pilot.py`).
 - **`scripts/common/`**: Shared helpers (`create_canon_split.py`, `data_prep.py`).
+- **`scripts/paper/`**: Overleaf mirror sync (`sync_paper_repo.sh`).
 - **`scripts/_archive/`**: Stale phase 3-12 pipelines preserved for reproducibility.
 
 Key active script: **`evaluate_vectors.py`** (Phase 9+ evaluator). Applies 5 methods (baseline, sif_only, sif_abtt_fixed, sif_abtt_optimal, whitening), learns threshold on train, evaluates on test.
@@ -169,7 +170,10 @@ bash scripts/paper/sync_paper_repo.sh pull
 
 `push` commits a clean snapshot to localLatin-paper main; Ian then pulls in Overleaf.
 `pull` creates a `paper-sync-*` branch here with the Overleaf-side edits for a normal PR.
-Never edit localLatin-paper directly; it is a mirror, not a source.
+Never edit localLatin-paper directly from this side; it is a snapshot mirror, not a git subtree
+(subtree was the original #33 plan; this git lacks the subtree command and a mirror is simpler).
+`push` refuses to overwrite un-pulled Overleaf edits unless `SYNC_FORCE=1`; `pull` is
+deletion-aware and refuses to run over local `overleaf_drafts/` changes.
 
 ## Webapp (Git Subtree)
 
