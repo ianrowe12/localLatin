@@ -270,6 +270,10 @@ def load_token_map(
     # Extract metadata
     layer = int(data["layer"].item()) if "layer" in data else 0
     D = int(data["D"].item()) if "D" in data else 0
+    # The sif_abtt variant is cleaned in the SIF-pooled ABTT subspace, whose D is
+    # swept independently of the mean-pooled one (LaTa layer 1: mean 10, SIF 3).
+    # Absent on pre-per-pooling artifacts, where sif_abtt reused the mean fit.
+    D_sif = int(np.asarray(data["D_sif"]).reshape(-1)[0]) if "D_sif" in data else None
 
     # Get model slug from the artifact path (parent dir name)
     model_slug = normalize_slug(npz_path.parent.name)
@@ -413,6 +417,7 @@ def load_token_map(
         model=model_slug,
         layer=layer,
         D=D,
+        D_sif=D_sif,
         bucket=bucket,
         query_path=query_path,
         candidate_path=candidate_path,

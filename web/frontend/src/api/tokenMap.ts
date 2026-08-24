@@ -47,7 +47,10 @@ export interface TokenMapResponse {
   example_id: number
   model: string
   layer: number
+  /** PCs removed by the `abtt` variant (mean-pooled ABTT fit). */
   D: number
+  /** PCs removed by the `sif_abtt` variant (SIF-pooled fit, swept separately). */
+  D_sif?: number | null
   bucket: string
   query_path: string
   candidate_path: string

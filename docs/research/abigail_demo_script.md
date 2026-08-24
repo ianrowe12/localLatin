@@ -96,20 +96,23 @@ listed for that query:
 
 Each of those artifacts carries all four variants, so the Attribution toggle follows the same
 `Raw | ABTT | SIF | SIF+ABTT` control as the rest of the page. They were built at the layer and D
-the deployed retrieval actually uses; for the SIF+ABTT panel the cleaner is the mean-pooled fit, a
-close but not identical subspace. Two caveats worth knowing rather than discovering:
+the deployed retrieval actually uses, and each ABTT panel is cleaned in its own pooling space: the
+ABTT panel uses the mean-pooled fit and the SIF+ABTT panel uses the deployed SIF-pooled cleaner,
+with the D that variant's own sweep chose (LaTa layer 1: mean D=10, SIF D=3). All four panels
+therefore remove the directions the ranking on screen removed. One caveat worth knowing rather
+than discovering:
 
-* The artifact stores a single cleaner, and it is the mean-pooled fit, so the SIF+ABTT panel
-  removes different directions from the deployed SIF+ABTT ranking on **both** models. On LaTa the D
-  differs too (panel D=10, deployed D=3; principal-angle cosines 0.97, 0.96, 0.91). On PhilTa both
-  fits pick D=10, but the subspaces still differ (cosines 0.99 down to 0.37 and 0.09 on the last
-  two directions). Raw and ABTT are exact on both models.
 * Attribution truncates at 256 tokens while the retrieval embeddings were pooled at 512. Query A
   (`C1525.56v.3`) is 294 tokens, so roughly the last 13% of it is not shown in the attribution
   panel. The other three queries are 51, 144 and 147 tokens and are fully covered.
 
-Neither caveat affects the Highlights and Connections view modes in the paragraph above, which are
-computed live.
+That caveat does not affect the Highlights and Connections view modes in the paragraph above,
+which are computed live.
+
+One detail only worth raising if asked how the panels are built: the per-token integrated-gradient
+scores behind the IG and OT methods are attributions of a mean-pooled target, and the SIF variants
+express SIF-ness through the token weights rather than by re-running IG. The four other methods
+(BERTScore, DLA and the two attention ones) do not use them at all.
 
 Stay on the demo queries if Abigail asks to see attribution. Off the demo set the toggle will not
 appear, and that is expected: an artifact costs a GPU pass per pair.

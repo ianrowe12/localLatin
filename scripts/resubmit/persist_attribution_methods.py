@@ -113,6 +113,77 @@ def topk_indices(M: np.ndarray, k: int) -> tuple[np.ndarray, np.ndarray]:
     return q_top.astype(np.int32), c_top.astype(np.int32)
 
 
+def masked_lengths(data: dict[str, np.ndarray]) -> tuple[int, int]:
+    """Unpadded ``(query, candidate)`` sequence lengths for one artifact."""
+    return (
+        int(data["query_attention_mask"][0].sum()),
+        int(data["candidate_attention_mask"][0].sum()),
+    )
+
+
+def method_builders(
+    q_tok: np.ndarray,
+    c_tok: np.ndarray,
+    q_attn: np.ndarray,
+    c_attn: np.ndarray,
+    q_ig: np.ndarray,
+    c_ig: np.ndarray,
+) -> list[tuple[str, callable]]:
+    """The 6 pair-matrix builders bound to one set of token vectors.
+
+    ``q_tok`` / ``c_tok`` are either the raw hidden states (the ``baseline``
+    variant) or ABTT-cleaned ones (``abtt``); ``q_ig`` / ``c_ig`` are the IG
+    scores that go with them. Attention matrices are the same either way --
+    ABTT cleans the residual stream, not the attention weights.
+    """
+    return [
+        ("ig", lambda: build_ig_pair_matrix(q_tok, c_tok, q_ig, c_ig)),
+        ("bertscore", lambda: build_bertscore_matrix(q_tok, c_tok)[1]),
+        ("ot", lambda: build_ot_transport_plan(q_tok, c_tok, q_ig, c_ig)),
+        ("attention_weighted", lambda: build_attention_crosssim(q_tok, c_tok, q_attn, c_attn)),
+        ("dla", lambda: build_dla_pair_matrix(q_tok, c_tok)),
+        ("attention_standalone", lambda: build_attention_standalone(q_tok, c_tok, q_attn, c_attn)),
+    ]
+
+
+def compute_cleaned_matrices(
+    data: dict[str, np.ndarray],
+    pcs: np.ndarray,
+    mean_vec: np.ndarray,
+) -> dict[str, np.ndarray]:
+    """Build the 6 method matrices on tokens cleaned with the given cleaner.
+
+    Split out of :func:`compute_pair_matrices` for issue #87: the ``sif_abtt``
+    variant has to be built in the *SIF*-pooled ABTT subspace, which is a
+    different ``(pcs, mean_vec)`` from the mean-pooled one the ``abtt`` variant
+    uses. Everything the computation needs -- raw hidden states, attention,
+    both IG vectors -- is already in the artifact, so this stays CPU work.
+
+    Methods that raise are omitted, as in :func:`compute_pair_matrices`.
+    """
+    q_len, c_len = masked_lengths(data)
+    q_h = data["query_hidden"][:q_len].astype(np.float32, copy=False)
+    c_h = data["candidate_hidden"][:c_len].astype(np.float32, copy=False)
+    q_attn = data["query_attention"][:q_len, :q_len].astype(np.float32, copy=False)
+    c_attn = data["candidate_attention"][:c_len, :c_len].astype(np.float32, copy=False)
+    q_ig_a = data["query_ig_abtt"][:q_len].astype(np.float32, copy=False)
+    c_ig_a = data["candidate_ig_abtt"][:c_len].astype(np.float32, copy=False)
+
+    q_hc = clean_tokens(q_h, pcs, mean_vec).astype(np.float32, copy=False)
+    c_hc = clean_tokens(c_h, pcs, mean_vec).astype(np.float32, copy=False)
+
+    out: dict[str, np.ndarray] = {}
+    for method, build in method_builders(q_hc, c_hc, q_attn, c_attn, q_ig_a, c_ig_a):
+        try:
+            mat = np.asarray(build(), dtype=np.float32)
+            if mat.shape != (q_len, c_len):
+                raise ValueError(f"expected ({q_len},{c_len}), got {mat.shape}")
+            out[method] = mat
+        except Exception as exc:  # noqa: BLE001
+            print(f"  [WARN] method {method} failed: {exc}", file=sys.stderr)
+    return out
+
+
 def compute_pair_matrices(
     data: dict[str, np.ndarray],
 ) -> dict[str, dict[str, np.ndarray]]:
@@ -121,9 +192,13 @@ def compute_pair_matrices(
     Returns a dict ``{method_name: {variant: matrix}}``. Methods that fail are
     omitted from the returned dict; the caller decides whether to surface the
     failure.
+
+    The ``abtt`` column uses the mean-pooled cleaner stored under ``pcs`` /
+    ``mean_vec``, which is the right one: ``abtt`` is the deployed
+    mean-pooled-plus-ABTT variant. The SIF-pooled counterpart lives in
+    ``persist_sif_attribution.py``.
     """
-    q_len = int(data["query_attention_mask"][0].sum())
-    c_len = int(data["candidate_attention_mask"][0].sum())
+    q_len, c_len = masked_lengths(data)
 
     # Truncate everything to masked sequence length so the persisted matrices
     # contain no padding tokens.
@@ -132,62 +207,27 @@ def compute_pair_matrices(
     q_attn = data["query_attention"][:q_len, :q_len].astype(np.float32, copy=False)
     c_attn = data["candidate_attention"][:c_len, :c_len].astype(np.float32, copy=False)
     q_ig_b = data["query_ig_baseline"][:q_len].astype(np.float32, copy=False)
-    q_ig_a = data["query_ig_abtt"][:q_len].astype(np.float32, copy=False)
     c_ig_b = data["candidate_ig_baseline"][:c_len].astype(np.float32, copy=False)
-    c_ig_a = data["candidate_ig_abtt"][:c_len].astype(np.float32, copy=False)
 
-    pcs = data["pcs"]
-    mean_vec = data["mean_vec"]
-    q_hc = clean_tokens(q_h, pcs, mean_vec).astype(np.float32, copy=False)
-    c_hc = clean_tokens(c_h, pcs, mean_vec).astype(np.float32, copy=False)
+    baseline_builders = dict(
+        method_builders(q_h, c_h, q_attn, c_attn, q_ig_b, c_ig_b)
+    )
+    abtt_matrices = compute_cleaned_matrices(data, data["pcs"], data["mean_vec"])
 
     out: dict[str, dict[str, np.ndarray]] = {}
-
     # Each builder is wrapped individually so a single failure (e.g., POT
     # missing for OT, NaN cost) does not poison the rest.
-    method_builders: list[tuple[str, callable, callable]] = [
-        (
-            "ig",
-            lambda: build_ig_pair_matrix(q_h, c_h, q_ig_b, c_ig_b),
-            lambda: build_ig_pair_matrix(q_hc, c_hc, q_ig_a, c_ig_a),
-        ),
-        (
-            "bertscore",
-            lambda: build_bertscore_matrix(q_h, c_h)[1],
-            lambda: build_bertscore_matrix(q_hc, c_hc)[1],
-        ),
-        (
-            "ot",
-            lambda: build_ot_transport_plan(q_h, c_h, q_ig_b, c_ig_b),
-            lambda: build_ot_transport_plan(q_hc, c_hc, q_ig_a, c_ig_a),
-        ),
-        (
-            "attention_weighted",
-            lambda: build_attention_crosssim(q_h, c_h, q_attn, c_attn),
-            lambda: build_attention_crosssim(q_hc, c_hc, q_attn, c_attn),
-        ),
-        (
-            "dla",
-            lambda: build_dla_pair_matrix(q_h, c_h),
-            lambda: build_dla_pair_matrix(q_hc, c_hc),
-        ),
-        (
-            "attention_standalone",
-            lambda: build_attention_standalone(q_h, c_h, q_attn, c_attn),
-            lambda: build_attention_standalone(q_hc, c_hc, q_attn, c_attn),
-        ),
-    ]
-
-    for method, build_baseline, build_abtt in method_builders:
+    for method, build_baseline in baseline_builders.items():
         try:
             mat_b = np.asarray(build_baseline(), dtype=np.float32)
-            mat_a = np.asarray(build_abtt(), dtype=np.float32)
-            if mat_b.shape != (q_len, c_len) or mat_a.shape != (q_len, c_len):
+            if mat_b.shape != (q_len, c_len):
                 raise ValueError(
                     f"method {method}: expected ({q_len},{c_len}), got "
-                    f"baseline={mat_b.shape} abtt={mat_a.shape}"
+                    f"baseline={mat_b.shape}"
                 )
-            out[method] = {"baseline": mat_b, "abtt": mat_a}
+            if method not in abtt_matrices:
+                raise ValueError(f"method {method}: abtt variant failed")
+            out[method] = {"baseline": mat_b, "abtt": abtt_matrices[method]}
         except Exception as exc:  # noqa: BLE001
             print(f"  [WARN] method {method} failed: {exc}", file=sys.stderr)
     return out

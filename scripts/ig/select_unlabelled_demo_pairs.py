@@ -27,24 +27,18 @@ attribution layer contract:
   resulting score is checked against ``rank1_score`` from the CSV.
 * **D and the ABTT principal components** are refit here with the same
   ``find_optimal_D`` sweep and the same train-only ``EmbeddingCleaner`` fit that
-  ``run_resubmit_unlabelled_retrieval.py`` performs, on the mean-pooled
-  labelled train split. The token-level ``abtt`` variant in the artifact
-  therefore removes the same directions the deployed ranking removed.
+  ``run_resubmit_unlabelled_retrieval.py`` performs, **once per pooling space**,
+  and both fits are persisted (issue #87). The token-level ``abtt`` variant
+  removes the directions the deployed ``abtt`` ranking removed and ``sif_abtt``
+  removes the ones the deployed ``sif_abtt`` ranking removed.
 
 ``gold_similar`` is 0 for every row: an unlabelled query has no gold directory.
 ``baseline_pred`` / ``abtt_pred`` are set truthfully -- 1 when the directory is
 top-1 under ``raw`` / ``abtt`` respectively.
 
-Two known gaps between the artifact and the deployed configuration:
+One known gap between the artifact and the deployed configuration:
 
-1. **One cleaner per artifact.** The NPZ format holds a single
-   ``(pcs, mean_vec)`` pair, so ``write_pcs`` persists the mean-pooled fit and
-   the ``sif_abtt`` panel reweights those same cleaned states. Where the two
-   poolings disagree on D -- LaTa layer 1 is mean D=10 against SIF D=3 -- the
-   ``sif_abtt`` panel is a close but not identical subspace to the ranking it
-   explains (principal-angle cosines 0.98/0.96/0.91). ``raw`` and ``abtt`` are
-   exact. Fixing this needs per-pooling PCs in the artifact format.
-2. **Token budget.** ``run_phase12e_pair_explanations.py`` truncates at
+1. **Token budget.** ``run_phase12e_pair_explanations.py`` truncates at
    ``--max_length`` 256 while the retrieval embeddings were pooled at 512, so a
    query longer than 256 tokens has an invisible tail in the attribution panel.
    ``C1525.56v.3.txt`` is 294 tokens, about 13% of it unseen; the other three
@@ -80,13 +74,18 @@ from run_resubmit_unlabelled_retrieval import (  # noqa: E402
     model_slug,
 )
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from pooling_cleaners import (  # noqa: E402
+    CLEANER_KEYS,
+    Cleaner,
+    embeddings_path,
+    pc_file_path,
+    write_cleaner,
+)
+
 # Variant priority when a directory is top-1 under more than one variant.
 # sif_abtt is the webapp default, so it wins.
 VARIANT_PRIORITY = ["sif_abtt", "sif", "abtt", "raw"]
-
-POOLING_SUBDIR = {"mean": "hidden_mean_tokempty", "sif": "hidden_sif_tokempty"}
-# SIF-pooled caches carry a "_sif" suffix on the array filename; mean-pooled do not.
-POOLING_SUFFIX = {"mean": "", "sif": "_sif"}
 
 # The four queries in docs/research/abigail_demo_script.md, with the model each
 # is demoed under.
@@ -189,25 +188,47 @@ def load_variant_frames(unlabelled_root: Path) -> dict[str, pd.DataFrame]:
 
 
 def embeddings(root: Path, slug: str, pooling: str, layer: int) -> np.ndarray:
-    fname = f"hidden_layer{layer}_embeddings{POOLING_SUFFIX[pooling]}.npy"
-    path = root / slug / POOLING_SUBDIR[pooling] / fname
+    path = embeddings_path(root, slug, pooling, layer)
     if not path.exists():
         raise SystemExit(f"Embedding cache missing: {path}")
     return np.load(path)
 
 
-def pcs_match(path: Path, pcs: np.ndarray, mean_vec: np.ndarray) -> bool:
-    """True when an existing PC file already holds this exact fit."""
+def _keys_match(path: Path, pcs_key: str, mean_key: str, pcs, mean_vec) -> bool:
     try:
         existing = np.load(path, allow_pickle=False)
         return (
-            existing["pcs"].shape == pcs.shape
-            and existing["mean_vec"].shape == mean_vec.shape
-            and np.allclose(existing["pcs"], pcs, atol=1e-6)
-            and np.allclose(existing["mean_vec"], mean_vec, atol=1e-6)
+            pcs_key in existing
+            and mean_key in existing
+            and existing[pcs_key].shape == pcs.shape
+            and existing[mean_key].shape == mean_vec.shape
+            and np.allclose(existing[pcs_key], pcs, atol=1e-6)
+            and np.allclose(existing[mean_key], mean_vec, atol=1e-6)
         )
     except Exception:  # noqa: BLE001  -- unreadable counts as "does not match"
         return False
+
+
+def pcs_match(path: Path, pcs: np.ndarray, mean_vec: np.ndarray) -> bool:
+    """True when an existing PC file already holds this exact mean-pooled fit."""
+    keys = CLEANER_KEYS["mean"]
+    return _keys_match(path, keys.pcs, keys.mean_vec, pcs, mean_vec)
+
+
+def sif_keys_match(path: Path, pcs: np.ndarray, mean_vec: np.ndarray) -> bool:
+    """True when an existing PC file already holds this exact SIF-pooled fit."""
+    keys = CLEANER_KEYS["sif"]
+    return _keys_match(path, keys.pcs, keys.mean_vec, pcs, mean_vec)
+
+
+def merge_into_pc_file(path: Path, arrays: dict[str, np.ndarray]) -> None:
+    """Add keys to an existing PC file without disturbing the ones already there."""
+    with np.load(path, allow_pickle=False) as data:
+        merged = {k: data[k] for k in data.files}
+    merged.update(arrays)
+    tmp = path.with_name(path.stem + ".tmp.npz")
+    np.savez(tmp, **merged)
+    tmp.replace(path)
 
 
 def tau_for(results: pd.DataFrame, model: str, layer: int, method: str) -> float:
@@ -273,12 +294,15 @@ class ModelContext:
             self.unlab_abtt[pooling] = cleaner.transform(self.unlab[pooling])
 
     def write_pcs(self, pc_root: Path, dry_run: bool, overwrite: bool) -> Path:
-        """Write the mean-pooled PCs, which is what the NPZ's abtt variant uses.
+        """Write **both** poolings' cleaners to the PC file (issue #87).
 
-        The artifact stores one (pcs, mean_vec) pair and applies it to token
-        vectors. Its ``abtt`` variant is the unweighted-aggregation one, so it
-        takes the mean-pooled cleaner; ``sif_abtt`` layers SIF token weights on
-        top of those same cleaned states, per the issue #46 convention.
+        The artifact applies a cleaner to token vectors, once per ABTT variant:
+        ``abtt`` uses the mean-pooled cleaner under ``pcs`` / ``mean_vec``, and
+        ``sif_abtt`` uses the SIF-pooled one under ``pcs_sif`` /
+        ``mean_vec_sif`` / ``D_sif``. Writing only the mean fit -- what this did
+        before -- left the default panel explaining a subspace the deployed
+        ranking never removed. The mean keys keep their legacy names, so
+        readers that predate the change still load the file.
 
         ``pc_root`` is shared with the paper pipeline and already holds files
         that back shipped artifacts (mT5-base and KaLM-mini at layer 1, LaTa L4,
@@ -286,23 +310,43 @@ class ModelContext:
         there would invalidate artifacts this run never looked at. So: write
         when absent, no-op when the existing file already matches, and refuse
         otherwise unless ``--overwrite_pcs``, which first takes a backup in the
-        repo's own ``.PRE_*`` style.
+        repo's own ``.PRE_*`` style. "Matches" is judged on the mean keys alone,
+        because those are the ones other artifacts depend on; a file that
+        matches but lacks the SIF keys is topped up in place.
         """
-        out = pc_root / self.slug / f"layer{self.layer}_pcs.npz"
-        cleaner = self.cleaners["mean"]
-        pcs = np.asarray(cleaner.pcs, dtype=np.float32)
-        mean_vec = np.asarray(cleaner.mean_vec, dtype=np.float32)
+        out = pc_file_path(pc_root, self.slug, self.layer)
+        arrays: dict[str, np.ndarray] = {}
+        for pooling in ("mean", "sif"):
+            cleaner = self.cleaners[pooling]
+            write_cleaner(
+                arrays,
+                Cleaner(
+                    pooling=pooling,
+                    pcs=np.asarray(cleaner.pcs, dtype=np.float32),
+                    mean_vec=np.asarray(cleaner.mean_vec, dtype=np.float32),
+                    D=self.D[pooling],
+                ),
+            )
+        pcs = arrays["pcs"]
+        mean_vec = arrays["mean_vec"]
 
         if out.exists():
             if pcs_match(out, pcs, mean_vec):
-                print(f"[{self.slug}] {out} already matches this fit; leaving it alone")
+                if sif_keys_match(out, arrays["pcs_sif"], arrays["mean_vec_sif"]):
+                    print(f"[{self.slug}] {out} already matches this fit; leaving it alone")
+                    return out
+                if dry_run:
+                    print(f"[{self.slug}] [DRY] would add pcs_sif={arrays['pcs_sif'].shape} to {out}")
+                    return out
+                merge_into_pc_file(out, arrays)
+                print(f"[{self.slug}] added SIF keys to {out} pcs_sif={arrays['pcs_sif'].shape}")
                 return out
             if not overwrite:
                 raise SystemExit(
                     f"[{self.slug}] refusing to overwrite {out}: it exists and holds a "
-                    f"different fit. Other artifacts may depend on it. Re-run with "
-                    f"--overwrite_pcs to replace it (a .PRE_ISSUE53 backup is kept), "
-                    f"or point --pc_root somewhere else."
+                    f"different mean-pooled fit. Other artifacts may depend on it. "
+                    f"Re-run with --overwrite_pcs to replace it (a .PRE_ISSUE53 backup "
+                    f"is kept), or point --pc_root somewhere else."
                 )
             backup = out.with_suffix(".PRE_ISSUE53.npz")
             if dry_run:
@@ -313,11 +357,17 @@ class ModelContext:
                 print(f"[{self.slug}] backed up {out} -> {backup}")
 
         if dry_run:
-            print(f"[{self.slug}] [DRY] would write {out} pcs={pcs.shape}")
+            print(
+                f"[{self.slug}] [DRY] would write {out} pcs={pcs.shape} "
+                f"pcs_sif={arrays['pcs_sif'].shape}"
+            )
             return out
         out.parent.mkdir(parents=True, exist_ok=True)
-        np.savez(out, pcs=pcs, mean_vec=mean_vec)
-        print(f"[{self.slug}] wrote {out} pcs={pcs.shape} mean={mean_vec.shape}")
+        np.savez(out, **arrays)
+        print(
+            f"[{self.slug}] wrote {out} pcs={pcs.shape} (D={self.D['mean']}) "
+            f"pcs_sif={arrays['pcs_sif'].shape} (D={self.D['sif']}) mean={mean_vec.shape}"
+        )
         return out
 
     def vectors(self, variant: str) -> tuple[np.ndarray, np.ndarray]:
