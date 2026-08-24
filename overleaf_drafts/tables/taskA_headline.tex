@@ -16,6 +16,6 @@ Qwen3-0.6B & 0.958\,\textsubscript{28} & 0.941\,\textsubscript{22} & 0.972\,\tex
 KaLM-mini & 0.970\,\textsubscript{23} & 0.963\,\textsubscript{23} & \textbf{0.980}\,\textsubscript{1} & 0.974\,\textsubscript{4} & 0.056\,\textsubscript{23} & 0.056\,\textsubscript{23} & \textbf{0.568}\,\textsubscript{1} & 0.535\,\textsubscript{4} \\
 \bottomrule
 \end{tabular}
-\caption{Task A pairwise duplicate detection for all six models under four post-processing settings. For every model and method we select one layer by training-set AUROC and report the test-set numbers at that layer; the subscript gives the selected layer. ABTT uses $D$ tuned on train. Baseline AUROC spans 0.839 to 0.970 across the six models, and ABTT lifts every model into a 0.971 to 0.984 band. Cosine gap is the mean same-directory cosine minus the mean different-directory cosine. Per-layer grids are in Appendix Tables~\ref{tab:taskA_main} and~\ref{tab:taskA_appendix}, and the SIF sweeps in Appendix Table~\ref{tab:taskA_appendix_sif}.}
+\caption{Task A pairwise duplicate detection for all six models under four post-processing settings. Each cell is a test-set score at the layer chosen by training-set AUROC, given as the subscript; ABTT uses $D$ tuned on train. Baseline AUROC spans 0.839 to 0.970, and ABTT lifts every model into a 0.971 to 0.984 band. Cosine gap is the mean same-directory minus the mean different-directory cosine. Per-layer grids: Appendix Tables~\ref{tab:taskA_main}, \ref{tab:taskA_appendix}, and~\ref{tab:taskA_appendix_sif}.}
 \label{tab:taskA_headline}
 \end{table*}

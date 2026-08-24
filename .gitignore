@@ -68,3 +68,17 @@ dist/
 overleaf_drafts/figures/*.pdf
 overleaf_drafts/figures/*.png
 overleaf_drafts/notes/
+
+# LaTeX build artifacts. A committed .aux carries stale lineno state and breaks
+# fresh local compiles, so only the source and the compiled PDF are tracked;
+# overleaf_drafts/acl_latex.pdf stays under version control on purpose because
+# the professor and deploy workflows read the built paper straight from the repo.
+overleaf_drafts/*.aux
+overleaf_drafts/*.bbl
+overleaf_drafts/*.blg
+overleaf_drafts/*.fdb_latexmk
+overleaf_drafts/*.fls
+overleaf_drafts/*.log
+overleaf_drafts/*.out
+overleaf_drafts/*.synctex.gz
+overleaf_drafts/*.toc
