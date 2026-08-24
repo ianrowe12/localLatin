@@ -86,6 +86,10 @@ $PY scripts/_archive/run_phase12e_pair_explanations.py \
 
 echo ""
 echo "=== [3/7] GPU: IG artifact NPZs for the 8 demo pairs ($(date)) ==="
+# --max_length defaults to 256 while the retrieval embeddings were pooled at
+# 512, so a query longer than 256 tokens has an invisible tail in the
+# attribution panel (C1525.56v.3.txt is 294). Add --max_length 512 to close
+# that; it costs a few GPU-seconds and changes every artifact it touches.
 $PY -u scripts/_archive/run_phase12e_pair_explanations.py \
     --examples_csv "$SUBSET_CSV" \
     --pc_root "$PC_ROOT" \

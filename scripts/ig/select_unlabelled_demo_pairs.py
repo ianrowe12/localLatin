@@ -35,6 +35,22 @@ attribution layer contract:
 ``baseline_pred`` / ``abtt_pred`` are set truthfully -- 1 when the directory is
 top-1 under ``raw`` / ``abtt`` respectively.
 
+Two known gaps between the artifact and the deployed configuration:
+
+1. **One cleaner per artifact.** The NPZ format holds a single
+   ``(pcs, mean_vec)`` pair, so ``write_pcs`` persists the mean-pooled fit and
+   the ``sif_abtt`` panel reweights those same cleaned states. Where the two
+   poolings disagree on D -- LaTa layer 1 is mean D=10 against SIF D=3 -- the
+   ``sif_abtt`` panel is a close but not identical subspace to the ranking it
+   explains (principal-angle cosines 0.98/0.96/0.91). ``raw`` and ``abtt`` are
+   exact. Fixing this needs per-pooling PCs in the artifact format.
+2. **Token budget.** ``run_phase12e_pair_explanations.py`` truncates at
+   ``--max_length`` 256 while the retrieval embeddings were pooled at 512, so a
+   query longer than 256 tokens has an invisible tail in the attribution panel.
+   ``C1525.56v.3.txt`` is 294 tokens, about 13% of it unseen; the other three
+   demo queries are 51/144/147 and unaffected. Pass ``--max_length 512`` to the
+   generator to close this at the cost of a few GPU-seconds.
+
 Usage::
 
     python scripts/ig/select_unlabelled_demo_pairs.py \\
@@ -126,6 +142,13 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--data_root", type=Path, default=REPO_ROOT / "data")
     p.add_argument("--pc_root", type=Path, default=REPO_ROOT / "runs/phase12_release/pcs")
     p.add_argument(
+        "--overwrite_pcs",
+        action="store_true",
+        help="Replace an existing PC file that holds a different fit, keeping a "
+        "'.PRE_ISSUE53.npz' backup. Without this the run refuses, because "
+        "--pc_root is shared with artifacts this run did not build.",
+    )
+    p.add_argument(
         "--results_csv",
         type=Path,
         default=REPO_ROOT / "runs/active/resubmit/results/phase_resubmit_results.csv",
@@ -133,8 +156,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--score_tolerance",
         type=float,
-        default=2e-3,
-        help="Max allowed |recomputed score - rank1_score| before failing.",
+        default=5e-5,
+        help="Max allowed |recomputed score - rank1_score| before failing. The "
+        "default is the 5 decimal places the acceptance criterion claims. A "
+        "looser bound hides exactly the class of bug this guard exists for: "
+        "cleaning with the wrong pooling's D moved one pair by only 1.8e-3.",
     )
     p.add_argument("--dry_run", action="store_true")
     return p.parse_args()
@@ -168,6 +194,20 @@ def embeddings(root: Path, slug: str, pooling: str, layer: int) -> np.ndarray:
     if not path.exists():
         raise SystemExit(f"Embedding cache missing: {path}")
     return np.load(path)
+
+
+def pcs_match(path: Path, pcs: np.ndarray, mean_vec: np.ndarray) -> bool:
+    """True when an existing PC file already holds this exact fit."""
+    try:
+        existing = np.load(path, allow_pickle=False)
+        return (
+            existing["pcs"].shape == pcs.shape
+            and existing["mean_vec"].shape == mean_vec.shape
+            and np.allclose(existing["pcs"], pcs, atol=1e-6)
+            and np.allclose(existing["mean_vec"], mean_vec, atol=1e-6)
+        )
+    except Exception:  # noqa: BLE001  -- unreadable counts as "does not match"
+        return False
 
 
 def tau_for(results: pd.DataFrame, model: str, layer: int, method: str) -> float:
@@ -232,18 +272,46 @@ class ModelContext:
             self.lab_abtt[pooling] = cleaner.transform(self.lab[pooling])
             self.unlab_abtt[pooling] = cleaner.transform(self.unlab[pooling])
 
-    def write_pcs(self, pc_root: Path, dry_run: bool) -> Path:
+    def write_pcs(self, pc_root: Path, dry_run: bool, overwrite: bool) -> Path:
         """Write the mean-pooled PCs, which is what the NPZ's abtt variant uses.
 
         The artifact stores one (pcs, mean_vec) pair and applies it to token
         vectors. Its ``abtt`` variant is the unweighted-aggregation one, so it
         takes the mean-pooled cleaner; ``sif_abtt`` layers SIF token weights on
         top of those same cleaned states, per the issue #46 convention.
+
+        ``pc_root`` is shared with the paper pipeline and already holds files
+        that back shipped artifacts (mT5-base and KaLM-mini at layer 1, LaTa L4,
+        PhilTa L6). Since ``--queries`` accepts any model, a silent overwrite
+        there would invalidate artifacts this run never looked at. So: write
+        when absent, no-op when the existing file already matches, and refuse
+        otherwise unless ``--overwrite_pcs``, which first takes a backup in the
+        repo's own ``.PRE_*`` style.
         """
         out = pc_root / self.slug / f"layer{self.layer}_pcs.npz"
         cleaner = self.cleaners["mean"]
         pcs = np.asarray(cleaner.pcs, dtype=np.float32)
         mean_vec = np.asarray(cleaner.mean_vec, dtype=np.float32)
+
+        if out.exists():
+            if pcs_match(out, pcs, mean_vec):
+                print(f"[{self.slug}] {out} already matches this fit; leaving it alone")
+                return out
+            if not overwrite:
+                raise SystemExit(
+                    f"[{self.slug}] refusing to overwrite {out}: it exists and holds a "
+                    f"different fit. Other artifacts may depend on it. Re-run with "
+                    f"--overwrite_pcs to replace it (a .PRE_ISSUE53 backup is kept), "
+                    f"or point --pc_root somewhere else."
+                )
+            backup = out.with_suffix(".PRE_ISSUE53.npz")
+            if dry_run:
+                print(f"[{self.slug}] [DRY] would back up {out} -> {backup} and overwrite")
+                return out
+            if not backup.exists():
+                backup.write_bytes(out.read_bytes())
+                print(f"[{self.slug}] backed up {out} -> {backup}")
+
         if dry_run:
             print(f"[{self.slug}] [DRY] would write {out} pcs={pcs.shape}")
             return out
@@ -432,7 +500,7 @@ def main() -> None:
     )
 
     for ctx in contexts.values():
-        ctx.write_pcs(args.pc_root, args.dry_run)
+        ctx.write_pcs(args.pc_root, args.dry_run, args.overwrite_pcs)
 
     if args.dry_run:
         print(f"\n[dry-run] would write {len(combined)} rows ({len(new_df)} new)")

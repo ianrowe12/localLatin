@@ -125,6 +125,47 @@ def test_rows_without_an_artifact_do_not_mask_a_usable_row(tmp_path: Path) -> No
     )
 
 
+def test_labelled_row_never_serves_an_unlabelled_query(tmp_path: Path) -> None:
+    """A real collision from the deployed top-10 must resolve to nothing.
+
+    Unlabelled query C1525.69r.5.txt has file_id 1189, and LaTa ranks
+    Can.apost.7 into its top 10 under both raw and abtt. Labelled example 67
+    happens to carry query_file_id 1189 with candidate_folder_id Can.apost.7
+    as well, but its query is C1525.7v.2.txt, a different manuscript. One of
+    13 such combinations. Before the strict filter this served ex67's token map
+    as evidence for C1525.69r.5.txt.
+    """
+    npz = tmp_path / "a.npz"
+    _write_npz(npz, variants=ALL_VARIANTS, token_strings=True, sif_weights=True)
+    store = _store(
+        [
+            _row(
+                67,
+                "labelled",
+                query_file_id=1189,
+                candidate_folder_id="Can.apost.7",
+                candidate_label="Can.apost.7",
+                query_path="/u/irowerojas/localLatin/canon/Can.apost.45/C1525.7v.2.txt",
+            )
+        ],
+        {67: npz},
+    )
+
+    assert (
+        token_map_svc.resolve_example_id(
+            store, 1189, "Can.apost.7", "bowphs_LaTa", query_source="unlabelled"
+        )
+        is None
+    )
+    # The labelled artifact is still reachable for what it actually describes.
+    assert (
+        token_map_svc.resolve_example_id(
+            store, 1189, "Can.apost.7", "bowphs_LaTa", query_source="labelled"
+        )
+        == 67
+    )
+
+
 def test_no_match_still_returns_none(tmp_path: Path) -> None:
     npz = tmp_path / "a.npz"
     _write_npz(npz, variants=ALL_VARIANTS, token_strings=True, sif_weights=True)

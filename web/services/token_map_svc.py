@@ -206,9 +206,10 @@ def resolve_example_id(
     ``query_file_id`` is only unique within a corpus: the labelled examples
     number the canon split from 0 and the unlabelled review queue numbers its
     own files from 0, so the two ranges overlap. ``query_source`` disambiguates
-    them. It is optional and the column is optional too -- artifacts CSVs
-    written before unlabelled examples existed have neither, and those resolve
-    exactly as before.
+    them, and the filter is strict -- a request for one corpus never falls back
+    to a row from the other. Both the argument and the column are optional:
+    artifact CSVs written before unlabelled examples existed have neither, and
+    those resolve exactly as before.
 
     Rows that have a matching artifact on disk win over rows that do not, so a
     stale CSV entry cannot mask a usable one.
@@ -227,9 +228,15 @@ def resolve_example_id(
         return None
 
     if query_source is not None and "query_source" in matches.columns:
-        narrowed = matches[matches["query_source"].astype(str) == query_source]
-        if not narrowed.empty:
-            matches = narrowed
+        # Strict: no fallback to the unnarrowed set. Falling back would resolve
+        # an unlabelled query to a labelled artifact describing a different
+        # manuscript, which is the collision this argument exists to prevent
+        # (13 such combinations sit inside the deployed top-10). Returning None
+        # renders as "no artifact for this pair", i.e. the Attribution toggle is
+        # absent, which is what the demo script promises off the demo set.
+        matches = matches[matches["query_source"].astype(str) == query_source]
+        if matches.empty:
+            return None
 
     ids = [int(eid) for eid in matches["example_id"]]
     for eid in ids:

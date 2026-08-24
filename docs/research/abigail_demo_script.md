@@ -96,8 +96,19 @@ listed for that query:
 
 Each of those artifacts carries all four variants, so the Attribution toggle follows the same
 `Raw | ABTT | SIF | SIF+ABTT` control as the rest of the page. They were built at the layer and D
-the deployed retrieval actually uses, from the same train-only ABTT fit, so the attribution
-explains the ranking on screen rather than a different configuration of the same model.
+the deployed retrieval actually uses; for the SIF+ABTT panel the cleaner is the mean-pooled fit, a
+close but not identical subspace. Two caveats worth knowing rather than discovering:
+
+* On LaTa the SIF+ABTT panel removes the mean-pooled D=10 directions, while the deployed SIF+ABTT
+  ranking removes the SIF-pooled D=3 ones. The subspaces overlap heavily (principal-angle cosines
+  0.98, 0.96, 0.91) but are not the same, and the panel reports D=10. PhilTa is unaffected, since
+  both fits choose D=10 there. Raw and ABTT are exact on both models.
+* Attribution truncates at 256 tokens while the retrieval embeddings were pooled at 512. Query A
+  (`C1525.56v.3`) is 294 tokens, so roughly the last 13% of it is not shown in the attribution
+  panel. The other three queries are 51, 144 and 147 tokens and are fully covered.
+
+Neither caveat affects the Highlights and Connections view modes in the paragraph above, which are
+computed live.
 
 Stay on the demo queries if Abigail asks to see attribution. Off the demo set the toggle will not
 appear, and that is expected: an artifact costs a GPU pass per pair.
