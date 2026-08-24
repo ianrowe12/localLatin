@@ -153,6 +153,24 @@ Rules:
 - **GPU submissions for the current push are limited to issue #47.** Any other GPU job needs
   explicit approval from Ian before submission.
 
+## Paper Repo (Overleaf Sync)
+
+The paper is edited in this repo at `overleaf_drafts/` and mirrored to
+[localLatin-paper](https://github.com/ianrowe12/localLatin-paper), which the Overleaf
+project syncs with (Overleaf's GitHub menu: "Pull/Push GitHub changes").
+
+```bash
+# After paper PRs merge to main: snapshot overleaf_drafts/ to the paper repo
+bash scripts/paper/sync_paper_repo.sh push
+
+# After edits arrive from Overleaf: bring them back as a review branch
+bash scripts/paper/sync_paper_repo.sh pull
+```
+
+`push` commits a clean snapshot to localLatin-paper main; Ian then pulls in Overleaf.
+`pull` creates a `paper-sync-*` branch here with the Overleaf-side edits for a normal PR.
+Never edit localLatin-paper directly; it is a mirror, not a source.
+
 ## Webapp (Git Subtree)
 
 The scholar review webapp lives in a separate repo ([localLatin-webapp](https://github.com/ianrowe12/localLatin-webapp)) embedded as a git subtree at `web/`. Zero code imports cross the boundary — the webapp reads research data via configurable paths.
