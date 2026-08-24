@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from 'react'
 import { PIN_COLORS } from '../utils/colors'
-import type { AttributionMethod, AttributionVariant } from '../api/tokenMap'
+import type { AttributionMethod } from '../api/tokenMap'
 
 export type ViewMode = 'connections' | 'heatmap' | 'ig'
 export type PinSource = 'manual' | 'auto'
@@ -46,11 +46,12 @@ export interface TokenContextValue {
   hasAutoHighlights: boolean
   hasIgData: boolean
   setHasIgData: (v: boolean) => void
+  // The post-processing variant is NOT held here: it is a single app-wide
+  // choice (AppContext.activeVariant) shared with the prediction list, so the
+  // highlights can never disagree with the ranking the reviewer is judging.
   selectedMethod: AttributionMethod | null
-  selectedVariant: AttributionVariant
   availableMethods: AttributionMethod[]
   setSelectedMethod: (m: AttributionMethod) => void
-  setSelectedVariant: (v: AttributionVariant) => void
   setAvailableMethods: (methods: AttributionMethod[]) => void
 }
 
@@ -63,18 +64,22 @@ export function TokenProvider({ children }: { children: ReactNode }) {
   const [pinnedTokens, setPinnedTokens] = useState<Map<number, PinEntry>>(new Map())
   const [hasIgData, setHasIgData] = useState(false)
   const [autoHighlightedTokens, setAutoHighlightedTokens] = useState<Set<number>>(new Set())
-  const [selectedVariant, setSelectedVariant] = useState<AttributionVariant>('baseline')
   const [availableMethods, setAvailableMethods] = useState<AttributionMethod[]>([])
-  const [selectedMethod, setSelectedMethod] = useState<AttributionMethod | null>(null)
+  // Seeded with the first method rather than null so the very first token-map
+  // fetch can send ?method= and stay small; the effect below corrects it if
+  // this pair has no IG matrices.
+  const [selectedMethod, setSelectedMethod] = useState<AttributionMethod | null>('ig')
 
   // Keep selectedMethod consistent with availableMethods. If the current
   // selection is no longer available (or is null), reset to the first
   // available method. This runs as an effect to avoid stale closures.
+  // An empty list means "no pair loaded yet" (or no attribution data at all),
+  // which must not wipe the 'ig' seed the first fetch relies on.
   useEffect(() => {
-    setSelectedMethod((prev) => {
-      if (prev && availableMethods.includes(prev)) return prev
-      return availableMethods[0] ?? null
-    })
+    if (availableMethods.length === 0) return
+    setSelectedMethod((prev) =>
+      prev && availableMethods.includes(prev) ? prev : availableMethods[0],
+    )
   }, [availableMethods])
 
   const pinToken = useCallback((queryIdx: number, matches: PinMatch[]) => {
@@ -159,10 +164,8 @@ export function TokenProvider({ children }: { children: ReactNode }) {
     hasIgData,
     setHasIgData,
     selectedMethod,
-    selectedVariant,
     availableMethods,
     setSelectedMethod,
-    setSelectedVariant,
     setAvailableMethods,
   }
 

@@ -72,6 +72,19 @@ FEATURED_MODELS = {
         "baseline_tau": 0.984924623115578,
         "abtt_tau": 0.5226130653266332,
     },
+    # KaLM-mini layer 1 is the train-selected operational retrieval layer:
+    # it maximises train_aucroc (0.984993) and overall_assignment_acc
+    # (0.920746) in runs/active/resubmit/results/phase_resubmit_results.csv.
+    # Thresholds are the abtt_optimal / baseline taus for that row.
+    "KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5": {
+        "model_short": "KaLM-mini",
+        "model_type": "decoder",
+        "layer": 1,
+        "D": 10,
+        "tau": 0.4120603015075377,
+        "baseline_tau": 0.9748743718592965,
+        "abtt_tau": 0.4120603015075377,
+    },
 }
 
 

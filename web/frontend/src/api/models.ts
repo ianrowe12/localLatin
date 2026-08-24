@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { apiFetch } from './client'
 import { FEEDBACK_UPDATED_EVENT } from './feedback'
+import type { PredictionVariant } from './variants'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -12,6 +13,9 @@ export interface ModelInfo {
   layer: number | null
   pooling: string | null
   prediction_count: number
+  // Populated by GET /api/models; consumed by the variant selector (#48).
+  available_variants: PredictionVariant[]
+  default_variant: PredictionVariant
 }
 
 export interface RecentReview {
@@ -60,17 +64,31 @@ interface HookState<T> {
   error: string | null
 }
 
+// Module-level rather than per-hook: the model list is immutable for the life
+// of a deployment and has more than one consumer (ModelSelector and the
+// variant selector), which would otherwise each fetch it.
+let modelsCache: ModelInfo[] | null = null
+
+/**
+ * Test-only. Without this, the first `/api/models` payload a test file fetches
+ * would be silently reused by every later test in that file, so a test that
+ * needs different `available_variants` would quietly assert against the wrong
+ * deployment. Called from src/test/setup.ts after each test.
+ */
+export function __resetModelsCache(): void {
+  modelsCache = null
+}
+
 export function useModels(): HookState<ModelInfo[]> {
   const [state, setState] = useState<HookState<ModelInfo[]>>({
-    data: null,
+    data: modelsCache,
     loading: false,
     error: null,
   })
-  const cache = useRef<ModelInfo[] | null>(null)
 
   useEffect(() => {
-    if (cache.current) {
-      setState({ data: cache.current, loading: false, error: null })
+    if (modelsCache) {
+      setState({ data: modelsCache, loading: false, error: null })
       return
     }
 
@@ -80,7 +98,7 @@ export function useModels(): HookState<ModelInfo[]> {
     apiFetch<ModelInfo[]>('/api/models')
       .then((data) => {
         if (cancelled) return
-        cache.current = data
+        modelsCache = data
         setState({ data, loading: false, error: null })
       })
       .catch((err: Error) => {

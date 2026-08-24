@@ -44,7 +44,7 @@ conda run -n localLatin python ...
 Grouped by purpose:
 - **`scripts/resubmit/`**: Active paper resubmission pipeline (`run_resubmit_data_prep.py`, `run_taskb_mseed.py`, `visualize_taskb_mseed.py`, `run_resubmit_ig_comparison.py`, `run_leiden_examples.py`, `evaluate_vectors.py`, `visualize_resubmit.py`, `index_unlabelled.py`, `run_resubmit_unlabelled_retrieval.py`).
 - **`scripts/ig/`**: IG artifact regeneration for the webapp (`run_ig_examples_pipeline.sh`, `run_phase12f_select_pair_examples.py`, `run_phase12f_visualize.py`).
-- **`scripts/webapp/`**: Webapp data export (`export_webapp_data.sh`).
+- **`scripts/webapp/`**: Webapp data export (`export_webapp_data.sh`), deploy data packaging (`make_data_release.sh`), deployment smoke checks (`smoke_reviewer_pilot.py`).
 - **`scripts/common/`**: Shared helpers (`create_canon_split.py`, `data_prep.py`).
 - **`scripts/_archive/`**: Stale phase 3-12 pipelines preserved for reproducibility.
 
@@ -190,8 +190,18 @@ git subtree push --prefix=web webapp main
 The webapp reads these files (relative to `data_root` in `web/config.yaml`):
 - `data/canon_unlabelled/` — 2,238 query .txt files
 - `data/canon_labelled/` — 840 directories of candidate .txt files
-- `runs/active/resubmit/unlabelled/unlabelled_predictions.csv` — model predictions
+- `runs/active/resubmit/unlabelled/unlabelled_predictions_<variant>.csv` — model predictions,
+  one file per post-processing variant (`raw`, `abtt`, `sif`, `sif_abtt`; `sif_abtt` is the
+  default). The pre-variant `unlabelled_predictions.csv` is stale and is never served.
 - `runs/active/ig_examples/` — IG visualization artifacts (CSV + NPZ)
 - `runs/active/resubmit/webapp/feedback.db` — auto-created SQLite
 
-Run `bash scripts/webapp/export_webapp_data.sh` to verify all required data files are present.
+Run `bash scripts/webapp/export_webapp_data.sh` to verify all required data files are present
+(add `--strict` to exit non-zero on anything missing).
+
+Everything under `runs/` in that list is gitignored, so it never reaches the deploy host through
+`git pull`. Package it with `bash scripts/webapp/make_data_release.sh --tag data-YYYYMMDD`, publish
+the tarball plus its `.sha256` as a GitHub Release, and set the repo variable `DATA_RELEASE_TAG`;
+`deploy/deploy.sh` then downloads, verifies and installs it. Every archive member is confined to
+`runs/active/`, which is what keeps the reviewer feedback DB at `data/feedback.db` untouchable by a
+deploy. See `deploy/REVIEWER_PILOT_READINESS.md`.

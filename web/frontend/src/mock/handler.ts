@@ -5,6 +5,11 @@ import type {
   QueryListResponse,
 } from '../api/queries'
 import type { StatsResponse, ModelInfo } from '../api/models'
+import {
+  DEFAULT_VARIANT,
+  PREDICTION_VARIANTS,
+  type PredictionVariant,
+} from '../api/variants'
 import type { AuthUser } from '../api/auth'
 import type { TokenMapResponse } from '../api/tokenMap'
 import { MOCK_QUERIES, MOCK_QUERY_DETAILS } from './queries'
@@ -291,9 +296,12 @@ function handleQueryDetail(id: number): QueryDetail | { error: { message: string
 function handlePredictions(
   queryId: number,
   _model: string,
+  variant: PredictionVariant = DEFAULT_VARIANT,
 ): ReturnType<typeof MOCK_PREDICTIONS.get> | { error: { message: string } } {
   const pred = MOCK_PREDICTIONS.get(queryId)
-  if (pred) return pred
+  // Echo back the requested variant: the canned entries are all sif_abtt, and
+  // returning them unchanged would report the wrong variant under #48.
+  if (pred) return { ...pred, variant }
 
   // Return a minimal prediction set for synthetic queries
   const item = ALL_QUERIES.find((q) => q.file_id === queryId)
@@ -303,6 +311,7 @@ function handlePredictions(
     file_id: queryId,
     filename: item.filename,
     model: 'bowphs_LaTa',
+    variant,
     predictions: [
       {
         rank: 1,
@@ -337,12 +346,13 @@ function handlePredictions(
 function handleTokenMap(
   url: string,
 ): TokenMapResponse | { error: { message: string } } {
-  // URL pattern: /api/query/{queryId}/token-map/{candidateId}
-  const match = url.match(/\/api\/query\/(\d+)\/token-map\/([^?]+)/)
+  // URL pattern: /api/query/{queryId}/token_map?candidate_dir=...&method=&variant=
+  const match = url.match(/\/api\/query\/(\d+)\/token_map\?(.*)$/)
   if (!match) return { error: { message: 'Invalid token map URL' } }
 
   const queryId = match[1]
-  const candidateId = decodeURIComponent(match[2])
+  const params = new URLSearchParams(match[2])
+  const candidateId = params.get('candidate_dir') ?? ''
   const key = `${queryId}-${candidateId}`
 
   const data = MOCK_TOKEN_MAPS.get(key)
@@ -386,6 +396,8 @@ function handleModels(): ModelInfo[] {
       layer: 4,
       pooling: 'mean',
       prediction_count: 2238,
+      available_variants: PREDICTION_VARIANTS,
+      default_variant: DEFAULT_VARIANT,
     },
   ]
 }
@@ -430,20 +442,22 @@ export function installMockHandler(): void {
       return mockResponse(handleQueryList(url))
     }
 
-    // Predictions: /api/query/{id}/predictions?model={model}
-    const predMatch = url.match(/\/api\/query\/(\d+)\/predictions\?model=(.+)/)
+    // Predictions: /api/query/{id}/predictions?model={model}&variant={variant}
+    const predMatch = url.match(/\/api\/query\/(\d+)\/predictions\?(.+)/)
     if (predMatch) {
       const id = parseInt(predMatch[1], 10)
-      const model = decodeURIComponent(predMatch[2])
-      const result = handlePredictions(id, model)
+      const predParams = new URLSearchParams(predMatch[2])
+      const model = predParams.get('model') ?? ''
+      const variant = (predParams.get('variant') ?? DEFAULT_VARIANT) as PredictionVariant
+      const result = handlePredictions(id, model, variant)
       if (result && 'error' in result) {
         return mockResponse(result, 404)
       }
       return mockResponse(result)
     }
 
-    // Token map: /api/query/{id}/token-map/{candidateId}
-    if (url.match(/\/api\/query\/\d+\/token-map\//)) {
+    // Token map: /api/query/{id}/token_map?candidate_dir=...
+    if (url.match(/\/api\/query\/\d+\/token_map\?/)) {
       const result = handleTokenMap(url)
       if ('error' in result) {
         return mockResponse(result, 404)

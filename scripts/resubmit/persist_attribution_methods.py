@@ -309,6 +309,14 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Process at most N rows (for smoke testing).",
     )
+    p.add_argument(
+        "--models",
+        nargs="*",
+        default=None,
+        help="Restrict processing to these model_name strings. Rows for other "
+        "models keep whatever methods_available they already had, so a "
+        "partial rerun never blanks the column for untouched artifacts.",
+    )
     return p.parse_args()
 
 
@@ -327,9 +335,19 @@ def main() -> None:
     report_methods = MAIN_METHODS + PRESERVED_SIDECAR_METHODS
     method_success_counts = {m: 0 for m in report_methods}
 
+    prior_methods = (
+        examples["methods_available"].fillna("").astype(str).tolist()
+        if "methods_available" in examples.columns
+        else [""] * len(examples)
+    )
+    model_filter = set(args.models) if args.models else None
+
     for idx, row in examples.iterrows():
+        if model_filter is not None and str(row["model_name"]) not in model_filter:
+            methods_available_per_row.append(prior_methods[idx])
+            continue
         if args.max_rows is not None and counts["ok"] + counts["missing"] + counts["error"] >= args.max_rows:
-            methods_available_per_row.append("")
+            methods_available_per_row.append(prior_methods[idx])
             continue
 
         slug = model_slug(row["model_name"])
@@ -363,7 +381,7 @@ def main() -> None:
 
     # Pad the per-row list if --max_rows truncated processing.
     while len(methods_available_per_row) < len(examples):
-        methods_available_per_row.append("")
+        methods_available_per_row.append(prior_methods[len(methods_available_per_row)])
 
     examples["methods_available"] = methods_available_per_row
     examples.to_csv(args.examples_csv, index=False)

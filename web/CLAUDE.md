@@ -24,7 +24,7 @@ Scholar review web application for the localLatin Latin manuscript retrieval pro
 
 - `config.py` — Settings with `PathsConfig.resolve()` for path resolution
 - `services/data_store.py` — `build_store()` loads all data at startup. The `DataStore` dataclass is the central data cache.
-- `services/token_map_svc.py` — Loads NPZ artifacts, computes cosine similarity matrices, optional HuggingFace tokenizer decoding
+- `services/token_map_svc.py` — Loads NPZ artifacts, computes cosine similarity matrices, optional HuggingFace tokenizer decoding. The token-map endpoints take `?method=&variant=`; without them the response carries every persisted method x variant matrix (7 x 4 dense grids), so the UI always sends both. `available_methods` / `available_variants` always report the artifact's full contents regardless of the filters.
 - `services/text_tokenizer.py` — Mirrors `src/token_filtering.classify_token()` from the research repo without torch dependency
 - `services/feedback_db.py` — SQLite CRUD for reviewer feedback
 - `routers/` — One file per API domain (queries, predictions, token_map, feedback, stats)
@@ -35,7 +35,12 @@ Scholar review web application for the localLatin Latin manuscript retrieval pro
 The webapp reads these from `data_root`:
 - `canon_unlabelled/` — flat directory of 2,238 .txt query files
 - `canon_labelled/` — 859 subdirectories, each with .txt candidate files
-- `runs/active/resubmit/unlabelled/unlabelled_predictions.csv` — CSV with columns: model, file_id, filename, rank1_dir, rank1_score, ..., rank10_dir, rank10_score, layer, pooling
+- `runs/active/resubmit/unlabelled/unlabelled_predictions_<variant>.csv` — one CSV per
+  post-processing variant (`raw`, `abtt`, `sif`, `sif_abtt`), with columns: model, variant,
+  file_id, filename, rank1_dir, rank1_score, ..., rank10_dir, rank10_score, layer, pooling.
+  The path pattern, the served variant list, and the default (`sif_abtt`) come from
+  `PathsConfig`. Only the default variant is read at startup; the others load on first
+  request. The pre-variant `unlabelled_predictions.csv` is stale and is never a fallback.
 - `runs/active/ig_examples/phase12f_examples.csv` — IG example metadata
 - `runs/active/ig_examples/artifacts/<model_slug>/` — NPZ files with keys: query_embeddings, candidate_embeddings, query_ig_baseline, query_ig_abtt, candidate_ig_baseline, candidate_ig_abtt, query_input_ids, candidate_input_ids, layer, D
 
@@ -43,6 +48,13 @@ The webapp reads these from `data_root`:
 
 - Mock mode: `npm run dev:mock` — uses synthetic data from `src/mock/`
 - API types in `src/api/` mirror backend `models.py`
+- Unit tests: `npm test` (vitest, jsdom + Testing Library; setup in `src/test/setup.ts`)
+- Post-processing variant: one app-wide choice in `AppContext.activeVariant`, set by
+  `components/predictions/VariantSelector.tsx` and persisted under `locallatin-variant`.
+  It drives predictions, feedback drafts and the token highlights. The attribution
+  artifacts name the uncorrected variant `baseline` where the prediction CSVs name it
+  `raw`; `toAttributionVariant` in `src/api/variants.ts` is the only place that bridges
+  the two vocabularies.
 - Token classification duplicated in `src/utils/tokens.ts` (matches `services/text_tokenizer.py`)
 
 ## Running

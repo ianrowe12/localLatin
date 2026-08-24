@@ -13,7 +13,12 @@ from fastapi.responses import JSONResponse, Response
 
 from web.config import Settings, load_settings
 from web.dependencies import set_db, set_store
-from web.exceptions import ExampleNotFoundError, InvalidModelError, QueryNotFoundError
+from web.exceptions import (
+    ExampleNotFoundError,
+    InvalidModelError,
+    QueryNotFoundError,
+    VariantUnavailableError,
+)
 from web.models import ErrorResponse, ErrorDetail
 from web.routers import auth, feedback, packets, predictions, queries, stats, token_map
 from web.services.data_store import build_store
@@ -87,6 +92,17 @@ def create_app(config_path: str | None = None) -> FastAPI:
             status_code=400,
             content=ErrorResponse(
                 error=ErrorDetail(code="INVALID_MODEL", message=exc.message)
+            ).model_dump(),
+        )
+
+    @app.exception_handler(VariantUnavailableError)
+    async def variant_unavailable_handler(
+        request: Request, exc: VariantUnavailableError
+    ):
+        return JSONResponse(
+            status_code=400,
+            content=ErrorResponse(
+                error=ErrorDetail(code="VARIANT_UNAVAILABLE", message=exc.message)
             ).model_dump(),
         )
 

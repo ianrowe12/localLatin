@@ -26,7 +26,7 @@ def _write_fixture_data(root: Path) -> Path:
     (unlabelled / "query-1.txt").write_text("query text 1", encoding="utf-8")
     (labelled / "a.txt").write_text("candidate text a", encoding="utf-8")
 
-    with (predictions / "unlabelled_predictions.csv").open("w", newline="") as f:
+    with (predictions / "unlabelled_predictions_sif_abtt.csv").open("w", newline="") as f:
         writer = csv.DictWriter(
             f,
             fieldnames=[
@@ -59,7 +59,9 @@ paths:
   data_root: "{root}"
   canon_unlabelled: "data/canon_unlabelled"
   canon_labelled: "data/canon_labelled"
-  predictions_combined: "runs/active/resubmit/unlabelled/unlabelled_predictions.csv"
+  predictions_variant_pattern: "runs/active/resubmit/unlabelled/unlabelled_predictions_{{variant}}.csv"
+  variants: ["sif_abtt"]
+  default_variant: "sif_abtt"
   feedback_db: "runs/active/resubmit/webapp/feedback.db"
   ig_examples_csv: "missing/phase12f_examples.csv"
   ig_artifacts_dir: "missing/artifacts"

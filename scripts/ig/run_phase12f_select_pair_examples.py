@@ -96,6 +96,13 @@ def parse_args() -> argparse.Namespace:
         default="hidden_mean",
         help="Fallback hidden/mean embedding subdirectory.",
     )
+    parser.add_argument(
+        "--bases_root",
+        default=None,
+        help="Embedding cache root holding <slug>/<subdir>/hidden_layer{N}_embeddings.npy. "
+        "Defaults to <runs_root>/phase9_bases; pass runs/active/encoder_bases for the "
+        "canonical cache.",
+    )
     return parser.parse_args()
 
 
@@ -119,17 +126,26 @@ def find_embedding_file(
     layer: int,
     preferred_subdir: str,
     fallback_subdir: str,
+    bases_root: Path | None = None,
 ) -> Path:
+    """Locate the pooled hidden-state cache for ``slug`` at ``layer``.
+
+    ``bases_root`` defaults to the legacy ``<runs_root>/phase9_bases`` layout.
+    The canonical cache now lives at ``runs/active/encoder_bases``, so callers
+    can point at it explicitly without rewriting the historical default.
+    """
+    roots = [bases_root] if bases_root is not None else [runs_root / "phase9_bases"]
     fname = f"hidden_layer{layer}_embeddings.npy"
-    preferred = runs_root / "phase9_bases" / slug / preferred_subdir / fname
-    if preferred.exists():
-        return preferred
-    fallback = runs_root / "phase9_bases" / slug / fallback_subdir / fname
-    if fallback.exists():
-        return fallback
+    tried: list[Path] = []
+    for root in roots:
+        for subdir in (preferred_subdir, fallback_subdir):
+            candidate = root / slug / subdir / fname
+            tried.append(candidate)
+            if candidate.exists():
+                return candidate
     raise FileNotFoundError(
         f"Embedding file not found for {slug} layer {layer}: "
-        f"{preferred} or {fallback}"
+        + " or ".join(str(p) for p in tried)
     )
 
 
@@ -227,6 +243,7 @@ def build_pair_frame(
     runs_root: Path,
     preferred_subdir: str,
     fallback_subdir: str,
+    bases_root: Path | None = None,
 ) -> pd.DataFrame:
     slug = model_slug(model_name)
     emb_path = find_embedding_file(
@@ -235,6 +252,7 @@ def build_pair_frame(
         int(cfg["layer"]),
         preferred_subdir,
         fallback_subdir,
+        bases_root=bases_root,
     )
     emb_all = np.load(emb_path)
 
@@ -328,6 +346,7 @@ def main() -> None:
             runs_root,
             args.hidden_mean_subdir,
             args.fallback_hidden_mean_subdir,
+            bases_root=Path(args.bases_root) if args.bases_root else None,
         )
 
         for bucket in BUCKET_ORDER:

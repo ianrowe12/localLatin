@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { apiFetch } from './client'
 import { FEEDBACK_UPDATED_EVENT } from './feedback'
+import { DEFAULT_VARIANT, type PredictionVariant } from './variants'
 
 // ---------------------------------------------------------------------------
 // Types matching backend models.py
@@ -59,6 +60,7 @@ export interface PredictionResponse {
   file_id: number
   filename: string
   model: string
+  variant: PredictionVariant
   predictions: Prediction[]
 }
 
@@ -266,6 +268,7 @@ export function useCandidateDirFiles(
 export function usePredictions(
   queryId: number | null,
   model: string,
+  variant: PredictionVariant = DEFAULT_VARIANT,
 ): HookState<PredictionResponse> {
   const [state, setState] = useState<HookState<PredictionResponse>>({
     data: null,
@@ -280,7 +283,7 @@ export function usePredictions(
       return
     }
 
-    const key = `${queryId}:${model}`
+    const key = `${queryId}:${model}:${variant}`
     const cached = cache.current.get(key)
     if (cached) {
       setState({ data: cached, loading: false, error: null })
@@ -288,9 +291,17 @@ export function usePredictions(
     }
 
     let cancelled = false
-    setState((prev) => ({ ...prev, loading: true, error: null }))
+    // Drop the previous key's data rather than keeping it under `loading`.
+    // Holding it would let one paint pair the OLD variant's rank-1 candidate
+    // with the NEW variant: a wasted token-map fetch for a candidate that is
+    // about to change, the previous variant's text under the new variant's
+    // label, and a submit in that window posting the old ranking under the new
+    // variant name.
+    setState({ data: null, loading: true, error: null })
 
-    apiFetch<PredictionResponse>(`/api/query/${queryId}/predictions?model=${encodeURIComponent(model)}`)
+    apiFetch<PredictionResponse>(
+      `/api/query/${queryId}/predictions?model=${encodeURIComponent(model)}&variant=${variant}`,
+    )
       .then((data) => {
         if (cancelled) return
         cache.current.set(key, data)
@@ -304,7 +315,7 @@ export function usePredictions(
     return () => {
       cancelled = true
     }
-  }, [queryId, model])
+  }, [queryId, model, variant])
 
   return state
 }

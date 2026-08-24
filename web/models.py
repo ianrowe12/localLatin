@@ -5,6 +5,10 @@ from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
+# Re-exported so API consumers can keep importing the variant vocabulary from
+# web.models; the canonical definition lives in web/variants.py.
+from web.variants import DEFAULT_VARIANT, PredictionVariant
+
 
 # --- Queries ---
 
@@ -63,6 +67,7 @@ class PredictionResponse(BaseModel):
     file_id: int
     filename: str
     model: str
+    variant: PredictionVariant
     predictions: List[Prediction]
 
 
@@ -104,8 +109,15 @@ class TokenMapResponse(BaseModel):
     candidate_ig_abtt: List[float]
     auto_highlights: Optional[List[AutoHighlight]] = None
     available_methods: List[str] = Field(default_factory=list)
+    # Attribution variants actually present in this artifact, in render order:
+    # a subset of {"baseline", "abtt", "sif", "sif_abtt"}.
+    available_variants: List[str] = Field(default_factory=list)
     pair_matrices: Dict[str, Dict[str, List[List[float]]]] = Field(default_factory=dict)
     top_highlights: Dict[str, Dict[str, Dict[str, List[int]]]] = Field(default_factory=dict)
+    # Mean-1 normalised SIF token weights (present once the sif variants are
+    # persisted); useful for explaining why a token was down-weighted.
+    query_sif_weights: Optional[List[float]] = None
+    candidate_sif_weights: Optional[List[float]] = None
 
 
 class TokenMapExampleSummary(BaseModel):
@@ -126,6 +138,7 @@ class TokenMapExampleCard(BaseModel):
     candidate_folder_id: str
     candidate_label: str
     methods_available: List[str]
+    variants_available: List[str] = Field(default_factory=list)
     gold_similar: int
     baseline_pred: int
     abtt_pred: int
@@ -208,6 +221,8 @@ class AccountCreateResponse(BaseModel):
 class FeedbackCreate(BaseModel):
     query_id: int
     model_slug: str
+    # None means "the deployment's configured default", resolved in the router.
+    variant: Optional[PredictionVariant] = None
     outcome: Optional[FeedbackOutcome] = None
     correct_rank: Optional[int] = Field(None, ge=0, le=10)
     correct_dir: Optional[str] = None
@@ -289,6 +304,9 @@ class FeedbackEntry(BaseModel):
     query_id: int
     timestamp: str
     model_slug: str
+    # None only for rows written before the variant column existed; those
+    # predate the variant CSVs and are never attributed to one retroactively.
+    variant: Optional[str] = None
     outcome: FeedbackOutcome
     correct_rank: Optional[int]
     correct_dir: Optional[str]
@@ -345,6 +363,10 @@ class ModelInfo(BaseModel):
     layer: Optional[int] = None
     pooling: Optional[str] = None
     prediction_count: int
+    # Variants this deployment can actually serve for this model, plus the one
+    # used when a client omits ?variant=.
+    available_variants: List[str] = Field(default_factory=list)
+    default_variant: str = DEFAULT_VARIANT
 
 
 # --- Errors ---
