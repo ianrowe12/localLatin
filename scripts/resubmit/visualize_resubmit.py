@@ -1,4 +1,4 @@
-"""Render resubmit figures: AUCROC per model, Gap per model, density 2x2.
+"""Render resubmit figures: AUROC per model, Gap per model, density 2x2.
 
 Combines the release line plots from visualize_phase11_release.py with the
 density histogram from package_paper_release_assets.py.
@@ -174,7 +174,7 @@ def compute_dip_layer(
     results: pd.DataFrame, model: str, max_layer: int
 ) -> tuple[int, int]:
     """Return (last_layer, dip_layer) using the same rule as run_resubmit_distributions.py:
-    last = max layer with a baseline row; dip = baseline layer with the highest AUCROC
+    last = max layer with a baseline row; dip = baseline layer with the highest AUROC
     in the 30-70% depth band. Falls back to (max_layer, max_layer // 2) if no rows match.
     """
     base = results[
@@ -408,7 +408,7 @@ def main() -> None:
     plot_metric(
         release_rows,
         metric="aucroc",
-        ylabel="AUCROC",
+        ylabel="AUROC",
         out_dir=out_dir,
         stem="fig_release_aucroc_per_model",
         models=main_models,
@@ -417,7 +417,7 @@ def main() -> None:
     plot_metric(
         release_rows,
         metric="aucroc",
-        ylabel="AUCROC",
+        ylabel="AUROC",
         out_dir=out_dir,
         stem="fig_appendix_aucroc_per_model",
         models=appendix_models,

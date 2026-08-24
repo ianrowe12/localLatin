@@ -1,5 +1,7 @@
 # Attribution Pipeline Audit (Run-1 Agent-2, 2026-04-26)
 
+> Note (2026-08-24): the `attribution_metrics_200pair.tex` and `attribution_metrics_200pos*.tex` files this audit greps were removed from the working tree in #78 as dormant duplicates of `\label{tab:attribution_metrics}`; recover them from git history (`git show 7df945f:overleaf_drafts/tables/<file>`) before rerunning any command below.
+
 ## Headline
 
 Pre-meeting audit of the IG / MaRC attribution pipeline that produces
