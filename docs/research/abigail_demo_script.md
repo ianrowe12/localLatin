@@ -78,17 +78,41 @@ words shared by every canon (`episcopus`, `dixit`, `qui`, `est`), while SIF pull
 the content words that actually distinguish this canon. That is what "down-weights frequent words"
 means, made visible.
 
-Caveat to state out loud: the third view mode, **Attribution** (integrated gradients and the other
-six attribution methods, per variant), is PI-only and needs a precomputed artifact for the exact
-query/candidate pair. The 120 artifacts cover the labelled canon pairs used in the paper, not the
-unlabelled review queue, so they almost never line up with a live query.
+The third view mode, **Attribution** (integrated gradients and the other six attribution methods,
+per variant), is PI-only and needs a precomputed artifact for the exact query/candidate pair. Most
+of the 128 artifacts cover the labelled canon pairs used in the paper, so on an arbitrary live
+query the toggle is still absent.
 
-Measured against the deployed data: across all 2,238 queries, all six models and the full top 10,
-exactly **6 (query, candidate) pairs** have an artifact, and which of them are reachable depends on
-the variant selected (6 under Raw, 4 under SIF, 2 under ABTT, 1 under SIF+ABTT). None of them is
-under LaTa or PhilTa with SIF+ABTT selected, and none is on any of the demo queries above. So the
-Attribution toggle will not appear during this demo. Do not promise it on a live query; if Abigail
-asks for token-level attribution, describe it from the paper figures instead.
+The four demo queries above are the exception. Eight artifacts (issue #53) cover each demo query
+against both the directory Raw picks and the directory the corrected variants pick, under the model
+listed for that query:
+
+| Query | Model | Raw top-1 | Corrected top-1 |
+|---|---|---|---|
+| `C1525.56v.3` | LaTa | CANT.328.12 | CSAR.347.17 |
+| `C1525.35r.9` | PhilTa | CNEO.315.12 | CLAO.300.47 |
+| `BAV1341.16r.7` | PhilTa | CANC.314.3 | CSAR.347.21 |
+| `C1525.54r.2` | LaTa | CNIC.325.16 | CSAR.347.2 |
+
+Each of those artifacts carries all four variants, so the Attribution toggle follows the same
+`Raw | ABTT | SIF | SIF+ABTT` control as the rest of the page. They were built at the layer and D
+the deployed retrieval actually uses; for the SIF+ABTT panel the cleaner is the mean-pooled fit, a
+close but not identical subspace. Two caveats worth knowing rather than discovering:
+
+* The artifact stores a single cleaner, and it is the mean-pooled fit, so the SIF+ABTT panel
+  removes different directions from the deployed SIF+ABTT ranking on **both** models. On LaTa the D
+  differs too (panel D=10, deployed D=3; principal-angle cosines 0.97, 0.96, 0.91). On PhilTa both
+  fits pick D=10, but the subspaces still differ (cosines 0.99 down to 0.37 and 0.09 on the last
+  two directions). Raw and ABTT are exact on both models.
+* Attribution truncates at 256 tokens while the retrieval embeddings were pooled at 512. Query A
+  (`C1525.56v.3`) is 294 tokens, so roughly the last 13% of it is not shown in the attribution
+  panel. The other three queries are 51, 144 and 147 tokens and are fully covered.
+
+Neither caveat affects the Highlights and Connections view modes in the paragraph above, which are
+computed live.
+
+Stay on the demo queries if Abigail asks to see attribution. Off the demo set the toggle will not
+appear, and that is expected: an artifact costs a GPU pass per pair.
 
 ## 6. Notes reload and multi-select
 
@@ -122,7 +146,8 @@ earlier session may point at a rank that has moved.
 | Symptom | Cause | Say |
 |---|---|---|
 | Variant greyed out | predictions CSV missing on host | "one data file did not sync, the other three variants work" |
-| Attribution toggle absent | no IG artifact for this pair | expected, see section 5 |
+| Attribution toggle absent off the demo set | no IG artifact for this pair | expected, see section 5 |
+| Attribution toggle absent *on* a demo pair | data release predates issue #53 | re-run the deploy with the newer `DATA_RELEASE_TAG` |
 | Query text blank | canon corpus missing on host | fall back to a different query |
 
 Deploy state, workflow runs and the data payload mechanism are documented in
