@@ -1,13 +1,13 @@
 # Fdb version 4
-["bibtex acl_latex"] 1787513710.41257 "acl_latex.aux" "acl_latex.bbl" "acl_latex" 1787513713.0112 0
+["bibtex acl_latex"] 1787539798.78199 "acl_latex.aux" "acl_latex.bbl" "acl_latex" 1787539801.51244 0
   "./acl_natbib.bst" 1787510330 45186 3d1af46d62cc9172ef6e42b56c1cd613 ""
   "./custom.bib" 1787510330 9514 445ee19c44ecc422953b35a0238a9907 ""
-  "acl_latex.aux" 1787513712 50755 7c50c9cad88b9cc0e37b3ea58f0a87c0 "pdflatex"
+  "acl_latex.aux" 1787539801 50889 c6d86d53f9adff8ba9b2b8466091f343 "pdflatex"
   (generated)
   "acl_latex.bbl"
   "acl_latex.blg"
   (rewritten before read)
-["pdflatex"] 1787513710.5066 "acl_latex.tex" "acl_latex.pdf" "acl_latex" 1787513713.01255 0
+["pdflatex"] 1787539798.87821 "acl_latex.tex" "acl_latex.pdf" "acl_latex" 1787539801.51369 0
   "/u/irowerojas/.TinyTeX/texmf-dist/fonts/enc/dvips/base/8r.enc" 1165713224 4850 80dc9bab7f31fb78a000ccfed0e27cab ""
   "/u/irowerojas/.TinyTeX/texmf-dist/fonts/enc/dvips/inconsolata/i4-t1-0.enc" 1558214095 7631 5169ff1acd97ff1c4ab83563c99f96f4 ""
   "/u/irowerojas/.TinyTeX/texmf-dist/fonts/tfm/adobe/helvetic/phvb.tfm" 1136768653 2300 14616918391efa49ac8b481a75fbdc1a ""
@@ -181,10 +181,10 @@
   "/u/irowerojas/.TinyTeX/texmf-var/web2c/pdftex/pdflatex.fmt" 1775594354 2292448 7f6b73c247db06403797e2c68920a8f7 ""
   "/u/irowerojas/.TinyTeX/texmf.cnf" 1775534761 637 edd806fb06a89761a6034e1968af9017 ""
   "acl.sty" 1787510330 11615 e2c027f483aa40e577ed34264c8b0655 ""
-  "acl_latex.aux" 1787513712 50755 7c50c9cad88b9cc0e37b3ea58f0a87c0 "pdflatex"
-  "acl_latex.bbl" 1787513710 5113 3f39f9eea7b9dbff21d833a44ea20e7f "bibtex acl_latex"
-  "acl_latex.out" 1787513712 4446 ccff8a8e9a8f796150e8c8b3d26497cd "pdflatex"
-  "acl_latex.tex" 1787513694 39876 f282db31c1bf2b46ee8c4965344fa621 ""
+  "acl_latex.aux" 1787539801 50889 c6d86d53f9adff8ba9b2b8466091f343 "pdflatex"
+  "acl_latex.bbl" 1787539798 5113 3f39f9eea7b9dbff21d833a44ea20e7f "bibtex acl_latex"
+  "acl_latex.out" 1787539801 4446 ccff8a8e9a8f796150e8c8b3d26497cd "pdflatex"
+  "acl_latex.tex" 1787539793 40158 9446169eb7b11c1b32bcc5e6c577ebd5 ""
   "figures/fig_attention_philta.pdf" 1787510330 27574 5ad4f21f485a7fbb79880b3f070f1cb3 ""
   "figures/fig_attribution_rho_loo_main.pdf" 1787510330 17346 307cb69079c58eb274d043fcd6c8118c ""
   "figures/fig_attribution_rho_loo_main.tex" 1787510330 681 5035d39910996f82a04104c79170b9aa ""
@@ -205,7 +205,7 @@
   "tables/taskA_appendix_sif.tex" 1787510330 5756 126b085fadd2fa142a8edf7d3f60a4ab ""
   "tables/taskA_headline.tex" 1787510876 2529 071abf734266715f81bef8ca2e33db82 ""
   "tables/taskA_main.tex" 1787510330 2688 f58b9fa0d479970ed6f31bdd4e22f0b1 ""
-  "tables/taskB_headline.tex" 1787513559 2690 28c5496fdebdffb9d18b0cd1f77162cf ""
+  "tables/taskB_headline.tex" 1787539594 2736 1418db4e31ca369df3696bc4fc6457d5 ""
   "tables/taskB_ranking_appendix.tex" 1787510330 5415 68cb0d82a19eb0f93d2220539f09d684 ""
   "tables/taskB_ranking_appendix_mseed.tex" 1787510330 14978 2358dc78e889114f6252d360f61e93d5 ""
   "tables/taskB_ranking_main.tex" 1787510330 3363 18d2aaef648ca9a029601f3bfa433e47 ""

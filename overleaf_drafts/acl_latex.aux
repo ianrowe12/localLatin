@@ -388,14 +388,14 @@
 \@LN{335}{3}
 \@LN{336}{3}
 \@LN{337}{3}
-\@writefile{toc}{\contentsline {paragraph}{Attribution.}{4}{section*.7}\protected@file@percent }
 \@LN{338}{3}
+\@writefile{toc}{\contentsline {paragraph}{Attribution.}{4}{section*.7}\protected@file@percent }
 \@LN{339}{3}
 \@LN{340}{3}
-\@LN{341}{3}
 \citation{vandermaaten2008tsne}
 \citation{mcinnes2018umap}
 \def\@LN@column{1}
+\@LN{341}{4}
 \@LN{342}{4}
 \@LN{343}{4}
 \@LN{344}{4}
@@ -405,15 +405,15 @@
 \@LN{348}{4}
 \@LN{349}{4}
 \@LN{350}{4}
-\@writefile{toc}{\contentsline {section}{\numberline {4}Results}{5}{section.4}\protected@file@percent }
 \@LN{351}{4}
+\@writefile{toc}{\contentsline {section}{\numberline {4}Results}{5}{section.4}\protected@file@percent }
 \@LN{352}{4}
 \@LN{353}{4}
 \@LN{354}{4}
 \@LN{355}{4}
 \@LN{356}{4}
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Task A: Pairwise Duplicate Detection}{5}{subsection.4.1}\protected@file@percent }
 \@LN{357}{4}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Task A: Pairwise Duplicate Detection}{5}{subsection.4.1}\protected@file@percent }
 \@LN{358}{4}
 \@LN{359}{4}
 \@LN{360}{4}
@@ -430,9 +430,9 @@
 \@LN{371}{4}
 \@LN{372}{4}
 \@LN{373}{4}
-\@writefile{toc}{\contentsline {paragraph}{SIF as a frequency-based complement.}{5}{section*.9}\protected@file@percent }
 \@LN{374}{4}
 \@LN{375}{4}
+\@writefile{toc}{\contentsline {paragraph}{SIF as a frequency-based complement.}{5}{section*.9}\protected@file@percent }
 \@LN{376}{4}
 \@LN{377}{4}
 \@LN{378}{4}
@@ -447,14 +447,14 @@
 \@LN{387}{4}
 \@LN{388}{4}
 \@LN{389}{4}
-\@LN{390}{4}
 \def\@LN@column{2}
+\@LN{390}{4}
 \@LN{391}{4}
 \@LN{392}{4}
 \@LN{393}{4}
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Layerwise Geometry Diagnosis}{5}{subsection.4.2}\protected@file@percent }
 \@LN{394}{4}
 \@LN{395}{4}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Layerwise Geometry Diagnosis}{5}{subsection.4.2}\protected@file@percent }
 \@LN{396}{4}
 \@LN{397}{4}
 \@LN{398}{4}
@@ -506,9 +506,9 @@
 \newlabel{fig:dip}{{2}{6}{Task A AUROC against normalized layer depth for all six models. The three T5 encoders in the top row lose almost all pairwise separation in their middle layers, with LaTa reaching chance. The three sentence-embedding models in the bottom row improve close to monotonically with depth and never dip below 0.80. ABTT holds every model near its ceiling at every depth, so the repair does not depend on the collapse being present}{figure.caption.10}{}}
 \def\@LN@column{1}
 \@LN{441}{5}
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.3}Task B: Directory Routing}{6}{subsection.4.3}\protected@file@percent }
 \@LN{442}{5}
 \@LN{443}{5}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.3}Task B: Directory Routing}{6}{subsection.4.3}\protected@file@percent }
 \@LN{444}{5}
 \@LN{445}{5}
 \@LN{446}{5}
@@ -522,8 +522,8 @@
 \@LN{454}{5}
 \@LN{455}{5}
 \@LN{456}{5}
-\@LN{457}{5}
 \def\@LN@column{2}
+\@LN{457}{5}
 \@LN{458}{5}
 \@LN{459}{5}
 \@LN{460}{5}
@@ -540,12 +540,12 @@
 \@LN{471}{5}
 \@LN{472}{5}
 \@LN{473}{5}
-\@LN{474}{5}
 \@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces Cosine gap against normalized layer depth for all six models. The baseline gap stays under 0.29 at every layer of every model, and under 0.11 at every layer of Qwen3-0.6B, so raw cosine carries almost no decision margin anywhere. ABTT lifts all six models to a gap near 0.5 across the whole depth profile. SIF raises the gap for LaTa and PhilTa and leaves the remaining four models close to baseline.}}{7}{figure.caption.11}\protected@file@percent }
 \newlabel{fig:gap}{{3}{7}{Cosine gap against normalized layer depth for all six models. The baseline gap stays under 0.29 at every layer of every model, and under 0.11 at every layer of Qwen3-0.6B, so raw cosine carries almost no decision margin anywhere. ABTT lifts all six models to a gap near 0.5 across the whole depth profile. SIF raises the gap for LaTa and PhilTa and leaves the remaining four models close to baseline}{figure.caption.11}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces Task B autonomous routing for all six models under four post-processing settings, in percent. For every model and method we select one layer by training-set directory accuracy at rank 1 and report the test-set numbers at that layer; the subscript gives the selected layer. Assignment accuracy scores the existing-versus-new decision alone, comparing each file's maximum cosine against the train-fit threshold $\tau $ without checking which directory it would enter; it therefore has a floor at the 62.4 percent class prior. Directory accuracy at rank 1 is the metric that requires the correct directory, so the two columns should be read together. Per-layer grids are in Appendix Tables~\ref {tab:taskB_routing_main} and~\ref {tab:taskB_routing_appendix}, and the SIF sweeps in Appendix Table~\ref {tab:taskB_routing_appendix_sif}.}}{7}{table.caption.12}\protected@file@percent }
-\newlabel{tab:taskB_headline}{{3}{7}{Task B autonomous routing for all six models under four post-processing settings, in percent. For every model and method we select one layer by training-set directory accuracy at rank 1 and report the test-set numbers at that layer; the subscript gives the selected layer. Assignment accuracy scores the existing-versus-new decision alone, comparing each file's maximum cosine against the train-fit threshold $\tau $ without checking which directory it would enter; it therefore has a floor at the 62.4 percent class prior. Directory accuracy at rank 1 is the metric that requires the correct directory, so the two columns should be read together. Per-layer grids are in Appendix Tables~\ref {tab:taskB_routing_main} and~\ref {tab:taskB_routing_appendix}, and the SIF sweeps in Appendix Table~\ref {tab:taskB_routing_appendix_sif}}{table.caption.12}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces Task B autonomous routing for all six models under four post-processing settings, in percent. For every model and method we select one layer by training-set directory accuracy at rank 1 and report the test-set numbers at that layer; the subscript gives the selected layer. Assignment accuracy scores the existing-versus-new decision alone, comparing each file's maximum cosine against the train-fit threshold $\tau $ without checking which directory it would enter; a degenerate threshold that routes everything as existing already attains the 62.4 percent class prior. Directory accuracy at rank 1 is the metric that requires the correct directory, so the two columns should be read together. Per-layer grids are in Appendix Tables~\ref {tab:taskB_routing_main} and~\ref {tab:taskB_routing_appendix}, and the SIF sweeps in Appendix Table~\ref {tab:taskB_routing_appendix_sif}.}}{7}{table.caption.12}\protected@file@percent }
+\newlabel{tab:taskB_headline}{{3}{7}{Task B autonomous routing for all six models under four post-processing settings, in percent. For every model and method we select one layer by training-set directory accuracy at rank 1 and report the test-set numbers at that layer; the subscript gives the selected layer. Assignment accuracy scores the existing-versus-new decision alone, comparing each file's maximum cosine against the train-fit threshold $\tau $ without checking which directory it would enter; a degenerate threshold that routes everything as existing already attains the 62.4 percent class prior. Directory accuracy at rank 1 is the metric that requires the correct directory, so the two columns should be read together. Per-layer grids are in Appendix Tables~\ref {tab:taskB_routing_main} and~\ref {tab:taskB_routing_appendix}, and the SIF sweeps in Appendix Table~\ref {tab:taskB_routing_appendix_sif}}{table.caption.12}{}}
 \def\@LN@column{1}
+\@LN{474}{6}
 \@LN{475}{6}
 \@LN{476}{6}
 \@LN{477}{6}
@@ -553,8 +553,8 @@
 \@LN{479}{6}
 \@LN{480}{6}
 \@LN{481}{6}
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.4}Attribution at Retrieval-Selected Layers}{7}{subsection.4.4}\protected@file@percent }
 \@LN{482}{6}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.4}Attribution at Retrieval-Selected Layers}{7}{subsection.4.4}\protected@file@percent }
 \@LN{483}{6}
 \@LN{484}{6}
 \@LN{485}{6}
@@ -562,8 +562,8 @@
 \@LN{487}{6}
 \@LN{488}{6}
 \@LN{489}{6}
-\@LN{490}{6}
 \def\@LN@column{2}
+\@LN{490}{6}
 \@LN{491}{6}
 \@LN{492}{6}
 \@LN{493}{6}
@@ -579,12 +579,12 @@
 \@LN{503}{6}
 \@LN{504}{6}
 \@LN{505}{6}
-\@LN{506}{6}
 \@writefile{lot}{\contentsline {table}{\numberline {4}{\ignorespaces Cumulative top-$K$ accuracy for Task B across the six models, as mean $\pm $ standard deviation over five query/reference reseedings at a fixed v2 split, using the best per-model SIF+ABTT configuration. Each cell gives the percentage of test queries whose labelled directory appears within the top $K$ options. Per-layer top-$k$ rankings are in Appendix Tables~\ref {tab:taskB_ranking_main}, \ref {tab:taskB_ranking_appendix}, and~\ref {tab:taskB_ranking_appendix_mseed}.}}{8}{table.caption.13}\protected@file@percent }
 \newlabel{tab:taskb}{{4}{8}{Cumulative top-$K$ accuracy for Task B across the six models, as mean $\pm $ standard deviation over five query/reference reseedings at a fixed v2 split, using the best per-model SIF+ABTT configuration. Each cell gives the percentage of test queries whose labelled directory appears within the top $K$ options. Per-layer top-$k$ rankings are in Appendix Tables~\ref {tab:taskB_ranking_main}, \ref {tab:taskB_ranking_appendix}, and~\ref {tab:taskB_ranking_appendix_mseed}}{table.caption.13}{}}
 \@writefile{lot}{\contentsline {table}{\numberline {5}{\ignorespaces \textbf  {Main-text candidate attribution metrics at the predeclared operational layers for LaTa, PhilTa, and mT5-base.} We report 200 positive query-candidate pairs per model and the two attribution methods used in the paper: integrated gradients (IG) and retrieval-adapted MaRC. The primary faithfulness signal is $\rho _{\text  {LOO}}$, which improves under ABTT in 6/6 model--method cells. ERASER-style metrics are shown as baseline$\rightarrow $ABTT values at one global threshold choice: Sufficiency and Comprehensiveness at 25\% of query tokens, and MinFrac at recovery threshold 0.80 (lower is better for MinFrac, higher otherwise). These midpoint thresholds are applied globally rather than tuned per model or method; Appendix~\ref {app:attribution_sweeps} exposes the full sweeps and Figure~\ref {fig:attribution_rho_loo_main}. Boldface inside the ERASER cells marks the better variant, making disagreements visible: ABTT wins 6/18 ERASER-style comparisons even though $\rho _{\text  {LOO}}$ improves consistently. Cross-variant comparisons are descriptive because ABTT changes both the attribution scores and the cosine function being explained.}}{8}{table.caption.14}\protected@file@percent }
 \newlabel{tab:attribution_metrics_main}{{5}{8}{\textbf {Main-text candidate attribution metrics at the predeclared operational layers for LaTa, PhilTa, and mT5-base.} We report 200 positive query-candidate pairs per model and the two attribution methods used in the paper: integrated gradients (IG) and retrieval-adapted MaRC. The primary faithfulness signal is $\rho _{\text {LOO}}$, which improves under ABTT in 6/6 model--method cells. ERASER-style metrics are shown as baseline$\rightarrow $ABTT values at one global threshold choice: Sufficiency and Comprehensiveness at 25\% of query tokens, and MinFrac at recovery threshold 0.80 (lower is better for MinFrac, higher otherwise). These midpoint thresholds are applied globally rather than tuned per model or method; Appendix~\ref {app:attribution_sweeps} exposes the full sweeps and Figure~\ref {fig:attribution_rho_loo_main}. Boldface inside the ERASER cells marks the better variant, making disagreements visible: ABTT wins 6/18 ERASER-style comparisons even though $\rho _{\text {LOO}}$ improves consistently. Cross-variant comparisons are descriptive because ABTT changes both the attribution scores and the cosine function being explained}{table.caption.14}{}}
 \def\@LN@column{1}
+\@LN{506}{7}
 \@LN{507}{7}
 \@LN{508}{7}
 \@LN{509}{7}
@@ -593,8 +593,8 @@
 \@LN{512}{7}
 \@LN{513}{7}
 \@LN{514}{7}
-\@writefile{toc}{\contentsline {section}{\numberline {5}Discussion}{8}{section.5}\protected@file@percent }
 \@LN{515}{7}
+\@writefile{toc}{\contentsline {section}{\numberline {5}Discussion}{8}{section.5}\protected@file@percent }
 \@LN{516}{7}
 \@LN{517}{7}
 \@LN{518}{7}
@@ -606,8 +606,8 @@
 \@LN{524}{7}
 \@LN{525}{7}
 \@LN{526}{7}
-\@LN{527}{7}
 \def\@LN@column{2}
+\@LN{527}{7}
 \@LN{528}{7}
 \@LN{529}{7}
 \@LN{530}{7}
@@ -893,25 +893,28 @@
 \@LN{693}{26}
 \@LN{694}{26}
 \@LN{695}{26}
-\@writefile{toc}{\contentsline {section}{\numberline {G}Qualitative Attribution Examples}{27}{appendix.G}\protected@file@percent }
-\newlabel{app:qual_attribution}{{G}{27}{Qualitative Attribution Examples}{appendix.G}{}}
 \@LN{696}{26}
 \@LN{697}{26}
 \@LN{698}{26}
+\@writefile{toc}{\contentsline {section}{\numberline {G}Qualitative Attribution Examples}{27}{appendix.G}\protected@file@percent }
+\newlabel{app:qual_attribution}{{G}{27}{Qualitative Attribution Examples}{appendix.G}{}}
 \@LN{699}{26}
 \@LN{700}{26}
 \@LN{701}{26}
 \@LN{702}{26}
 \@LN{703}{26}
-\@writefile{toc}{\contentsline {section}{\numberline {H}Cluster Geometry}{27}{appendix.H}\protected@file@percent }
-\newlabel{app:cluster_geometry}{{H}{27}{Cluster Geometry}{appendix.H}{}}
 \@LN{704}{26}
 \@LN{705}{26}
 \@LN{706}{26}
+\@writefile{toc}{\contentsline {section}{\numberline {H}Cluster Geometry}{27}{appendix.H}\protected@file@percent }
+\newlabel{app:cluster_geometry}{{H}{27}{Cluster Geometry}{appendix.H}{}}
 \@LN{707}{26}
 \@LN{708}{26}
 \@LN{709}{26}
+\@LN{710}{26}
+\@LN{711}{26}
 \def\@LN@column{2}
+\@LN{712}{26}
 \@writefile{lot}{\contentsline {table}{\numberline {17}{\ignorespaces Appendix attribution sweep for the two paper-facing attribution views, \textsc  {IG} and retrieval-adapted \textsc  {MaRC}, across the three main-paper models. Direction arrows are printed in the column headers. Sufficiency and Comprehensiveness are ratio metrics at $\{10\%, 25\%, 50\%\}$; MinFrac is the minimum retained query-token fraction needed to recover $\tau \in \{0.70, 0.80, 0.90, 0.95\}$ of the full cosine (lower is better). Ratio metrics require $|S_v(q_{\text  {full}}, c)| \ge 0.05$; $\rho _{\text  {LOO}}$ excludes $|\Delta | < 10^{-6}$. The completeness report contains no missing metric cells.}}{28}{table.caption.23}\protected@file@percent }
 \newlabel{tab:attribution_sweep_main_methods}{{17}{28}{Appendix attribution sweep for the two paper-facing attribution views, \textsc {IG} and retrieval-adapted \textsc {MaRC}, across the three main-paper models. Direction arrows are printed in the column headers. Sufficiency and Comprehensiveness are ratio metrics at $\{10\%, 25\%, 50\%\}$; MinFrac is the minimum retained query-token fraction needed to recover $\tau \in \{0.70, 0.80, 0.90, 0.95\}$ of the full cosine (lower is better). Ratio metrics require $|S_v(q_{\text {full}}, c)| \ge 0.05$; $\rho _{\text {LOO}}$ excludes $|\Delta | < 10^{-6}$. The completeness report contains no missing metric cells}{table.caption.23}{}}
 \@writefile{lot}{\contentsline {table}{\numberline {18}{\ignorespaces Supplemental attribution sweep for additional methods and sanity baselines. \textit  {random} and \textit  {inverse} are diagnostic baselines, not paper-facing attribution methods. Direction arrows are printed in the column headers. Sufficiency and Comprehensiveness are ratio metrics at $\{10\%, 25\%, 50\%\}$; MinFrac is the minimum retained query-token fraction needed to recover $\tau \in \{0.70, 0.80, 0.90, 0.95\}$ of the full cosine (lower is better). Ratio metrics require $|S_v(q_{\text  {full}}, c)| \ge 0.05$; $\rho _{\text  {LOO}}$ excludes $|\Delta | < 10^{-6}$. The completeness report contains no missing metric cells.}}{28}{table.caption.24}\protected@file@percent }
