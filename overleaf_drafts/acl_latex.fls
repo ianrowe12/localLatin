@@ -1,4 +1,4 @@
-PWD /projects/beto/irowerojas/localLatin/.claude/worktrees/agent-a1e1f5096ebc88945/overleaf_drafts
+PWD /projects/beto/irowerojas/localLatin/.claude/worktrees/agent-aaf8831bd737cfbf7/overleaf_drafts
 INPUT /u/irowerojas/.TinyTeX/texmf.cnf
 INPUT /u/irowerojas/.TinyTeX/texmf-dist/web2c/texmf.cnf
 INPUT /u/irowerojas/.TinyTeX/texmf-var/web2c/pdftex/pdflatex.fmt
@@ -242,7 +242,14 @@ INPUT /u/irowerojas/.TinyTeX/texmf-dist/fonts/vf/adobe/times/ptmr8t.vf
 INPUT /u/irowerojas/.TinyTeX/texmf-dist/fonts/tfm/adobe/times/ptmr8r.tfm
 INPUT /u/irowerojas/.TinyTeX/texmf-dist/fonts/vf/adobe/times/ptmr8t.vf
 INPUT /u/irowerojas/.TinyTeX/texmf-dist/fonts/tfm/adobe/times/ptmr8r.tfm
+INPUT ./related_work.tex
+INPUT ./related_work.tex
+INPUT ./related_work.tex
+INPUT ./related_work.tex
+INPUT related_work.tex
 INPUT /u/irowerojas/.TinyTeX/texmf-dist/fonts/tfm/adobe/times/ptmb8t.tfm
+INPUT /u/irowerojas/.TinyTeX/texmf-dist/fonts/vf/adobe/times/ptmb8t.vf
+INPUT /u/irowerojas/.TinyTeX/texmf-dist/fonts/tfm/adobe/times/ptmb8r.tfm
 INPUT /u/irowerojas/.TinyTeX/texmf-dist/fonts/tfm/public/cm/cmmi10.tfm
 INPUT /u/irowerojas/.TinyTeX/texmf-dist/fonts/tfm/public/cm/cmsy10.tfm
 INPUT /u/irowerojas/.TinyTeX/texmf-dist/fonts/tfm/public/cm/cmex10.tfm
@@ -255,9 +262,6 @@ INPUT /u/irowerojas/.TinyTeX/texmf-dist/tex/latex/inconsolata/t1zi4.fd
 INPUT /u/irowerojas/.TinyTeX/texmf-dist/tex/latex/inconsolata/t1zi4.fd
 INPUT /u/irowerojas/.TinyTeX/texmf-dist/tex/latex/inconsolata/t1zi4.fd
 INPUT /u/irowerojas/.TinyTeX/texmf-dist/fonts/tfm/public/inconsolata/t1-zi4r-0.tfm
-INPUT /u/irowerojas/.TinyTeX/texmf-dist/fonts/vf/adobe/times/ptmb8t.vf
-INPUT /u/irowerojas/.TinyTeX/texmf-dist/fonts/tfm/adobe/times/ptmb8r.tfm
-INPUT /u/irowerojas/.TinyTeX/texmf-dist/fonts/enc/dvips/inconsolata/i4-t1-0.enc
 INPUT /u/irowerojas/.TinyTeX/texmf-dist/fonts/tfm/adobe/times/ptmr8t.tfm
 INPUT /u/irowerojas/.TinyTeX/texmf-dist/fonts/tfm/public/cm/cmr9.tfm
 INPUT /u/irowerojas/.TinyTeX/texmf-dist/fonts/tfm/public/cm/cmmi9.tfm
@@ -276,6 +280,7 @@ INPUT /u/irowerojas/.TinyTeX/texmf-dist/tex/latex/psnfss/ts1ptm.fd
 INPUT /u/irowerojas/.TinyTeX/texmf-dist/tex/latex/psnfss/ts1ptm.fd
 INPUT /u/irowerojas/.TinyTeX/texmf-dist/tex/latex/psnfss/ts1ptm.fd
 INPUT /u/irowerojas/.TinyTeX/texmf-dist/fonts/tfm/adobe/times/ptmr8c.tfm
+INPUT /u/irowerojas/.TinyTeX/texmf-dist/fonts/enc/dvips/inconsolata/i4-t1-0.enc
 INPUT /u/irowerojas/.TinyTeX/texmf-dist/fonts/vf/adobe/times/ptmb8t.vf
 INPUT /u/irowerojas/.TinyTeX/texmf-dist/fonts/tfm/adobe/times/ptmb8r.tfm
 INPUT /u/irowerojas/.TinyTeX/texmf-dist/fonts/vf/adobe/times/ptmr8t.vf
@@ -332,14 +337,14 @@ INPUT tables/attribution_metrics_main.tex
 INPUT /u/irowerojas/.TinyTeX/texmf-dist/fonts/tfm/adobe/times/ptmr8t.tfm
 INPUT /u/irowerojas/.TinyTeX/texmf-dist/fonts/tfm/adobe/times/ptmb8t.tfm
 INPUT /u/irowerojas/.TinyTeX/texmf-dist/fonts/tfm/adobe/times/ptmr8t.tfm
-INPUT /u/irowerojas/.TinyTeX/texmf-dist/fonts/vf/adobe/times/ptmb8t.vf
-INPUT /u/irowerojas/.TinyTeX/texmf-dist/fonts/tfm/adobe/times/ptmb8r.tfm
-INPUT /u/irowerojas/.TinyTeX/texmf-dist/fonts/vf/adobe/times/ptmr8t.vf
-INPUT /u/irowerojas/.TinyTeX/texmf-dist/fonts/tfm/adobe/times/ptmr8r.tfm
 INPUT ./acl_latex.bbl
 INPUT ./acl_latex.bbl
 INPUT acl_latex.bbl
 INPUT /u/irowerojas/.TinyTeX/texmf-dist/fonts/tfm/adobe/times/ptmri8t.tfm
+INPUT /u/irowerojas/.TinyTeX/texmf-dist/fonts/vf/adobe/times/ptmb8t.vf
+INPUT /u/irowerojas/.TinyTeX/texmf-dist/fonts/tfm/adobe/times/ptmb8r.tfm
+INPUT /u/irowerojas/.TinyTeX/texmf-dist/fonts/vf/adobe/times/ptmr8t.vf
+INPUT /u/irowerojas/.TinyTeX/texmf-dist/fonts/tfm/adobe/times/ptmr8r.tfm
 INPUT /u/irowerojas/.TinyTeX/texmf-dist/fonts/vf/adobe/times/ptmri8t.vf
 INPUT /u/irowerojas/.TinyTeX/texmf-dist/fonts/tfm/adobe/times/ptmri8r.tfm
 INPUT ./tables/taskA_main.tex

@@ -156,20 +156,20 @@
     doi = {10.18653/v1/2021.findings-emnlp.23},
 }
 
-@misc{qwen3embedding2025,
-    title = {Qwen3-Embedding: Advancing Text Embedding and Reranking Through Foundation Models},
-    author = {{Qwen Team}},
+@article{qwen3embedding2025,
+    title = {{Q}wen3 Embedding: Advancing Text Embedding and Reranking Through Foundation Models},
+    author = {Zhang, Yanzhao and Li, Mingxin and Long, Dingkun and Zhang, Xin and Lin, Huan and Yang, Baosong and Xie, Pengjun and Yang, An and Liu, Dayiheng and Lin, Junyang and Huang, Fei and Zhou, Jingren},
+    journal = {arXiv preprint arXiv:2506.05176},
     year = {2025},
-    url = {https://huggingface.co/Qwen/Qwen3-Embedding-0.6B},
-    note = {Accessed: 2025},
+    url = {https://arxiv.org/abs/2506.05176},
 }
 
-@misc{kalm2025embedding,
-    title = {{KaLM}-Embedding: Superior Training Data Brings A Stronger Embedding Model},
-    author = {Xinyu Lu and Nurlan Maharramov and others},
+@article{kalm2025embedding,
+    title = {{K}a{LM}-Embedding: Superior Training Data Brings A Stronger Embedding Model},
+    author = {Hu, Xinshuo and Shan, Zifei and Zhao, Xinping and Sun, Zetian and Liu, Zhenyu and Li, Dongfang and Ye, Shaolin and Wei, Xinyuan and Chen, Qian and Hu, Baotian and Wang, Haofen and Yu, Jun and Zhang, Min},
+    journal = {arXiv preprint arXiv:2501.01028},
     year = {2025},
-    url = {https://huggingface.co/KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5},
-    note = {Accessed: 2025},
+    url = {https://arxiv.org/abs/2501.01028},
 }
 
 @inproceedings{xue2021mt5,
@@ -228,4 +228,241 @@
     title   = {{UMAP}: Uniform Manifold Approximation and Projection for Dimension Reduction},
     journal = {arXiv preprint arXiv:1802.03426},
     year    = {2018},
+}
+
+% ---------------------------------------------------------------------------
+% Related Work additions (Issue #38). Every entry below was verified against
+% the ACL Anthology, arXiv, PMLR, or Crossref; see the PR description for the
+% verification table.
+% ---------------------------------------------------------------------------
+
+@inproceedings{gao2019degeneration,
+    title = {Representation Degeneration Problem in Training Natural Language Generation Models},
+    author = {Gao, Jun and He, Di and Tan, Xu and Qin, Tao and Wang, Liwei and Liu, Tie-Yan},
+    booktitle = {Proceedings of the 7th International Conference on Learning Representations ({ICLR})},
+    year = {2019},
+    url = {https://arxiv.org/abs/1907.12009},
+}
+
+@inproceedings{godey2024anisotropy,
+    title = {Anisotropy Is Inherent to Self-Attention in Transformers},
+    author = {Godey, Nathan and Clergerie, {\'E}ric and Sagot, Beno{\^i}t},
+    booktitle = {Proceedings of the 18th Conference of the European Chapter of the Association for Computational Linguistics (Volume 1: Long Papers)},
+    year = {2024},
+    publisher = {Association for Computational Linguistics},
+    pages = {35--48},
+    doi = {10.18653/v1/2024.eacl-long.3},
+    url = {https://aclanthology.org/2024.eacl-long.3/},
+}
+
+@inproceedings{kovaleva2021bertbusters,
+    title = {{BERT} Busters: Outlier Dimensions that Disrupt Transformers},
+    author = {Kovaleva, Olga and Kulshreshtha, Saurabh and Rogers, Anna and Rumshisky, Anna},
+    booktitle = {Findings of the Association for Computational Linguistics: ACL-IJCNLP 2021},
+    year = {2021},
+    publisher = {Association for Computational Linguistics},
+    pages = {3392--3405},
+    doi = {10.18653/v1/2021.findings-acl.300},
+    url = {https://aclanthology.org/2021.findings-acl.300/},
+}
+
+@inproceedings{timkey2021rogue,
+    title = {All Bark and No Bite: Rogue Dimensions in Transformer Language Models Obscure Representational Quality},
+    author = {Timkey, William and van Schijndel, Marten},
+    booktitle = {Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing},
+    year = {2021},
+    publisher = {Association for Computational Linguistics},
+    pages = {4527--4546},
+    doi = {10.18653/v1/2021.emnlp-main.372},
+    url = {https://aclanthology.org/2021.emnlp-main.372/},
+}
+
+@inproceedings{rajaee2022mbert,
+    title = {An Isotropy Analysis in the Multilingual {BERT} Embedding Space},
+    author = {Rajaee, Sara and Pilehvar, Mohammad Taher},
+    booktitle = {Findings of the Association for Computational Linguistics: ACL 2022},
+    year = {2022},
+    publisher = {Association for Computational Linguistics},
+    pages = {1309--1316},
+    doi = {10.18653/v1/2022.findings-acl.103},
+    url = {https://aclanthology.org/2022.findings-acl.103/},
+}
+
+
+@inproceedings{tenney2019pipeline,
+    title = {{BERT} Rediscovers the Classical {NLP} Pipeline},
+    author = {Tenney, Ian and Das, Dipanjan and Pavlick, Ellie},
+    booktitle = {Proceedings of the 57th Annual Meeting of the Association for Computational Linguistics},
+    year = {2019},
+    publisher = {Association for Computational Linguistics},
+    pages = {4593--4601},
+    doi = {10.18653/v1/P19-1452},
+    url = {https://aclanthology.org/P19-1452/},
+}
+
+
+@inproceedings{liu2019linguistic,
+    title = {Linguistic Knowledge and Transferability of Contextual Representations},
+    author = {Liu, Nelson F. and Gardner, Matt and Belinkov, Yonatan and Peters, Matthew E. and Smith, Noah A.},
+    booktitle = {Proceedings of the 2019 Conference of the North {A}merican Chapter of the Association for Computational Linguistics: Human Language Technologies, Volume 1 (Long and Short Papers)},
+    year = {2019},
+    publisher = {Association for Computational Linguistics},
+    pages = {1073--1094},
+    doi = {10.18653/v1/N19-1112},
+    url = {https://aclanthology.org/N19-1112/},
+}
+
+
+@inproceedings{skean2025layer,
+    title = {Layer by Layer: Uncovering Hidden Representations in Language Models},
+    author = {Skean, Oscar and Arefin, Md Rifat and Zhao, Dan and Patel, Niket Nikul and Naghiyev, Jalal and LeCun, Yann and Shwartz-Ziv, Ravid},
+    booktitle = {Proceedings of the 42nd International Conference on Machine Learning ({ICML})},
+    year = {2025},
+    series = {Proceedings of Machine Learning Research},
+    volume = {267},
+    pages = {55854--55875},
+    publisher = {PMLR},
+    url = {https://proceedings.mlr.press/v267/skean25a.html},
+}
+
+@article{bamman2020latinbert,
+    title = {{L}atin {BERT}: A Contextual Language Model for Classical Philology},
+    author = {Bamman, David and Burns, Patrick J.},
+    journal = {arXiv preprint arXiv:2009.10053},
+    year = {2020},
+    url = {https://arxiv.org/abs/2009.10053},
+}
+
+@inproceedings{riemenschneider2023sphilberta,
+    title = {Graecia capta ferum victorem cepit. Detecting {L}atin Allusions to {A}ncient {G}reek Literature},
+    author = {Riemenschneider, Frederick and Frank, Anette},
+    booktitle = {Proceedings of the Ancient Language Processing Workshop},
+    year = {2023},
+    publisher = {INCOMA Ltd., Shoumen, Bulgaria},
+    pages = {30--38},
+    url = {https://aclanthology.org/2023.alp-1.4/},
+}
+
+@inproceedings{sprugnoli2020evalatin,
+    title = {Overview of the {E}va{L}atin 2020 Evaluation Campaign},
+    author = {Sprugnoli, Rachele and Passarotti, Marco and Cecchini, Flavio Massimiliano and Pellegrini, Matteo},
+    booktitle = {Proceedings of LT4HALA 2020 - 1st Workshop on Language Technologies for Historical and Ancient Languages},
+    year = {2020},
+    publisher = {European Language Resources Association ({ELRA})},
+    pages = {105--110},
+    url = {https://aclanthology.org/2020.lt4hala-1.16/},
+}
+
+
+@article{liu2024medieval,
+    title = {Comparative Analysis of Static and Contextual Embeddings for Analyzing Semantic Changes in Medieval {L}atin Charters},
+    author = {Liu, Yifan and Tilahun, Gelila and Gao, Xinxiang and Wen, Qianfeng and Gervers, Michael},
+    journal = {arXiv preprint arXiv:2410.09283},
+    year = {2024},
+    url = {https://arxiv.org/abs/2410.09283},
+}
+
+
+
+@inproceedings{muennighoff2023mteb,
+    title = {{MTEB}: Massive Text Embedding Benchmark},
+    author = {Muennighoff, Niklas and Tazi, Nouamane and Magne, Loic and Reimers, Nils},
+    booktitle = {Proceedings of the 17th Conference of the European Chapter of the Association for Computational Linguistics},
+    year = {2023},
+    publisher = {Association for Computational Linguistics},
+    pages = {2014--2037},
+    doi = {10.18653/v1/2023.eacl-main.148},
+    url = {https://aclanthology.org/2023.eacl-main.148/},
+}
+
+@inproceedings{thakur2021beir,
+    title = {{BEIR}: A Heterogenous Benchmark for Zero-shot Evaluation of Information Retrieval Models},
+    author = {Thakur, Nandan and Reimers, Nils and R{\"u}ckl{\'e}, Andreas and Srivastava, Abhishek and Gurevych, Iryna},
+    booktitle = {Proceedings of the 35th Conference on Neural Information Processing Systems ({NeurIPS}) Datasets and Benchmarks Track},
+    year = {2021},
+    url = {https://arxiv.org/abs/2104.08663},
+}
+
+@article{coffee2012tesserae,
+    title = {Intertextuality in the Digital Age},
+    author = {Coffee, Neil and Koenig, Jean-Pierre and Poornima, Shakthi and Ossewaarde, Roelant and Forstall, Christopher and Jacobson, Sarah},
+    journal = {Transactions of the American Philological Association},
+    year = {2012},
+    volume = {142},
+    number = {2},
+    pages = {383--422},
+    doi = {10.1353/apa.2012.0010},
+}
+
+@inproceedings{smith2013infectious,
+    title = {Infectious Texts: Modeling Text Reuse in Nineteenth-Century Newspapers},
+    author = {Smith, David A. and Cordell, Ryan and Dillon, Elizabeth Maddock},
+    booktitle = {2013 {IEEE} International Conference on Big Data},
+    year = {2013},
+    pages = {86--94},
+    publisher = {IEEE},
+    doi = {10.1109/BigData.2013.6691675},
+}
+
+@inproceedings{manjavacas2019allusive,
+    title = {On the Feasibility of Automated Detection of Allusive Text Reuse},
+    author = {Manjavacas, Enrique and Long, Brian and Kestemont, Mike},
+    booktitle = {Proceedings of the 3rd Joint {SIGHUM} Workshop on Computational Linguistics for Cultural Heritage, Social Sciences, Humanities and Literature},
+    year = {2019},
+    publisher = {Association for Computational Linguistics},
+    pages = {104--114},
+    doi = {10.18653/v1/W19-2514},
+    url = {https://aclanthology.org/W19-2514/},
+}
+
+@inproceedings{burns2021intertextuality,
+    title = {Profiling of Intertextuality in {L}atin Literature Using Word Embeddings},
+    author = {Burns, Patrick J. and Brofos, James A. and Li, Kyle and Chaudhuri, Pramit and Dexter, Joseph P.},
+    booktitle = {Proceedings of the 2021 Conference of the North {A}merican Chapter of the Association for Computational Linguistics: Human Language Technologies},
+    year = {2021},
+    publisher = {Association for Computational Linguistics},
+    pages = {4900--4907},
+    doi = {10.18653/v1/2021.naacl-main.389},
+    url = {https://aclanthology.org/2021.naacl-main.389/},
+}
+
+@inproceedings{jacovi2020faithfully,
+    title = {Towards Faithfully Interpretable {NLP} Systems: How Should We Define and Evaluate Faithfulness?},
+    author = {Jacovi, Alon and Goldberg, Yoav},
+    booktitle = {Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics},
+    year = {2020},
+    publisher = {Association for Computational Linguistics},
+    pages = {4198--4205},
+    doi = {10.18653/v1/2020.acl-main.386},
+    url = {https://aclanthology.org/2020.acl-main.386/},
+}
+
+@inproceedings{jain2019attention,
+    title = {{A}ttention is not {E}xplanation},
+    author = {Jain, Sarthak and Wallace, Byron C.},
+    booktitle = {Proceedings of the 2019 Conference of the North {A}merican Chapter of the Association for Computational Linguistics: Human Language Technologies, Volume 1 (Long and Short Papers)},
+    year = {2019},
+    publisher = {Association for Computational Linguistics},
+    pages = {3543--3556},
+    doi = {10.18653/v1/N19-1357},
+    url = {https://aclanthology.org/N19-1357/},
+}
+
+@inproceedings{atanasova2020diagnostic,
+    title = {A Diagnostic Study of Explainability Techniques for Text Classification},
+    author = {Atanasova, Pepa and Simonsen, Jakob Grue and Lioma, Christina and Augenstein, Isabelle},
+    booktitle = {Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing ({EMNLP})},
+    year = {2020},
+    publisher = {Association for Computational Linguistics},
+    pages = {3256--3274},
+    doi = {10.18653/v1/2020.emnlp-main.263},
+    url = {https://aclanthology.org/2020.emnlp-main.263/},
+}
+
+@article{anand2022xir,
+    title = {Explainable Information Retrieval: A Survey},
+    author = {Anand, Avishek and Lyu, Lijun and Idahl, Maximilian and Wang, Yumeng and Wallat, Jonas and Zhang, Zijian},
+    journal = {arXiv preprint arXiv:2211.02405},
+    year = {2022},
+    url = {https://arxiv.org/abs/2211.02405},
 }

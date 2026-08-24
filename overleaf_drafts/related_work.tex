@@ -1,0 +1,14 @@
+\section{Related Work}
+\label{sec:related}
+
+\paragraph{Anisotropy, layer geometry, and repair.}
+Pre-trained embedding spaces occupy narrow cones \citep{gao2019degeneration, ethayarajh2019contextual, godey2024anisotropy}, where a few coordinates dominate cosine similarity \citep{kovaleva2021bertbusters, timkey2021rogue}. Post-hoc corrections remove or rescale those directions \citep{mu2018allbutthetop, su2021whitening} or downweight frequent tokens before pooling \citep{arora2017sif}. Probing finds information spread across depth \citep{tenney2019pipeline, liu2019linguistic}, and intermediate layers can beat the last \citep{skean2025layer}. Multilingual analyses are rarer \citep{rajaee2022mbert}. We reuse ABTT unchanged on low-resource retrieval, using geometry to measure anisotropy and a train-only rule to pick layers.
+
+\paragraph{Latin and classical-language NLP.}
+Latin has dedicated encoders and encoder-decoders \citep{bamman2020latinbert, riemenschneider2023lata}, and appears in multilingual sentence encoders \citep{feng2022labse}, mT5 \citep{xue2021mt5}, and decoder-only LLM embedders \citep{qwen3embedding2025, kalm2025embedding}. Shared tasks target tagging \citep{sprugnoli2020evalatin}, retrieval work centres on allusion \citep{riemenschneider2023sphilberta}, and charter studies on semantic change \citep{liu2024medieval}. No general embedding benchmark \citep{thakur2021beir, muennighoff2023mteb} covers medieval Latin retrieval.
+
+\paragraph{Text reuse in digital humanities.}
+Text-reuse systems match n-grams \citep{coffee2012tesserae}, align reprinted newspapers \citep{smith2013infectious}, and add distributional semantics for allusive reuse \citep{manjavacas2019allusive, burns2021intertextuality}, ranking candidates in a closed collection. Our routing task is open-set: a fragment may belong to no existing family.
+
+\paragraph{Faithfulness of token attributions.}
+Integrated gradients \citep{sundararajan2017axiomatic} and learned input masks \citep{brinnerzarriess2023marc} attribute a score to tokens, and much work asks whether attributions are faithful \citep{jain2019attention, jacovi2020faithfully}. Erasure and perturbation protocols \citep{deyoung2020eraser, atanasova2020diagnostic} target classification; retrieval explanation targets ranking \citep{anand2022xir}. We apply them to a bi-encoder cosine score and report where faithfulness improves and where it does not.
