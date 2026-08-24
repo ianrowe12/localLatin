@@ -405,3 +405,49 @@ def test_serving_path_never_executes_remote_tokenizer_code(monkeypatch) -> None:
     for kwargs in seen:
         assert "trust_remote_code" not in kwargs
         assert kwargs == {}
+
+
+def test_d_sif_is_served_when_the_artifact_carries_a_sif_pooled_cleaner(
+    tmp_path: Path,
+) -> None:
+    """Issue #87: sif_abtt is cleaned in the SIF-pooled space, with its own D.
+
+    LaTa layer 1 is the real case: the mean-pooled sweep picks D=10 and the
+    SIF-pooled sweep picks D=3, so a single ``D`` in the payload cannot describe
+    both ABTT panels.
+    """
+    npz = tmp_path / "bowphs_LaTa" / "example001_pair_example.npz"
+    _write_npz(
+        npz,
+        variants=("baseline", "abtt", "sif", "sif_abtt"),
+        token_strings=True,
+        sif_weights=True,
+    )
+    with np.load(npz, allow_pickle=False) as handle:
+        data = {k: handle[k] for k in handle.files}
+    data["pcs_sif"] = np.eye(3, DIM, dtype=np.float32)
+    data["mean_vec_sif"] = np.zeros(DIM, dtype=np.float32)
+    data["D_sif"] = np.array([3], dtype=np.int32)
+    np.savez(npz, **data)
+
+    resp = token_map_svc.load_token_map(_make_store(npz), 1)
+
+    assert resp is not None
+    assert resp.D == 10
+    assert resp.D_sif == 3
+
+
+def test_d_sif_is_none_on_artifacts_without_a_sif_pooled_cleaner(tmp_path: Path) -> None:
+    """Pre-#87 artifacts have no D_sif key and must still load."""
+    npz = tmp_path / "bowphs_PhilTa" / "example001_pair_example.npz"
+    _write_npz(
+        npz,
+        variants=("baseline", "abtt", "sif", "sif_abtt"),
+        token_strings=True,
+        sif_weights=True,
+    )
+    resp = token_map_svc.load_token_map(_make_store(npz), 1)
+
+    assert resp is not None
+    assert resp.D == 10
+    assert resp.D_sif is None

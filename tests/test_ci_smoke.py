@@ -290,3 +290,104 @@ def test_top_k_directories_truncates_and_breaks_ties_by_insertion_order() -> Non
         ("first", 0.5),
         ("second", 0.5),
     ]
+
+
+# --- scripts/ig/pooling_cleaners.py (issue #87) -----------------------------
+#
+# The per-pooling ABTT cleaner format that the attribution artifacts and the
+# shared PC files both use. These tests cover the format helpers, which are
+# pure NumPy; the fitting path needs the embedding cache and is out of scope
+# for a data-free runner.
+
+sys.path.insert(0, str(REPO_ROOT / "scripts" / "ig"))
+
+from pooling_cleaners import (  # noqa: E402
+    Cleaner,
+    cleaners_match,
+    principal_angle_cosines,
+    read_cleaner,
+    write_cleaner,
+)
+
+
+def _cleaner(pooling: str, k: int = 3, dim: int = 6) -> Cleaner:
+    return Cleaner(
+        pooling=pooling,
+        pcs=np.eye(k, dim, dtype=np.float32),
+        mean_vec=np.arange(dim, dtype=np.float32),
+        D=k,
+    )
+
+
+def test_write_then_read_cleaner_round_trips_per_pooling() -> None:
+    store: dict[str, np.ndarray] = {}
+    write_cleaner(store, _cleaner("mean", k=10))
+    write_cleaner(store, _cleaner("sif", k=3))
+
+    assert set(store) == {"pcs", "mean_vec", "D", "pcs_sif", "mean_vec_sif", "D_sif"}
+    mean = read_cleaner(store, "mean")
+    sif = read_cleaner(store, "sif")
+    assert mean is not None and sif is not None
+    assert (mean.D, mean.pcs.shape) == (10, (10, 6))
+    assert (sif.D, sif.pcs.shape) == (3, (3, 6))
+    # The two spaces do not bleed into each other.
+    assert not cleaners_match(mean, sif)
+
+
+def test_read_cleaner_reads_the_legacy_single_cleaner_format() -> None:
+    """Pre-#87 PC files hold `pcs` / `mean_vec` and nothing else."""
+    legacy = {
+        "pcs": np.eye(4, 6, dtype=np.float32),
+        "mean_vec": np.zeros(6, dtype=np.float32),
+    }
+
+    mean = read_cleaner(legacy, "mean")
+    assert mean is not None
+    assert mean.D == 4  # inferred from pcs.shape[0]: legacy files carry no D
+    assert read_cleaner(legacy, "sif") is None
+
+
+def test_read_cleaner_trims_pcs_to_the_stored_d() -> None:
+    """A PC file may hold more components than the D it is applied at."""
+    store = {
+        "pcs_sif": np.eye(10, 6, dtype=np.float32),
+        "mean_vec_sif": np.zeros(6, dtype=np.float32),
+        "D_sif": np.array([3], dtype=np.int32),
+    }
+    sif = read_cleaner(store, "sif")
+    assert sif is not None
+    assert sif.pcs.shape == (3, 6)
+
+
+def test_clean_tokens_projects_out_exactly_the_stored_directions() -> None:
+    cleaner = Cleaner(
+        pooling="sif",
+        pcs=np.array([[1.0, 0.0, 0.0]], dtype=np.float32),
+        mean_vec=np.zeros(3, dtype=np.float32),
+        D=1,
+    )
+    cleaned = cleaner.clean_tokens(np.array([[2.0, 3.0, 4.0]], dtype=np.float32))
+    np.testing.assert_allclose(cleaned, [[0.0, 3.0, 4.0]], atol=1e-6)
+
+
+def test_principal_angle_cosines_are_one_for_the_same_subspace() -> None:
+    a = np.eye(3, 8)
+    # A different basis for the same row space must still score all ones.
+    b = np.array(
+        [
+            [1.0, 1.0, 0.0, 0, 0, 0, 0, 0],
+            [0.0, 1.0, 1.0, 0, 0, 0, 0, 0],
+            [1.0, 0.0, 1.0, 0, 0, 0, 0, 0],
+        ]
+    )
+    np.testing.assert_allclose(principal_angle_cosines(a, b), np.ones(3), atol=1e-9)
+
+
+def test_principal_angle_cosines_are_zero_for_orthogonal_subspaces() -> None:
+    np.testing.assert_allclose(
+        principal_angle_cosines(np.eye(2, 8), np.eye(2, 8, k=4)), np.zeros(2), atol=1e-9
+    )
+
+
+def test_principal_angle_cosines_length_is_the_smaller_subspace_rank() -> None:
+    assert principal_angle_cosines(np.eye(10, 20), np.eye(3, 20)).shape == (3,)

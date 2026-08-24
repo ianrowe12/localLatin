@@ -114,12 +114,18 @@ $PY -u scripts/ig/persist_decoded_tokens.py \
 
 echo ""
 echo "=== [6/7] Persist sif / sif_abtt variants, refreshed SIF corpus ($(date)) ==="
+# --pc_root supplies the SIF-pooled ABTT cleaner (pcs_sif / mean_vec_sif / D_sif)
+# that sif_abtt is built with. Step 1 writes it for the models it touches; run
+# scripts/ig/fit_pooling_cleaners.py for any (model, layer) it did not. Without
+# a SIF cleaner this step now fails loudly rather than silently reusing the
+# mean-pooled fit (issue #87).
 $PY -u scripts/resubmit/persist_sif_attribution.py \
     --examples_csv "$EXAMPLES_CSV" \
     --artifacts_dir "$ARTIFACTS_DIR" \
     --split_csv "$SPLIT_CSV" \
     --repo_root "$DATA_ROOT" \
     --token_probs_cache "$PROBS_CACHE" \
+    --pc_root "$PC_ROOT" \
     --refresh_probs
 
 echo ""

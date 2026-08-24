@@ -94,7 +94,13 @@ class TokenMapResponse(BaseModel):
     example_id: int
     model: str
     layer: int
+    # Number of principal components removed by the `abtt` variant, i.e. the
+    # mean-pooled ABTT fit.
     D: int
+    # Same, for the `sif_abtt` variant, which is cleaned in the SIF-pooled space
+    # with an independently swept D. None on artifacts written before the
+    # per-pooling cleaners landed, where `sif_abtt` reused the mean-pooled fit.
+    D_sif: Optional[int] = None
     bucket: str
     query_path: str
     candidate_path: str

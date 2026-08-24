@@ -5,7 +5,39 @@ Sibling of ``persist_attribution_methods.py``, which writes the ``baseline``
 script adds the two SIF variants on top of them:
 
     pair_matrix_<method>_sif       = SIF-reweighted pair_matrix_<method>_baseline
-    pair_matrix_<method>_sif_abtt  = SIF-reweighted pair_matrix_<method>_abtt
+    pair_matrix_<method>_sif_abtt  = SIF-reweighted matrix over tokens cleaned
+                                     with the SIF-pooled ABTT cleaner
+
+Per-pooling cleaners (issue #87)
+--------------------------------
+``sif_abtt`` used to be a SIF reweighting of ``pair_matrix_<method>_abtt``,
+which is cleaned with the **mean**-pooled cleaner. But the deployed ``sif_abtt``
+retrieval fits its cleaner on the SIF-pooled train embeddings, with its own
+swept D, so the default attribution panel explained a subspace the ranking
+never removed: LaTa layer 1 is mean D=10 against SIF D=3, and even where both
+sweeps pick D=10 the subspaces differ (PhilTa layer 1's last two principal-angle
+cosines are 0.37 and 0.09).
+
+So ``sif_abtt`` is now rebuilt from the raw hidden states in the NPZ, cleaned
+with the SIF-pooled cleaner (``pcs_sif`` / ``mean_vec_sif`` / ``D_sif``, see
+``scripts/ig/pooling_cleaners.py``), then SIF-reweighted. The cleaner comes from
+``--pc_root`` and is stamped into every artifact this script touches, so the
+artifact is self-describing. All of it is CPU work: the artifacts already carry
+full raw token hidden states.
+
+Two things the SIF cleaner does *not* reach, both recorded here so nobody has to
+rediscover them:
+
+* **IG scores.** ``query_ig_abtt`` / ``candidate_ig_abtt`` are integrated
+  gradients of a mean-pooled-plus-ABTT cosine target and recomputing them needs
+  the model on a GPU. They set the token *mass* of the ``ig`` and ``ot`` panels
+  (4 of the 6 methods do not use them at all). This is the same approximation
+  the ``sif`` variant already makes -- it reweights matrices built from
+  ``query_ig_baseline``, a mean-pooled target -- and it is the convention these
+  variants are defined by: SIF-ness enters through the token weights.
+* **``retrieval_mark``.** That sidecar's pair matrices come from a GPU gradient
+  run against the mean-pooled cleaner and cannot be rebuilt here, so its
+  ``sif_abtt`` panel stays a reweighting of ``pair_matrix_retrieval_mark_abtt``.
 
 The reweighting is the standard SIF token weight [Arora et al. 2017]
 
@@ -34,12 +66,15 @@ Also written per NPZ (all trimmed to masked length):
     query_sif_weights / candidate_sif_weights   mean-1 normalised w_hat
     query_ig_sif / query_ig_sif_abtt            SIF-scaled per-token IG
     candidate_ig_sif / candidate_ig_sif_abtt
+    pcs_sif / mean_vec_sif / D_sif              the SIF-pooled ABTT cleaner
+    sif_abtt_cleaner_pooling                    "sif", or "mean" on a fallback run
 
 Usage::
 
     python scripts/resubmit/persist_sif_attribution.py \\
         --examples_csv runs/active/ig_examples/phase12f_examples.csv \\
-        --artifacts_dir runs/active/ig_examples/artifacts
+        --artifacts_dir runs/active/ig_examples/artifacts \\
+        --pc_root runs/phase12_release/pcs
 
     # inspect what SIF does to the frequent-function-word tokens of one pair
     python scripts/resubmit/persist_sif_attribution.py ... \\
@@ -67,9 +102,19 @@ from persist_attribution_methods import (  # noqa: E402
     MAIN_METHODS,
     PRESERVED_SIDECAR_METHODS,
     atomic_write_npz,
+    compute_cleaned_matrices,
     topk_indices,
 )
 from persist_decoded_tokens import SLUG_TO_HF, decode_ids, get_tokenizer  # noqa: E402
+from pooling_cleaners import (  # noqa: E402
+    SIF_ABTT_CLEANER_KEY,
+    Cleaner,
+    fit_cleaner,
+    pc_file_path,
+    principal_angle_cosines,
+    read_cleaner,
+    write_cleaner,
+)
 
 ALL_METHODS: list[str] = MAIN_METHODS + PRESERVED_SIDECAR_METHODS
 
@@ -77,6 +122,8 @@ ALL_METHODS: list[str] = MAIN_METHODS + PRESERVED_SIDECAR_METHODS
 SIF_VARIANTS: list[tuple[str, str]] = [("baseline", "sif"), ("abtt", "sif_abtt")]
 
 DEFAULT_SPLIT_CSV = REPO_ROOT / "runs/active/resubmit/data/phase_resubmit_split.csv"
+DEFAULT_PC_ROOT = REPO_ROOT / "runs/phase12_release/pcs"
+DEFAULT_LABELLED_BASES = REPO_ROOT / "runs/active/resubmit_bases/phase9_bases"
 
 
 # ---------------------------------------------------------------------------
@@ -185,19 +232,48 @@ def build_sif_keys(
     w_q: np.ndarray,
     w_c: np.ndarray,
     topk: int,
+    sif_cleaner: Cleaner | None = None,
 ) -> tuple[dict[str, np.ndarray], list[str]]:
+    """Build every ``sif`` / ``sif_abtt`` key for one artifact.
+
+    ``sif`` is always a reweighting of the stored ``baseline`` matrix. With a
+    ``sif_cleaner`` (issue #87), ``sif_abtt`` is instead rebuilt from the raw
+    hidden states in the SIF-pooled ABTT subspace and only then reweighted, so
+    the panel removes the directions the deployed ``sif_abtt`` ranking removes.
+    Without one it falls back to reweighting the mean-pooled ``abtt`` matrix,
+    which is the pre-#87 behaviour.
+
+    ``retrieval_mark`` never has a rebuilt source -- its matrices come from a
+    GPU gradient run -- so it always takes the stored-matrix path.
+    """
     new_keys: dict[str, np.ndarray] = {}
     methods: list[str] = []
     q_len = w_q.shape[0]
     c_len = w_c.shape[0]
 
+    rebuilt: dict[str, np.ndarray] = {}
+    if sif_cleaner is not None:
+        rebuilt = compute_cleaned_matrices(data, sif_cleaner.pcs, sif_cleaner.mean_vec)
+        # A method with a stored abtt matrix but no rebuilt one would quietly
+        # take the mean-pooled path again, which is the bug this fixes. Say so.
+        for method in MAIN_METHODS:
+            if method not in rebuilt and f"pair_matrix_{method}_abtt" in data:
+                print(
+                    f"  [WARN] {method}: rebuild in the SIF-pooled space failed; its "
+                    f"sif_abtt panel falls back to the mean-pooled abtt matrix",
+                    file=sys.stderr,
+                )
+
     for method in ALL_METHODS:
         made_any = False
         for src_variant, dst_variant in SIF_VARIANTS:
             src_key = f"pair_matrix_{method}_{src_variant}"
-            if src_key not in data:
+            if dst_variant == "sif_abtt" and method in rebuilt:
+                mat = rebuilt[method]
+            elif src_key in data:
+                mat = np.asarray(data[src_key], dtype=np.float32)[:q_len, :c_len]
+            else:
                 continue
-            mat = np.asarray(data[src_key], dtype=np.float32)[:q_len, :c_len]
             if mat.shape != (q_len, c_len):
                 print(
                     f"  [WARN] {src_key}: shape {mat.shape} != ({q_len},{c_len}); skipping",
@@ -215,6 +291,11 @@ def build_sif_keys(
 
     new_keys["query_sif_weights"] = w_q
     new_keys["candidate_sif_weights"] = w_c
+    if sif_cleaner is not None:
+        write_cleaner(new_keys, sif_cleaner)
+        new_keys[SIF_ABTT_CLEANER_KEY] = np.array(["sif"], dtype="<U8")
+    else:
+        new_keys[SIF_ABTT_CLEANER_KEY] = np.array(["mean"], dtype="<U8")
     for side, weights, length in (("query", w_q, q_len), ("candidate", w_c, c_len)):
         for src_variant, dst_variant in SIF_VARIANTS:
             ig_key = f"{side}_ig_{src_variant}"
@@ -286,6 +367,85 @@ def spot_check(
 
 
 # ---------------------------------------------------------------------------
+# SIF-pooled cleaner resolution
+# ---------------------------------------------------------------------------
+
+class SifCleanerResolver:
+    """Resolve (and cache) the SIF-pooled ABTT cleaner for a (slug, layer).
+
+    Order of preference:
+
+    1. the ``pcs_sif`` / ``mean_vec_sif`` / ``D_sif`` keys of the shared PC file
+       written by ``scripts/ig/fit_pooling_cleaners.py``;
+    2. a fresh fit off ``--labelled_bases`` when ``--fit_missing_cleaners`` is
+       set, using the same train-only sweep the deployed retrieval runs;
+    3. ``None``, which raises unless ``--allow_mean_cleaner_fallback``.
+
+    Step 3 is deliberately fatal by default. Falling back silently is how the
+    mean-pooled subspace ended up behind the default panel in the first place.
+    """
+
+    def __init__(self, args: argparse.Namespace):
+        self.pc_root = args.pc_root
+        self.labelled_bases = args.labelled_bases
+        self.fit_missing = args.fit_missing_cleaners
+        self.allow_fallback = args.allow_mean_cleaner_fallback
+        self.split_csv = args.split_csv
+        self._split: pd.DataFrame | None = None
+        self._cache: dict[tuple[str, int], Cleaner | None] = {}
+
+    @property
+    def split(self) -> pd.DataFrame:
+        if self._split is None:
+            self._split = pd.read_csv(self.split_csv)
+        return self._split
+
+    def get(self, slug: str, layer: int) -> Cleaner | None:
+        key = (slug, int(layer))
+        if key in self._cache:
+            return self._cache[key]
+
+        cleaner: Cleaner | None = None
+        path = pc_file_path(self.pc_root, slug, layer)
+        if path.exists():
+            with np.load(path, allow_pickle=False) as data:
+                cleaner = read_cleaner(data, "sif")
+            if cleaner is not None:
+                print(f"  [{slug} L{layer}] SIF cleaner from {path} (D={cleaner.D})")
+
+        if cleaner is None and self.fit_missing:
+            print(f"  [{slug} L{layer}] no SIF cleaner in {path}; fitting from bases")
+            cleaner = fit_cleaner(self.labelled_bases, slug, "sif", layer, self.split)
+
+        if cleaner is None:
+            msg = (
+                f"[{slug} L{layer}] no SIF-pooled cleaner available ({path} has no "
+                f"pcs_sif). Run scripts/ig/fit_pooling_cleaners.py first, or pass "
+                f"--fit_missing_cleaners."
+            )
+            if not self.allow_fallback:
+                raise SystemExit(msg)
+            print(f"  [WARN] {msg} Falling back to the mean-pooled abtt matrix.",
+                  file=sys.stderr)
+
+        self._cache[key] = cleaner
+        return cleaner
+
+
+def report_subspace_gap(data: dict[str, np.ndarray], cleaner: Cleaner, slug: str, layer: int) -> None:
+    """Log how far the artifact's mean-pooled subspace is from the SIF one."""
+    mean_cleaner = read_cleaner(data, "mean")
+    if mean_cleaner is None:
+        return
+    cos = principal_angle_cosines(mean_cleaner.pcs, cleaner.pcs)
+    print(
+        f"  [{slug} L{layer}] mean D={mean_cleaner.D} vs sif D={cleaner.D}; "
+        "principal-angle cosines "
+        + np.array2string(cos, precision=3, floatmode="fixed")
+    )
+
+
+# ---------------------------------------------------------------------------
 # Driver
 # ---------------------------------------------------------------------------
 
@@ -305,6 +465,22 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--trust_remote_code", action="store_true", default=True)
     p.add_argument("--no_trust_remote_code", dest="trust_remote_code", action="store_false")
     p.add_argument("--models", nargs="*", default=None)
+    p.add_argument("--pc_root", type=Path, default=DEFAULT_PC_ROOT,
+                   help="Root of the per-pooling PC files "
+                        "(<pc_root>/<slug>/layer{N}_pcs.npz). Their pcs_sif / "
+                        "mean_vec_sif / D_sif keys are what sif_abtt is built with.")
+    p.add_argument("--labelled_bases", type=Path, default=DEFAULT_LABELLED_BASES,
+                   help="Embedding cache used to fit a SIF cleaner that the PC "
+                        "file does not already hold (see --fit_missing_cleaners).")
+    p.add_argument("--fit_missing_cleaners", action="store_true",
+                   help="Fit the SIF-pooled cleaner from --labelled_bases when the "
+                        "PC file lacks it, instead of failing. Does not write it "
+                        "back; use scripts/ig/fit_pooling_cleaners.py for that.")
+    p.add_argument("--allow_mean_cleaner_fallback", action="store_true",
+                   help="Build sif_abtt by reweighting the mean-pooled abtt matrix "
+                        "when no SIF cleaner can be resolved (pre-issue-#87 "
+                        "behaviour). Off by default: a silent fallback is exactly "
+                        "the bug #87 fixed.")
     p.add_argument("--dry_run", action="store_true")
     p.add_argument("--spot_check_example", type=int, default=None)
     p.add_argument("--spot_check_method", default="ig")
@@ -329,6 +505,8 @@ def main() -> None:
 
     counts = {"ok": 0, "missing": 0, "error": 0}
     per_model: dict[str, int] = {}
+    resolver = SifCleanerResolver(args)
+    reported: set[tuple[str, int]] = set()
 
     for model_name, group in examples.groupby("model_name", sort=False):
         slug = str(model_name).replace("/", "_")
@@ -363,7 +541,14 @@ def main() -> None:
                 w_c = normalized_sif_weights(
                     data["candidate_input_ids"], probs, args.sif_a, special_ids, c_len
                 )
-                new_keys, methods = build_sif_keys(data, w_q, w_c, args.topk)
+                layer = int(np.asarray(data["layer"]).reshape(-1)[0])
+                sif_cleaner = resolver.get(slug, layer)
+                if sif_cleaner is not None and (slug, layer) not in reported:
+                    report_subspace_gap(data, sif_cleaner, slug, layer)
+                    reported.add((slug, layer))
+                new_keys, methods = build_sif_keys(
+                    data, w_q, w_c, args.topk, sif_cleaner=sif_cleaner
+                )
             except Exception as exc:  # noqa: BLE001
                 print(f"  [ERROR] {path.name}: {exc}", file=sys.stderr)
                 counts["error"] += 1
