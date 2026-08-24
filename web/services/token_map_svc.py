@@ -58,6 +58,19 @@ def _stored_tokens(data: dict[str, np.ndarray], key: str, count: int) -> list[st
     return tokens[:count]
 
 
+def _cell(row, key: str) -> str:
+    """Read a CSV cell as a display string, mapping missing/NaN to "".
+
+    Unlabelled-query rows leave columns like ``query_folder_id`` empty, which
+    pandas reads back as NaN. ``str(nan)`` would surface a literal "nan" in the
+    gallery.
+    """
+    value = row.get(key, "")
+    if value is None or (isinstance(value, float) and np.isnan(value)):
+        return ""
+    return str(value)
+
+
 def _optional_vector(data: dict[str, np.ndarray], key: str, count: int) -> list[float] | None:
     arr = data.get(key)
     if arr is None:
@@ -122,8 +135,8 @@ def list_examples(store: DataStore, model: str | None = None, bucket: str | None
             example_id=eid,
             model=normalize_slug(str(row["model_name"])),
             bucket=str(row["bucket"]),
-            query_path=str(row.get("query_path", "")),
-            candidate_path=str(row.get("candidate_path", "")),
+            query_path=_cell(row, "query_path"),
+            candidate_path=_cell(row, "candidate_path"),
         ))
     return results
 
@@ -156,16 +169,16 @@ def list_examples_grouped(store: DataStore) -> dict:
         ]
 
         slug = normalize_slug(npz_path.parent.name)
-        query_path = str(row.get("query_path", ""))
+        query_path = _cell(row, "query_path")
         by_model.setdefault(slug, []).append({
             "example_id": eid,
             "model_slug": slug,
-            "bucket": str(row.get("bucket", "")),
+            "bucket": _cell(row, "bucket"),
             "query_file_id": int(row.get("query_file_id", -1)),
-            "query_folder_id": str(row.get("query_folder_id", "")),
+            "query_folder_id": _cell(row, "query_folder_id"),
             "query_filename": Path(query_path).name if query_path else "",
-            "candidate_folder_id": str(row.get("candidate_folder_id", "")),
-            "candidate_label": str(row.get("candidate_label", "")),
+            "candidate_folder_id": _cell(row, "candidate_folder_id"),
+            "candidate_label": _cell(row, "candidate_label"),
             "methods_available": methods,
             "variants_available": variants,
             "gold_similar": int(row.get("gold_similar", 0) or 0),
@@ -186,8 +199,20 @@ def resolve_example_id(
     file_id: int,
     candidate_dir: str,
     model: str | None = None,
+    query_source: str | None = None,
 ) -> int | None:
-    """Find the example_id for a (query file_id, candidate_dir) pair."""
+    """Find the example_id for a (query file_id, candidate_dir) pair.
+
+    ``query_file_id`` is only unique within a corpus: the labelled examples
+    number the canon split from 0 and the unlabelled review queue numbers its
+    own files from 0, so the two ranges overlap. ``query_source`` disambiguates
+    them. It is optional and the column is optional too -- artifacts CSVs
+    written before unlabelled examples existed have neither, and those resolve
+    exactly as before.
+
+    Rows that have a matching artifact on disk win over rows that do not, so a
+    stale CSV entry cannot mask a usable one.
+    """
     if store.ig_examples is None:
         return None
 
@@ -201,8 +226,16 @@ def resolve_example_id(
     if matches.empty:
         return None
 
-    eid = int(matches.iloc[0]["example_id"])
-    return eid if eid in store.ig_artifact_paths else None
+    if query_source is not None and "query_source" in matches.columns:
+        narrowed = matches[matches["query_source"].astype(str) == query_source]
+        if not narrowed.empty:
+            matches = narrowed
+
+    ids = [int(eid) for eid in matches["example_id"]]
+    for eid in ids:
+        if eid in store.ig_artifact_paths:
+            return eid
+    return None
 
 
 def load_token_map(
@@ -242,9 +275,9 @@ def load_token_map(
         match = store.ig_examples[store.ig_examples["example_id"] == example_id]
         if len(match) > 0:
             row = match.iloc[0]
-            bucket = str(row.get("bucket", ""))
-            query_path = str(row.get("query_path", ""))
-            candidate_path = str(row.get("candidate_path", ""))
+            bucket = _cell(row, "bucket")
+            query_path = _cell(row, "query_path")
+            candidate_path = _cell(row, "candidate_path")
 
     # Token embeddings
     query_hidden = data["query_hidden"]    # (Q, dim)
