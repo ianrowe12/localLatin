@@ -26,6 +26,12 @@ ATTRIBUTION_METHODS = (
 ATTRIBUTION_VARIANTS = ("baseline", "abtt", "sif", "sif_abtt")
 BUCKET_ORDER = ["correct_similar", "correct_not_similar", "wrong_similar", "wrong_not_similar"]
 
+# Buckets the Attribution gallery does not list. The full-corpus run (issue #84)
+# adds tens of thousands of rows that exist to be resolved from a live query, not
+# browsed: listing them would mean tens of thousands of cards, and the grouped
+# listing opens every artifact it lists.
+GALLERY_EXCLUDED_BUCKETS = frozenset({"unlabelled_bulk"})
+
 # Fallback only. Artifacts built after issue #47 carry
 # query_token_strings / candidate_token_strings, so no tokenizer is needed at
 # serve time. Kept in sync with scripts/ig/persist_decoded_tokens.py.
@@ -69,6 +75,20 @@ def _cell(row, key: str) -> str:
     if value is None or (isinstance(value, float) and np.isnan(value)):
         return ""
     return str(value)
+
+
+def _csv_list(row, key: str) -> list[str] | None:
+    """Parse a comma-separated CSV cell, or ``None`` when it is absent/blank."""
+    raw = _cell(row, key).strip()
+    if not raw or raw.lower() == "nan":
+        return None
+    return [part.strip() for part in raw.split(",") if part.strip()]
+
+
+def _gallery_rows(df: pd.DataFrame) -> pd.DataFrame:
+    if "bucket" not in df.columns:
+        return df
+    return df[~df["bucket"].astype(str).isin(GALLERY_EXCLUDED_BUCKETS)]
 
 
 def _optional_vector(data: dict[str, np.ndarray], key: str, count: int) -> list[float] | None:
@@ -117,7 +137,7 @@ def list_examples(store: DataStore, model: str | None = None, bucket: str | None
     if store.ig_examples is None:
         return []
 
-    df = store.ig_examples
+    df = _gallery_rows(store.ig_examples)
     if model:
         slug = normalize_slug(model)
         # Filter by model short name or slug
@@ -146,27 +166,37 @@ def list_examples_grouped(store: DataStore) -> dict:
         return {"by_model": {}, "bucket_order": BUCKET_ORDER}
 
     by_model: dict[str, list[dict]] = {}
-    for _, row in store.ig_examples.iterrows():
+    for _, row in _gallery_rows(store.ig_examples).iterrows():
         eid = int(row["example_id"])
         if eid not in store.ig_artifact_paths:
             continue
 
-        # Trust NPZ contents over CSV's methods_available
         npz_path = store.ig_artifact_paths[eid]
-        try:
-            data = _load_npz(str(npz_path))
-        except Exception as e:
-            logger.warning("Failed to load NPZ for example %d: %s", eid, e)
-            continue
 
-        methods = [
-            m for m in ATTRIBUTION_METHODS
-            if any(f"pair_matrix_{m}_{v}" in data for v in ATTRIBUTION_VARIANTS)
-        ]
-        variants = [
-            v for v in ATTRIBUTION_VARIANTS
-            if any(f"pair_matrix_{m}_{v}" in data for m in ATTRIBUTION_METHODS)
-        ]
+        # The CSV columns are authoritative when present -- opening every listed
+        # NPZ is what made this endpoint scale with the artifact count rather
+        # than the gallery size. Fall back to inspecting the file for rows
+        # written before those columns existed.
+        methods = _csv_list(row, "methods_available")
+        variants = _csv_list(row, "variants_available")
+        if methods is None or variants is None:
+            try:
+                data = _load_npz(str(npz_path))
+            except Exception as e:
+                logger.warning("Failed to load NPZ for example %d: %s", eid, e)
+                continue
+            if methods is None:
+                methods = [
+                    m for m in ATTRIBUTION_METHODS
+                    if any(f"pair_matrix_{m}_{v}" in data for v in ATTRIBUTION_VARIANTS)
+                ]
+            if variants is None:
+                variants = [
+                    v for v in ATTRIBUTION_VARIANTS
+                    if any(f"pair_matrix_{m}_{v}" in data for m in ATTRIBUTION_METHODS)
+                ]
+        methods = [m for m in ATTRIBUTION_METHODS if m in set(methods)]
+        variants = [v for v in ATTRIBUTION_VARIANTS if v in set(variants)]
 
         slug = normalize_slug(npz_path.parent.name)
         query_path = _cell(row, "query_path")
@@ -200,6 +230,7 @@ def resolve_example_id(
     candidate_dir: str,
     model: str | None = None,
     query_source: str | None = None,
+    variant: str | None = None,
 ) -> int | None:
     """Find the example_id for a (query file_id, candidate_dir) pair.
 
@@ -210,6 +241,16 @@ def resolve_example_id(
     to a row from the other. Both the argument and the column are optional:
     artifact CSVs written before unlabelled examples existed have neither, and
     those resolve exactly as before.
+
+    ``variant`` narrows further, and for the same reason. On four of the six
+    models the four post-processing variants are deployed at *different layers*
+    (KaLM-mini ranks raw at L22, abtt and sif_abtt at L1, sif at L23), so one
+    ``(file_id, candidate_dir, model)`` has several artifacts, each built at one
+    layer and carrying only the variants deployed there. Without this filter the
+    first matching row wins and the reviewer gets an explanation computed at a
+    layer their ranking never used. Rows whose ``variants_available`` is absent
+    or blank are treated as carrying every variant -- that is what the paper-set
+    artifacts do.
 
     Rows that have a matching artifact on disk win over rows that do not, so a
     stale CSV entry cannot mask a usable one.
@@ -235,6 +276,18 @@ def resolve_example_id(
         # renders as "no artifact for this pair", i.e. the Attribution toggle is
         # absent, which is what the demo script promises off the demo set.
         matches = matches[matches["query_source"].astype(str) == query_source]
+        if matches.empty:
+            return None
+
+    if variant is not None and "variants_available" in matches.columns:
+        # Strict, like the query_source filter above: an artifact that does not
+        # carry this variant was built at another layer, and serving it would
+        # explain a configuration the ranking never used.
+        def _carries(cell) -> bool:
+            listed = _csv_list({"variants_available": cell}, "variants_available")
+            return listed is None or variant in listed
+
+        matches = matches[matches["variants_available"].apply(_carries)]
         if matches.empty:
             return None
 
@@ -290,16 +343,29 @@ def load_token_map(
             query_path = _cell(row, "query_path")
             candidate_path = _cell(row, "candidate_path")
 
-    # Token embeddings
-    query_hidden = data["query_hidden"]    # (Q, dim)
-    cand_hidden = data["candidate_hidden"]  # (C, dim)
-    q_len = query_hidden.shape[0]
-    c_len = cand_hidden.shape[0]
-
-    # Cosine similarity matrix
-    q_norm = query_hidden / (np.linalg.norm(query_hidden, axis=1, keepdims=True) + 1e-8)
-    c_norm = cand_hidden / (np.linalg.norm(cand_hidden, axis=1, keepdims=True) + 1e-8)
-    sim_matrix = (q_norm @ c_norm.T).tolist()
+    # Token-token cosine similarity. Artifacts from the full-corpus run (issue
+    # #84) store it directly and omit the raw hidden states it was derived from:
+    # a (Q, dim) float32 block is six times the size of the (Q, C) grid, and this
+    # is the only thing the serving path ever used it for. Older artifacts carry
+    # the hidden states and no stored matrix, so both shapes are read.
+    stored_sim = data.get("similarity_matrix")
+    if stored_sim is not None:
+        sim_arr = np.asarray(stored_sim, dtype=np.float32)
+        q_len, c_len = int(sim_arr.shape[0]), int(sim_arr.shape[1])
+    elif "query_hidden" in data and "candidate_hidden" in data:
+        query_hidden = data["query_hidden"]    # (Q, dim)
+        cand_hidden = data["candidate_hidden"]  # (C, dim)
+        q_len = query_hidden.shape[0]
+        c_len = cand_hidden.shape[0]
+        q_norm = query_hidden / (np.linalg.norm(query_hidden, axis=1, keepdims=True) + 1e-8)
+        c_norm = cand_hidden / (np.linalg.norm(cand_hidden, axis=1, keepdims=True) + 1e-8)
+        sim_arr = np.asarray(q_norm @ c_norm.T, dtype=np.float32)
+    else:
+        logger.warning(
+            "Artifact %s has neither similarity_matrix nor hidden states", npz_path
+        )
+        return None
+    sim_matrix = sim_arr.tolist()
 
     # IG weights
     q_ig_base = data.get("query_ig_baseline", np.zeros(q_len))
@@ -363,7 +429,6 @@ def load_token_map(
 
     # Top matches (sparse format for frontend connection lines)
     top_matches: dict[str, list[TopMatch]] = {}
-    sim_arr = np.array(sim_matrix)
     for qi in range(q_len):
         row = sim_arr[qi]
         top_k = min(3, c_len)
@@ -373,11 +438,22 @@ def load_token_map(
             for ci in top_idx
         ]
 
-    # Auto-highlights: top K=5 query tokens by |IG score|
+    # Auto-highlights: top K=5 query tokens by |IG score|. Prefer the ABTT
+    # vector, but a bulk artifact only carries the variants deployed at its
+    # layer, so an artifact built for `sif` alone has no `query_ig_abtt`. Take
+    # whichever IG vector it does have rather than dropping the highlights.
     auto_highlights = None
-    if "query_ig_abtt" in data:
-        abs_ig = np.abs(q_ig_abtt[:q_len])
-        if abs_ig.max() > 1e-6:
+    ig_source = next(
+        (
+            f"query_ig_{v}"
+            for v in ("abtt", "sif_abtt", "baseline", "sif")
+            if f"query_ig_{v}" in data
+        ),
+        None,
+    )
+    if ig_source is not None:
+        abs_ig = np.abs(np.asarray(data[ig_source], dtype=np.float32)[:q_len])
+        if abs_ig.size and abs_ig.max() > 1e-6:
             K = 5
             top_k_idx = np.argsort(abs_ig)[-K:][::-1]
             auto_highlights = []

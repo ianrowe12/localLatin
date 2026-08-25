@@ -52,6 +52,9 @@ from pooling_cleaners import (  # noqa: E402
     write_cleaner,
 )
 
+# Suffix for the backup taken before a stale mean fit is replaced.
+RESEED_BACKUP_SUFFIX = ".PRE_ISSUE84.npz"
+
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__,
@@ -74,6 +77,13 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--seed_mean_from_artifacts", action="store_true",
                    help="When the PC file has no mean-pooled keys, copy them from the "
                         "artifacts so the file describes both poolings.")
+    p.add_argument("--reseed_stale_mean", action="store_true",
+                   help="Also replace mean-pooled keys that DISAGREE with the "
+                        "artifacts (issue #84 caveat 1). bowphs_LaTa/layer4 and "
+                        "bowphs_PhilTa/layer6 hold a mean fit that does not describe "
+                        "the artifacts at those layers, so read_cleaner(..., 'mean') "
+                        "returns the wrong subspace. Implies "
+                        "--seed_mean_from_artifacts; keeps a .PRE_ISSUE84.npz backup.")
     p.add_argument("--report_only", action="store_true",
                    help="Fit and compare, but write nothing.")
     p.add_argument("--dry_run", action="store_true", help="Alias for --report_only.")
@@ -113,30 +123,59 @@ def merge_pc_file(
     sif: Cleaner,
     mean_seed: Cleaner | None,
     write: bool,
+    reseed_mean: bool = False,
 ) -> str:
-    """Merge the SIF cleaner into a PC file, preserving every existing key."""
+    """Merge the SIF cleaner into a PC file, preserving every existing key.
+
+    ``mean_seed`` fills the mean keys in when they are absent. ``reseed_mean``
+    additionally *replaces* mean keys that disagree with ``mean_seed`` (issue
+    #84 caveat 1): two shared PC files hold a mean fit that no longer matches
+    the artifacts they are supposed to describe, so ``read_cleaner(..., "mean")``
+    hands a caller the wrong subspace. The artifacts are the source of truth --
+    they are what shipped -- so the fix is to copy their fit back over the file,
+    keeping a ``.PRE_ISSUE84.npz`` backup.
+    """
     existing: dict[str, np.ndarray] = {}
     if path.exists():
         with np.load(path, allow_pickle=False) as data:
             existing = {k: data[k] for k in data.files}
 
+    prior_mean = read_cleaner(existing, "mean")
+    stale_mean = (
+        reseed_mean
+        and mean_seed is not None
+        and prior_mean is not None
+        and not cleaners_match(prior_mean, mean_seed)
+    )
+
     prior_sif = read_cleaner(existing, "sif")
-    if cleaners_match(prior_sif, sif):
+    if cleaners_match(prior_sif, sif) and not stale_mean:
         return "unchanged"
 
     merged = dict(existing)
     write_cleaner(merged, sif)
 
     seeded = ""
-    if read_cleaner(existing, "mean") is None and mean_seed is not None:
+    if prior_mean is None and mean_seed is not None:
         write_cleaner(merged, mean_seed)
         seeded = " (+ mean seeded from artifacts)"
+    elif stale_mean:
+        seeded = (
+            f" (+ STALE mean replaced from artifacts: file D={prior_mean.D} -> "
+            f"artifact D={mean_seed.D})"
+        )
+        write_cleaner(merged, mean_seed)
 
     if not write:
         keys = CLEANER_KEYS["sif"]
         return f"[DRY] would write {keys.pcs}/{keys.mean_vec}/{keys.d}{seeded}"
 
     path.parent.mkdir(parents=True, exist_ok=True)
+    if stale_mean:
+        backup = path.with_name(path.stem + RESEED_BACKUP_SUFFIX)
+        if not backup.exists():
+            backup.write_bytes(path.read_bytes())
+            seeded += f" [backup {backup.name}]"
     tmp = path.with_name(path.stem + ".tmp.npz")
     np.savez(tmp, **merged)
     tmp.replace(path)
@@ -182,11 +221,13 @@ def main() -> None:
             )
 
         pc_path = pc_file_path(args.pc_root, slug, layer)
+        seed_mean = args.seed_mean_from_artifacts or args.reseed_stale_mean
         status = merge_pc_file(
             pc_path,
             sif,
-            artifact_mean if args.seed_mean_from_artifacts else None,
+            artifact_mean if seed_mean else None,
             write,
+            reseed_mean=args.reseed_stale_mean,
         )
         print(f"  {pc_path}: {status}")
 

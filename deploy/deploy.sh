@@ -27,7 +27,11 @@ DATA_CACHE_DIR="${DATA_CACHE_DIR:-${REPO_DIR}/.deploy-cache}"
 info()  { printf '\033[1;34m[deploy]\033[0m %s\n' "$*"; }
 error() { printf '\033[1;31m[deploy]\033[0m %s\n' "$*" >&2; }
 
-if [[ ! -d "${REPO_DIR}" ]]; then
+# Sourcing with DEPLOY_LIB_ONLY=1 defines the functions and stops before
+# anything touches the host, so tests/test_deploy_data_sync.py can exercise
+# sync_data_release against a file:// fixture on a runner with no repo, no node
+# and no systemd.
+if [[ -z "${DEPLOY_LIB_ONLY:-}" ]] && [[ ! -d "${REPO_DIR}" ]]; then
     error "Repo not found at ${REPO_DIR}"
     exit 1
 fi
@@ -59,12 +63,9 @@ _sync_data_release_impl() {
         return 0
     fi
 
-    local asset="locallatin-${DATA_RELEASE_TAG}.tar.gz"
     # Overridable so the sync can be exercised against a local directory
     # (file://...) without publishing a release.
     local base_url="${DATA_RELEASE_BASE_URL:-https://github.com/${DATA_RELEASE_REPO}/releases/download/${DATA_RELEASE_TAG}}"
-    local tarball="${DATA_CACHE_DIR}/${asset}"
-    local checksum="${tarball}.sha256"
     # ONE state file describing what is currently on disk, as "<tag> <sha256>".
     # Deliberately not one marker per tag: a per-tag marker makes rolling back
     # to a previously installed tag a silent no-op that leaves the newer data
@@ -74,33 +75,87 @@ _sync_data_release_impl() {
 
     mkdir -p "${DATA_CACHE_DIR}" || { error "Cannot create ${DATA_CACHE_DIR}"; return 1; }
 
+    # SHARDED RELEASES: a GitHub Release asset may not exceed 2 GB, and the
+    # full-corpus attribution payload (issue #84) is several times that, so
+    # make_data_release.sh --shard-bytes emits `locallatin-<TAG>.partNN.tar.gz`
+    # plus a `.parts.txt` listing them in order. The parts list is the discovery
+    # mechanism: present => sharded, absent (404) => the single-asset layout,
+    # which is left byte-for-byte as it was. Each part is an independently valid
+    # tar with its own .sha256, so verification and extraction stay per-part;
+    # only the *state* has to describe the whole set.
     info "Fetching data release ${DATA_RELEASE_TAG} from ${DATA_RELEASE_REPO}..."
-    if ! curl -sSfL --retry 3 --retry-delay 5 -o "${checksum}.part" "${base_url}/${asset}.sha256"; then
-        error "Could not download ${base_url}/${asset}.sha256"
-        error "Check that release ${DATA_RELEASE_TAG} exists and carries both assets."
-        return 1
+    local parts_list="${DATA_CACHE_DIR}/locallatin-${DATA_RELEASE_TAG}.parts.txt"
+    local -a assets=()
+    if curl -sSfL --retry 2 --retry-delay 2 -o "${parts_list}.part" \
+            "${base_url}/locallatin-${DATA_RELEASE_TAG}.parts.txt" 2>/dev/null; then
+        mv -f "${parts_list}.part" "${parts_list}" || { error "Could not install parts list"; return 1; }
+        local part_name
+        while IFS= read -r part_name; do
+            [[ -z "${part_name}" ]] && continue
+            # The list is published data. Refuse anything that is not the exact
+            # asset-name shape, so a tampered list cannot steer a download or a
+            # cache write outside DATA_CACHE_DIR.
+            if [[ ! "${part_name}" =~ ^locallatin-[A-Za-z0-9._-]+\.part[0-9]+\.tar\.gz$ ]]; then
+                error "Refusing parts list: unexpected entry '${part_name}'"
+                return 1
+            fi
+            assets+=("${part_name}")
+        done < "${parts_list}"
+        if [[ "${#assets[@]}" -eq 0 ]]; then
+            error "Parts list for ${DATA_RELEASE_TAG} is empty."
+            return 1
+        fi
+        info "Sharded release: ${#assets[@]} part(s)."
+    else
+        rm -f "${parts_list}.part"
+        assets=("locallatin-${DATA_RELEASE_TAG}.tar.gz")
     fi
-    mv -f "${checksum}.part" "${checksum}" || { error "Could not install checksum file"; return 1; }
 
+    # Download and verify every part before unpacking any of it: a half-verified
+    # set must not reach the staging tree.
+    local -a tarballs=()
+    local sha_lines="" asset tarball checksum want_part
+    for asset in "${assets[@]}"; do
+        tarball="${DATA_CACHE_DIR}/${asset}"
+        checksum="${tarball}.sha256"
+        if ! curl -sSfL --retry 3 --retry-delay 5 -o "${checksum}.part" "${base_url}/${asset}.sha256"; then
+            error "Could not download ${base_url}/${asset}.sha256"
+            error "Check that release ${DATA_RELEASE_TAG} exists and carries every asset."
+            rm -f "${checksum}.part"
+            return 1
+        fi
+        mv -f "${checksum}.part" "${checksum}" || { error "Could not install checksum file"; return 1; }
+
+        want_part="$(awk '{print $1}' "${checksum}")"
+        if [[ ! "${want_part}" =~ ^[0-9a-f]{64}$ ]]; then
+            error "Published checksum for ${asset} is not a sha256: ${want_part}"
+            return 1
+        fi
+        sha_lines+="${want_part}  ${asset}"$'\n'
+        tarballs+=("${tarball}")
+    done
+
+    # One hash for the whole release: the sha256 of the per-part checksum lines.
+    # For a single-asset release this is NOT the asset's own sha256, so the first
+    # deploy after this change reinstalls once and is then idempotent again --
+    # cheaper than carrying two state formats forever.
     local want_sha
-    want_sha="$(awk '{print $1}' "${checksum}")"
-    if [[ ! "${want_sha}" =~ ^[0-9a-f]{64}$ ]]; then
-        error "Published checksum for ${asset} is not a sha256: ${want_sha}"
-        return 1
-    fi
+    want_sha="$(printf '%s' "${sha_lines}" | sha256sum | awk '{print $1}')"
 
     if [[ -f "${state_file}" ]] && [[ "$(cat "${state_file}")" == "${DATA_RELEASE_TAG} ${want_sha}" ]]; then
         info "Data release ${DATA_RELEASE_TAG} (${want_sha:0:12}) already installed — skipping."
         return 0
     fi
 
-    local have_valid_tarball=0
-    if [[ -f "${tarball}" ]] && ( cd "${DATA_CACHE_DIR}" && sha256sum -c --status "$(basename "${checksum}")" ); then
-        info "Cached ${asset} already matches the published checksum."
-        have_valid_tarball=1
-    fi
-
-    if [[ "${have_valid_tarball}" -eq 0 ]]; then
+    local i=0
+    for asset in "${assets[@]}"; do
+        tarball="${tarballs[$i]}"
+        checksum="${tarball}.sha256"
+        i=$((i + 1))
+        if [[ -f "${tarball}" ]] && ( cd "${DATA_CACHE_DIR}" && sha256sum -c --status "$(basename "${checksum}")" ); then
+            info "Cached ${asset} already matches the published checksum."
+            continue
+        fi
         if ! curl -sSfL --retry 3 --retry-delay 5 -o "${tarball}.part" "${base_url}/${asset}"; then
             error "Could not download ${base_url}/${asset}"
             rm -f "${tarball}.part"
@@ -112,34 +167,39 @@ _sync_data_release_impl() {
             rm -f "${tarball}"
             return 1
         fi
-        info "Checksum verified."
-    fi
+        info "Checksum verified for ${asset}."
+    done
 
     # Every member must live under runs/active/. This is what keeps the payload
     # from ever reaching the reviewer feedback database, which the production
     # config puts at data/feedback.db — outside this prefix and never touched.
     # The listing is also the expected-file count the install is checked against.
+    # Checked on every part: one bad member anywhere refuses the whole release.
     info "Validating archive member paths..."
-    local listing entry expected=0
-    if ! listing="$(tar -tzf "${tarball}")"; then
-        error "Could not list ${asset} — the cached tarball is unreadable."
-        return 1
-    fi
-    while IFS= read -r entry; do
-        [[ -z "${entry}" ]] && continue
-        case "${entry}" in
-            runs/active/*) ;;
-            *) error "Refusing archive: member outside runs/active/: ${entry}"; return 1 ;;
-        esac
-        case "${entry}" in
-            *..*) error "Refusing archive: path traversal member: ${entry}"; return 1 ;;
-        esac
-        # Directory members end in '/'; only files are installed and counted.
-        case "${entry}" in
-            */) ;;
-            *) expected=$((expected + 1)) ;;
-        esac
-    done <<< "${listing}"
+    local listing entry expected=0 tar_kb=0 part_kb
+    for tarball in "${tarballs[@]}"; do
+        if ! listing="$(tar -tzf "${tarball}")"; then
+            error "Could not list $(basename "${tarball}") — the cached tarball is unreadable."
+            return 1
+        fi
+        while IFS= read -r entry; do
+            [[ -z "${entry}" ]] && continue
+            case "${entry}" in
+                runs/active/*) ;;
+                *) error "Refusing archive: member outside runs/active/: ${entry}"; return 1 ;;
+            esac
+            case "${entry}" in
+                *..*) error "Refusing archive: path traversal member: ${entry}"; return 1 ;;
+            esac
+            # Directory members end in '/'; only files are installed and counted.
+            case "${entry}" in
+                */) ;;
+                *) expected=$((expected + 1)) ;;
+            esac
+        done <<< "${listing}"
+        part_kb="$(du -k "${tarball}" | cut -f1)"
+        tar_kb=$((tar_kb + part_kb))
+    done
 
     if [[ "${expected}" -eq 0 ]]; then
         error "Data release ${DATA_RELEASE_TAG} contains no files."
@@ -147,13 +207,12 @@ _sync_data_release_impl() {
     fi
 
     # Cheap ENOSPC preflight: the staging copy plus the installed copy roughly
-    # doubles the uncompressed payload, and the tarball is already on disk.
-    local tar_kb avail_kb need_kb
-    tar_kb="$(du -k "${tarball}" | cut -f1)"
+    # doubles the uncompressed payload, and the tarballs are already on disk.
+    local avail_kb need_kb
     avail_kb="$(df -Pk "${DATA_CACHE_DIR}" | awk 'NR==2 {print $4}')"
     need_kb=$((tar_kb * 4))
     if [[ -n "${avail_kb}" ]] && [[ "${avail_kb}" -lt "${need_kb}" ]]; then
-        error "Not enough free space to unpack ${asset}: need ~$((need_kb / 1024)) MB, have $((avail_kb / 1024)) MB."
+        error "Not enough free space to unpack ${DATA_RELEASE_TAG}: need ~$((need_kb / 1024)) MB, have $((avail_kb / 1024)) MB."
         error "Free space under ${DATA_CACHE_DIR} (old cached tarballs are safe to delete) and re-run."
         return 1
     fi
@@ -161,11 +220,13 @@ _sync_data_release_impl() {
     local stage="${DATA_CACHE_DIR}/stage-${DATA_RELEASE_TAG}"
     rm -rf "${stage}"
     mkdir -p "${stage}" || { error "Cannot create staging dir ${stage}"; return 1; }
-    info "Unpacking ${expected} files to staging directory..."
-    if ! tar -xzf "${tarball}" -C "${stage}"; then
-        error "Extraction of ${asset} failed (disk full? corrupt cache?) — nothing was installed."
-        return 1
-    fi
+    info "Unpacking ${expected} files from ${#tarballs[@]} archive(s) to staging directory..."
+    for tarball in "${tarballs[@]}"; do
+        if ! tar -xzf "${tarball}" -C "${stage}"; then
+            error "Extraction of $(basename "${tarball}") failed (disk full? corrupt cache?) — nothing was installed."
+            return 1
+        fi
+    done
 
     local staged
     staged="$(find "${stage}" -type f | wc -l | tr -d ' ')"
@@ -220,14 +281,29 @@ _sync_data_release_impl() {
     info "Installed ${installed}/${expected} data files from ${DATA_RELEASE_TAG} (${want_sha:0:12})."
 
     # Keep the cache bounded: any other release's tarball is re-downloadable.
-    local stale
+    # With a sharded release "the current one" is every part plus every part's
+    # sidecar, so the keep-set is built from the asset list rather than from a
+    # single filename.
+    local keep=" "
+    for asset in "${assets[@]}"; do
+        keep+="${asset} ${asset}.sha256 "
+    done
+    local stale name
     while IFS= read -r stale; do
         [[ -z "${stale}" ]] && continue
-        [[ "${stale}" == "${tarball}" || "${stale}" == "${checksum}" ]] && continue
-        info "Pruning stale cache entry $(basename "${stale}")"
+        name="$(basename "${stale}")"
+        [[ "${keep}" == *" ${name} "* ]] && continue
+        info "Pruning stale cache entry ${name}"
         rm -f "${stale}"
     done < <(find "${DATA_CACHE_DIR}" -maxdepth 1 -type f -name 'locallatin-*.tar.gz*' 2>/dev/null)
 }
+
+# Everything above is definitions; everything below touches the host. Sourcing
+# with DEPLOY_LIB_ONLY=1 stops here, which is what lets the data-sync logic be
+# tested on a runner with no repo, no node and no systemd.
+if [[ -n "${DEPLOY_LIB_ONLY:-}" ]]; then
+    return 0
+fi
 
 # Ensure node is available
 export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
