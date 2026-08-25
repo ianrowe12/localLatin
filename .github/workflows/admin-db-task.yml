@@ -1,0 +1,28 @@
+name: Admin DB task
+on:
+  workflow_dispatch:
+    inputs:
+      approve_username:
+        description: "Username whose pending account to approve (reviewer role)"
+        required: true
+        type: string
+jobs:
+  approve:
+    runs-on: [self-hosted, locallatin, production]
+    steps:
+      - name: Approve pending account
+        env:
+          APPROVE_USER: ${{ inputs.approve_username }}
+        run: |
+          set -euo pipefail
+          DB=/homes/ipro222/localLatin/data/feedback.db
+          test -f "$DB"
+          ROW=$(sqlite3 "$DB" "SELECT id, role, approval_status FROM accounts WHERE username = '$(printf %s "$APPROVE_USER" | sed "s/'/''/g")';")
+          echo "found: $ROW"
+          [ -n "$ROW" ] || { echo "no such account"; exit 1; }
+          STATUS=$(echo "$ROW" | cut -d'|' -f3)
+          [ "$STATUS" = "pending" ] || { echo "account is '$STATUS', not pending - refusing"; exit 1; }
+          ADMIN_ID=$(sqlite3 "$DB" "SELECT id FROM accounts WHERE role='pi_admin' AND approval_status='approved' ORDER BY id LIMIT 1;")
+          sqlite3 "$DB" "UPDATE accounts SET approval_status='approved', approved_by_account_id=${ADMIN_ID:-NULL} WHERE username = '$(printf %s "$APPROVE_USER" | sed "s/'/''/g")' AND approval_status='pending';"
+          sqlite3 "$DB" "SELECT id, username, role, approval_status FROM accounts WHERE username = '$(printf %s "$APPROVE_USER" | sed "s/'/''/g")';"
+          echo "approved."
