@@ -114,11 +114,16 @@ def test_installed_state_is_keyed_on_tag_and_content_hash() -> None:
     assert 'state_file="${DATA_CACHE_DIR}/installed.state"' in deploy
     assert '"${DATA_RELEASE_TAG} ${want_sha}"' in deploy
     assert "rolling back" in deploy
-    # The published checksum is fetched before the skip decision, so the skip
-    # can compare content and not just the tag.
-    sha_fetch = deploy.index('want_sha="$(awk')
+    # The published checksums are fetched before the skip decision, so the skip
+    # can compare content and not just the tag. Since issue #84 a release may be
+    # several parts, and the hash the state records covers all of them -- so the
+    # ordering that matters is "every part's checksum is in hand", i.e. the
+    # download loop closes before the skip.
+    sha_fetch = deploy.index('"${base_url}/${asset}.sha256"')
+    sha_combine = deploy.index('want_sha="$(printf')
     skip_check = deploy.index('already installed — skipping')
-    assert sha_fetch < skip_check
+    assert sha_fetch < sha_combine < skip_check
+    assert 'sha_lines+="${want_part}  ${asset}"' in deploy
     # The old per-tag marker path must be gone.
     assert "installed-${DATA_RELEASE_TAG}" not in deploy
 
@@ -193,10 +198,18 @@ def test_data_release_builder_confines_the_payload_to_runs_active() -> None:
     assert "Payload member outside runs/active/" in source
     assert "member outside runs/active/" in source
     assert "sha256sum" in source
-    # Asset name must match what deploy.sh derives from DATA_RELEASE_TAG.
-    assert "locallatin-${TAG}.tar.gz" in source
+    # Asset names must match what deploy.sh derives from DATA_RELEASE_TAG, for
+    # both layouts: the single tarball, and the sharded parts plus the parts
+    # list that tells deploy.sh which layout it is looking at (issue #84).
+    # tests/test_deploy_data_sync.py exercises both end to end; this keeps the
+    # two scripts' *names* from drifting apart without anyone noticing.
     deploy = (ROOT / "deploy" / "deploy.sh").read_text(encoding="utf-8")
-    assert 'asset="locallatin-${DATA_RELEASE_TAG}.tar.gz"' in deploy
+    assert "locallatin-${TAG}.tar.gz" in source
+    assert 'assets=("locallatin-${DATA_RELEASE_TAG}.tar.gz")' in deploy
+    assert "locallatin-${TAG}.part${suffix}.tar.gz" in source
+    assert 'locallatin-[A-Za-z0-9._-]+\\.part[0-9]+\\.tar\\.gz$' in deploy
+    assert "locallatin-${TAG}.parts.txt" in source
+    assert "locallatin-${DATA_RELEASE_TAG}.parts.txt" in deploy
 
 
 def test_smoke_script_is_valid_python() -> None:
