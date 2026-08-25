@@ -99,9 +99,15 @@ async def get_token_map_by_query(
     ``file_id`` here always indexes the unlabelled review queue, so prefer an
     unlabelled example when the CSV records the query's corpus. Labelled rows
     stay reachable as a fallback for CSVs written before that column existed.
+
+    ``variant`` also narrows the *lookup*, not just the payload: the four
+    variants are deployed at different layers on four of the six models, so one
+    (query, candidate) pair can have several artifacts and only the one built at
+    this variant's layer explains this variant's ranking.
     """
     example_id = token_map_svc.resolve_example_id(
         store, file_id, candidate_dir, model or None, query_source="unlabelled",
+        variant=variant,
     )
     if example_id is None:
         raise ExampleNotFoundError(f"{file_id}/{candidate_dir}")

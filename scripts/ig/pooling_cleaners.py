@@ -68,9 +68,21 @@ from run_resubmit_unlabelled_retrieval import D_VALUES, find_optimal_D  # noqa: 
 POOLINGS: tuple[str, ...] = ("mean", "sif")
 
 # Layout of the canonical embedding cache
-# (``runs/active/resubmit_bases/phase9_bases/<slug>/<subdir>/<file>``).
-POOLING_SUBDIR = {"mean": "hidden_mean_tokempty", "sif": "hidden_sif_tokempty"}
+# (``runs/active/resubmit_bases/phase9_bases/<slug>/<repr>_<pooling>_tokempty/<file>``).
+# ``repr`` is "hidden" for every deployed configuration, but it is a real axis of
+# the cache (``ff1`` bases exist for the T5 models), so it is a parameter rather
+# than a constant baked into the path helpers.
+DEFAULT_REPR = "hidden"
+POOLING_TAG = {"mean": "mean", "sif": "sif"}
 POOLING_SUFFIX = {"mean": "", "sif": "_sif"}
+
+
+def pooling_subdir(pooling: str, repr_name: str = DEFAULT_REPR) -> str:
+    return f"{repr_name}_{POOLING_TAG[validate_pooling(pooling)]}_tokempty"
+
+
+# Back-compat alias for callers that only ever meant the hidden-state cache.
+POOLING_SUBDIR = {p: f"{DEFAULT_REPR}_{POOLING_TAG[p]}_tokempty" for p in POOLINGS}
 
 
 @dataclass(frozen=True)
@@ -90,6 +102,46 @@ CLEANER_KEYS: dict[str, CleanerKeys] = {
 # ``sif_abtt`` matrices were cleaned in. Absent on pre-#87 artifacts, which
 # were all cleaned in the mean-pooled space.
 SIF_ABTT_CLEANER_KEY = "sif_abtt_cleaner_pooling"
+
+# Unified provenance (issue #84). ``SIF_ABTT_CLEANER_KEY`` records the cleaner
+# for exactly one variant, so an artifact could not say which space the *other*
+# ABTT panel came from -- a reader had to know that ``abtt`` is always mean.
+# These two parallel arrays say it for every variant the artifact carries, and
+# ``SIF_ABTT_CLEANER_KEY`` is still written alongside them so pre-#84 readers
+# keep working.
+ARTIFACT_VARIANTS_KEY = "artifact_variants"
+VARIANT_CLEANER_POOLING_KEY = "variant_cleaner_pooling"
+
+# Which pooling space each deployed variant's ABTT cleaner is fit in. "" means
+# the variant applies no cleaner at all.
+VARIANT_CLEANER_POOLING: dict[str, str] = {
+    "baseline": "",
+    "abtt": "mean",
+    "sif": "",
+    "sif_abtt": "sif",
+}
+
+
+def write_variant_provenance(
+    target: MutableMapping[str, np.ndarray], variants: Sequence[str]
+) -> None:
+    """Stamp per-variant cleaner provenance into a dict destined for ``np.savez``.
+
+    ``variants`` is the list of variants the artifact actually carries, in the
+    order the webapp renders them. Unknown variant names are rejected rather
+    than recorded with an empty cleaner, since a silent "" would read as "this
+    panel applies no ABTT" -- the exact class of wrong claim issue #87 fixed.
+    """
+    names = [str(v) for v in variants]
+    unknown = [v for v in names if v not in VARIANT_CLEANER_POOLING]
+    if unknown:
+        raise ValueError(f"Unknown attribution variant(s): {unknown}")
+    target[ARTIFACT_VARIANTS_KEY] = np.array(names, dtype="<U16")
+    target[VARIANT_CLEANER_POOLING_KEY] = np.array(
+        [VARIANT_CLEANER_POOLING[v] for v in names], dtype="<U8"
+    )
+    if "sif_abtt" in names:
+        target[SIF_ABTT_CLEANER_KEY] = np.array(["sif"], dtype="<U8")
 
 
 @dataclass(frozen=True)
@@ -147,16 +199,22 @@ def write_cleaner(target: MutableMapping[str, np.ndarray], cleaner: Cleaner) -> 
     target[keys.d] = np.array([int(cleaner.D)], dtype=np.int32)
 
 
-def embeddings_path(bases_root: Path, slug: str, pooling: str, layer: int) -> Path:
-    validate_pooling(pooling)
-    fname = f"hidden_layer{layer}_embeddings{POOLING_SUFFIX[pooling]}.npy"
-    return Path(bases_root) / slug / POOLING_SUBDIR[pooling] / fname
+def embeddings_path(
+    bases_root: Path, slug: str, pooling: str, layer: int, repr_name: str = DEFAULT_REPR
+) -> Path:
+    fname = f"{repr_name}_layer{layer}_embeddings{POOLING_SUFFIX[validate_pooling(pooling)]}.npy"
+    return Path(bases_root) / slug / pooling_subdir(pooling, repr_name) / fname
 
 
 def load_pooled_embeddings(
-    bases_root: Path, slug: str, pooling: str, layer: int, n_expected: int | None = None
+    bases_root: Path,
+    slug: str,
+    pooling: str,
+    layer: int,
+    n_expected: int | None = None,
+    repr_name: str = DEFAULT_REPR,
 ) -> np.ndarray:
-    path = embeddings_path(bases_root, slug, pooling, layer)
+    path = embeddings_path(bases_root, slug, pooling, layer, repr_name)
     if not path.exists():
         raise SystemExit(f"Embedding cache missing: {path}")
     emb = np.load(path)
@@ -177,6 +235,7 @@ def fit_cleaner(
     fixed_d: int | None = None,
     d_values: Sequence[int] = D_VALUES,
     verbose: bool = True,
+    repr_name: str = DEFAULT_REPR,
 ) -> Cleaner:
     """Fit the deployed cleaner for one (model, layer, pooling).
 
@@ -191,7 +250,9 @@ def fit_cleaner(
     Passing ``fixed_d`` skips the sweep, for callers that already know D.
     """
     validate_pooling(pooling)
-    emb = load_pooled_embeddings(bases_root, slug, pooling, layer, n_expected=len(split))
+    emb = load_pooled_embeddings(
+        bases_root, slug, pooling, layer, n_expected=len(split), repr_name=repr_name
+    )
     train_mask = split["split"].to_numpy() == "train"
     train_emb = emb[train_mask]
     train_folders = split.loc[train_mask, "folder_id"].to_numpy()
