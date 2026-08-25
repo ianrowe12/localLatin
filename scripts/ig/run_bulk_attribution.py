@@ -19,7 +19,16 @@ Budget-safety
 -------------
 ``--max_seconds`` stops the loop cleanly and still writes the registry, so a
 chunk that runs out of wallclock hands the next one a consistent state rather
-than a TIMEOUT. The sbatch derives it from the SLURM time limit.
+than a TIMEOUT. The sbatch derives it from the SLURM time limit, minus headroom
+for the registry pass; the budget is measured from **process start**, so setup
+(model load, the O(vocab) keep-lookup, the D sweeps, the SIF estimate) is spent
+out of the same budget rather than added on top of it.
+
+The chunk also stops on a run of pair errors (``--max_consecutive_errors``) or a
+high error rate (``--max_error_frac``). Everything that can raise per pair is
+post-model-load, so a systematic fault fails every pair identically; without a
+circuit breaker such a chunk would burn its whole reservation and still exit 0.
+Both paths flush the registry first and only then exit nonzero.
 
 Usage::
 
@@ -125,10 +134,25 @@ def parse_args() -> argparse.Namespace:
                    help="Abort the chunk if more than this fraction of attempted "
                         "pairs fail the score check. A handful is a degenerate-file "
                         "edge case; a systematic failure means the wrong cache.")
+    p.add_argument("--max_consecutive_errors", type=int, default=20,
+                   help="Stop the chunk after this many pair errors in a row. "
+                        "Everything that can raise is post-model-load, so a "
+                        "systematic fault (CUDA OOM, a call-time captum failure) "
+                        "fails every pair alike and would otherwise burn the whole "
+                        "reservation and still exit 0.")
+    p.add_argument("--max_error_frac", type=float, default=0.10,
+                   help="Stop the chunk once errors exceed this fraction of "
+                        "attempted pairs. Catches a fault that fails most but not "
+                        "all pairs, which no consecutive-run test would see.")
+    p.add_argument("--error_frac_min_attempts", type=int, default=20,
+                   help="Ignore --max_error_frac until this many pairs have been "
+                        "attempted, so two early errors cannot abort a healthy run.")
     p.add_argument("--limit", type=int, default=0, help="0 = all pairs; N = first N.")
     p.add_argument("--max_seconds", type=float, default=0.0,
-                   help="0 = no limit. Stop cleanly once the pair loop has run this "
-                        "long, and still write the registry.")
+                   help="0 = no limit. Stop cleanly once the PROCESS has run this "
+                        "long, and still write the registry. Measured from process "
+                        "start, not from the first pair, so setup counts against it: "
+                        "the caller's headroom is for the registry pass alone.")
     p.add_argument("--trust_remote_code", action="store_true")
     p.add_argument("--half_precision", action="store_true")
     p.add_argument("--report_truncation", action="store_true",
@@ -313,6 +337,40 @@ def build_artifact_arrays(
     return arrays
 
 
+def error_abort_reason(
+    consecutive: int,
+    errors: int,
+    attempted: int,
+    max_consecutive: int,
+    max_frac: float,
+    min_attempts: int,
+) -> str | None:
+    """Why this chunk should stop, or ``None`` to keep going.
+
+    Two independent triggers. A run of consecutive failures catches the common
+    shape -- a fault that appeared partway through and now fails everything --
+    quickly, before it costs an hour. A rate over the whole run catches a fault
+    that fails most but not all pairs, which no consecutive-run test would see.
+    The rate is held back until ``min_attempts`` so a couple of early bad pairs
+    cannot abort a healthy chunk.
+    """
+    if max_consecutive > 0 and consecutive >= max_consecutive:
+        return (
+            f"{consecutive} consecutive pair errors "
+            f"(--max_consecutive_errors {max_consecutive})"
+        )
+    if (
+        max_frac > 0
+        and attempted >= min_attempts
+        and errors / attempted > max_frac
+    ):
+        return (
+            f"{errors}/{attempted} pairs errored, above "
+            f"--max_error_frac {max_frac}"
+        )
+    return None
+
+
 def atomic_savez(path: Path, arrays: dict[str, np.ndarray]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.stem + ".tmp.npz")
@@ -348,6 +406,19 @@ def main() -> None:  # noqa: PLR0912, PLR0915 -- one linear pipeline, kept toget
         print(f"  L{layer}: {len(at):6d} pairs, variants {at[0].variants}")
 
     artifacts_dir = args.artifacts_dir / slug
+    # Sweep half-written temporaries from a killed run. atomic_savez renames
+    # into place, so a leftover .tmp.npz is never a usable artifact -- but it is
+    # still matched by the webapp's `*.npz` glob at startup, where its filename
+    # parses to the same example_id and can shadow the real file, and by the
+    # release packer, which would ship it. Cheap to do, and only safe here
+    # because one model's chunk is the only writer of its own directory.
+    if artifacts_dir.exists():
+        stale_tmp = list(artifacts_dir.glob("*.tmp.npz"))
+        for tmp_path in stale_tmp:
+            tmp_path.unlink()
+        if stale_tmp:
+            print(f"removed {len(stale_tmp)} stale .tmp.npz from a killed run")
+
     todo = [p for p in pairs if not p.artifact_path(args.artifacts_dir, slug).exists()]
     print(f"already on disk: {len(pairs) - len(todo)}; to build: {len(todo)}")
     if args.limit:
@@ -416,10 +487,20 @@ def main() -> None:  # noqa: PLR0912, PLR0915 -- one linear pipeline, kept toget
     sizes: list[int] = []
     truncated_q = 0
     mismatches: list[str] = []
+    errors: list[str] = []
+    consecutive_errors = 0
+    abort_reason: str | None = None
     loop_started = time.time()
 
     for i, pair in enumerate(todo):
-        if args.max_seconds and (time.time() - loop_started) > args.max_seconds:
+        # Measured from PROCESS start, not loop start. The sbatch derives
+        # --max_seconds as (SLURM limit - 8 min) and that 8 minutes is the
+        # registry's headroom, not setup's: model load, the O(vocab) token-keep
+        # lookup, the D sweeps and the train-corpus SIF estimate can be ten
+        # minutes on their own. Timing the loop alone would let a capped chunk
+        # run setup + cap + registry past the wallclock, TIMEOUT, and lose the
+        # registry entirely -- which is exactly the capped Qwen chunk.
+        if args.max_seconds and (time.time() - started) > args.max_seconds:
             counts["stopped"] = len(todo) - i
             print(f"\n[budget] --max_seconds reached; {counts['stopped']} pairs left for the next run")
             break
@@ -524,10 +605,35 @@ def main() -> None:  # noqa: PLR0912, PLR0915 -- one linear pipeline, kept toget
             atomic_savez(out_path, arrays)
             sizes.append(out_path.stat().st_size)
             counts["built"] += 1
+            consecutive_errors = 0
         except Exception as exc:  # noqa: BLE001 -- one bad pair must not kill 8k
             counts["error"] += 1
+            consecutive_errors += 1
+            if len(errors) < 20:
+                errors.append(
+                    f"{pair.filename}/{pair.candidate_dir}@L{pair.layer}: {exc}"
+                )
             print(f"  [ERROR] {pair.filename}/{pair.candidate_dir}@L{pair.layer}: {exc}",
                   file=sys.stderr)
+            # Per-pair tolerance is for a bad pair, not a bad *run*. Everything
+            # inside this try is post-model-load, so a systematic fault -- CUDA
+            # OOM, a captum import that only fails at call time, a corrupt cache
+            # -- fails every pair identically. Without a circuit breaker that
+            # burns the entire reservation and still exits 0, which reads as a
+            # successful chunk and lets the chain roll on.
+            abort_reason = error_abort_reason(
+                consecutive_errors,
+                counts["error"],
+                counts["built"] + counts["error"],
+                args.max_consecutive_errors,
+                args.max_error_frac,
+                args.error_frac_min_attempts,
+            )
+            if abort_reason:
+                print(f"\n[abort] {abort_reason}; flushing the registry and stopping",
+                      file=sys.stderr)
+                counts["stopped"] = len(todo) - i - 1
+                break
             continue
 
         if counts["built"] % 100 == 0:
@@ -591,12 +697,24 @@ def main() -> None:  # noqa: PLR0912, PLR0915 -- one linear pipeline, kept toget
               f"({counts['built'] / loop_elapsed * 3600:.0f} pairs/GPU-h)")
     print(f"  wallclock: {elapsed / 60:.1f} min (loop {loop_elapsed / 60:.1f} min)")
     print(f"  artifacts dir: {artifacts_dir}")
+    if abort_reason:
+        print(f"  ABORTED: {abort_reason}")
 
     if attempted and counts["mismatch"] / attempted > args.max_score_mismatch_frac:
         raise SystemExit(
             f"score mismatch rate {counts['mismatch']}/{attempted} exceeds "
             f"--max_score_mismatch_frac {args.max_score_mismatch_frac}"
         )
+
+    # Nonzero only now, with the registry already flushed: whatever this chunk
+    # did build is registered and the next run resumes from it. The chain is
+    # --dependency=afterany, so a nonzero exit stops nothing except the illusion
+    # that this chunk succeeded.
+    if abort_reason:
+        print("\n=== PAIR ERRORS (first 20) ===", file=sys.stderr)
+        for e in errors:
+            print("  " + e, file=sys.stderr)
+        raise SystemExit(f"aborted: {abort_reason}")
 
 
 if __name__ == "__main__":

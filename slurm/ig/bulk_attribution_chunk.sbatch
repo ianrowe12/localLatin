@@ -63,9 +63,12 @@ export PYTHONPATH="$CODE_ROOT/src:${PYTHONPATH:-}"
 IG_ROOT="$DATA_ROOT/runs/active/ig_examples"
 EXAMPLES_CSV="$IG_ROOT/phase12f_examples.csv"
 
-# Stop the pair loop with time to spare so the registry is always written and
-# the job never TIMEOUTs (a TIMEOUT still bills the full reservation and trips
-# the watchdog). Default: the SLURM limit minus 8 minutes for setup + registry.
+# Stop with time to spare so the registry is always written and the job never
+# TIMEOUTs (a TIMEOUT still bills the full reservation and trips the watchdog).
+# The generator measures this budget from PROCESS start, so setup is spent out
+# of it and these 8 minutes are headroom for the registry pass alone. Do not
+# re-read that as "setup + registry": setup can be ten minutes by itself on a
+# large vocabulary, which would push a capped chunk past its wallclock.
 if [[ -z "${BULK_MAX_SECONDS:-}" ]]; then
     limit_min="$(squeue -h -j "${SLURM_JOB_ID}" -o '%l' 2>/dev/null | awk -F: '
         NF==3 { split($1, d, "-"); h = (length(d)>1 ? d[2] : d[1]);
