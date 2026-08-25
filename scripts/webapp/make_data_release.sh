@@ -182,11 +182,23 @@ else
 fi
 
 # Every part gets its own sidecar, so a download can be verified part by part.
-: > "${PARTS_LIST}"
 for part in "${PARTS[@]}"; do
     ( cd "${OUT_DIR}" && sha256sum "$(basename "${part}")" > "$(basename "${part}").sha256" )
-    basename "${part}" >> "${PARTS_LIST}"
 done
+
+# The parts list is deploy/deploy.sh's discovery mechanism: present means
+# sharded, absent means the single-asset layout. So an unsharded build must NOT
+# write one -- its published asset set stays exactly what it was before
+# sharding existed, and the deploy path it exercises is the one every already
+# published release uses.
+if [[ "${#PARTS[@]}" -gt 1 ]] || [[ "${SHARD_BYTES}" -gt 0 ]]; then
+    : > "${PARTS_LIST}"
+    for part in "${PARTS[@]}"; do
+        basename "${part}" >> "${PARTS_LIST}"
+    done
+else
+    rm -f "${PARTS_LIST}"
+fi
 
 # The parts must reconstruct exactly the payload, no more and no less.
 packed="$(LC_ALL=C sort -u < "${MANIFEST}" | grep -v '/$' | wc -l | tr -d ' ')"
@@ -199,7 +211,9 @@ info "Done."
 for part in "${PARTS[@]}"; do
     info "  part:     ${part} ($(du -h "${part}" | cut -f1))  + .sha256"
 done
-info "  parts:    ${PARTS_LIST} (${#PARTS[@]} archive(s))"
+if [[ -f "${PARTS_LIST}" ]]; then
+    info "  parts:    ${PARTS_LIST} (${#PARTS[@]} archive(s)) — publish this too"
+fi
 info "  manifest: ${MANIFEST} ($(wc -l < "${MANIFEST}" | tr -d ' ') entries)"
 info ""
 info "Publish with:"
