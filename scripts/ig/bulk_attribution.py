@@ -135,8 +135,11 @@ ABTT_IG_VARIANTS = frozenset({"abtt", "sif_abtt"})
 # it is the webapp default.
 VARIANT_PRIORITY: tuple[str, ...] = ("sif_abtt", "sif", "abtt", "raw")
 
-# Chunk order from issue #84. Also fixes the example_id ranges, so an id always
-# decodes to one model and reruns are stable.
+# Fixes the example_id ranges: an id always decodes to one model, and a rerun
+# lands on the ids it landed on before. **Never reorder this.** It is the order
+# issue #84 listed, and it is now load-bearing for identity rather than for
+# scheduling -- changing it would renumber every artifact already on disk and
+# orphan them from the registry. Submission order lives in CHUNK_ORDER.
 MODEL_PRIORITY: tuple[str, ...] = (
     "bowphs/LaTa",
     "bowphs/PhilTa",
@@ -144,6 +147,21 @@ MODEL_PRIORITY: tuple[str, ...] = (
     "sentence-transformers/LaBSE",
     "Qwen/Qwen3-Embedding-0.6B",
     "KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5",
+)
+
+# The order chunks are actually submitted in. KaLM moves ahead of Qwen against
+# the issue's listed order, because at the measured rates Qwen alone (17.3 h)
+# does not fit in the 33 h above the floor while KaLM (11.6 h) does: KaLM-first
+# buys five complete models plus a Qwen remainder, Qwen-first buys four complete
+# models plus a 75% partial. Qwen's remainder is finished by a resume chunk once
+# the allocation is topped up, which the resume-safety makes a no-op to restart.
+CHUNK_ORDER: tuple[str, ...] = (
+    "bowphs/LaTa",
+    "bowphs/PhilTa",
+    "google/mt5-base",
+    "sentence-transformers/LaBSE",
+    "KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5",
+    "Qwen/Qwen3-Embedding-0.6B",
 )
 
 MODEL_TYPES: dict[str, str] = {

@@ -40,7 +40,12 @@ CODE_ROOT="${CODE_ROOT:-${REPO_ROOT}}"
 DATA_ROOT="${DATA_ROOT:-/projects/beto/irowerojas/localLatin}"
 ACCOUNT="${BUDGET_ACCOUNT:-beto-delta-gpu}"
 FLOOR="${BUDGET_FLOOR:-5.0}"
-MARGIN="${MARGIN:-1.5}"
+# 1.25, not 1.5. SLURM bills the reservation, so an over-margin is money spent
+# outright, while an under-margin only costs a resumed chunk -- the pair loop
+# stops cleanly 8 minutes before the limit and still writes its registry. With
+# the projected total above the balance, the asymmetry runs the other way from
+# the usual one.
+MARGIN="${MARGIN:-1.25}"
 SETUP_MIN="${SETUP_MIN:-10}"
 RATES=""
 DRY_RUN=0
@@ -85,7 +90,7 @@ here = Path(__file__).resolve()
 sys.path.insert(0, str(Path.cwd() / "scripts" / "ig"))
 sys.path.insert(0, str(Path.cwd() / "scripts" / "resubmit"))
 from bulk_attribution import (  # noqa: E402
-    MODEL_PRIORITY, enumerate_pairs, load_variant_frames, slug_for,
+    CHUNK_ORDER, enumerate_pairs, load_variant_frames, slug_for,
 )
 
 unl = data_root / "runs/active/resubmit/unlabelled"
@@ -94,7 +99,7 @@ meta = pd.read_csv(unl / "meta_unlabelled.csv")
 f2r = {str(r): i for i, r in enumerate(meta["filename"])}
 fids = {str(r["filename"]): int(r["file_id"]) for _, r in meta.iterrows()}
 frames = load_variant_frames(unl)
-for model in MODEL_PRIORITY:
+for model in CHUNK_ORDER:
     slug = slug_for(model)
     pairs = enumerate_pairs(frames, model, f2r, fids)
     have = {p.stem for p in (artifacts / slug).glob("*.npz")} if (artifacts / slug).exists() else set()
