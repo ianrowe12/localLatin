@@ -14,6 +14,7 @@ import { buildWordMatchMap } from '../../utils/wordSimilarity'
 import { useTokenMap, type TokenMapResponse, type TopMatch } from '../../api/tokenMap'
 import { toAttributionVariant, VARIANT_OPTIONS } from '../../api/variants'
 import { useTokens } from '../../contexts/TokenContext'
+import { METHODS } from '../common/AttributionMethodSelector'
 
 export default function CenterArea() {
   const [splitPercent, setSplitPercent] = useState(50)
@@ -97,6 +98,10 @@ export default function CenterArea() {
   const attributionVariant = toAttributionVariant(activeVariant)
   const variantLabel =
     VARIANT_OPTIONS.find((o) => o.key === activeVariant)?.label ?? activeVariant
+  // The reviewer-facing method name, not the artifact slug: a PI-admin on
+  // attention_weighted should read "Attn-W", the label the method picker uses.
+  const methodLabel =
+    METHODS.find((m) => m.key === selectedMethod)?.label ?? selectedMethod
 
   const tokenMapResult = useTokenMap(
     activeQueryId,
@@ -136,14 +141,36 @@ export default function CenterArea() {
   // when the selected variant's matrix is absent is what made the highlights
   // look frozen across a variant switch (issue #73) -- the view had silently
   // stopped showing attribution at all. Say so instead of showing a grid that
-  // cannot answer the question the reviewer just asked. Artifacts with no
-  // `pair_matrices` at all predate attribution entirely, and for those the
-  // cosine map is the honest whole story, so they keep the old behaviour.
+  // cannot answer the question the reviewer just asked.
+  //
+  // `available_methods` is the test, NOT the shape of `pair_matrices`. Both
+  // are declared with a default factory (web/models.py:117,121), so the API
+  // always serialises both keys -- the original `pair_matrices != null` was
+  // true for every real response and false only under `npm run dev:mock`.
+  // Emptiness does not separate the two cases either: `load_token_map` builds
+  // `pair_matrices` with `setdefault(m, {})[v]` only when a matrix is actually
+  // added, so an artifact that carries attribution but not for the requested
+  // variant emits exactly the same `{}` as one that carries none at all.
+  // `available_methods` describes the whole artifact regardless of the
+  // ?method=/?variant= filter, which is precisely the distinction wanted:
+  // empty means the artifact predates attribution, and for those the cosine
+  // map is the honest whole story, so they keep the old behaviour.
+  const artifactHasAttribution =
+    (tokenMapResult.data?.available_methods?.length ?? 0) > 0
+
   const attributionUnavailable =
     tokenMapResult.data != null &&
-    tokenMapResult.data.pair_matrices != null &&
+    artifactHasAttribution &&
     selectedMethod != null &&
     selectedMatrix === undefined
+
+  // On current main the notice above is defence in depth: #90's resolver keys
+  // artifacts per layer and filters on `variants_available`, so a pair that
+  // resolves at all carries the variant it resolved for. What a reviewer does
+  // hit is the other branch -- `resolve_example_id` returning None, i.e. a 404
+  // -- which until now rendered an unexplained empty evidence panel. Both
+  // states mean the same thing to the reader, so they share one message.
+  const attributionMissing = tokenMapResult.error != null
 
   const effectiveTokenMap = useMemo(() => {
     const data = tokenMapResult.data
@@ -197,14 +224,23 @@ export default function CenterArea() {
   return (
     <TokenRefProvider>
       <div className="flex-1 flex flex-col h-full overflow-hidden">
-        {attributionUnavailable && (
+        {(attributionUnavailable || attributionMissing) && (
           <div
             role="status"
             className="px-3 py-1.5 bg-stone-100 dark:bg-stone-800 border-b border-stone-200 dark:border-stone-700 text-xs text-stone-600 dark:text-stone-300 flex-shrink-0"
           >
-            No {selectedMethod} attribution for the {variantLabel} variant on
-            this pair. Highlights are off rather than showing another
-            variant&apos;s.
+            {attributionUnavailable ? (
+              <>
+                No {methodLabel} attribution for the {variantLabel} variant on
+                this pair. Highlights are off rather than showing another
+                variant&apos;s.
+              </>
+            ) : (
+              <>
+                No attribution available for this pair under the {variantLabel}{' '}
+                variant. Highlights are off; the ranking above is unaffected.
+              </>
+            )}
           </div>
         )}
         <div

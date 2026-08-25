@@ -40,6 +40,8 @@ let requested: string[] = []
 let missingArtifacts = new Set<string>()
 /** Variants the artifact loads for, but holds no pair_matrices for. */
 let variantsWithoutMatrices = new Set<string>()
+/** Model an artifact from before attribution existed (no available_methods). */
+let preAttribution = false
 let tokenMapDelay = new Map<string, number>()
 let predictionDelay = 0
 
@@ -105,17 +107,22 @@ function installFetch(): void {
         candidate_ig_baseline: [],
         candidate_ig_abtt: [],
         auto_highlights: null,
-        available_methods: ['ig'],
         available_variants: VARIANTS,
-        pair_matrices: variantsWithoutMatrices.has(variant)
-          ? { ig: {} }
-          : {
-              ig: {
-                [variant]: QUERY_TOKENS.map((_, qi) =>
-                  qi === hot ? [1, 1] : [0, 0],
-                ),
+        // The real wire shape. `load_token_map` only creates the method key
+        // when it actually adds a matrix, so "artifact carries attribution but
+        // not this variant" serialises as `{}` -- identical to "artifact has
+        // no attribution at all". `available_methods` is what separates them.
+        available_methods: preAttribution ? [] : ['ig'],
+        pair_matrices:
+          preAttribution || variantsWithoutMatrices.has(variant)
+            ? {}
+            : {
+                ig: {
+                  [variant]: QUERY_TOKENS.map((_, qi) =>
+                    qi === hot ? [1, 1] : [0, 0],
+                  ),
+                },
               },
-            },
       })
     }
 
@@ -210,6 +217,7 @@ async function click(name: RegExp) {
 beforeEach(() => {
   missingArtifacts = new Set()
   variantsWithoutMatrices = new Set()
+  preAttribution = false
   tokenMapDelay = new Map()
   predictionDelay = 0
   installFetch()
@@ -221,6 +229,20 @@ afterEach(() => {
 
 const settle = () => new Promise((r) => setTimeout(r, 80))
 
+/**
+ * A note on what these pin, since the names oversell some of them.
+ *
+ * Three are true regression tests, each failing on the pre-fix code and each
+ * isolating one defect: `never requests a (candidate, variant) pairing...`
+ * (the prediction-lag guard), the two `useTokenMap` tests in
+ * ../../api/tokenMap.test.ts (stale data across a key change), and
+ * `says so instead of falling back...` (the cosine fall-through).
+ *
+ * The rest -- including `follows the reported sequence`, named after the bug
+ * report -- pass on the pre-fix code too, because the mock always returns the
+ * requested variant's matrix and so cannot exhibit the "frozen" symptom. They
+ * are guards against re-breaking the happy path, not proof of the fix.
+ */
 describe('CenterArea variant switching (issue #73)', () => {
   it('follows the reported sequence sif_abtt -> raw -> abtt', async () => {
     renderApp()
@@ -297,7 +319,11 @@ describe('CenterArea variant switching (issue #73)', () => {
     expect(renderedPairing()).toBe(`${RAW_DIR}:baseline`)
   })
 
-  it('shows no highlights, not the previous ones, when the pair has no artifact', async () => {
+  it('explains the 404, rather than blanking, when the pair has no artifact', async () => {
+    // This is the reachable gap state on current main: #90's resolver filters
+    // on `variants_available` and returns None when no artifact carries the
+    // requested variant, so the reviewer gets a 404 -- not a payload missing a
+    // matrix. Before, that rendered an unexplained empty evidence panel.
     missingArtifacts.add(`${CORRECTED_DIR}:abtt`)
     renderApp()
     await waitFor(() =>
@@ -308,6 +334,22 @@ describe('CenterArea variant switching (issue #73)', () => {
     await click(/^ABTT/)
     await settle()
     expect(renderedPairing()).toBe(null)
+    expect(screen.getByRole('status').textContent).toMatch(
+      /No attribution available for this pair under the ABTT variant/,
+    )
+  })
+
+  it('keeps the cosine map, and stays quiet, for a pre-attribution artifact', async () => {
+    // No `available_methods` means the artifact predates attribution, and its
+    // cosine grid is the whole story rather than a stand-in for a missing
+    // variant. Note it serialises `pair_matrices: {}` exactly like the
+    // variant-missing case above, which is why that is not the test.
+    preAttribution = true
+    renderApp()
+    await waitFor(() =>
+      expect(renderedPairing()).toBe(`${CORRECTED_DIR}:cosine`),
+    )
+    expect(screen.queryByRole('status')).toBeNull()
   })
 
   it('says so instead of falling back to the variant-independent cosine map', async () => {
@@ -341,7 +383,7 @@ describe('CenterArea variant switching (issue #73)', () => {
     await settle()
     expect(renderedPairing()).toBe(null)
     expect(screen.getByRole('status').textContent).toMatch(
-      /No ig attribution for the ABTT variant/,
+      /No IG attribution for the ABTT variant/,
     )
   })
 })
