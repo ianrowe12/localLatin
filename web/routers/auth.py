@@ -7,18 +7,27 @@ import string
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 
 from web.config import Settings
-from web.dependencies import get_current_user, get_db, get_settings, require_pi_admin
+from web.dependencies import (
+    get_current_user,
+    get_db,
+    get_rate_limiter,
+    get_settings,
+    require_pi_admin,
+)
 from web.models import (
     AccountCreateRequest,
     AccountCreateResponse,
     AccountPublic,
     ApprovalDecisionRequest,
+    PasswordChangeRequest,
+    PasswordResetResponse,
     RegisterRequest,
     RegistrationResponse,
     SignInRequest,
     UserPublic,
 )
 from web.services.feedback_db import FeedbackDB
+from web.services.rate_limit import RateLimiter
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -99,6 +108,35 @@ async def me(current_user: UserPublic = Depends(get_current_user)) -> UserPublic
     return current_user
 
 
+@router.post("/change_password", response_model=UserPublic)
+async def change_password(
+    body: PasswordChangeRequest,
+    request: Request,
+    db: FeedbackDB = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+    limiter: RateLimiter = Depends(get_rate_limiter),
+    current_user: UserPublic = Depends(get_current_user),
+) -> UserPublic:
+    _enforce_rate_limit(limiter, settings, f"change:{current_user.id}")
+    if not await db.verify_account_password(current_user.id, body.current_password):
+        raise HTTPException(status_code=403, detail="Current password is incorrect")
+    if body.new_password == body.current_password:
+        raise HTTPException(
+            status_code=400, detail="New password must differ from the current one"
+        )
+    account = await db.set_account_password(
+        account_id=current_user.id,
+        new_password=body.new_password,
+        must_change_password=False,
+        # The tab doing the change keeps working; every other session for this
+        # account is revoked.
+        keep_session_token=request.cookies.get(settings.auth.session_cookie),
+    )
+    if account is None:
+        raise HTTPException(status_code=404, detail="Account not found")
+    return UserPublic(**{key: account[key] for key in UserPublic.model_fields})
+
+
 @router.get("/accounts", response_model=list[AccountPublic])
 async def list_accounts(
     status: str | None = Query(None, pattern="^(pending|approved|rejected|all)$"),
@@ -172,6 +210,43 @@ async def reject_account(
     if account is None:
         raise HTTPException(status_code=404, detail="Account not found")
     return AccountPublic(**account)
+
+
+@router.post("/accounts/{account_id}/reset_password", response_model=PasswordResetResponse)
+async def reset_account_password(
+    account_id: int,
+    db: FeedbackDB = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+    limiter: RateLimiter = Depends(get_rate_limiter),
+    current_user: UserPublic = Depends(require_pi_admin),
+) -> PasswordResetResponse:
+    _enforce_rate_limit(limiter, settings, f"reset:{current_user.id}")
+    temporary_password = _generate_temporary_password()
+    account = await db.set_account_password(
+        account_id=account_id,
+        new_password=temporary_password,
+        must_change_password=True,
+        # Admin reset: every session of the affected account dies.
+        keep_session_token=None,
+    )
+    if account is None:
+        raise HTTPException(status_code=404, detail="Account not found")
+    return PasswordResetResponse(
+        account=AccountPublic(**account),
+        temporary_password=temporary_password,
+    )
+
+
+def _enforce_rate_limit(limiter: RateLimiter, settings: Settings, key: str) -> None:
+    allowed = limiter.check(
+        key,
+        settings.auth.password_rate_limit_max_attempts,
+        settings.auth.password_rate_limit_window_seconds,
+    )
+    if not allowed:
+        raise HTTPException(
+            status_code=429, detail="Too many password attempts. Try again later."
+        )
 
 
 async def _registration_role(

@@ -6,6 +6,7 @@ export interface AuthUser {
   display_name: string
   role: 'reviewer' | 'pi_admin'
   approval_status: 'pending' | 'approved' | 'rejected'
+  must_change_password: boolean
 }
 
 export interface RegisterPayload {
@@ -87,6 +88,34 @@ export function createAccount(
     method: 'POST',
     body: JSON.stringify(payload),
   })
+}
+
+/** Mirrors MIN_PASSWORD_LENGTH in web/models.py. */
+export const MIN_PASSWORD_LENGTH = 10
+
+export interface PasswordChangePayload {
+  current_password: string
+  new_password: string
+}
+
+export interface PasswordResetResponse {
+  account: AccountPublic
+  /** Returned once, never stored in plaintext. */
+  temporary_password: string
+}
+
+export function changePassword(payload: PasswordChangePayload): Promise<AuthUser> {
+  return apiFetch<AuthUser>('/api/auth/change_password', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function resetAccountPassword(id: number): Promise<PasswordResetResponse> {
+  return apiFetch<PasswordResetResponse>(
+    `/api/auth/accounts/${id}/reset_password`,
+    { method: 'POST' },
+  )
 }
 
 export function approveAccount(id: number): Promise<AccountPublic> {

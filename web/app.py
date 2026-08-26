@@ -23,6 +23,7 @@ from web.models import ErrorResponse, ErrorDetail
 from web.routers import auth, feedback, packets, predictions, queries, stats, token_map
 from web.services.data_store import build_store
 from web.services.feedback_db import FeedbackDB
+from web.services.rate_limit import RateLimiter
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +67,8 @@ def create_app(config_path: str | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     app.state.settings = settings
+    # Per-app so throttling state never leaks between instances (or tests).
+    app.state.rate_limiter = RateLimiter()
 
     # CORS
     app.add_middleware(

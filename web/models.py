@@ -170,12 +170,18 @@ class AccountApprovalStatus(StrEnum):
     REJECTED = "rejected"
 
 
+# Self-serve changes and admin-generated temporary passwords are checked
+# against this; registration keeps its own, stricter minimum.
+MIN_PASSWORD_LENGTH = 10
+
+
 class UserPublic(BaseModel):
     id: int
     username: str
     display_name: str
     role: str
     approval_status: AccountApprovalStatus = AccountApprovalStatus.APPROVED
+    must_change_password: bool = False
 
 
 class AccountPublic(UserPublic):
@@ -222,6 +228,17 @@ class AccountCreateRequest(BaseModel):
 class AccountCreateResponse(BaseModel):
     account: AccountPublic
     temporary_password: Optional[str] = None
+
+
+class PasswordChangeRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=256)
+    new_password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=256)
+
+
+class PasswordResetResponse(BaseModel):
+    account: AccountPublic
+    # Shown to the admin exactly once; never persisted in plaintext.
+    temporary_password: str
 
 
 class FeedbackCreate(BaseModel):

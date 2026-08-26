@@ -4,6 +4,7 @@ import {
   createAccount,
   listAccounts,
   rejectAccount,
+  resetAccountPassword,
   type AccountCreateResponse,
   type AccountPublic,
 } from '../../api/auth'
@@ -21,6 +22,13 @@ function formatCreatedAt(value: string): string {
 
 export default function AccountApprovalPanel() {
   const [accounts, setAccounts] = useState<AccountPublic[]>([])
+  const [approved, setApproved] = useState<AccountPublic[]>([])
+  const [resettingId, setResettingId] = useState<number | null>(null)
+  const [resetResult, setResetResult] = useState<{
+    username: string
+    password: string
+  } | null>(null)
+  const [copied, setCopied] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [actingId, setActingId] = useState<number | null>(null)
@@ -36,7 +44,12 @@ export default function AccountApprovalPanel() {
     setLoading(true)
     setError(null)
     try {
-      setAccounts(await listAccounts('pending'))
+      const [pending, all] = await Promise.all([
+        listAccounts('pending'),
+        listAccounts('approved'),
+      ])
+      setAccounts(pending)
+      setApproved(all)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load accounts')
     } finally {
@@ -64,6 +77,40 @@ export default function AccountApprovalPanel() {
       setError(err instanceof Error ? err.message : 'Account update failed')
     } finally {
       setActingId(null)
+    }
+  }
+
+  const resetPassword = async (account: AccountPublic) => {
+    if (resettingId !== null) return
+    setResettingId(account.id)
+    setError(null)
+    setResetResult(null)
+    setCopied(false)
+    try {
+      const result = await resetAccountPassword(account.id)
+      // Shown once: the backend stores only the hash.
+      setResetResult({
+        username: result.account.username,
+        password: result.temporary_password,
+      })
+      setApproved((current) =>
+        current.map((item) => (item.id === account.id ? result.account : item)),
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Password reset failed')
+    } finally {
+      setResettingId(null)
+    }
+  }
+
+  const copyTemporaryPassword = async () => {
+    if (!resetResult) return
+    try {
+      await navigator.clipboard.writeText(resetResult.password)
+      setCopied(true)
+    } catch {
+      setCopied(false)
+      setError('Could not copy. Select the password and copy it manually.')
     }
   }
 
@@ -265,6 +312,85 @@ export default function AccountApprovalPanel() {
           ))}
         </div>
       )}
+
+      <div className="border-t border-stone-100 dark:border-stone-700/70">
+        <div className="px-4 py-3">
+          <h4 className="font-ui text-sm font-semibold text-stone-700 dark:text-stone-200">
+            Password Resets
+          </h4>
+          <p className="font-ui text-xs text-stone-500 dark:text-stone-400">
+            Generates a one-time temporary password, signs the account out
+            everywhere, and forces a change at next sign-in.
+          </p>
+        </div>
+
+        {resetResult && (
+          <div className="mx-4 mb-3 rounded-md bg-accent/10 dark:bg-accent/15 px-3 py-2">
+            <p className="font-ui text-sm text-stone-700 dark:text-stone-200">
+              Temporary password for @{resetResult.username}, shown once:
+            </p>
+            <div className="mt-1 flex items-center gap-2">
+              <code className="font-mono text-xs text-accent dark:text-accent-light break-all">
+                {resetResult.password}
+              </code>
+              <button
+                type="button"
+                onClick={() => void copyTemporaryPassword()}
+                className="h-7 px-2 rounded-md font-ui text-xs font-medium
+                           bg-white dark:bg-surface-900 text-stone-600 dark:text-stone-300
+                           border border-stone-200 dark:border-stone-700
+                           hover:bg-stone-100 dark:hover:bg-stone-700 transition-colors"
+              >
+                {copied ? 'Copied' : 'Copy'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {approved.length === 0 ? (
+          <div className="px-4 pb-5 font-ui text-sm text-stone-500 dark:text-stone-400">
+            No approved accounts yet.
+          </div>
+        ) : (
+          <div className="divide-y divide-stone-100 dark:divide-stone-700/70">
+            {approved.map((account) => (
+              <div
+                key={account.id}
+                className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                    <span className="font-ui text-sm font-semibold text-stone-800 dark:text-stone-100">
+                      {account.display_name}
+                    </span>
+                    <span className="font-ui text-xs text-stone-500 dark:text-stone-400">
+                      @{account.username}
+                    </span>
+                  </div>
+                  <p className="font-ui text-xs text-stone-400 dark:text-stone-500">
+                    {account.role === 'pi_admin' ? 'PI/admin' : 'Reviewer'}
+                    {account.must_change_password
+                      ? ' - password change pending'
+                      : ''}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void resetPassword(account)}
+                  disabled={resettingId === account.id}
+                  className="h-8 px-3 rounded-md font-ui text-xs font-medium
+                             text-stone-600 dark:text-stone-300
+                             bg-stone-100 dark:bg-surface-900
+                             hover:bg-stone-200 dark:hover:bg-stone-700 transition-colors
+                             disabled:opacity-50"
+                >
+                  {resettingId === account.id ? 'Resetting...' : 'Reset password'}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

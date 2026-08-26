@@ -26,7 +26,14 @@ Scholar review web application for the localLatin Latin manuscript retrieval pro
 - `services/data_store.py` — `build_store()` loads all data at startup. The `DataStore` dataclass is the central data cache.
 - `services/token_map_svc.py` — Loads NPZ artifacts, computes cosine similarity matrices, optional HuggingFace tokenizer decoding. The token-map endpoints take `?method=&variant=`; without them the response carries every persisted method x variant matrix (7 x 4 dense grids), so the UI always sends both. `available_methods` / `available_variants` always report the artifact's full contents regardless of the filters.
 - `services/text_tokenizer.py` — Mirrors `src/token_filtering.classify_token()` from the research repo without torch dependency
-- `services/feedback_db.py` — SQLite CRUD for reviewer feedback
+- `services/feedback_db.py` — SQLite CRUD for reviewer feedback and accounts
+- `services/rate_limit.py` — in-process sliding-window limiter, held on `app.state.rate_limiter`,
+  currently used only by the password endpoints
+- Passwords: `POST /api/auth/change_password` (self-serve, keeps the calling session and revokes
+  the account's others) and `POST /api/auth/accounts/{id}/reset_password` (PI/admin only, returns a
+  temporary password once, revokes every session, sets `accounts.must_change_password`). While that
+  flag is set, `get_current_user` answers 403 on every route outside
+  `dependencies.PASSWORD_CHANGE_EXEMPT_PATHS`, so the forced change is backend-enforced.
 - `routers/` — One file per API domain (queries, predictions, token_map, feedback, stats)
 - `models.py` — All Pydantic request/response models
 

@@ -8,11 +8,13 @@ import {
   type ReactNode,
 } from 'react'
 import {
+  changePassword as changeAccountPassword,
   getCurrentUser,
   register as registerAccount,
   signIn as signInAccount,
   signOut as signOutAccount,
   type AuthUser,
+  type PasswordChangePayload,
   type RegisterPayload,
   type RegistrationResponse,
   type SignInPayload,
@@ -24,8 +26,11 @@ export interface ReviewerContextValue {
   loading: boolean
   error: string | null
   isPiAdmin: boolean
+  /** Backend forces a password change before any other route answers. */
+  mustChangePassword: boolean
   signIn: (payload: SignInPayload) => Promise<void>
   register: (payload: RegisterPayload) => Promise<RegistrationResponse>
+  changePassword: (payload: PasswordChangePayload) => Promise<void>
   clearReviewer: () => Promise<void>
 }
 
@@ -80,6 +85,16 @@ export function ReviewerProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  const changePassword = useCallback(async (payload: PasswordChangePayload) => {
+    setError(null)
+    try {
+      setUser(await changeAccountPassword(payload))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Password change failed')
+      throw err
+    }
+  }, [])
+
   const clearReviewer = useCallback(async () => {
     await signOutAccount()
     setUser(null)
@@ -92,11 +107,13 @@ export function ReviewerProvider({ children }: { children: ReactNode }) {
       loading,
       error,
       isPiAdmin: user?.role === 'pi_admin',
+      mustChangePassword: user?.must_change_password === true,
       signIn,
       register,
+      changePassword,
       clearReviewer,
     }),
-    [clearReviewer, error, loading, register, signIn, user],
+    [changePassword, clearReviewer, error, loading, register, signIn, user],
   )
 
   return (
