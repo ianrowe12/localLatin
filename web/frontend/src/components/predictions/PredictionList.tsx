@@ -41,7 +41,7 @@ export default function PredictionList() {
   // that is the number a reviewer reads first, and the one that says whether
   // this fragment has a plausible home in the corpus at all.
   const topScore = predictions.length > 0 ? predictions[0].score : null
-  const topBand = topScore !== null ? getConfidenceBand(topScore) : null
+  const topBand = topScore != null ? getConfidenceBand(topScore) : null
 
   const handlers = useMemo(
     () => ({
@@ -104,8 +104,17 @@ export default function PredictionList() {
           {/* Band treatment for the top hit. Below the no-match threshold the
               default top option is creating a new directory, not picking a
               rank, so the CTA renders above the ranked cards. */}
-          {topBand === 'no_match' && activeQueryId !== null && (
-            <NoMatchCallout queryFileId={activeQueryId} topScore={topScore} />
+          {topBand === 'no_match' && activeQueryId != null && (
+            <NoMatchCallout
+              // Remount per query so no in-flight CTA state can survive a
+              // navigation; the component guards its own async result too.
+              key={activeQueryId}
+              queryFileId={activeQueryId}
+              topScore={topScore}
+              // Same fallback as MatchPills, so the copy names the pill the
+              // reviewer can actually see.
+              topK={maxRank || 10}
+            />
           )}
           {topBand === 'careful' && (
             <p

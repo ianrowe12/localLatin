@@ -12,7 +12,11 @@ Task B split redesign, issue #66).
    ranking, the highlights and the recorded feedback alike. If a model's prediction list comes up
    empty, its predictions CSV did not reach the host: re-run the deploy with `DATA_RELEASE_TAG`
    set (see `deploy/REVIEWER_PILOT_READINESS.md`).
-3. Have this page open in a second window for the numbers.
+3. Switch the picker to **LaTa** before you start. mT5-base is where a reviewer lands, but every
+   query below runs on LaTa or PhilTa, and the model is named at the top of each section. Say the
+   switch out loud rather than doing it silently: "the reviewer's default is mT5-base, I am moving
+   to the model these examples were prepared on."
+4. Have this page open in a second window for the numbers.
 
 ## 1. The one-sentence framing
 

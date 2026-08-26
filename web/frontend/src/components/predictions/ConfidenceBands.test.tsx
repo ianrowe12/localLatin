@@ -1,18 +1,19 @@
 import { useEffect } from 'react'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppProvider, useApp } from '../../contexts/AppContext'
+import NoMatchCallout from './NoMatchCallout'
 import PredictionList from './PredictionList'
 
 const MODEL = 'google_mt5-base'
 const QUERY_ID = 11
 
 /** Ranked hits whose top score decides the band under test. */
-function predictionsPayload(scores: number[]) {
+function predictionsPayload(scores: number[], fileId = QUERY_ID) {
   return {
-    file_id: QUERY_ID,
-    filename: 'query-11.txt',
+    file_id: fileId,
+    filename: `query-${fileId}.txt`,
     model: MODEL,
     variant: 'sif_abtt',
     predictions: scores.map((score, index) => ({
@@ -30,6 +31,9 @@ let scores: number[] = [0.9]
 /** Status the stubbed POST /api/reviewer_dirs answers with. */
 let reviewerDirStatus = 201
 let reviewerDirPosts: { url: string; body: unknown }[] = []
+/** When set, the stubbed POST hangs until `releaseReviewerDir()` is called. */
+let deferReviewerDir = false
+let releaseReviewerDir: () => void = () => {}
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -49,6 +53,11 @@ function installFetch(): void {
           url,
           body: init?.body ? JSON.parse(String(init.body)) : null,
         })
+        if (deferReviewerDir) {
+          await new Promise<void>((resolve) => {
+            releaseReviewerDir = resolve
+          })
+        }
         if (reviewerDirStatus === 201) {
           return jsonResponse(
             { dir_id: 'rev-42', label: 'New directory 42', status: 'awaiting_match' },
@@ -70,9 +79,32 @@ function installFetch(): void {
           },
         ])
       }
-      if (url.includes('/predictions')) return jsonResponse(predictionsPayload(scores))
+      if (url.includes('/predictions')) {
+        const fileId = Number(url.match(/\/api\/query\/(\d+)\/predictions/)?.[1] ?? QUERY_ID)
+        return jsonResponse(predictionsPayload(scores, fileId))
+      }
       return jsonResponse({})
     }),
+  )
+}
+
+const NEXT_QUERY_ID = 12
+
+/** Lets a test navigate to another query mid-request, as a reviewer would. */
+function NavigableHarness() {
+  const { activeQueryId, setActiveQueryId, setActiveModel } = useApp()
+  useEffect(() => {
+    setActiveQueryId(QUERY_ID)
+    setActiveModel(MODEL)
+  }, [setActiveQueryId, setActiveModel])
+  return (
+    <>
+      <button type="button" onClick={() => setActiveQueryId(NEXT_QUERY_ID)}>
+        go to next query
+      </button>
+      <span data-testid="active-query">{activeQueryId}</span>
+      <PredictionList />
+    </>
   )
 }
 
@@ -97,6 +129,8 @@ function renderList(topScores: number[]) {
 beforeEach(() => {
   scores = [0.9]
   reviewerDirStatus = 201
+  deferReviewerDir = false
+  releaseReviewerDir = () => {}
   installFetch()
 })
 
@@ -196,6 +230,22 @@ describe('new-directory CTA', () => {
     expect(screen.getByText('CSAR.347.1')).toBeTruthy()
   })
 
+  it('names the rank pill the reviewer can actually see', async () => {
+    reviewerDirStatus = 404
+    const user = userEvent.setup()
+    renderList([0.2, 0.19, 0.18])
+
+    await user.click(
+      await screen.findByRole('button', { name: 'New directory / New file' }),
+    )
+
+    // MatchPills renders "None of top 3" for a 3-hit list, so the fallback
+    // copy must not say "None of top N" or "None of top 10".
+    expect((await screen.findByTestId('no-match-cta-unavailable')).textContent).toContain(
+      'None of top 3',
+    )
+  })
+
   it('surfaces a real server failure as an error, not as "coming soon"', async () => {
     reviewerDirStatus = 500
     const user = userEvent.setup()
@@ -207,5 +257,66 @@ describe('new-directory CTA', () => {
 
     expect(await screen.findByTestId('no-match-cta-error')).toBeTruthy()
     expect(screen.queryByTestId('no-match-cta-unavailable')).toBeNull()
+  })
+})
+
+describe('CTA staleness (reviewer navigates mid-request)', () => {
+  it('does not paint a created directory onto the next query', async () => {
+    // The reviewer's repro: click the CTA on query 11, move to query 12 before
+    // the POST resolves. The late 201 belongs to a fragment that is no longer
+    // on screen and must not be shown as query 12's outcome.
+    deferReviewerDir = true
+    const user = userEvent.setup()
+    scores = [0.2]
+    render(
+      <AppProvider>
+        <NavigableHarness />
+      </AppProvider>,
+    )
+
+    await user.click(
+      await screen.findByRole('button', { name: 'New directory / New file' }),
+    )
+    await waitFor(() => {
+      expect(reviewerDirPosts).toHaveLength(1)
+    })
+    expect(reviewerDirPosts[0].body).toEqual({ query_file_id: QUERY_ID })
+
+    await user.click(screen.getByRole('button', { name: 'go to next query' }))
+    await waitFor(() => {
+      expect(screen.getByTestId('active-query').textContent).toBe(String(NEXT_QUERY_ID))
+    })
+
+    // ...and only now does query 11's request come back.
+    await act(async () => {
+      releaseReviewerDir()
+    })
+
+    expect(screen.queryByTestId('no-match-cta-created')).toBeNull()
+    // Query 12 shows a fresh, clickable CTA rather than a stuck "Creating...".
+    expect(screen.getByRole('button', { name: 'New directory / New file' })).toBeTruthy()
+  })
+
+  it('drops a late result even when the component is reused, not remounted', async () => {
+    // Directly exercises the guard inside the component, independently of the
+    // `key` in PredictionList: here the same instance is handed a new query.
+    deferReviewerDir = true
+    const user = userEvent.setup()
+    const { rerender } = render(
+      <NoMatchCallout queryFileId={QUERY_ID} topScore={0.2} topK={10} />,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'New directory / New file' }))
+    await waitFor(() => {
+      expect(reviewerDirPosts).toHaveLength(1)
+    })
+
+    rerender(<NoMatchCallout queryFileId={NEXT_QUERY_ID} topScore={0.3} topK={10} />)
+    await act(async () => {
+      releaseReviewerDir()
+    })
+
+    expect(screen.queryByTestId('no-match-cta-created')).toBeNull()
+    expect(screen.getByRole('button', { name: 'New directory / New file' })).toBeTruthy()
   })
 })

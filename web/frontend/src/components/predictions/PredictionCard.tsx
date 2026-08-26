@@ -3,6 +3,7 @@ import type { Prediction } from '../../api/queries'
 import {
   BAND_COPY,
   BAND_STYLES,
+  NO_MATCH_CARD_STYLE,
   getConfidenceBand,
 } from '../../utils/confidenceBands'
 
@@ -21,7 +22,9 @@ function PredictionCardInner({ prediction, rank, isActive, onClick }: Prediction
   const copy = BAND_COPY[band]
 
   const inactiveBorder =
-    band === 'no_match' ? styles.card : 'border-transparent hover:bg-stone-50 dark:hover:bg-stone-800'
+    band === 'no_match'
+      ? NO_MATCH_CARD_STYLE
+      : 'border-transparent hover:bg-stone-50 dark:hover:bg-stone-800'
 
   return (
     <button

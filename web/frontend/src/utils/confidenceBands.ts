@@ -34,11 +34,6 @@ export function getConfidenceBand(score: number): ConfidenceBand {
   return 'likely'
 }
 
-/** True when the no-match treatment (red banner + new-directory CTA) applies. */
-export function isNoMatch(score: number | null | undefined): boolean {
-  return score == null || getConfidenceBand(score) === 'no_match'
-}
-
 export interface BandCopy {
   /** Short chip text shown on the prediction card. */
   label: string
@@ -62,23 +57,24 @@ export const BAND_COPY: Record<ConfidenceBand, BandCopy> = {
 }
 
 /** Tailwind classes for each band, kept next to the thresholds they follow. */
-export const BAND_STYLES: Record<
-  ConfidenceBand,
-  { chip: string; bar: string; card: string }
-> = {
+export const BAND_STYLES: Record<ConfidenceBand, { chip: string; bar: string }> = {
   no_match: {
     chip: 'bg-incorrect/15 text-incorrect ring-1 ring-incorrect/40 font-semibold',
     bar: 'bg-incorrect',
-    card: 'border-incorrect/50 bg-incorrect/5',
   },
   careful: {
     chip: 'bg-highlight/15 text-highlight-dark dark:text-highlight-light ring-1 ring-highlight/40',
     bar: 'bg-highlight',
-    card: '',
   },
   likely: {
     chip: 'bg-stone-100 text-stone-600 dark:bg-stone-700 dark:text-stone-300',
     bar: 'bg-accent',
-    card: '',
   },
 }
+
+/**
+ * Card outline for a no-match hit. Only this band tints the card itself: the
+ * other two would turn a ten-card list into a traffic light and cost the red
+ * band the contrast that makes it readable in a split second.
+ */
+export const NO_MATCH_CARD_STYLE = 'border-incorrect/50 bg-incorrect/5'

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
   getConfidenceBand,
-  isNoMatch,
   LIKELY_MATCH_THRESHOLD,
   NO_MATCH_THRESHOLD,
 } from './confidenceBands'
@@ -29,11 +28,8 @@ describe('confidence band thresholds', () => {
     expect(getConfidenceBand(score as number)).toBe(band)
   })
 
-  it('treats a missing or non-finite score as no-match, never as a match', () => {
+  it('treats a non-finite score as no-match, never as a match', () => {
     expect(getConfidenceBand(Number.NaN)).toBe('no_match')
-    expect(isNoMatch(null)).toBe(true)
-    expect(isNoMatch(undefined)).toBe(true)
-    expect(isNoMatch(0.49)).toBe(true)
-    expect(isNoMatch(0.5)).toBe(false)
+    expect(getConfidenceBand(Number.NEGATIVE_INFINITY)).toBe('no_match')
   })
 })

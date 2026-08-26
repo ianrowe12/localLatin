@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createReviewerDir } from '../../api/reviewerDirs'
 import { BAND_COPY } from '../../utils/confidenceBands'
 
@@ -7,6 +7,8 @@ interface NoMatchCalloutProps {
   queryFileId: number
   /** Best similarity on offer, for the "best is X" line. */
   topScore: number | null
+  /** How many ranks the feedback pills offer, so the fallback copy matches. */
+  topK: number
 }
 
 type CtaState =
@@ -27,18 +29,32 @@ type CtaState =
  * exist yet it degrades to a friendly "coming with the next update" state
  * instead of an error, so shipping this ahead of the backend is safe.
  */
-export default function NoMatchCallout({ queryFileId, topScore }: NoMatchCalloutProps) {
+export default function NoMatchCallout({
+  queryFileId,
+  topScore,
+  topK,
+}: NoMatchCalloutProps) {
   const [state, setState] = useState<CtaState>({ kind: 'idle' })
+  // The query this component is currently showing, readable from inside an
+  // in-flight request's closure (which still holds the click-time value).
+  const currentQuery = useRef(queryFileId)
 
   // A different query is a different decision: never carry a created/failed
   // state across.
   useEffect(() => {
+    currentQuery.current = queryFileId
     setState({ kind: 'idle' })
   }, [queryFileId])
 
   const handleClick = async () => {
+    // Staleness guard: a reviewer can navigate while the POST is in flight,
+    // and a response that lands afterwards belongs to a query that is no
+    // longer on screen. Dropping it here is what keeps "created" from being
+    // painted onto the next fragment once issue #95 makes creation real.
+    const forQuery = queryFileId
     setState({ kind: 'submitting' })
-    const result = await createReviewerDir(queryFileId)
+    const result = await createReviewerDir(forQuery)
+    if (currentQuery.current !== forQuery) return
     if (result.status === 'created') {
       setState({ kind: 'created', label: result.dir.label || result.dir.dir_id })
     } else if (result.status === 'unavailable') {
@@ -78,7 +94,7 @@ export default function NoMatchCallout({ queryFileId, topScore }: NoMatchCallout
 
       <p className="mt-1 font-ui text-xs leading-snug text-stone-600 dark:text-stone-300">
         {BAND_COPY.no_match.note}
-        {topScore !== null && (
+        {topScore != null && (
           <>
             {' '}
             Best similarity is{' '}
@@ -115,7 +131,7 @@ export default function NoMatchCallout({ queryFileId, topScore }: NoMatchCallout
           className="mt-1.5 font-ui text-xs italic text-stone-500 dark:text-stone-400"
         >
           Creating directories is coming with the next update. For now, record this as
-          &ldquo;None of top N&rdquo; with a note.
+          &ldquo;None of top {topK}&rdquo; with a note.
         </p>
       )}
 

@@ -35,8 +35,13 @@ export type AttributionVariant = 'baseline' | 'abtt' | 'sif' | 'sif_abtt'
  * uncorrected variant `raw`; the IG/attribution artifacts written by
  * scripts/ig/ name the very same thing `baseline` (`pair_matrix_ig_baseline`,
  * `query_ig_baseline`, ...). Rather than renaming either dataset, every place
- * that hands the reviewer's selected variant to the token-map API goes through
- * this function. Nothing else in the frontend should hardcode 'baseline'.
+ * that hands the displayed variant to the token-map API goes through this
+ * function. Nothing else in the frontend should hardcode 'baseline'.
+ *
+ * Honest note since issue #94: the `raw` branch is unreachable from the UI,
+ * because nothing can move `activeVariant` off `sif_abtt`. It is kept because
+ * the artifacts and the backend still carry all four variants, so this is a
+ * retained translation rather than a live one.
  */
 export function toAttributionVariant(variant: PredictionVariant): AttributionVariant {
   return variant === 'raw' ? 'baseline' : variant
