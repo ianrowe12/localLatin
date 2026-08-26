@@ -1,7 +1,10 @@
-// Mirrors backend web/variants.py PredictionVariant. This is the vocabulary
-// the reviewer-facing variant selector (#48) drives: it picks which
-// post-processing variant the prediction list, candidate texts, feedback
-// drafts and token highlights are all computed from.
+// Mirrors backend web/variants.py PredictionVariant.
+//
+// The reviewer-facing variant selector (#48) is gone as of issue #94: the app
+// now shows one pipeline, DEFAULT_VARIANT, for the prediction list, candidate
+// texts, feedback drafts and token highlights alike. The backend still serves
+// all four and feedback rows still record which variant they belong to, so
+// this vocabulary stays.
 export type PredictionVariant = 'raw' | 'abtt' | 'sif' | 'sif_abtt'
 
 export const PREDICTION_VARIANTS: PredictionVariant[] = [
@@ -12,24 +15,6 @@ export const PREDICTION_VARIANTS: PredictionVariant[] = [
 ]
 
 export const DEFAULT_VARIANT: PredictionVariant = 'sif_abtt'
-
-export function isPredictionVariant(value: unknown): value is PredictionVariant {
-  return PREDICTION_VARIANTS.includes(value as PredictionVariant)
-}
-
-/** Reviewer-facing label and one-line explanation for each variant. */
-export interface VariantOption {
-  key: PredictionVariant
-  label: string
-  description: string
-}
-
-export const VARIANT_OPTIONS: VariantOption[] = [
-  { key: 'raw', label: 'Raw', description: 'no post-processing' },
-  { key: 'abtt', label: 'ABTT', description: 'removes dominant embedding directions' },
-  { key: 'sif', label: 'SIF', description: 'down-weights frequent words' },
-  { key: 'sif_abtt', label: 'SIF+ABTT', description: 'both corrections (default)' },
-]
 
 // ---------------------------------------------------------------------------
 // Prediction variant  <->  attribution variant
@@ -50,8 +35,13 @@ export type AttributionVariant = 'baseline' | 'abtt' | 'sif' | 'sif_abtt'
  * uncorrected variant `raw`; the IG/attribution artifacts written by
  * scripts/ig/ name the very same thing `baseline` (`pair_matrix_ig_baseline`,
  * `query_ig_baseline`, ...). Rather than renaming either dataset, every place
- * that hands the reviewer's selected variant to the token-map API goes through
- * this function. Nothing else in the frontend should hardcode 'baseline'.
+ * that hands the displayed variant to the token-map API goes through this
+ * function. Nothing else in the frontend should hardcode 'baseline'.
+ *
+ * Honest note since issue #94: the `raw` branch is unreachable from the UI,
+ * because nothing can move `activeVariant` off `sif_abtt`. It is kept because
+ * the artifacts and the backend still carry all four variants, so this is a
+ * retained translation rather than a live one.
  */
 export function toAttributionVariant(variant: PredictionVariant): AttributionVariant {
   return variant === 'raw' ? 'baseline' : variant

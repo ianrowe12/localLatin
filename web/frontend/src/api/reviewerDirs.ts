@@ -8,6 +8,14 @@ import type { PredictionVariant } from './variants'
  * can declare a new directory seeded by that document. From then on the
  * directory is scored against every other query from the query-query cosine
  * matrix and appears in their candidate lists like any other option.
+ *
+ * Issue #94 shipped an earlier version of this client that feature-detected the
+ * endpoint (404/405/501 -> a quiet "coming with the next update" state),
+ * because the CTA landed before the backend did. This PR *is* that backend, so
+ * the endpoint is never absent from a deployment that has this file and the
+ * degradation branch is dead code; it is deleted rather than left to rot into a
+ * state nothing can reach. Ordinary `apiFetch` error handling covers the
+ * failures that remain real (401, 409, 422, 429).
  */
 
 /**

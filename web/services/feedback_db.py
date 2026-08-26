@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS accounts (
     approved_by_account_id INTEGER,
     rejected_at TEXT,
     approval_note TEXT NOT NULL DEFAULT '',
+    must_change_password INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     last_login_at TEXT
@@ -69,6 +70,15 @@ CREATE TABLE IF NOT EXISTS account_sessions (
 CREATE INDEX IF NOT EXISTS idx_account_sessions_account ON account_sessions(account_id);
 CREATE INDEX IF NOT EXISTS idx_account_sessions_expires ON account_sessions(expires_at);
 """
+
+# Columns the auth layer reads unconditionally; verified after every migration.
+_REQUIRED_ACCOUNT_COLUMNS = {
+    "approval_status",
+    "is_active",
+    "must_change_password",
+    "password_hash",
+    "role",
+}
 
 _EXPORT_COLUMNS = [
     "id",
@@ -108,6 +118,7 @@ class FeedbackDB:
         self._db.row_factory = aiosqlite.Row
         await self._db.executescript(_SCHEMA)
         await self._migrate()
+        await self._assert_account_schema()
         await self._db.commit()
         logger.info("Feedback DB ready at %s", self.db_path)
 
@@ -297,6 +308,13 @@ class FeedbackDB:
             await self._db.execute(
                 "ALTER TABLE accounts ADD COLUMN approval_note TEXT NOT NULL DEFAULT ''"
             )
+        if "must_change_password" not in account_columns:
+            # Additive: existing accounts keep their password and are never
+            # retroactively forced through a change. Only an admin reset sets
+            # this flag.
+            await self._db.execute(
+                "ALTER TABLE accounts ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0"
+            )
         await self._db.execute(
             """
             UPDATE accounts
@@ -354,6 +372,25 @@ class FeedbackDB:
         await self._db.execute(
             "CREATE INDEX IF NOT EXISTS idx_reviewer_dir_members_query ON reviewer_dir_members(query_id)"
         )
+
+    async def _assert_account_schema(self) -> None:
+        """Refuse to serve if the accounts table lost a security-relevant column.
+
+        `must_change_password` gates every authenticated route, so a database
+        that somehow skipped the migration must fail loudly at startup rather
+        than answer requests with the flag silently absent.
+        """
+        assert self._db is not None
+        rows = await (
+            await self._db.execute("PRAGMA table_info(accounts)")
+        ).fetchall()
+        columns = {r["name"] for r in rows}
+        missing = _REQUIRED_ACCOUNT_COLUMNS - columns
+        if missing:
+            raise RuntimeError(
+                "accounts table is missing required column(s): "
+                f"{', '.join(sorted(missing))}"
+            )
 
     # --- reviewer directories -------------------------------------------------
 
@@ -670,6 +707,73 @@ class FeedbackDB:
         else:
             raise ValueError(f"Unsupported approval status: {approval_status}")
 
+        await self._db.commit()
+        row = await (
+            await self._db.execute("SELECT * FROM accounts WHERE id = ?", (account_id,))
+        ).fetchone()
+        return _account_public(row) if row is not None else None
+
+    async def verify_account_password(self, account_id: int, password: str) -> bool:
+        """True when ``password`` matches the stored hash for that account."""
+        await self._ensure_auth_connection()
+        assert self._db is not None
+        row = await (
+            await self._db.execute(
+                "SELECT password_hash FROM accounts WHERE id = ?", (account_id,)
+            )
+        ).fetchone()
+        if row is None:
+            return False
+        return _verify_password(password, row["password_hash"])
+
+    async def set_account_password(
+        self,
+        account_id: int,
+        new_password: str,
+        must_change_password: bool = False,
+        keep_session_token: str | None = None,
+    ) -> dict | None:
+        """Rehash the account password and drop its other live sessions.
+
+        ``keep_session_token`` is the caller's own session, spared so a
+        self-serve change does not sign the user out of the tab they are in.
+        An admin reset passes None, which revokes every session.
+        """
+        await self._ensure_auth_connection()
+        assert self._db is not None
+        cursor = await self._db.execute(
+            """
+            UPDATE accounts
+               SET password_hash = ?,
+                   must_change_password = ?,
+                   updated_at = datetime('now')
+             WHERE id = ?
+            """,
+            (_hash_password(new_password), 1 if must_change_password else 0, account_id),
+        )
+        if cursor.rowcount == 0:
+            await self._db.commit()
+            return None
+        if keep_session_token:
+            await self._db.execute(
+                """
+                UPDATE account_sessions
+                   SET revoked_at = datetime('now')
+                 WHERE account_id = ?
+                   AND revoked_at IS NULL
+                   AND token_hash != ?
+                """,
+                (account_id, _hash_token(keep_session_token)),
+            )
+        else:
+            await self._db.execute(
+                """
+                UPDATE account_sessions
+                   SET revoked_at = datetime('now')
+                 WHERE account_id = ? AND revoked_at IS NULL
+                """,
+                (account_id,),
+            )
         await self._db.commit()
         row = await (
             await self._db.execute("SELECT * FROM accounts WHERE id = ?", (account_id,))
@@ -1089,6 +1193,11 @@ def _public_account(row: aiosqlite.Row) -> dict:
         "display_name": row["display_name"],
         "role": row["role"],
         "approval_status": row["approval_status"],
+        # Read straight from the row rather than through a tolerant getter: this
+        # is a security flag, and _open_connection() asserts the column exists
+        # after _migrate(), so a missing column must surface as an error instead
+        # of silently defaulting to "no forced change".
+        "must_change_password": bool(row["must_change_password"]),
     }
 
 

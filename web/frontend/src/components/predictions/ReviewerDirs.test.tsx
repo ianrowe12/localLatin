@@ -160,7 +160,7 @@ describe('reviewer directory candidates', () => {
 
     // The model's own card is still an ordinary prediction card.
     expect(
-      screen.getByRole('button', { name: 'Prediction rank 1: candidate-1' }),
+      screen.getByRole('button', { name: /^Prediction rank 1: candidate-1\./ }),
     ).toBeTruthy()
     expect(screen.queryByTestId('reviewer-dir-card-candidate-1')).toBeNull()
   })
@@ -179,7 +179,7 @@ describe('reviewer directory candidates', () => {
     // All ten model cards survive the ten-item cap, and the reviewer card is
     // additional rather than displacing rank 10.
     expect(
-      screen.getByRole('button', { name: 'Prediction rank 10: candidate-10' }),
+      screen.getByRole('button', { name: /^Prediction rank 10: candidate-10\./ }),
     ).toBeTruthy()
     expect(
       screen.getByTestId('reviewer-dir-card-reviewer-dir-1').getAttribute('aria-label'),
@@ -209,7 +209,7 @@ describe('reviewer directory candidates', () => {
     await waitFor(() => {
       expect(
         screen
-          .getByRole('button', { name: 'Prediction rank 2: candidate-2' })
+          .getByRole('button', { name: /^Prediction rank 2: candidate-2\./ })
           .getAttribute('aria-pressed'),
       ).toBe('true')
     })
@@ -335,11 +335,16 @@ describe('AwaitingMatchBadge', () => {
 // --- creation flow ---------------------------------------------------------
 
 describe('new-directory creation flow', () => {
-  it('is emphasised when the best labelled candidate is below the no-match band', async () => {
+  it('is emphasised inside the no-match callout below the band', async () => {
+    // #94's callout owns the framing; #95's CTA is the action inside it.
     predictions = { predictions: [modelCard(1, 0.41)], seeded_dirs: [] }
     renderList()
-    const cta = await screen.findByTestId('new-directory-cta')
-    expect(cta.textContent).toBe('None of these — start a new directory')
+    const callout = await screen.findByTestId('no-match-callout')
+    expect(callout.getAttribute('role')).toBe('alert')
+    expect(callout.textContent).toContain('Potentially no match')
+    const cta = screen.getByTestId('new-directory-cta')
+    expect(cta.textContent).toBe('New directory / New file')
+    expect(callout.contains(cta)).toBe(true)
   })
 
   it('is hidden once this document already seeds a directory', async () => {
@@ -373,6 +378,7 @@ describe('new-directory creation flow', () => {
     renderList()
     const cta = await screen.findByTestId('new-directory-cta')
     expect(cta.textContent).toBe('Start a new directory')
+    expect(screen.queryByTestId('no-match-callout')).toBeNull()
   })
 
   it('posts the contract body and confirms the result', async () => {
@@ -380,10 +386,9 @@ describe('new-directory creation flow', () => {
     renderList()
 
     await userEvent.click(await screen.findByTestId('new-directory-cta'))
-    await userEvent.type(
-      screen.getByLabelText('Name the new directory'),
-      'Unattested homily',
-    )
+    const field = screen.getByLabelText('Name the new directory')
+    await userEvent.clear(field)
+    await userEvent.type(field, 'Unattested homily')
     await userEvent.click(screen.getByTestId('new-directory-submit'))
 
     await waitFor(() => {
@@ -400,11 +405,12 @@ describe('new-directory creation flow', () => {
     )
   })
 
-  it('omits the label when the reviewer leaves it blank, letting the backend default it', async () => {
+  it('omits the label when the reviewer clears it, letting the backend default it', async () => {
     predictions = { predictions: [modelCard(1, 0.41)], seeded_dirs: [] }
     renderList()
 
     await userEvent.click(await screen.findByTestId('new-directory-cta'))
+    await userEvent.clear(screen.getByLabelText('Name the new directory'))
     await userEvent.click(screen.getByTestId('new-directory-submit'))
 
     await waitFor(() => {
@@ -427,7 +433,7 @@ describe('new-directory creation flow', () => {
     await userEvent.click(await screen.findByTestId('new-directory-cta'))
     await userEvent.click(screen.getByTestId('new-directory-submit'))
 
-    const alert = await screen.findByRole('alert')
+    const alert = await screen.findByTestId('new-directory-error')
     expect(alert.textContent).toBe('Authentication required')
     expect(screen.queryByTestId('new-directory-created')).toBeNull()
   })

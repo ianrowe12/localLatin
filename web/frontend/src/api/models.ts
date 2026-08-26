@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ConfidenceBands } from './bands'
+import type { ConfidenceBands } from '../utils/confidenceBands'
 import { apiFetch } from './client'
 import { FEEDBACK_UPDATED_EVENT } from './feedback'
 import type { PredictionVariant } from './variants'
@@ -8,17 +8,27 @@ import type { PredictionVariant } from './variants'
 // Types
 // ---------------------------------------------------------------------------
 
+/**
+ * Model the reviewer lands on when they have not picked one (issue #94).
+ *
+ * The slug is the filesystem-safe form of the HuggingFace id, exactly as
+ * `web/services/data_store.py` builds it: `google/mt5-base` -> `google_mt5-base`,
+ * displayed as "mT5-base" by that module's `_DISPLAY_NAMES`.
+ */
+export const DEFAULT_MODEL_SLUG = 'google_mt5-base'
+
 export interface ModelInfo {
   slug: string
   display_name: string
   layer: number | null
   pooling: string | null
   prediction_count: number
-  // Populated by GET /api/models; consumed by the variant selector (#48).
+  // Populated by GET /api/models. The reviewer-facing variant picker is gone
+  // (#94), but the deployment still describes what it serves here.
   available_variants: PredictionVariant[]
   default_variant: PredictionVariant
   // Deployment-wide. The backend owns these thresholds because it decides
-  // reviewer-directory status with them; see api/bands.ts. Optional so a
+  // reviewer-directory status with them; see utils/confidenceBands.ts. Optional so a
   // frontend build can talk to a backend that predates them.
   confidence_bands?: ConfidenceBands
   // Whether this model shipped a query-query matrix, i.e. whether it can score
@@ -73,8 +83,8 @@ interface HookState<T> {
 }
 
 // Module-level rather than per-hook: the model list is immutable for the life
-// of a deployment and has more than one consumer (ModelSelector and the
-// variant selector), which would otherwise each fetch it.
+// of a deployment and has more than one consumer, which would otherwise each
+// fetch it.
 let modelsCache: ModelInfo[] | null = null
 
 /**

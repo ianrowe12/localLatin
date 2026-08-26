@@ -1,11 +1,17 @@
 import { useEffect, useMemo } from 'react'
 import { useApp } from '../../contexts/AppContext'
 import { usePredictions } from '../../api/queries'
-import { bandsFrom } from '../../api/bands'
 import { useModels } from '../../api/models'
 import { useKeyboardShortcuts } from '../../utils/keyboard'
+import {
+  BAND_COPY,
+  BAND_STYLES,
+  bandsFrom,
+  getConfidenceBand,
+} from '../../utils/confidenceBands'
 import AwaitingMatchBadge from './AwaitingMatchBadge'
 import NewDirectoryCta from './NewDirectoryCta'
+import NoMatchCallout from './NoMatchCallout'
 import PredictionCard from './PredictionCard'
 import ReviewerDirCard from './ReviewerDirCard'
 
@@ -34,6 +40,9 @@ export default function PredictionList() {
     }
   }, [overrideCandidateDir, data, setActivePredictionRank, setOverrideCandidateDir])
 
+  // Thresholds come from the deployment (GET /api/models), not from a literal
+  // in this bundle: the backend decides reviewer-directory status with the same
+  // numbers, so there is one source of truth and it is server-side.
   const { data: models } = useModels()
   const bands = bandsFrom(models)
 
@@ -50,8 +59,15 @@ export default function PredictionList() {
   const seededDirs = data?.seeded_dirs ?? []
   // One directory per seed document, enforced by the backend with a 409.
   const alreadySeeded = seededDirs.length > 0
-  const topScore = modelPredictions[0]?.score ?? 0
-  const noLabelledMatch = modelPredictions.length === 0 || topScore < bands.no_match
+
+  // The band of the *best model hit* decides the whole list's framing (issue
+  // #94): that is the number a reviewer reads first, and the one that says
+  // whether this fragment has a plausible home in the labelled corpus at all.
+  // Reviewer directories are deliberately not part of that judgement — one
+  // colleague's new directory scoring 0.6 does not mean the corpus has a home
+  // for this fragment.
+  const topScore = modelPredictions.length > 0 ? modelPredictions[0].score : null
+  const topBand = topScore != null ? getConfidenceBand(topScore, bands) : null
 
   // Arrow keys walk the ranks that actually exist rather than counting by one.
   // Reviewer directories are anchored at rank 11 whatever the model returned,
@@ -123,11 +139,48 @@ export default function PredictionList() {
         </p>
       ) : (
         <div className="flex flex-col gap-1">
+          {/* Band treatment for the top hit. Below the no-match threshold the
+              default top option is creating a new directory, not picking a
+              rank, so the CTA renders above the ranked cards. */}
+          {topBand === 'no_match' && activeQueryId != null && (
+            <NoMatchCallout
+              // Remount per query so no in-flight CTA state can survive a
+              // navigation.
+              key={activeQueryId}
+              queryFileId={activeQueryId}
+              topScore={topScore}
+              // Same fallback as MatchPills, so the copy names the pill the
+              // reviewer can actually see.
+              topK={modelPredictions.length || 10}
+              model={activeModel}
+              filename={data?.filename}
+              alreadySeeded={alreadySeeded}
+            />
+          )}
+          {topBand === 'careful' && (
+            <p
+              data-testid="careful-review-note"
+              className={`mb-2 rounded-lg px-2.5 py-2 font-ui text-xs leading-snug ${BAND_STYLES.careful.chip}`}
+            >
+              <span className="font-semibold">{BAND_COPY.careful.label}.</span>{' '}
+              {BAND_COPY.careful.note}
+            </p>
+          )}
+          {topBand === 'likely' && (
+            <p
+              data-testid="likely-match-note"
+              className="mb-2 rounded-lg bg-stone-100 px-2.5 py-2 font-ui text-xs leading-snug text-stone-600 dark:bg-stone-800 dark:text-stone-300"
+            >
+              <span className="font-semibold">{BAND_COPY.likely.label}.</span>{' '}
+              {BAND_COPY.likely.note}
+            </p>
+          )}
           {modelPredictions.map((pred) => (
             <PredictionCard
               key={pred.rank}
               prediction={pred}
               rank={pred.rank}
+              bands={bands}
               isActive={
                 !overrideCandidateDir && pred.rank === activePredictionRank
               }
@@ -151,11 +204,14 @@ export default function PredictionList() {
           ))}
         </div>
       )}
-      {activeQueryId !== null && !alreadySeeded && (
+      {/* Above the no-match band the CTA is a quiet escape hatch at the foot of
+          the list; below it, NoMatchCallout has already offered it up top. */}
+      {activeQueryId !== null && !alreadySeeded && topBand !== 'no_match' && (
         <NewDirectoryCta
+          key={activeQueryId}
           queryId={activeQueryId}
           model={activeModel}
-          emphasised={noLabelledMatch}
+          emphasised={false}
           filename={data?.filename}
         />
       )}

@@ -18,6 +18,18 @@ if (!window.matchMedia) {
   })) as unknown as typeof window.matchMedia
 }
 
+// ConnectionOverlay's line updater observes the center panel for resizes.
+// jsdom has no layout engine and therefore no ResizeObserver.
+if (!('ResizeObserver' in globalThis)) {
+  class NoopResizeObserver {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  }
+  ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver =
+    NoopResizeObserver
+}
+
 afterEach(() => {
   cleanup()
   localStorage.clear()

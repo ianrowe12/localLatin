@@ -7,9 +7,10 @@ import { ReviewerProvider, useReviewer } from './contexts/ReviewerContext'
 import { fetchNextQuery } from './api/queries'
 import AppShell from './components/layout/AppShell'
 import ReviewerLoginModal from './components/auth/ReviewerLoginModal'
+import ChangePasswordModal from './components/auth/ChangePasswordModal'
 
 function AppContent() {
-  const { user, loading } = useReviewer()
+  const { user, loading, mustChangePassword } = useReviewer()
   const {
     activeQueryId,
     currentView,
@@ -18,12 +19,14 @@ function AppContent() {
   } = useApp()
 
   useEffect(() => {
+    if (mustChangePassword) return
     if (user?.role === 'reviewer' && currentView === 'dashboard') {
       setCurrentView('review')
     }
-  }, [currentView, setCurrentView, user])
+  }, [currentView, mustChangePassword, setCurrentView, user])
 
   useEffect(() => {
+    if (mustChangePassword) return
     if (user?.role !== 'reviewer' || activeQueryId !== null) return
 
     let cancelled = false
@@ -43,7 +46,7 @@ function AppContent() {
     return () => {
       cancelled = true
     }
-  }, [activeQueryId, navigateToQuery, setCurrentView, user])
+  }, [activeQueryId, mustChangePassword, navigateToQuery, setCurrentView, user])
 
   if (loading) {
     return (
@@ -57,6 +60,12 @@ function AppContent() {
 
   if (user === null) {
     return <ReviewerLoginModal />
+  }
+
+  // Backend refuses every other route until this is done; the modal is the
+  // only thing on screen so the reviewer cannot get stuck against 403s.
+  if (mustChangePassword) {
+    return <ChangePasswordModal forced />
   }
 
   return (

@@ -87,6 +87,9 @@ class AuthConfig(BaseModel):
     session_days: int = 14
     secure_cookies: bool = False
     admin_registration_code: str | None = os.environ.get("LOCALLATIN_ADMIN_CODE")
+    # Password change / reset throttling, per actor, in a rolling window.
+    password_rate_limit_max_attempts: int = 10
+    password_rate_limit_window_seconds: int = 900
 
 
 class Settings(BaseModel):
