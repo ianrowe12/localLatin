@@ -26,7 +26,30 @@ Scholar review web application for the localLatin Latin manuscript retrieval pro
 - `services/data_store.py` — `build_store()` loads all data at startup. The `DataStore` dataclass is the central data cache.
 - `services/token_map_svc.py` — Loads NPZ artifacts, computes cosine similarity matrices, optional HuggingFace tokenizer decoding. The token-map endpoints take `?method=&variant=`; without them the response carries every persisted method x variant matrix (7 x 4 dense grids), so the UI always sends both. `available_methods` / `available_variants` always report the artifact's full contents regardless of the filters.
 - `services/text_tokenizer.py` — Mirrors `src/token_filtering.classify_token()` from the research repo without torch dependency
-- `services/feedback_db.py` — SQLite CRUD for reviewer feedback
+- `services/feedback_db.py` — SQLite CRUD for reviewer feedback and accounts
+- `services/rate_limit.py` — in-process sliding-window limiter on `app.state.rate_limiter`, used by
+  sign-in and the password endpoints. Per-process, which is correct only because
+  `deploy/locallatin.service` runs `--workers 1`; a service restart wipes every open window.
+- Passwords: `POST /api/auth/change_password` (self-serve, keeps the calling session and revokes
+  the account's others) and `POST /api/auth/accounts/{id}/reset_password` (PI/admin only, returns a
+  temporary password once, revokes every session, sets `accounts.must_change_password`). While that
+  flag is set, `get_current_user` answers 403 on every route outside
+  `dependencies.PASSWORD_CHANGE_EXEMPT_PATHS`, so the forced change is backend-enforced. The one
+  authenticated-looking exception is `/api/models`, which has no auth dependency at all (pre-existing)
+  and therefore still answers during a forced change.
+- Lockout policy (there is no email recovery, so every path must stay recoverable):
+  self-reset is refused with 400 — an admin changes their own password, and a second PI/admin resets
+  one who is locked out. Sign-in and change-password verify the password *before* consulting the
+  rate-limit window and record a hit only on a failed verification, so a correct password always
+  gets through and a stranger cannot lock a reviewer out. 429s carry `Retry-After`.
+- Sign-in throttle keying: `(client address, username)`, where the address comes from `X-Real-IP`,
+  falling back to the **rightmost** `X-Forwarded-For` hop and then the socket peer. `deploy/nginx.conf`
+  sets `X-Real-IP $remote_addr` (overwritten per request) but `X-Forwarded-For $proxy_add_x_forwarded_for`,
+  which *appends* the peer to whatever the client sent — so XFF's leftmost hops are attacker-chosen
+  and only the rightmost is proxy-written. Trusting the left hop would let one attacker rotate a fake
+  address per request, never fill a window, and grow the limiter's key space without bound. This is
+  safe only because uvicorn binds `127.0.0.1` and is reachable solely through that proxy; exposing it
+  directly would make both headers forgeable.
 - `routers/` — One file per API domain (queries, predictions, token_map, feedback, stats)
 - `models.py` — All Pydantic request/response models
 

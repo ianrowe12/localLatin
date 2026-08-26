@@ -170,12 +170,19 @@ class AccountApprovalStatus(StrEnum):
     REJECTED = "rejected"
 
 
+# Floor for self-serve password changes. Kept equal to the RegisterRequest and
+# AccountCreateRequest minimums so a user cannot lower their own password below
+# the registration policy.
+MIN_PASSWORD_LENGTH = 12
+
+
 class UserPublic(BaseModel):
     id: int
     username: str
     display_name: str
     role: str
     approval_status: AccountApprovalStatus = AccountApprovalStatus.APPROVED
+    must_change_password: bool = False
 
 
 class AccountPublic(UserPublic):
@@ -192,7 +199,7 @@ class AccountPublic(UserPublic):
 class RegisterRequest(BaseModel):
     username: str = Field(min_length=2, max_length=64)
     display_name: str = Field(min_length=1, max_length=120)
-    password: str = Field(min_length=12, max_length=256)
+    password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=256)
     admin_code: Optional[str] = None
 
 
@@ -215,13 +222,26 @@ class AccountCreateRequest(BaseModel):
     username: str = Field(min_length=2, max_length=128)
     display_name: str = Field(min_length=1, max_length=120)
     role: Literal["reviewer", "pi_admin"] = "reviewer"
-    password: Optional[str] = Field(default=None, min_length=12, max_length=256)
+    password: Optional[str] = Field(
+        default=None, min_length=MIN_PASSWORD_LENGTH, max_length=256
+    )
     approval_note: str = Field(default="", max_length=500)
 
 
 class AccountCreateResponse(BaseModel):
     account: AccountPublic
     temporary_password: Optional[str] = None
+
+
+class PasswordChangeRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=256)
+    new_password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=256)
+
+
+class PasswordResetResponse(BaseModel):
+    account: AccountPublic
+    # Shown to the admin exactly once; never persisted in plaintext.
+    temporary_password: str
 
 
 class FeedbackCreate(BaseModel):
