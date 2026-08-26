@@ -95,6 +95,7 @@ def build_review_packet_pdf(
     feedback_variant: str | None,
     predictions: list[dict[str, Any]],
     feedback_rows: list[dict[str, Any]],
+    reviewer_dirs: list[dict[str, Any]] | None = None,
     actor: str,
     top_k: int,
 ) -> bytes:
@@ -146,19 +147,68 @@ def build_review_packet_pdf(
     pdf.add_rule()
 
     pdf.add_heading("Top Predictions")
-    for prediction in predictions[:top_k]:
+    # Model candidates only, and NOT re-sliced here: the router already bounded
+    # them by top_k. Their ranks come from the retrieval CSV and never move, so
+    # "Match N" means exactly what the reviewer saw.
+    for prediction in predictions:
         dir_name = prediction["dir_name"]
         pdf.add_heading(
             f"Match {prediction['rank']}: {dir_name} | similarity {prediction['score']:.3f}",
             size=12,
         )
-        texts = store.labelled_texts.get(dir_name, {})
+        texts: dict[str, str] = store.labelled_texts.get(dir_name, {})
         if not texts:
             pdf.add_text("Candidate text unavailable.")
             continue
         for fname, text in sorted(texts.items()):
             pdf.add_text(f"Candidate file: {fname}", bold=True)
             pdf.add_text(_clip(text or "[empty candidate text]", MAX_CANDIDATE_CHARS), size=9)
+
+    # Reviewer-created directories, WITHOUT ranks. See packet_dirs_for_query:
+    # a reviewer directory's position is live and moves when somebody files a
+    # document into it, so no rank printed here could be trusted to mean what
+    # the reviewer saw. `dir_id` is the join key to the Reviewer Outcomes rows.
+    if reviewer_dirs:
+        pdf.add_rule()
+        pdf.add_heading("Reviewer-Created Directories")
+        pdf.add_text(
+            "Listed WITHOUT a rank, by design: a reviewer directory's position "
+            "is recomputed on every request and shifts once somebody files a "
+            "document into it, so a rank printed here could not be trusted to "
+            "match the one recorded above. Match these to the Reviewer Outcomes "
+            "rows by directory id.",
+            size=9,
+        )
+        for entry in reviewer_dirs:
+            title = entry.get("label") or entry["dir_id"]
+            pdf.add_heading(f"{title} ({entry['dir_id']})", size=12)
+            if entry.get("group") == "filed_into":
+                role = (
+                    "seeded by this query"
+                    if entry.get("is_seed")
+                    else "this query was filed into it"
+                )
+                standing = f"Filed into: {role}."
+            else:
+                score = entry.get("score")
+                standing = "Offered as a candidate" + (
+                    f", similarity {score:.3f}." if score is not None else "."
+                )
+            created_by = entry.get("created_by") or "unknown"
+            pdf.add_text(
+                f"{standing} Created by {created_by}; "
+                f"{len(entry.get('member_query_ids') or [])} document(s).",
+                size=9,
+            )
+            for entry_file in entry.get("candidate_files") or []:
+                pdf.add_text(f"Member file: {entry_file['filename']}", bold=True)
+                pdf.add_text(
+                    _clip(
+                        entry_file.get("text") or "[empty member text]",
+                        MAX_CANDIDATE_CHARS,
+                    ),
+                    size=9,
+                )
 
     pdf.add_rule()
     pdf.add_text("End of bounded LocalLatin review packet.", size=9)

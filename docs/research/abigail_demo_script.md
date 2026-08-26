@@ -40,9 +40,12 @@ Worth saying out loud: 0.50 is deliberately conservative. The learned per-model 
 SIF+ABTT sits at 0.34 to 0.43 on the training fit, so the red band starts well above where the
 model itself would stop calling something a match.
 
-The **New directory / New file** button is the entry point to the reviewer-created-directory loop.
-Until that backend lands (issue #95) it answers with "coming with the next update", and the honest
-thing to say is that the flag is live now and the creation step follows.
+The **New directory / New file** button is the entry point to the reviewer-created-directory loop,
+and it is live: it opens a one-field naming form, and creating the directory makes it a scored
+candidate on every other query from this point on. Say that the badge on the seed reads
+"Awaiting future match" until a reviewer actually files a second document into it -- similarity
+alone never flips it, deliberately, so the green state means a human judgement and not an
+embedding-space coincidence.
 
 ## 3. Query A: what the correction buys (LaTa)
 
@@ -178,7 +181,8 @@ earlier session may point at a rank that has moved.
 | Symptom | Cause | Say |
 |---|---|---|
 | Prediction list empty for a model | that model's predictions CSV missing on host | "one data file did not sync, the other models work" |
-| New-directory CTA says "coming with the next update" | reviewer-directory backend (issue #95) not deployed yet | expected, the flag ships ahead of the creation step |
+| New-directory CTA refuses with "already started a directory" | this document already seeds one | expected, one directory per document |
+| Reviewer directories never appear as candidates | q-q matrices missing from the data release | "one data file did not sync"; re-deploy with a newer `DATA_RELEASE_TAG` |
 | Attribution toggle absent off the demo set | no IG artifact for this pair | expected, see section 6 |
 | Attribution toggle absent *on* a demo pair | data release predates issue #53 | re-run the deploy with the newer `DATA_RELEASE_TAG` |
 | Query text blank | canon corpus missing on host | fall back to a different query |

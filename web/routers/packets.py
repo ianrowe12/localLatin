@@ -8,8 +8,9 @@ from fastapi.responses import Response
 
 from web.dependencies import get_db, get_store, require_pi_admin
 from web.exceptions import QueryNotFoundError
-from web.models import PredictionVariant, UserPublic
+from web.models import MAX_MODEL_RANK, PredictionVariant, UserPublic
 from web.routers.predictions import resolve_variant, resolve_variant_rows
+from web.services import reviewer_dirs as reviewer_dirs_svc
 from web.services.data_store import DataStore, normalize_slug
 from web.services.feedback_db import FeedbackDB
 from web.services.pdf_packets import build_review_packet_pdf
@@ -48,7 +49,7 @@ async def get_review_packet(
             "with the variant it was recorded against."
         ),
     ),
-    top_k: int = Query(10, ge=1, le=10),
+    top_k: int = Query(MAX_MODEL_RANK, ge=1, le=MAX_MODEL_RANK),
     store: DataStore = Depends(get_store),
     db: FeedbackDB = Depends(get_db),
     current_user: UserPublic = Depends(require_pi_admin),
@@ -60,6 +61,25 @@ async def get_review_packet(
     row = _get_prediction_row(rows, file_id)
     if row is None:
         raise QueryNotFoundError(file_id)
+
+    # `top_k` bounds the MODEL's candidates and nothing else -- its original
+    # meaning, and what "Prediction scope: top N" says on the page. It used to
+    # bound the whole list, which is why the only real caller (Header.tsx, then
+    # hardcoding top_k=10) produced packets with every reviewer directory
+    # truncated away, while a test that omitted the parameter and so got the new
+    # default passed. Bounding only the model half means no caller, old or new,
+    # can produce a packet that drops them.
+    predictions = list(row["predictions"])[:top_k]
+
+    # Reviewer directories are documented WITHOUT ranks; see
+    # packet_dirs_for_query for why a live rank cannot be trusted in a packet.
+    reviewer_dirs: list[dict] = []
+    reviewer_records = await db.list_reviewer_dirs()
+    if reviewer_records:
+        qq = await store.ensure_qq_async(slug)
+        reviewer_dirs = reviewer_dirs_svc.packet_dirs_for_query(
+            store=store, records=reviewer_records, qq=qq, query_id=file_id
+        )
 
     # The feedback section is variant-agnostic by default. Filtering it by the
     # requested variant would silently drop every pre-variant review (those rows
@@ -78,7 +98,8 @@ async def get_review_packet(
         model_slug=slug,
         variant=resolved,
         feedback_variant=feedback_variant.value if feedback_variant else None,
-        predictions=row["predictions"],
+        predictions=predictions,
+        reviewer_dirs=reviewer_dirs,
         feedback_rows=feedback_rows,
         actor=current_user.display_name,
         top_k=top_k,

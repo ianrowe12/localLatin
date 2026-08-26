@@ -1,69 +1,76 @@
-import { apiUrl } from './client'
+import { apiFetch } from './client'
+import type { PredictionVariant } from './variants'
 
 /**
- * Client for the reviewer-created-directory endpoint (issue #95, "D2").
+ * Reviewer-created directories (issue #95).
  *
- * The UI side of the loop ships first (issue #94): the no-match CTA is written
- * against this contract and must not break on a deployment whose backend does
- * not serve it yet. Hence the deliberate feature detection below rather than
- * `apiFetch`, which collapses every failure into a bare Error message.
+ * A reviewer looking at a query that matches nothing in the labelled corpus
+ * can declare a new directory seeded by that document. From then on the
+ * directory is scored against every other query from the query-query cosine
+ * matrix and appears in their candidate lists like any other option.
  *
- *   POST /api/reviewer_dirs {query_file_id, label?}
- *     -> 201 {dir_id, label, status: 'awaiting_match'}
+ * Issue #94 shipped an earlier version of this client that feature-detected the
+ * endpoint (404/405/501 -> a quiet "coming with the next update" state),
+ * because the CTA landed before the backend did. This PR *is* that backend, so
+ * the endpoint is never absent from a deployment that has this file and the
+ * degradation branch is dead code; it is deleted rather than left to rot into a
+ * state nothing can reach. Ordinary `apiFetch` error handling covers the
+ * failures that remain real (401, 409, 422, 429).
  */
 
+/**
+ * `matched` means a reviewer filed a second document into the directory.
+ * Similarity alone never produces it.
+ */
+export type ReviewerDirStatus = 'awaiting_match' | 'matched'
+
+// Mirrors backend models.py ReviewerDir.
 export interface ReviewerDir {
   dir_id: string
   label: string
-  status: string
+  status: ReviewerDirStatus
+  seed_query_id: number
+  member_query_ids: number[]
+  created_at: string
+  created_by: string
+  model_slug: string
+  variant: PredictionVariant | null
+  // Informational only. Status is decided by human confirmation, never by this
+  // number -- see web/services/reviewer_dirs.py.
+  best_match_score: number | null
+  // best_match_score crosses the no-match band: the model sees something
+  // related that nobody has confirmed yet.
+  has_potential_match: boolean
 }
 
-export type CreateReviewerDirResult =
-  | { status: 'created'; dir: ReviewerDir }
-  /** Endpoint not deployed yet: show the "coming with the next update" state. */
-  | { status: 'unavailable' }
-  | { status: 'error'; message: string }
-
-/** 404/405/501 all mean "this deployment has no such endpoint", not "failed". */
-function isMissingEndpoint(status: number): boolean {
-  return status === 404 || status === 405 || status === 501
+export interface CreateReviewerDirPayload {
+  query_file_id: number
+  label?: string
+  model_slug?: string
+  variant?: PredictionVariant
 }
+
+/**
+ * Broadcast after a directory is created, so cached prediction responses are
+ * dropped: the new directory is a candidate for every other query, and a stale
+ * cache would keep it off screen until a reload.
+ */
+export const REVIEWER_DIRS_UPDATED_EVENT = 'locallatin:reviewer-dirs-updated'
 
 export async function createReviewerDir(
-  queryFileId: number,
-  label?: string,
-): Promise<CreateReviewerDirResult> {
-  let res: Response
-  try {
-    res = await fetch(apiUrl('/api/reviewer_dirs'), {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(
-        label ? { query_file_id: queryFileId, label } : { query_file_id: queryFileId },
-      ),
-    })
-  } catch {
-    return { status: 'error', message: 'Could not reach the server.' }
-  }
+  payload: CreateReviewerDirPayload,
+): Promise<ReviewerDir> {
+  const created = await apiFetch<ReviewerDir>('/api/reviewer_dirs', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+  window.dispatchEvent(new CustomEvent(REVIEWER_DIRS_UPDATED_EVENT))
+  return created
+}
 
-  if (isMissingEndpoint(res.status)) return { status: 'unavailable' }
-
-  if (!res.ok) {
-    const body = await res.json().catch(() => null)
-    const message =
-      (body as { error?: { message?: string }; detail?: string } | null)?.error?.message ??
-      (body as { detail?: string } | null)?.detail ??
-      res.statusText ??
-      'Request failed'
-    return { status: 'error', message }
-  }
-
-  const dir = (await res.json().catch(() => null)) as ReviewerDir | null
-  if (!dir || typeof dir.dir_id !== 'string') {
-    // A 2xx that does not match the contract is the same practical situation
-    // as no endpoint at all: nothing was created that the reviewer can use.
-    return { status: 'unavailable' }
-  }
-  return { status: 'created', dir }
+export async function fetchReviewerDirs(model?: string): Promise<ReviewerDir[]> {
+  const params = new URLSearchParams()
+  if (model) params.set('model', model)
+  const query = params.toString()
+  return apiFetch<ReviewerDir[]>(`/api/reviewer_dirs${query ? `?${query}` : ''}`)
 }

@@ -38,6 +38,10 @@ PAYLOAD = [
     "runs/active/resubmit/unlabelled/unlabelled_predictions_sif.csv",
     "runs/active/resubmit/unlabelled/unlabelled_predictions_sif_abtt.csv",
     "runs/active/ig_examples/phase12f_examples.csv",
+    # Query-query matrices (issue #95). Picked up by glob rather than by name,
+    # so having one here is what proves the glob actually reaches the archive.
+    "runs/active/resubmit/unlabelled/qq_sim_bowphs_LaTa.npz",
+    "runs/active/resubmit/unlabelled/qq_sim_google_mt5-base.npz",
 ]
 N_ARTIFACTS = 24
 ARTIFACT_BYTES = 40_000

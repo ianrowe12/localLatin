@@ -9,6 +9,7 @@ import {
 import { TokenRefProvider } from '../connections/TokenRefRegistry'
 import ConnectionOverlay from '../connections/ConnectionOverlay'
 import DocumentPanel from '../document/DocumentPanel'
+import AwaitingMatchBadge from '../predictions/AwaitingMatchBadge'
 import DraggableDivider from './DraggableDivider'
 import { buildWordMatchMap } from '../../utils/wordSimilarity'
 import { useTokenMap, type TokenMapResponse, type TopMatch } from '../../api/tokenMap'
@@ -57,7 +58,14 @@ export default function CenterArea() {
     if (!predictions.data?.predictions) return null
     if (predictions.data.variant !== activeVariant) return null
     if (predictions.data.model !== activeModel) return null
-    return predictions.data.predictions[activePredictionRank - 1] ?? null
+    // Looked up BY RANK, not by array index. Reviewer directories are
+    // anchored at rank 11 regardless of how many model candidates came back,
+    // so the list can have a gap in it and index arithmetic would pair a rank
+    // with the wrong card.
+    return (
+      predictions.data.predictions.find((p) => p.rank === activePredictionRank) ??
+      null
+    )
   }, [predictions.data, activePredictionRank, activeVariant, activeModel])
 
   // Derive candidate info — override wins over the normal prediction path
@@ -266,6 +274,13 @@ export default function CenterArea() {
               tokenMap={effectiveTokenMap}
               loading={queryDetail.loading}
               scrollRef={queryScrollRef}
+              // The badge reports the fate of directories *this* document
+              // seeded, so it belongs on the query panel, not on a candidate.
+              badge={
+                <AwaitingMatchBadge
+                  seededDirs={predictions.data?.seeded_dirs ?? []}
+                />
+              }
             />
           </div>
 
@@ -302,7 +317,11 @@ export default function CenterArea() {
                   side="candidate"
                   filename={candidateFile?.filename}
                   dirLabel={
-                    overrideCandidateDir ?? currentPrediction?.dir_name
+                    // Reviewer directories show their human label; the opaque
+                    // reviewer-dir-N id would tell the reviewer nothing.
+                    overrideCandidateDir ??
+                    currentPrediction?.label ??
+                    currentPrediction?.dir_name
                   }
                   score={overrideCandidateDir ? undefined : currentPrediction?.score}
                   rank={overrideCandidateDir ? undefined : activePredictionRank}

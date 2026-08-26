@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import type { ConfidenceBands } from '../utils/confidenceBands'
 import { apiFetch } from './client'
 import { FEEDBACK_UPDATED_EVENT } from './feedback'
 import type { PredictionVariant } from './variants'
@@ -26,6 +27,13 @@ export interface ModelInfo {
   // (#94), but the deployment still describes what it serves here.
   available_variants: PredictionVariant[]
   default_variant: PredictionVariant
+  // Deployment-wide. The backend owns these thresholds because it decides
+  // reviewer-directory status with them; see utils/confidenceBands.ts. Optional so a
+  // frontend build can talk to a backend that predates them.
+  confidence_bands?: ConfidenceBands
+  // Whether this model shipped a query-query matrix, i.e. whether it can score
+  // reviewer-created directories at all.
+  supports_reviewer_dirs?: boolean
 }
 
 export interface RecentReview {

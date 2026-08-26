@@ -1,6 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import { createReviewerDir } from '../../api/reviewerDirs'
 import { BAND_COPY } from '../../utils/confidenceBands'
+import NewDirectoryCta from './NewDirectoryCta'
 
 interface NoMatchCalloutProps {
   /** Query whose top hit fell below the no-match threshold. */
@@ -9,61 +8,40 @@ interface NoMatchCalloutProps {
   topScore: number | null
   /** How many ranks the feedback pills offer, so the fallback copy matches. */
   topK: number
+  /** Model slug the directory would be created under. */
+  model: string
+  /** Seed filename, used to suggest a default label. */
+  filename?: string
+  /** This document already seeds a directory, so creation is not on offer. */
+  alreadySeeded: boolean
 }
 
-type CtaState =
-  | { kind: 'idle' }
-  | { kind: 'submitting' }
-  | { kind: 'created'; label: string }
-  | { kind: 'unavailable' }
-  | { kind: 'error'; message: string }
-
 /**
- * The band-1 treatment (issue #94): when the best candidate scores below
- * NO_MATCH_THRESHOLD, the reviewer must see in a split second that the ranking
+ * The band-1 treatment (issue #94): when the best candidate scores below the
+ * no-match threshold, the reviewer must see in a split second that the ranking
  * below is probably noise, and the *default top option* is to say so rather
  * than to pick a rank.
  *
- * The button is a call to action for the new-directory loop (issue #95). It
- * calls POST /api/reviewer_dirs; on a deployment where that endpoint does not
- * exist yet it degrades to a friendly "coming with the next update" state
- * instead of an error, so shipping this ahead of the backend is safe.
+ * The callout is #94's: red frame, warning glyph, `role="alert"`, the band copy
+ * and the best-similarity line. The action inside it is #95's `NewDirectoryCta`,
+ * which is the integration point that component always documented -- it now
+ * renders here, emphasised, instead of at the foot of the list. #94's own
+ * button and its `CtaState` machine are gone: they existed to call an endpoint
+ * that did not exist yet, including a "coming with the next update" branch that
+ * this PR makes unreachable.
+ *
+ * Creation state (submitting, created, error) lives in `NewDirectoryCta`, and
+ * `PredictionList` keys this component by query id so none of it survives a
+ * navigation.
  */
 export default function NoMatchCallout({
   queryFileId,
   topScore,
   topK,
+  model,
+  filename,
+  alreadySeeded,
 }: NoMatchCalloutProps) {
-  const [state, setState] = useState<CtaState>({ kind: 'idle' })
-  // The query this component is currently showing, readable from inside an
-  // in-flight request's closure (which still holds the click-time value).
-  const currentQuery = useRef(queryFileId)
-
-  // A different query is a different decision: never carry a created/failed
-  // state across.
-  useEffect(() => {
-    currentQuery.current = queryFileId
-    setState({ kind: 'idle' })
-  }, [queryFileId])
-
-  const handleClick = async () => {
-    // Staleness guard: a reviewer can navigate while the POST is in flight,
-    // and a response that lands afterwards belongs to a query that is no
-    // longer on screen. Dropping it here is what keeps "created" from being
-    // painted onto the next fragment once issue #95 makes creation real.
-    const forQuery = queryFileId
-    setState({ kind: 'submitting' })
-    const result = await createReviewerDir(forQuery)
-    if (currentQuery.current !== forQuery) return
-    if (result.status === 'created') {
-      setState({ kind: 'created', label: result.dir.label || result.dir.dir_id })
-    } else if (result.status === 'unavailable') {
-      setState({ kind: 'unavailable' })
-    } else {
-      setState({ kind: 'error', message: result.message })
-    }
-  }
-
   return (
     <div
       data-testid="no-match-callout"
@@ -103,45 +81,23 @@ export default function NoMatchCallout({
         )}
       </p>
 
-      {state.kind === 'created' ? (
+      {alreadySeeded ? (
         <p
-          data-testid="no-match-cta-created"
-          className="mt-2 font-ui text-xs text-stone-700 dark:text-stone-200"
+          data-testid="no-match-already-seeded"
+          className="mt-2 font-ui text-xs italic text-stone-600 dark:text-stone-300"
         >
-          New directory <span className="font-medium">{state.label}</span> created and
-          awaiting a match.
+          You already started a directory from this document. Record your
+          assessment as &ldquo;None of top {topK}&rdquo; if none of the ranked
+          candidates fits.
         </p>
       ) : (
-        <button
-          type="button"
-          onClick={handleClick}
-          disabled={state.kind === 'submitting'}
-          className="mt-2 w-full rounded-lg bg-incorrect px-2 py-1.5 text-xs font-semibold
-                     text-white transition-colors hover:bg-incorrect-light
-                     focus:outline-none focus:ring-2 focus:ring-incorrect/40
-                     disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {state.kind === 'submitting' ? 'Creating...' : 'New directory / New file'}
-        </button>
-      )}
-
-      {state.kind === 'unavailable' && (
-        <p
-          data-testid="no-match-cta-unavailable"
-          className="mt-1.5 font-ui text-xs italic text-stone-500 dark:text-stone-400"
-        >
-          Creating directories is coming with the next update. For now, record this as
-          &ldquo;None of top {topK}&rdquo; with a note.
-        </p>
-      )}
-
-      {state.kind === 'error' && (
-        <p
-          data-testid="no-match-cta-error"
-          className="mt-1.5 font-ui text-xs text-incorrect"
-        >
-          {state.message}
-        </p>
+        <NewDirectoryCta
+          queryId={queryFileId}
+          model={model}
+          filename={filename}
+          emphasised
+          inline
+        />
       )}
     </div>
   )

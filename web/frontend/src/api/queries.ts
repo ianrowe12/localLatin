@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { apiFetch } from './client'
 import { FEEDBACK_UPDATED_EVENT } from './feedback'
+import { REVIEWER_DIRS_UPDATED_EVENT, type ReviewerDir } from './reviewerDirs'
 import { DEFAULT_VARIANT, type PredictionVariant } from './variants'
 
 // ---------------------------------------------------------------------------
@@ -47,6 +48,14 @@ export interface CandidateFile {
   text: string
 }
 
+/**
+ * Where a candidate came from. `model` is a labelled directory the retrieval
+ * run ranked; `reviewer` is a directory a reviewer created, scored live from
+ * the query-query matrix. Reviewer candidates are appended after the model's
+ * ten, so a model candidate's rank still means what it always did.
+ */
+export type CandidateSource = 'model' | 'reviewer'
+
 export interface Prediction {
   rank: number
   dir_name: string
@@ -54,6 +63,11 @@ export interface Prediction {
   dir_files: string[]
   preview_text: string
   candidate_files: CandidateFile[] | null
+  source?: CandidateSource
+  // Reviewer candidates only.
+  label?: string | null
+  created_by?: string | null
+  seed_query_id?: number | null
 }
 
 export interface PredictionResponse {
@@ -62,6 +76,9 @@ export interface PredictionResponse {
   model: string
   variant: PredictionVariant
   predictions: Prediction[]
+  // Reviewer directories seeded by this query. Drives the badge on the
+  // document itself rather than on any candidate card.
+  seeded_dirs?: ReviewerDir[]
 }
 
 // ---------------------------------------------------------------------------
@@ -276,6 +293,18 @@ export function usePredictions(
     error: null,
   })
   const cache = useRef(new Map<string, PredictionResponse>())
+  const [refreshVersion, setRefreshVersion] = useState(0)
+
+  // A new reviewer directory becomes a candidate for every *other* query, so
+  // the whole cache is stale, not just the seed's entry.
+  useEffect(() => {
+    const refresh = () => {
+      cache.current.clear()
+      setRefreshVersion((version) => version + 1)
+    }
+    window.addEventListener(REVIEWER_DIRS_UPDATED_EVENT, refresh)
+    return () => window.removeEventListener(REVIEWER_DIRS_UPDATED_EVENT, refresh)
+  }, [])
 
   useEffect(() => {
     if (queryId === null || !model) {
@@ -315,7 +344,7 @@ export function usePredictions(
     return () => {
       cancelled = true
     }
-  }, [queryId, model, variant])
+  }, [queryId, model, variant, refreshVersion])
 
   return state
 }

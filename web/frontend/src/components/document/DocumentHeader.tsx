@@ -1,9 +1,13 @@
+import type { ReactNode } from 'react'
+
 interface DocumentHeaderProps {
   filename: string
   dirLabel?: string
   score?: number
   rank?: number
   side: 'query' | 'candidate'
+  /** Status pills that belong to the document itself, e.g. "Awaiting future match". */
+  badge?: ReactNode
 }
 
 export default function DocumentHeader({
@@ -12,6 +16,7 @@ export default function DocumentHeader({
   score,
   rank,
   side,
+  badge,
 }: DocumentHeaderProps) {
   return (
     <div className="px-3 py-2 border-b border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-surface-800 flex-shrink-0">
@@ -28,6 +33,8 @@ export default function DocumentHeader({
         )}
 
         <span className="flex-1" />
+
+        {badge}
 
         {score != null && (
           <span className="bg-accent/10 text-accent text-xs px-2 py-0.5 rounded-full font-mono whitespace-nowrap">

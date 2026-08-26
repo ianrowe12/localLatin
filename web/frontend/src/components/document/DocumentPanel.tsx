@@ -28,6 +28,8 @@ interface DocumentPanelProps {
   tokenMap?: TokenMapLike | null
   loading?: boolean
   scrollRef?: React.RefObject<HTMLDivElement>
+  /** Status pills for the document itself; forwarded to DocumentHeader. */
+  badge?: React.ReactNode
 }
 
 export default function DocumentPanel({
@@ -40,6 +42,7 @@ export default function DocumentPanel({
   tokenMap,
   loading,
   scrollRef,
+  badge,
 }: DocumentPanelProps) {
   const {
     hoveredQueryTokenIdx,
@@ -136,6 +139,7 @@ export default function DocumentPanel({
             score={score}
             rank={rank}
             side={side}
+            badge={badge}
           />
         )}
         <SkeletonLoader />
@@ -168,6 +172,7 @@ export default function DocumentPanel({
         score={score}
         rank={rank}
         side={side}
+        badge={badge}
       />
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4">
         <div className="leading-relaxed">

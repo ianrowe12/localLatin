@@ -42,7 +42,7 @@ conda run -n localLatin python ...
 ### Pipeline scripts (`scripts/`)
 
 Grouped by purpose:
-- **`scripts/resubmit/`**: Active paper resubmission pipeline (`run_resubmit_data_prep.py`, `run_taskb_mseed.py`, `visualize_taskb_mseed.py`, `run_resubmit_ig_comparison.py`, `run_leiden_examples.py`, `evaluate_vectors.py`, `visualize_resubmit.py`, `index_unlabelled.py`, `run_resubmit_unlabelled_retrieval.py`).
+- **`scripts/resubmit/`**: Active paper resubmission pipeline (`run_resubmit_data_prep.py`, `run_taskb_mseed.py`, `visualize_taskb_mseed.py`, `run_resubmit_ig_comparison.py`, `run_leiden_examples.py`, `evaluate_vectors.py`, `visualize_resubmit.py`, `index_unlabelled.py`, `run_resubmit_unlabelled_retrieval.py`, `build_qq_matrices.py`).
 - **`scripts/ig/`**: IG artifact regeneration for the webapp (`run_ig_examples_pipeline.sh`, `run_phase12f_select_pair_examples.py`, `run_phase12f_visualize.py`).
 - **`scripts/webapp/`**: Webapp data export (`export_webapp_data.sh`), deploy data packaging (`make_data_release.sh`), deployment smoke checks (`smoke_reviewer_pilot.py`).
 - **`scripts/common/`**: Shared helpers (`create_canon_split.py`, `data_prep.py`).
@@ -215,6 +215,11 @@ The webapp reads these files (relative to `data_root` in `web/config.yaml`):
 - `runs/active/resubmit/unlabelled/unlabelled_predictions_<variant>.csv` — model predictions,
   one file per post-processing variant (`raw`, `abtt`, `sif`, `sif_abtt`; `sif_abtt` is the
   default). The pre-variant `unlabelled_predictions.csv` is stale and is never served.
+- `runs/active/resubmit/unlabelled/qq_sim_<model_slug>.npz` — query-query cosine matrix per
+  model (2,238 x 2,238 float16, ~10 MB each), built by
+  `scripts/resubmit/build_qq_matrices.py` at exactly the deployed `sif_abtt` layer/cleaner.
+  Reviewer-created directories are scored from these. Optional: a model without one simply
+  serves no reviewer-directory candidates.
 - `runs/active/ig_examples/` — IG visualization artifacts (CSV + NPZ)
 - `runs/active/resubmit/webapp/feedback.db` — auto-created SQLite
 

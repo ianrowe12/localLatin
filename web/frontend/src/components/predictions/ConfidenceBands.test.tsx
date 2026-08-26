@@ -23,11 +23,15 @@ function predictionsPayload(scores: number[], fileId = QUERY_ID) {
       dir_files: ['a.txt'],
       preview_text: 'preview',
       candidate_files: [{ filename: 'a.txt', text: 'candidate text' }],
+      source: 'model' as const,
     })),
+    seeded_dirs: seededDirs,
   }
 }
 
 let scores: number[] = [0.9]
+/** Reviewer directories seeded by the query under test. */
+let seededDirs: unknown[] = []
 /** Status the stubbed POST /api/reviewer_dirs answers with. */
 let reviewerDirStatus = 201
 let reviewerDirPosts: { url: string; body: unknown }[] = []
@@ -76,6 +80,9 @@ function installFetch(): void {
             prediction_count: 2238,
             available_variants: ['raw', 'abtt', 'sif', 'sif_abtt'],
             default_variant: 'sif_abtt',
+            // Thresholds are served, not hardcoded in the bundle (#95).
+            confidence_bands: { no_match: 0.5, verify: 0.7 },
+            supports_reviewer_dirs: true,
           },
         ])
       }
@@ -128,6 +135,7 @@ function renderList(topScores: number[]) {
 
 beforeEach(() => {
   scores = [0.9]
+  seededDirs = []
   reviewerDirStatus = 201
   deferReviewerDir = false
   releaseReviewerDir = () => {}
@@ -197,56 +205,32 @@ describe('new-directory CTA', () => {
   })
 
   it('posts the D2 contract and reports the created directory', async () => {
+    // Adapted for #95: the CTA opens a one-field naming form rather than
+    // posting on the first click, because a directory's label is permanent
+    // (both tables are append-only, there is no rename). The field is
+    // pre-filled, so accepting the default is one more click and no typing.
     const user = userEvent.setup()
     renderList([0.31])
     const cta = await screen.findByRole('button', { name: 'New directory / New file' })
 
     await user.click(cta)
+    await user.click(await screen.findByTestId('new-directory-submit'))
 
     await waitFor(() => {
       expect(reviewerDirPosts).toHaveLength(1)
     })
     expect(reviewerDirPosts[0].url).toContain('/api/reviewer_dirs')
-    expect(reviewerDirPosts[0].body).toEqual({ query_file_id: QUERY_ID })
-    expect((await screen.findByTestId('no-match-cta-created')).textContent).toContain(
+    expect(reviewerDirPosts[0].body).toEqual({
+      query_file_id: QUERY_ID,
+      label: 'New directory from query-11',
+      model_slug: MODEL,
+    })
+    expect((await screen.findByTestId('new-directory-created')).textContent).toContain(
       'New directory 42',
     )
   })
 
-  it('degrades to a friendly message when the endpoint is not deployed yet', async () => {
-    // #95 has not merged on this deployment: a 404 is expected, not an error.
-    reviewerDirStatus = 404
-    const user = userEvent.setup()
-    renderList([0.1])
-
-    await user.click(
-      await screen.findByRole('button', { name: 'New directory / New file' }),
-    )
-
-    const message = await screen.findByTestId('no-match-cta-unavailable')
-    expect(message.textContent).toContain('coming with the next update')
-    // The CTA is still there and the list is still usable.
-    expect(screen.getByRole('button', { name: 'New directory / New file' })).toBeTruthy()
-    expect(screen.getByText('CSAR.347.1')).toBeTruthy()
-  })
-
-  it('names the rank pill the reviewer can actually see', async () => {
-    reviewerDirStatus = 404
-    const user = userEvent.setup()
-    renderList([0.2, 0.19, 0.18])
-
-    await user.click(
-      await screen.findByRole('button', { name: 'New directory / New file' }),
-    )
-
-    // MatchPills renders "None of top 3" for a 3-hit list, so the fallback
-    // copy must not say "None of top N" or "None of top 10".
-    expect((await screen.findByTestId('no-match-cta-unavailable')).textContent).toContain(
-      'None of top 3',
-    )
-  })
-
-  it('surfaces a real server failure as an error, not as "coming soon"', async () => {
+  it('surfaces a server failure to the reviewer', async () => {
     reviewerDirStatus = 500
     const user = userEvent.setup()
     renderList([0.1])
@@ -254,9 +238,36 @@ describe('new-directory CTA', () => {
     await user.click(
       await screen.findByRole('button', { name: 'New directory / New file' }),
     )
+    await user.click(await screen.findByTestId('new-directory-submit'))
 
-    expect(await screen.findByTestId('no-match-cta-error')).toBeTruthy()
-    expect(screen.queryByTestId('no-match-cta-unavailable')).toBeNull()
+    expect(await screen.findByTestId('new-directory-error')).toBeTruthy()
+    expect(screen.queryByTestId('new-directory-created')).toBeNull()
+  })
+
+  it('refuses a second directory on a document that already seeds one', async () => {
+    // The backend answers that with 409, so the CTA is not offered at all.
+    seededDirs = [
+      {
+        dir_id: 'reviewer-dir-1',
+        label: 'Unattested homily',
+        status: 'awaiting_match',
+        seed_query_id: QUERY_ID,
+        member_query_ids: [QUERY_ID],
+        created_at: '2026-08-26 00:00:00',
+        created_by: 'Abigail',
+        model_slug: MODEL,
+        variant: 'sif_abtt',
+        best_match_score: 0.31,
+        has_potential_match: false,
+      },
+    ]
+    renderList([0.2])
+
+    await screen.findByTestId('no-match-callout')
+    expect(screen.getByTestId('no-match-already-seeded')).toBeTruthy()
+    expect(
+      screen.queryByRole('button', { name: 'New directory / New file' }),
+    ).toBeNull()
   })
 })
 
@@ -277,10 +288,11 @@ describe('CTA staleness (reviewer navigates mid-request)', () => {
     await user.click(
       await screen.findByRole('button', { name: 'New directory / New file' }),
     )
+    await user.click(await screen.findByTestId('new-directory-submit'))
     await waitFor(() => {
       expect(reviewerDirPosts).toHaveLength(1)
     })
-    expect(reviewerDirPosts[0].body).toEqual({ query_file_id: QUERY_ID })
+    expect(reviewerDirPosts[0].body).toMatchObject({ query_file_id: QUERY_ID })
 
     await user.click(screen.getByRole('button', { name: 'go to next query' }))
     await waitFor(() => {
@@ -292,7 +304,7 @@ describe('CTA staleness (reviewer navigates mid-request)', () => {
       releaseReviewerDir()
     })
 
-    expect(screen.queryByTestId('no-match-cta-created')).toBeNull()
+    expect(screen.queryByTestId('new-directory-created')).toBeNull()
     // Query 12 shows a fresh, clickable CTA rather than a stuck "Creating...".
     expect(screen.getByRole('button', { name: 'New directory / New file' })).toBeTruthy()
   })
@@ -303,20 +315,35 @@ describe('CTA staleness (reviewer navigates mid-request)', () => {
     deferReviewerDir = true
     const user = userEvent.setup()
     const { rerender } = render(
-      <NoMatchCallout queryFileId={QUERY_ID} topScore={0.2} topK={10} />,
+      <NoMatchCallout
+        queryFileId={QUERY_ID}
+        topScore={0.2}
+        topK={10}
+        model={MODEL}
+        alreadySeeded={false}
+      />,
     )
 
     await user.click(screen.getByRole('button', { name: 'New directory / New file' }))
+    await user.click(screen.getByTestId('new-directory-submit'))
     await waitFor(() => {
       expect(reviewerDirPosts).toHaveLength(1)
     })
 
-    rerender(<NoMatchCallout queryFileId={NEXT_QUERY_ID} topScore={0.3} topK={10} />)
+    rerender(
+      <NoMatchCallout
+        queryFileId={NEXT_QUERY_ID}
+        topScore={0.3}
+        topK={10}
+        model={MODEL}
+        alreadySeeded={false}
+      />,
+    )
     await act(async () => {
       releaseReviewerDir()
     })
 
-    expect(screen.queryByTestId('no-match-cta-created')).toBeNull()
+    expect(screen.queryByTestId('new-directory-created')).toBeNull()
     expect(screen.getByRole('button', { name: 'New directory / New file' })).toBeTruthy()
   })
 })

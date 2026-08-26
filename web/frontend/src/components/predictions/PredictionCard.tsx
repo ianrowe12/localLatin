@@ -3,8 +3,10 @@ import type { Prediction } from '../../api/queries'
 import {
   BAND_COPY,
   BAND_STYLES,
+  FALLBACK_BANDS,
   NO_MATCH_CARD_STYLE,
   getConfidenceBand,
+  type ConfidenceBands,
 } from '../../utils/confidenceBands'
 
 interface PredictionCardProps {
@@ -12,12 +14,25 @@ interface PredictionCardProps {
   rank: number
   isActive: boolean
   onClick: () => void
+  /**
+   * The deployment's thresholds, from GET /api/models. Passed down rather than
+   * fetched per card, and defaulted so a card rendered outside the list still
+   * bands sensibly.
+   */
+  bands?: ConfidenceBands
 }
 
-function PredictionCardInner({ prediction, rank, isActive, onClick }: PredictionCardProps) {
+function PredictionCardInner({
+  prediction,
+  rank,
+  isActive,
+  onClick,
+  bands = FALLBACK_BANDS,
+}: PredictionCardProps) {
   // One band per card, from the displayed similarity (issue #94). The
-  // thresholds live in utils/confidenceBands.ts and nowhere else.
-  const band = getConfidenceBand(prediction.score)
+  // thresholds are the server's; utils/confidenceBands.ts owns everything
+  // built on top of them.
+  const band = getConfidenceBand(prediction.score, bands)
   const styles = BAND_STYLES[band]
   const copy = BAND_COPY[band]
 
