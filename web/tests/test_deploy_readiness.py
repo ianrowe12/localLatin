@@ -153,8 +153,20 @@ def test_data_contract_rejects_present_but_empty_files() -> None:
     assert 'phase12f_examples.csv" file' in contract
     # An artifacts directory of zero-byte NPZ files must not count.
     assert "-name '*.npz' -size +0" in contract
-    # Same for the q-q matrices reviewer directories are scored from (#95).
-    assert "-name 'qq_sim_*.npz' -size +0" in contract
+    # The q-q matrices reviewer directories are scored from (#95) are checked
+    # one per model rather than as a glob count, so a single missing matrix
+    # cannot hide behind the other five. Each goes through the "file" kind,
+    # which is the zero-byte rejection asserted above.
+    assert 'qq_sim_${slug}.npz" file' in contract
+    for slug in (
+        "bowphs_LaTa",
+        "bowphs_PhilTa",
+        "google_mt5-base",
+        "sentence-transformers_LaBSE",
+        "Qwen_Qwen3-Embedding-0.6B",
+        "KaLM-Embedding_KaLM-embedding-multilingual-mini-instruct-v2.5",
+    ):
+        assert slug in contract, f"q-q matrix for {slug} is not checked"
 
 
 def test_deploy_script_preserves_the_feedback_database() -> None:
