@@ -67,6 +67,19 @@ class PacketPdf:
         return self.doc.tobytes(garbage=4, deflate=True)
 
 
+def _attribution(row: dict[str, Any]) -> str:
+    """Author label for one feedback row: display name, plus login when known.
+
+    Packets have always listed every reviewer's rows for a query (issue #96
+    made the in-app prefill match), so the author of each row is the load
+    bearing detail. `reviewer_username` is NULL for pre-account rows and for
+    rows whose account was removed; those fall back to the display name alone.
+    """
+    reviewer = row.get("reviewer") or "unknown reviewer"
+    username = row.get("reviewer_username")
+    return f"{reviewer} (@{username})" if username else reviewer
+
+
 def _clip(text: str, limit: int) -> str:
     if len(text) <= limit:
         return text
@@ -100,7 +113,12 @@ def build_review_packet_pdf(
     pdf.add_text("Attribution/token-map data: unavailable or omitted from this bounded packet.")
     pdf.add_rule()
 
-    pdf.add_heading("Reviewer Outcome")
+    pdf.add_heading("Reviewer Outcomes")
+    pdf.add_text(
+        "Every reviewer's rows are listed, newest first, each attributed to its "
+        "author. Notes are shared in the app, so a later row may restate or "
+        "revise an earlier reviewer's note; nothing is ever overwritten."
+    )
     if feedback_variant:
         pdf.add_text(f"Feedback scope: variant {feedback_variant} only.")
     else:
@@ -116,7 +134,7 @@ def build_review_packet_pdf(
         candidate = row["correct_dir"] or ""
         row_variant = row.get("variant") or LEGACY_VARIANT_LABEL
         pdf.add_text(
-            f"{row['timestamp']} | {row['reviewer']} | variant {row_variant} | "
+            f"{row['timestamp']} | {_attribution(row)} | variant {row_variant} | "
             f"{row['outcome']} | rank {rank} | {candidate}"
         )
         if row["notes"]:
