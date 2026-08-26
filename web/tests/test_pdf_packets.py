@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import sqlite3
 from pathlib import Path
 
 import fitz
@@ -137,6 +138,57 @@ def test_pi_admin_can_generate_bounded_review_packet_pdf(tmp_path: Path) -> None
         assert "rank one note" in text
         assert "Attribution/token-map data" in text
         assert "candidate-b" not in text
+        # Rows are attributed by display name plus login, and the packet says
+        # out loud that it spans every reviewer (issue #96).
+        assert "PI Scholar (@pi)" in text
+        assert "Reviewer Outcomes" in text
+        assert "Every reviewer's rows are listed" in text
+
+
+def test_packet_attributes_a_row_whose_account_is_gone(tmp_path: Path) -> None:
+    """Pre-account rows and deleted accounts keep their display name.
+
+    `reviewer_username` comes from a LEFT JOIN, so it is NULL whenever no
+    account backs the row. The packet must still name somebody rather than
+    printing an empty '(@)'.
+    """
+    config_path = _write_fixture_data(tmp_path)
+    with _client(config_path) as client:
+        _register_admin(client)
+        assert (
+            client.post(
+                "/api/feedback",
+                json={
+                    "query_id": 1,
+                    "model_slug": "bowphs/LaTa",
+                    "outcome": "matched_rank",
+                    "correct_rank": 1,
+                    "correct_dir": "candidate-a",
+                    "notes": "note from a reviewer who has since left",
+                },
+            ).status_code
+            == 201
+        )
+
+        # Sever the row from its account the way a pre-account row looks.
+        db_path = tmp_path / "runs" / "active" / "resubmit" / "webapp" / "feedback.db"
+        connection = sqlite3.connect(db_path)
+        try:
+            connection.execute("UPDATE feedback SET reviewer_account_id = NULL")
+            connection.commit()
+        finally:
+            connection.close()
+
+        response = client.get(
+            "/api/packets/review/1",
+            params={"model": "bowphs/LaTa", "top_k": 1},
+        )
+        assert response.status_code == 200
+        pdf = fitz.open(stream=response.content, filetype="pdf")
+        text = "\n".join(page.get_text() for page in pdf)
+        assert "PI Scholar" in text
+        assert "(@" not in text
+        assert "note from a reviewer who has since left" in text
 
 
 def test_reviewers_cannot_generate_review_packet_pdf(tmp_path: Path) -> None:

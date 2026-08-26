@@ -175,6 +175,12 @@ def check_notes_round_trip(
     This is the reload path the reviewer sees: reopening a query must prefill
     the notes and the selected ranks saved for *that* variant, and must not
     leak a note saved under a different variant.
+
+    /feedback/latest is shared across reviewers (issue #96), so the read-back
+    asserts that the row this run just appended is the newest one for the
+    query -- which it is, having been written moments earlier -- rather than
+    that it belongs to the smoke account. The leak check still holds either
+    way: the note text is stamped with a timestamp and is unique per run.
     """
     note = f"DEPLOY SMOKE notes round-trip {variant} {int(time.time())}"
     created = client.json(

@@ -70,6 +70,17 @@ CREATE INDEX IF NOT EXISTS idx_account_sessions_account ON account_sessions(acco
 CREATE INDEX IF NOT EXISTS idx_account_sessions_expires ON account_sessions(expires_at);
 """
 
+#: Every read of a feedback row carries the author's login name alongside the
+#: stored display name, so shared notes and review packets can attribute a note
+#: to a person. LEFT JOIN, never INNER: rows written before accounts existed
+#: (reviewer_account_id NULL) and rows whose account was later removed must
+#: still come back, just with reviewer_username NULL.
+_FEEDBACK_SELECT = """
+    SELECT feedback.*, accounts.username AS reviewer_username
+    FROM feedback
+    LEFT JOIN accounts ON accounts.id = feedback.reviewer_account_id
+"""
+
 # Columns the auth layer reads unconditionally; verified after every migration.
 _REQUIRED_ACCOUNT_COLUMNS = {
     "approval_status",
@@ -197,11 +208,25 @@ class FeedbackDB:
         )
         await self._db.commit()
         row = await (
-            await self._db.execute("SELECT * FROM feedback WHERE id = ?", (cursor.lastrowid,))
+            await self._db.execute(
+                _FEEDBACK_SELECT + " WHERE feedback.id = ?", (cursor.lastrowid,)
+            )
         ).fetchone()
         return _feedback_row(row)
 
     async def _migrate(self) -> None:
+        """Additive schema repair, run on every boot.
+
+        Warning for anyone tempted to enforce the append-only rule with a real
+        `BEFORE UPDATE` trigger on `feedback` (the tests install exactly such a
+        trigger, but only after startup): two of the normalization UPDATEs
+        below are unconditional. `WHERE outcome = 'none_of_top_k'` and
+        `WHERE outcome = 'skipped'` re-fire on already-normalized rows every
+        time the app starts, so a schema-level trigger would abort startup as
+        soon as one such row exists. Guard them first -- e.g. add
+        `AND (correct_rank IS NOT 0 OR correct_dir IS NOT NULL)` -- so they
+        become genuine no-ops once the data is clean.
+        """
         assert self._db is not None
         rows = await (await self._db.execute("PRAGMA table_info(feedback)")).fetchall()
         columns = {r["name"] for r in rows}
@@ -795,15 +820,15 @@ class FeedbackDB:
         variant: str | None = None,
     ) -> list[dict]:
         assert self._db is not None
-        query = "SELECT * FROM feedback WHERE query_id = ?"
+        query = _FEEDBACK_SELECT + " WHERE feedback.query_id = ?"
         params: list = [query_id]
         if model:
-            query += " AND model_slug = ?"
+            query += " AND feedback.model_slug = ?"
             params.append(model)
         if variant:
-            query += " AND variant = ?"
+            query += " AND feedback.variant = ?"
             params.append(variant)
-        query += " ORDER BY timestamp DESC, id DESC LIMIT ?"
+        query += " ORDER BY feedback.timestamp DESC, feedback.id DESC LIMIT ?"
         params.append(limit)
         rows = await (await self._db.execute(query, params)).fetchall()
         return [_feedback_row(row) for row in rows]
@@ -812,30 +837,52 @@ class FeedbackDB:
         self,
         query_id: int,
         model_slug: str,
-        reviewer_account_id: int,
         variant: str = DEFAULT_VARIANT,
+        reviewer_account_id: int | None = None,
+        require_note: bool = False,
     ) -> dict | None:
-        """Latest row for this reviewer on (query, model, variant).
+        """Latest row on (query, model, variant), team-wide or for one reviewer.
 
-        Keyed by variant so a note saved while reviewing sif_abtt never prefills
-        the form for raw -- different rankings, different answers.
+        Both scopes exist because issue #96 split them (see the router): the
+        NOTE a reviewer sees is the newest one from ANY reviewer, so two people
+        working the same query read each other's reasoning instead of silently
+        duplicating it, while the DECISION stays each reviewer's own. Pass
+        `reviewer_account_id` for the second; `require_note` for the first.
+
+        `require_note` skips rows whose notes are blank. The notes box exists to
+        surface notes, so an answer saved without prose must not displace a
+        colleague's substantive note -- "latest" there means latest row that
+        actually says something. The decision lookup never sets it: an answer
+        counts whether or not the reviewer explained it.
+
+        Still keyed by variant either way, so a note saved while reviewing
+        sif_abtt never prefills the form for raw -- different rankings,
+        different answers.
+
+        `idx_feedback_latest_variant` covers the scoped call outright. The
+        team-wide call uses only its first three columns, leaving the ORDER BY
+        to a sort: a handful of rows per query/model/variant in the pilot, so
+        not worth a second index.
         """
         assert self._db is not None
-        row = await (
-            await self._db.execute(
-                """
-                SELECT *
-                FROM feedback
-                WHERE query_id = ?
-                  AND model_slug = ?
-                  AND variant = ?
-                  AND reviewer_account_id = ?
-                ORDER BY timestamp DESC, id DESC
-                LIMIT 1
-                """,
-                (query_id, model_slug, variant, reviewer_account_id),
-            )
-        ).fetchone()
+        query = (
+            _FEEDBACK_SELECT
+            + """
+            WHERE feedback.query_id = ?
+              AND feedback.model_slug = ?
+              AND feedback.variant = ?
+            """
+        )
+        params: list = [query_id, model_slug, variant]
+        if reviewer_account_id is not None:
+            query += " AND feedback.reviewer_account_id = ?"
+            params.append(reviewer_account_id)
+        if require_note:
+            # COALESCE for safety: the column is NOT NULL today, but pre-schema
+            # rows have surprised this table before.
+            query += " AND TRIM(COALESCE(feedback.notes, '')) != ''"
+        query += " ORDER BY feedback.timestamp DESC, feedback.id DESC LIMIT 1"
+        row = await (await self._db.execute(query, params)).fetchone()
         return _feedback_row(row) if row is not None else None
 
     async def get_next_unreviewed(self, all_file_ids: list[int], limit: int = 5) -> list[int]:

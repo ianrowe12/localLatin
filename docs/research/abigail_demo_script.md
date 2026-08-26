@@ -139,7 +139,7 @@ express SIF-ness through the token weights rather than by re-running IG. The fou
 Stay on the demo queries if Abigail asks to see attribution. Off the demo set the toggle will not
 appear, and that is expected: an artifact costs a GPU pass per pair.
 
-## 7. Notes reload and multi-select
+## 7. Shared notes and multi-select
 
 On Query B:
 
@@ -149,8 +149,17 @@ On Query B:
 3. Type a note, for example `Both Laodicea 47 and Neocaesarea 12 are defensible; 47 matches the
    chapter number.`
 4. Submit.
-5. Navigate to another query and come back. The note and both selected pills are prefilled, with
-   the hint "Loaded from your last submitted review".
+5. Navigate to another query and come back. The note and both selected pills are prefilled, above
+   an attribution line reading "Last note by &lt;username&gt; - &lt;date&gt;". The two halves come from
+   different places: the **note** is the newest one from anyone on the review team, which is why
+   the line credits an author and is often somebody else's, while the **pills** are always your own
+   last answer and stay empty until you give one. A colleague who saves an answer without writing
+   anything does not blank the box: the newest row that actually carries a note is the one shown.
+   Saving never edits anybody's row; it appends a new one under whoever is signed in.
+
+This is the point worth making slowly if Abigail asks how two reviewers share a query: they see each
+other's reasoning, they never inherit each other's answer, and nothing anybody wrote can be
+overwritten.
 
 Every submitted row still records which pipeline it was given for, so the feedback log stays
 interpretable if a future deployment ever serves a different one. Reviewers no longer have to think

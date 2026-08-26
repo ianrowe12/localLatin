@@ -26,7 +26,17 @@ Scholar review web application for the localLatin Latin manuscript retrieval pro
 - `services/data_store.py` — `build_store()` loads all data at startup. The `DataStore` dataclass is the central data cache.
 - `services/token_map_svc.py` — Loads NPZ artifacts, computes cosine similarity matrices, optional HuggingFace tokenizer decoding. The token-map endpoints take `?method=&variant=`; without them the response carries every persisted method x variant matrix (7 x 4 dense grids), so the UI always sends both. `available_methods` / `available_variants` always report the artifact's full contents regardless of the filters.
 - `services/text_tokenizer.py` — Mirrors `src/token_filtering.classify_token()` from the research repo without torch dependency
-- `services/feedback_db.py` — SQLite CRUD for reviewer feedback and accounts
+- `services/feedback_db.py` — SQLite CRUD for reviewer feedback and accounts. The feedback log is
+  **append-only**: never UPDATE or DELETE a feedback row. `web/tests/test_top10_feedback.py`
+  installs SQLite triggers that enforce this during the save path; they are test-only and must not
+  move into `_SCHEMA`, because two of `_migrate()`'s normalization UPDATEs re-fire on every boot.
+- Shared notes (issue #96): `GET /api/feedback/latest` returns a **merged prefill view**, not a
+  stored row. The note, its timestamp and its attribution (`reviewer`, `reviewer_username`, which
+  usually name somebody else) come from the newest row by ANY reviewer that carries a non-empty
+  note, so an answer saved without prose cannot blank a colleague's reasoning. The decision
+  (`outcome`, `correct_rank`, `correct_dir`, `selected_ranks`) always comes from the CALLER's own
+  newest row, so a rank pressed by somebody else is never prefilled. When nobody has written a note
+  at all, the caller's own row carries the response so their selection is still restored.
 - `services/rate_limit.py` — in-process sliding-window limiter on `app.state.rate_limiter`, used by
   sign-in and the password endpoints. Per-process, which is correct only because
   `deploy/locallatin.service` runs `--workers 1`; a service restart wipes every open window.
