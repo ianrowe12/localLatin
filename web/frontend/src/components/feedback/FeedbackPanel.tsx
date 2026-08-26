@@ -7,6 +7,7 @@ import { fetchNextQuery, usePredictions } from '../../api/queries'
 import { fetchLatestFeedback, type FeedbackEntry } from '../../api/feedback'
 import MatchPills, { type MatchSelection } from './MatchPills'
 import NotesTextarea from './NotesTextarea'
+import { formatNoteAttribution } from './noteAttribution'
 import SubmitButton from './SubmitButton'
 
 function draftFromEntry(entry: FeedbackEntry): FeedbackDraft {
@@ -63,6 +64,12 @@ export default function FeedbackPanel() {
   const [skipNeedsNote, setSkipNeedsNote] = useState(false)
   const [multiSelect, setMultiSelect] = useState(false)
   const [seeded, setSeeded] = useState<{ key: string; draft: FeedbackDraft } | null>(null)
+  // The shared latest review for the query on screen, kept whether or not it
+  // seeded the form: a local unsaved draft wins the box, but the reviewer still
+  // needs to know who last recorded something here (issue #96).
+  const [latest, setLatest] = useState<{ key: string; entry: FeedbackEntry } | null>(
+    null,
+  )
 
   // Always-current view of the draft map for use inside async callbacks.
   const draftsRef = useRef(drafts)
@@ -82,15 +89,18 @@ export default function FeedbackPanel() {
     setMultiSelect(false)
   }, [activeQueryId, activeModel, activeVariant])
 
-  // Seed notes/selection from the reviewer's last submitted feedback, but never
-  // clobber a local unsaved draft (or a late typed draft via the resolve re-check).
+  // Seed notes/selection from the last submitted feedback for this query --
+  // from ANY reviewer, since notes are shared (issue #96) -- but never clobber a
+  // local unsaved draft (or a late typed draft via the resolve re-check).
   useEffect(() => {
     if (activeQueryId === null || !activeModel) return
     const key = makeDraftKey(activeQueryId, activeModel, activeVariant)
     let cancelled = false
     fetchLatestFeedback(activeQueryId, activeModel, activeVariant)
       .then((entry) => {
-        if (cancelled || entry === null) return
+        if (cancelled) return
+        setLatest(entry === null ? null : { key, entry })
+        if (entry === null) return
         if (!isFeedbackDraftEmpty(draftsRef.current.get(key))) return
         const seededDraft = draftFromEntry(entry)
         seedDraftIfEmpty(activeQueryId, activeModel, seededDraft, activeVariant)
@@ -298,6 +308,10 @@ export default function FeedbackPanel() {
     seeded.key === draftKey &&
     draft !== null &&
     draftsEqual(draft, seeded.draft)
+  const attribution =
+    latest !== null && draftKey !== null && latest.key === draftKey
+      ? formatNoteAttribution(latest.entry)
+      : null
 
   return (
     <div data-tour="feedback" className="flex-shrink-0 flex flex-col gap-3">
@@ -327,10 +341,25 @@ export default function FeedbackPanel() {
         onChange={handleMatchChange}
       />
 
-      {showSeededHint && (
-        <p className="text-xs font-ui italic text-stone-400 dark:text-stone-500">
-          Loaded from your last submitted review
+      {/* Whose review the panel is showing. Notes are shared across the team,
+          so this may credit another reviewer; when a local unsaved draft wins
+          the box, say so rather than letting the credit read as the content. */}
+      {attribution ? (
+        <p
+          data-testid="note-attribution"
+          className="text-xs font-ui text-stone-500 dark:text-stone-400"
+        >
+          {attribution}
+          {!showSeededHint && (
+            <span className="italic"> (your unsaved draft is shown below)</span>
+          )}
         </p>
+      ) : (
+        showSeededHint && (
+          <p className="text-xs font-ui italic text-stone-400 dark:text-stone-500">
+            Prefilled from the last submitted review
+          </p>
+        )
       )}
 
       <NotesTextarea

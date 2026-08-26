@@ -127,8 +127,10 @@ On Query B, with SIF+ABTT selected:
 3. Type a note, for example `Both Laodicea 47 and Neocaesarea 12 are defensible; 47 matches the
    chapter number.`
 4. Submit.
-5. Navigate to another query and come back. The note and both selected pills are prefilled, with
-   the hint "Loaded from your last submitted review".
+5. Navigate to another query and come back. The note and both selected pills are prefilled, above
+   an attribution line reading "Last note by &lt;username&gt; - &lt;date&gt;". Notes are shared across the
+   review team, so that line credits whoever last recorded a review on the query, which is often
+   somebody else. Saving never edits their row; it appends a new one under whoever is signed in.
 6. Now switch the toggle to **Raw**. The note does not follow. Feedback is recorded against the
    variant it was given for, so a reviewer's judgement of the SIF+ABTT ranking is never silently
    attributed to the Raw ranking. Switch back to SIF+ABTT and the note returns.

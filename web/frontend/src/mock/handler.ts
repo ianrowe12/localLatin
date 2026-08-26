@@ -388,6 +388,34 @@ function handleStats(): StatsResponse {
   }
 }
 
+/**
+ * Notes are shared across reviewers (issue #96), so mock mode has to be able to
+ * show a note that belongs to somebody else. One seeded query carries one;
+ * every other query is unreviewed, as before.
+ */
+const MOCK_NOTED_QUERY_ID = 101
+
+function handleLatestFeedback(url: string): unknown {
+  const queryId = Number(new URL(url, 'http://mock').searchParams.get('query_id'))
+  if (queryId !== MOCK_NOTED_QUERY_ID) return null
+  return {
+    id: 9001,
+    query_id: MOCK_NOTED_QUERY_ID,
+    timestamp: new Date(Date.now() - 3600_000).toISOString(),
+    model_slug: 'bowphs_LaTa',
+    variant: DEFAULT_VARIANT,
+    outcome: 'matched_rank',
+    correct_rank: 2,
+    correct_dir: 'Can.apost.42',
+    selected_ranks: null,
+    notes: 'Rank 2 matches the chapter number; rank 1 is a later gloss.',
+    reviewer: 'Abigail Scholar',
+    reviewer_account_id: 2,
+    reviewer_username: 'abigail',
+    schema_version: 2,
+  }
+}
+
 function handleModels(): ModelInfo[] {
   return [
     {
@@ -478,7 +506,7 @@ export function installMockHandler(): void {
 
     // Feedback
     if (url.includes('/api/feedback/latest')) {
-      return mockResponse(null)
+      return mockResponse(handleLatestFeedback(url))
     }
     if (url.includes('/api/feedback') && init?.method === 'POST') {
       return mockResponse({ success: true })

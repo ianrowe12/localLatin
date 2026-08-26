@@ -34,6 +34,8 @@ export interface FeedbackEntry {
   notes: string
   reviewer: string
   reviewer_account_id: number | null
+  /** Login name of the author; null for pre-account or deleted-account rows. */
+  reviewer_username: string | null
   schema_version: number
 }
 
@@ -44,7 +46,9 @@ export async function submitFeedback(payload: FeedbackPayload): Promise<void> {
   })
 }
 
-// Latest feedback row for the current reviewer on this query/model, or null.
+// Latest feedback row from ANY reviewer on this query/model/variant, or null.
+// Notes are shared across the team (issue #96), so the entry may belong to a
+// different reviewer; use `reviewer_username` / `reviewer` to attribute it.
 export async function fetchLatestFeedback(
   queryId: number,
   model: string,

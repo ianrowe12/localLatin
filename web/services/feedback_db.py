@@ -69,6 +69,17 @@ CREATE INDEX IF NOT EXISTS idx_account_sessions_account ON account_sessions(acco
 CREATE INDEX IF NOT EXISTS idx_account_sessions_expires ON account_sessions(expires_at);
 """
 
+#: Every read of a feedback row carries the author's login name alongside the
+#: stored display name, so shared notes and review packets can attribute a note
+#: to a person. LEFT JOIN, never INNER: rows written before accounts existed
+#: (reviewer_account_id NULL) and rows whose account was later removed must
+#: still come back, just with reviewer_username NULL.
+_FEEDBACK_SELECT = """
+    SELECT feedback.*, accounts.username AS reviewer_username
+    FROM feedback
+    LEFT JOIN accounts ON accounts.id = feedback.reviewer_account_id
+"""
+
 _EXPORT_COLUMNS = [
     "id",
     "query_id",
@@ -186,7 +197,9 @@ class FeedbackDB:
         )
         await self._db.commit()
         row = await (
-            await self._db.execute("SELECT * FROM feedback WHERE id = ?", (cursor.lastrowid,))
+            await self._db.execute(
+                _FEEDBACK_SELECT + " WHERE feedback.id = ?", (cursor.lastrowid,)
+            )
         ).fetchone()
         return _feedback_row(row)
 
@@ -691,15 +704,15 @@ class FeedbackDB:
         variant: str | None = None,
     ) -> list[dict]:
         assert self._db is not None
-        query = "SELECT * FROM feedback WHERE query_id = ?"
+        query = _FEEDBACK_SELECT + " WHERE feedback.query_id = ?"
         params: list = [query_id]
         if model:
-            query += " AND model_slug = ?"
+            query += " AND feedback.model_slug = ?"
             params.append(model)
         if variant:
-            query += " AND variant = ?"
+            query += " AND feedback.variant = ?"
             params.append(variant)
-        query += " ORDER BY timestamp DESC, id DESC LIMIT ?"
+        query += " ORDER BY feedback.timestamp DESC, feedback.id DESC LIMIT ?"
         params.append(limit)
         rows = await (await self._db.execute(query, params)).fetchall()
         return [_feedback_row(row) for row in rows]
@@ -708,28 +721,31 @@ class FeedbackDB:
         self,
         query_id: int,
         model_slug: str,
-        reviewer_account_id: int,
         variant: str = DEFAULT_VARIANT,
     ) -> dict | None:
-        """Latest row for this reviewer on (query, model, variant).
+        """Latest row from ANY reviewer on (query, model, variant).
 
-        Keyed by variant so a note saved while reviewing sif_abtt never prefills
-        the form for raw -- different rankings, different answers.
+        Notes are shared across the review team (issue #96): whoever opens a
+        query next sees the most recent assessment recorded for it, attributed
+        to its author, rather than only their own. Deliberately not scoped to
+        the caller -- two reviewers working the same query are meant to see one
+        another's reasoning instead of silently duplicating it.
+
+        Still keyed by variant, so a note saved while reviewing sif_abtt never
+        prefills the form for raw -- different rankings, different answers.
         """
         assert self._db is not None
         row = await (
             await self._db.execute(
-                """
-                SELECT *
-                FROM feedback
-                WHERE query_id = ?
-                  AND model_slug = ?
-                  AND variant = ?
-                  AND reviewer_account_id = ?
-                ORDER BY timestamp DESC, id DESC
+                _FEEDBACK_SELECT
+                + """
+                WHERE feedback.query_id = ?
+                  AND feedback.model_slug = ?
+                  AND feedback.variant = ?
+                ORDER BY feedback.timestamp DESC, feedback.id DESC
                 LIMIT 1
                 """,
-                (query_id, model_slug, variant, reviewer_account_id),
+                (query_id, model_slug, variant),
             )
         ).fetchone()
         return _feedback_row(row) if row is not None else None

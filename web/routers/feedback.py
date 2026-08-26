@@ -71,8 +71,17 @@ async def latest_feedback(
     ),
     store: DataStore = Depends(get_store),
     db: FeedbackDB = Depends(get_db),
-    current_user: UserPublic = Depends(get_current_user),
+    _current_user: UserPublic = Depends(get_current_user),
 ) -> FeedbackEntry | None:
+    """Most recent assessment recorded for this query, from any reviewer.
+
+    Shared across the team by design (issue #96). Sign-in is still required --
+    the dependency is what enforces that -- but the caller's identity no longer
+    filters the result, so the returned row carries `reviewer` and
+    `reviewer_username` for the UI to attribute it to its author. Saving never
+    edits this row: POST /api/feedback appends a new one under whoever is
+    signed in.
+    """
     if query_id not in store.file_id_to_filename:
         raise QueryNotFoundError(query_id)
 
@@ -83,7 +92,6 @@ async def latest_feedback(
     row = await db.get_latest_feedback(
         query_id=query_id,
         model_slug=slug,
-        reviewer_account_id=current_user.id,
         variant=resolved,
     )
     return FeedbackEntry(**row) if row is not None else None

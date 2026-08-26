@@ -320,6 +320,10 @@ class FeedbackEntry(BaseModel):
     notes: str
     reviewer: str
     reviewer_account_id: Optional[int] = None
+    #: Login name of the author, resolved from the accounts table. None for rows
+    #: written before accounts existed, or whose account has since been removed;
+    #: callers fall back to `reviewer` (the display name) for attribution.
+    reviewer_username: Optional[str] = None
     schema_version: int = 2
 
 

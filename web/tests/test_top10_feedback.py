@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import sqlite3
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -78,6 +79,31 @@ def _signed_in_client(tmp_path: Path) -> TestClient:
     )
     assert response.status_code == 201
     return client
+
+
+def _install_append_only_triggers(root: Path) -> None:
+    """Make the feedback table reject UPDATE and DELETE at the SQLite level.
+
+    Triggers live in the schema, so the app's own connection is bound by them:
+    any code path that tried to edit a stored review instead of appending a new
+    one turns into a visible 500 rather than silent data loss.
+    """
+    db_path = root / "runs" / "active" / "resubmit" / "webapp" / "feedback.db"
+    connection = sqlite3.connect(db_path)
+    try:
+        connection.executescript(
+            """
+            CREATE TRIGGER feedback_is_append_only_update
+            BEFORE UPDATE ON feedback
+            BEGIN SELECT RAISE(ABORT, 'feedback rows are append-only'); END;
+            CREATE TRIGGER feedback_is_append_only_delete
+            BEFORE DELETE ON feedback
+            BEGIN SELECT RAISE(ABORT, 'feedback rows are append-only'); END;
+            """
+        )
+        connection.commit()
+    finally:
+        connection.close()
 
 
 def test_top_10_rank_and_selected_directory_are_persisted(tmp_path: Path) -> None:
@@ -184,21 +210,35 @@ def test_latest_feedback_returns_newest_row_without_collapsing_history(
         client.__exit__(None, None, None)
 
 
-def test_latest_feedback_is_scoped_to_reviewer_and_normalized_model(
+def _add_reviewer(client: TestClient, username: str, display_name: str) -> None:
+    created = client.post(
+        "/api/auth/accounts",
+        json={
+            "username": username,
+            "display_name": display_name,
+            "role": "reviewer",
+            "password": "correct horse battery staple",
+        },
+    )
+    assert created.status_code == 201
+
+
+def _sign_in_as(client: TestClient, username: str) -> None:
+    assert client.post("/api/auth/signout").status_code == 204
+    signed_in = client.post(
+        "/api/auth/signin",
+        json={"username": username, "password": "correct horse battery staple"},
+    )
+    assert signed_in.status_code == 200
+
+
+def test_latest_feedback_is_shared_across_reviewers_and_normalized_model(
     tmp_path: Path,
 ) -> None:
+    """Whoever opens a query sees the newest note on it, whoever wrote it (#96)."""
     client = _signed_in_client(tmp_path)
     try:
-        created = client.post(
-            "/api/auth/accounts",
-            json={
-                "username": "reviewer",
-                "display_name": "Reviewer",
-                "role": "reviewer",
-                "password": "correct horse battery staple",
-            },
-        )
-        assert created.status_code == 201
+        _add_reviewer(client, "reviewer", "Reviewer")
 
         pi_feedback = client.post(
             "/api/feedback",
@@ -212,22 +252,21 @@ def test_latest_feedback_is_scoped_to_reviewer_and_normalized_model(
         )
         assert pi_feedback.status_code == 201
 
-        assert client.post("/api/auth/signout").status_code == 204
-        signed_in = client.post(
-            "/api/auth/signin",
-            json={
-                "username": "reviewer",
-                "password": "correct horse battery staple",
-            },
-        )
-        assert signed_in.status_code == 200
+        _sign_in_as(client, "reviewer")
 
-        no_reviewer_feedback = client.get(
+        # Reviewer B has written nothing here, and still sees reviewer A's note,
+        # A's decision, and enough identity to attribute both.
+        shared = client.get(
             "/api/feedback/latest",
             params={"query_id": 0, "model": "bowphs_LaTa"},
         )
-        assert no_reviewer_feedback.status_code == 200
-        assert no_reviewer_feedback.json() is None
+        assert shared.status_code == 200
+        assert shared.json()["id"] == pi_feedback.json()["id"]
+        assert shared.json()["notes"] == "pi note"
+        assert shared.json()["correct_rank"] == 1
+        assert shared.json()["reviewer"] == "PI"
+        assert shared.json()["reviewer_username"] == "pi"
+        assert shared.json()["timestamp"]
 
         reviewer_feedback = client.post(
             "/api/feedback",
@@ -249,7 +288,76 @@ def test_latest_feedback_is_scoped_to_reviewer_and_normalized_model(
         assert latest.json()["id"] == reviewer_feedback.json()["id"]
         assert latest.json()["model_slug"] == "bowphs_LaTa"
         assert latest.json()["reviewer"] == "Reviewer"
+        assert latest.json()["reviewer_username"] == "reviewer"
         assert latest.json()["notes"] == "reviewer note"
+
+        # Sharing runs both ways: A now sees B's newer note.
+        _sign_in_as(client, "pi")
+        back_to_pi = client.get(
+            "/api/feedback/latest",
+            params={"query_id": 0, "model": "bowphs/LaTa"},
+        )
+        assert back_to_pi.json()["id"] == reviewer_feedback.json()["id"]
+        assert back_to_pi.json()["reviewer_username"] == "reviewer"
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_saving_over_a_shared_note_appends_under_the_current_reviewer(
+    tmp_path: Path,
+) -> None:
+    """The append-only guard, exercised across reviewers.
+
+    A SQLite trigger makes any UPDATE or DELETE on `feedback` abort, so a save
+    path that edited the prior reviewer's row instead of appending would fail
+    here rather than quietly rewriting the pilot record.
+    """
+    client = _signed_in_client(tmp_path)
+    try:
+        _add_reviewer(client, "reviewer", "Reviewer")
+        _install_append_only_triggers(tmp_path)
+
+        pi_feedback = client.post(
+            "/api/feedback",
+            json={
+                "query_id": 0,
+                "model_slug": "bowphs/LaTa",
+                "correct_rank": 1,
+                "correct_dir": "candidate-1",
+                "notes": "pi note",
+            },
+        )
+        assert pi_feedback.status_code == 201
+        before = pi_feedback.json()
+
+        _sign_in_as(client, "reviewer")
+        reviewer_feedback = client.post(
+            "/api/feedback",
+            json={
+                "query_id": 0,
+                "model_slug": "bowphs/LaTa",
+                "correct_rank": 3,
+                "correct_dir": "candidate-3",
+                "notes": "reviewer disagrees",
+            },
+        )
+        assert reviewer_feedback.status_code == 201
+        assert reviewer_feedback.json()["id"] != before["id"]
+        assert reviewer_feedback.json()["reviewer"] == "Reviewer"
+        assert reviewer_feedback.json()["reviewer_username"] == "reviewer"
+
+        _sign_in_as(client, "pi")
+        rows = list(csv.DictReader(client.get("/api/feedback/export").text.splitlines()))
+        assert [row["notes"] for row in rows] == ["pi note", "reviewer disagrees"]
+        assert [row["reviewer"] for row in rows] == ["PI", "Reviewer"]
+
+        # The earlier reviewer's row is untouched, field for field.
+        original = next(row for row in rows if row["id"] == str(before["id"]))
+        assert original["notes"] == before["notes"]
+        assert original["reviewer"] == before["reviewer"]
+        assert original["timestamp"] == before["timestamp"]
+        assert original["correct_rank"] == str(before["correct_rank"])
+        assert original["correct_dir"] == before["correct_dir"]
     finally:
         client.__exit__(None, None, None)
 
