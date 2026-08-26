@@ -82,6 +82,24 @@ function generateSyntheticQueries(): QueryListItem[] {
 const ALL_QUERIES = generateSyntheticQueries()
 let mockUser: AuthUser | null = null
 let pendingAccounts: AuthUser[] = []
+const approvedAccounts: AuthUser[] = [
+  {
+    id: 1,
+    username: 'pi',
+    display_name: 'PI Scholar',
+    role: 'pi_admin',
+    approval_status: 'approved',
+    must_change_password: false,
+  },
+  {
+    id: 2,
+    username: 'reviewer',
+    display_name: 'Reviewer',
+    role: 'reviewer',
+    approval_status: 'approved',
+    must_change_password: false,
+  },
+]
 
 // ---------------------------------------------------------------------------
 // Mock response helper
@@ -101,12 +119,38 @@ async function handleAuth(url: string, init?: RequestInit): Promise<Response | n
       : mockResponse({ error: { message: 'Not authenticated' } }, 401)
   }
 
+  if (url.includes('/api/auth/change_password')) {
+    if (mockUser) mockUser = { ...mockUser, must_change_password: false }
+    return mockUser
+      ? mockResponse(mockUser)
+      : mockResponse({ error: { message: 'Not authenticated' } }, 401)
+  }
+
   if (url.includes('/api/auth/signout')) {
     mockUser = null
     return mockResponse({ success: true })
   }
 
   if (url.includes('/api/auth/accounts')) {
+    if (url.includes('/reset_password')) {
+      const accountId = Number(url.match(/accounts\/(\d+)\/reset_password/)?.[1])
+      const account = approvedAccounts.find((item) => item.id === accountId)
+      return mockResponse({
+        account: {
+          ...(account ?? approvedAccounts[0]),
+          must_change_password: true,
+          is_active: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          last_login_at: null,
+          approved_at: new Date().toISOString(),
+          approved_by_account_id: 1,
+          rejected_at: null,
+          approval_note: '',
+        },
+        temporary_password: 'temporary-password-456',
+      })
+    }
     if (url.includes('/approve')) {
       const accountId = Number(url.match(/accounts\/(\d+)\/approve/)?.[1])
       const account = pendingAccounts.find((item) => item.id === accountId)
@@ -149,6 +193,7 @@ async function handleAuth(url: string, init?: RequestInit): Promise<Response | n
         display_name: body.display_name ?? body.username ?? 'New Reviewer',
         role: body.role ?? 'reviewer',
         approval_status: 'approved',
+        must_change_password: false,
       }
       return mockResponse(
         {
@@ -168,8 +213,11 @@ async function handleAuth(url: string, init?: RequestInit): Promise<Response | n
         201,
       )
     }
+    const listed = url.includes('status=approved')
+      ? approvedAccounts
+      : pendingAccounts
     return mockResponse(
-      pendingAccounts.map((account) => ({
+      listed.map((account) => ({
         ...account,
         is_active: true,
         created_at: new Date().toISOString(),
@@ -191,6 +239,7 @@ async function handleAuth(url: string, init?: RequestInit): Promise<Response | n
       display_name: body.display_name ?? body.username ?? 'Reviewer',
       role: 'reviewer',
       approval_status: 'pending',
+      must_change_password: false,
     }
     pendingAccounts = [account, ...pendingAccounts]
     return mockResponse(
@@ -211,6 +260,7 @@ async function handleAuth(url: string, init?: RequestInit): Promise<Response | n
       display_name: body.username === 'pi' ? 'PI Scholar' : 'Reviewer',
       role: body.username === 'pi' ? 'pi_admin' : 'reviewer',
       approval_status: 'approved',
+      must_change_password: false,
     }
     return mockResponse(mockUser)
   }
@@ -295,13 +345,15 @@ function handleQueryDetail(id: number): QueryDetail | { error: { message: string
 
 function handlePredictions(
   queryId: number,
-  _model: string,
+  model: string,
   variant: PredictionVariant = DEFAULT_VARIANT,
 ): ReturnType<typeof MOCK_PREDICTIONS.get> | { error: { message: string } } {
   const pred = MOCK_PREDICTIONS.get(queryId)
-  // Echo back the requested variant: the canned entries are all sif_abtt, and
-  // returning them unchanged would report the wrong variant under #48.
-  if (pred) return { ...pred, variant }
+  // Echo back the requested model and variant, as the real API does. The
+  // canned entries carry one hardcoded pair, and CenterArea drops a response
+  // whose key does not match the current selection (issue #73), so an
+  // unechoed model would blank the evidence panel under dev:mock.
+  if (pred) return { ...pred, model: model || pred.model, variant }
 
   // Return a minimal prediction set for synthetic queries
   const item = ALL_QUERIES.find((q) => q.file_id === queryId)
@@ -310,7 +362,7 @@ function handlePredictions(
   return {
     file_id: queryId,
     filename: item.filename,
-    model: 'bowphs_LaTa',
+    model: model || 'bowphs_LaTa',
     variant,
     predictions: [
       {

@@ -26,7 +26,40 @@ Scholar review web application for the localLatin Latin manuscript retrieval pro
 - `services/data_store.py` — `build_store()` loads all data at startup. The `DataStore` dataclass is the central data cache.
 - `services/token_map_svc.py` — Loads NPZ artifacts, computes cosine similarity matrices, optional HuggingFace tokenizer decoding. The token-map endpoints take `?method=&variant=`; without them the response carries every persisted method x variant matrix (7 x 4 dense grids), so the UI always sends both. `available_methods` / `available_variants` always report the artifact's full contents regardless of the filters.
 - `services/text_tokenizer.py` — Mirrors `src/token_filtering.classify_token()` from the research repo without torch dependency
-- `services/feedback_db.py` — SQLite CRUD for reviewer feedback
+- `services/feedback_db.py` — SQLite CRUD for reviewer feedback and accounts. The feedback log is
+  **append-only**: never UPDATE or DELETE a feedback row. `web/tests/test_top10_feedback.py`
+  installs SQLite triggers that enforce this during the save path; they are test-only and must not
+  move into `_SCHEMA`, because two of `_migrate()`'s normalization UPDATEs re-fire on every boot.
+- Shared notes (issue #96): `GET /api/feedback/latest` returns a **merged prefill view**, not a
+  stored row. The note, its timestamp and its attribution (`reviewer`, `reviewer_username`, which
+  usually name somebody else) come from the newest row by ANY reviewer that carries a non-empty
+  note, so an answer saved without prose cannot blank a colleague's reasoning. The decision
+  (`outcome`, `correct_rank`, `correct_dir`, `selected_ranks`) always comes from the CALLER's own
+  newest row, so a rank pressed by somebody else is never prefilled. When nobody has written a note
+  at all, the caller's own row carries the response so their selection is still restored.
+- `services/rate_limit.py` — in-process sliding-window limiter on `app.state.rate_limiter`, used by
+  sign-in and the password endpoints. Per-process, which is correct only because
+  `deploy/locallatin.service` runs `--workers 1`; a service restart wipes every open window.
+- Passwords: `POST /api/auth/change_password` (self-serve, keeps the calling session and revokes
+  the account's others) and `POST /api/auth/accounts/{id}/reset_password` (PI/admin only, returns a
+  temporary password once, revokes every session, sets `accounts.must_change_password`). While that
+  flag is set, `get_current_user` answers 403 on every route outside
+  `dependencies.PASSWORD_CHANGE_EXEMPT_PATHS`, so the forced change is backend-enforced. The one
+  authenticated-looking exception is `/api/models`, which has no auth dependency at all (pre-existing)
+  and therefore still answers during a forced change.
+- Lockout policy (there is no email recovery, so every path must stay recoverable):
+  self-reset is refused with 400 — an admin changes their own password, and a second PI/admin resets
+  one who is locked out. Sign-in and change-password verify the password *before* consulting the
+  rate-limit window and record a hit only on a failed verification, so a correct password always
+  gets through and a stranger cannot lock a reviewer out. 429s carry `Retry-After`.
+- Sign-in throttle keying: `(client address, username)`, where the address comes from `X-Real-IP`,
+  falling back to the **rightmost** `X-Forwarded-For` hop and then the socket peer. `deploy/nginx.conf`
+  sets `X-Real-IP $remote_addr` (overwritten per request) but `X-Forwarded-For $proxy_add_x_forwarded_for`,
+  which *appends* the peer to whatever the client sent — so XFF's leftmost hops are attacker-chosen
+  and only the rightmost is proxy-written. Trusting the left hop would let one attacker rotate a fake
+  address per request, never fill a window, and grow the limiter's key space without bound. This is
+  safe only because uvicorn binds `127.0.0.1` and is reachable solely through that proxy; exposing it
+  directly would make both headers forgeable.
 - `routers/` — One file per API domain (queries, predictions, token_map, feedback, stats)
 - `models.py` — All Pydantic request/response models
 
@@ -49,12 +82,20 @@ The webapp reads these from `data_root`:
 - Mock mode: `npm run dev:mock` — uses synthetic data from `src/mock/`
 - API types in `src/api/` mirror backend `models.py`
 - Unit tests: `npm test` (vitest, jsdom + Testing Library; setup in `src/test/setup.ts`)
-- Post-processing variant: one app-wide choice in `AppContext.activeVariant`, set by
-  `components/predictions/VariantSelector.tsx` and persisted under `locallatin-variant`.
-  It drives predictions, feedback drafts and the token highlights. The attribution
-  artifacts name the uncorrected variant `baseline` where the prediction CSVs name it
-  `raw`; `toAttributionVariant` in `src/api/variants.ts` is the only place that bridges
-  the two vocabularies.
+- Post-processing variant: fixed at `DEFAULT_VARIANT` (`sif_abtt`) in
+  `AppContext.activeVariant`. The reviewer-facing picker was removed for every role in
+  issue #94, so predictions, candidate texts, feedback drafts and token highlights all
+  come from one pipeline. The backend still serves all four variants and feedback rows
+  still carry a variant column. The attribution artifacts name the uncorrected variant
+  `baseline` where the prediction CSVs name it `raw`; `toAttributionVariant` in
+  `src/api/variants.ts` is the only place that bridges the two vocabularies.
+- Confidence bands: `src/utils/confidenceBands.ts` owns the two thresholds (0.5 / 0.7) on
+  the displayed similarity and the copy/styling for each band. Nothing else hardcodes
+  them. Below 0.5 the prediction list renders `NoMatchCallout`, whose CTA posts
+  `POST /api/reviewer_dirs` (issue #95) and degrades to a "coming with the next update"
+  message when that endpoint is not deployed.
+- Default model: `DEFAULT_MODEL_SLUG` in `src/api/models.ts` (`google_mt5-base`, displayed
+  as "mT5-base" by `services/data_store.py`), with a fallback to the first served model.
 - Token classification duplicated in `src/utils/tokens.ts` (matches `services/text_tokenizer.py`)
 
 ## Running

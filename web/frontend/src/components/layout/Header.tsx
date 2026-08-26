@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import { useStats } from '../../api/models'
 import { apiUrl } from '../../api/client'
 import { useApp } from '../../contexts/AppContext'
@@ -5,12 +6,25 @@ import { useTour } from '../onboarding/TourProvider'
 import { DASHBOARD_TOUR_STEPS, getReviewTourSteps } from '../onboarding/tourSteps'
 import { useReviewer } from '../../contexts/ReviewerContext'
 import ThemeToggle from '../common/ThemeToggle'
+import ChangePasswordModal from '../auth/ChangePasswordModal'
 
 export default function Header() {
   const { activeModel, activeQueryId, currentView, setCurrentView } = useApp()
   const { startTour } = useTour()
   const { reviewerName, isPiAdmin, clearReviewer } = useReviewer()
   const { data: stats } = useStats(isPiAdmin)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [changingPassword, setChangingPassword] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!menuOpen) return
+    const onPointerDown = (event: MouseEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    return () => document.removeEventListener('mousedown', onPointerDown)
+  }, [menuOpen])
 
   const handleHelp = () => {
     startTour(
@@ -123,27 +137,68 @@ export default function Header() {
         </button>
         <ThemeToggle />
 
-        {/* Reviewer badge */}
+        {/* Reviewer badge + account menu */}
         {reviewerName && (
-          <button
-            type="button"
-            onClick={clearReviewer}
-            className="flex items-center gap-1.5 px-2 py-1 rounded-full
-                       bg-accent/10 dark:bg-accent/15 hover:bg-accent/20 transition-colors"
-            title="Sign out"
-          >
-            <span
-              className="w-5 h-5 rounded-full bg-accent text-white
-                         flex items-center justify-center text-[10px] font-bold font-ui
-                         uppercase leading-none"
-              aria-hidden="true"
+          <div className="relative" ref={menuRef}>
+            <button
+              type="button"
+              onClick={() => setMenuOpen((open) => !open)}
+              className="flex items-center gap-1.5 px-2 py-1 rounded-full
+                         bg-accent/10 dark:bg-accent/15 hover:bg-accent/20 transition-colors"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              title="Account"
             >
-              {reviewerName[0]}
-            </span>
-            <span className="text-xs font-ui font-medium text-accent dark:text-accent-light">
-              {reviewerName}
-            </span>
-          </button>
+              <span
+                className="w-5 h-5 rounded-full bg-accent text-white
+                           flex items-center justify-center text-[10px] font-bold font-ui
+                           uppercase leading-none"
+                aria-hidden="true"
+              >
+                {reviewerName[0]}
+              </span>
+              <span className="text-xs font-ui font-medium text-accent dark:text-accent-light">
+                {reviewerName}
+              </span>
+            </button>
+
+            {menuOpen && (
+              <div
+                role="menu"
+                className="absolute right-0 mt-2 w-44 z-50 rounded-lg overflow-hidden
+                           bg-white dark:bg-surface-800
+                           border border-stone-200/70 dark:border-stone-700/70
+                           shadow-glass dark:shadow-glass-dark"
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    setChangingPassword(true)
+                  }}
+                  className="w-full text-left px-3 py-2 font-ui text-xs
+                             text-stone-700 dark:text-stone-200
+                             hover:bg-stone-100 dark:hover:bg-stone-700 transition-colors"
+                >
+                  Change password
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    void clearReviewer()
+                  }}
+                  className="w-full text-left px-3 py-2 font-ui text-xs
+                             text-stone-700 dark:text-stone-200
+                             hover:bg-stone-100 dark:hover:bg-stone-700 transition-colors"
+                >
+                  Sign out
+                </button>
+              </div>
+            )}
+          </div>
         )}
 
         <button
@@ -217,6 +272,9 @@ export default function Header() {
           </button>
         )}
       </div>
+      {changingPassword && (
+        <ChangePasswordModal onClose={() => setChangingPassword(false)} />
+      )}
     </header>
   )
 }

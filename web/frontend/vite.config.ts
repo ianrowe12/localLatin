@@ -5,7 +5,7 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   test: {
-    // Component tests (VariantSelector, feedback wiring) need a DOM; the pure
+    // Component tests (confidence bands, feedback wiring) need a DOM; the pure
     // helper tests run happily under jsdom too.
     environment: 'jsdom',
     globals: false,
