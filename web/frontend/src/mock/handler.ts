@@ -392,6 +392,11 @@ function handleStats(): StatsResponse {
  * Notes are shared across reviewers (issue #96), so mock mode has to be able to
  * show a note that belongs to somebody else. One seeded query carries one;
  * every other query is unreviewed, as before.
+ *
+ * Shaped like what the server actually returns to a reviewer who has not
+ * answered this query yet: Abigail's note and attribution, and no decision --
+ * the API merges the shared note with the caller's own answer, and there is no
+ * own answer here.
  */
 const MOCK_NOTED_QUERY_ID = 101
 
@@ -404,9 +409,9 @@ function handleLatestFeedback(url: string): unknown {
     timestamp: new Date(Date.now() - 3600_000).toISOString(),
     model_slug: 'bowphs_LaTa',
     variant: DEFAULT_VARIANT,
-    outcome: 'matched_rank',
-    correct_rank: 2,
-    correct_dir: 'Can.apost.42',
+    outcome: 'legacy_unresolved',
+    correct_rank: null,
+    correct_dir: null,
     selected_ranks: null,
     notes: 'Rank 2 matches the chapter number; rank 1 is a later gloss.',
     reviewer: 'Abigail Scholar',

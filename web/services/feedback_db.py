@@ -204,6 +204,18 @@ class FeedbackDB:
         return _feedback_row(row)
 
     async def _migrate(self) -> None:
+        """Additive schema repair, run on every boot.
+
+        Warning for anyone tempted to enforce the append-only rule with a real
+        `BEFORE UPDATE` trigger on `feedback` (the tests install exactly such a
+        trigger, but only after startup): two of the normalization UPDATEs
+        below are unconditional. `WHERE outcome = 'none_of_top_k'` and
+        `WHERE outcome = 'skipped'` re-fire on already-normalized rows every
+        time the app starts, so a schema-level trigger would abort startup as
+        soon as one such row exists. Guard them first -- e.g. add
+        `AND (correct_rank IS NOT 0 OR correct_dir IS NOT NULL)` -- so they
+        become genuine no-ops once the data is clean.
+        """
         assert self._db is not None
         rows = await (await self._db.execute("PRAGMA table_info(feedback)")).fetchall()
         columns = {r["name"] for r in rows}
@@ -722,32 +734,40 @@ class FeedbackDB:
         query_id: int,
         model_slug: str,
         variant: str = DEFAULT_VARIANT,
+        reviewer_account_id: int | None = None,
     ) -> dict | None:
-        """Latest row from ANY reviewer on (query, model, variant).
+        """Latest row on (query, model, variant), team-wide or for one reviewer.
 
-        Notes are shared across the review team (issue #96): whoever opens a
-        query next sees the most recent assessment recorded for it, attributed
-        to its author, rather than only their own. Deliberately not scoped to
-        the caller -- two reviewers working the same query are meant to see one
-        another's reasoning instead of silently duplicating it.
+        Both scopes exist because issue #96 split them (see the router): the
+        NOTE a reviewer sees is the newest one from ANY reviewer, so two people
+        working the same query read each other's reasoning instead of silently
+        duplicating it, while the DECISION stays each reviewer's own. Pass
+        `reviewer_account_id` for the second; omit it for the first.
 
-        Still keyed by variant, so a note saved while reviewing sif_abtt never
-        prefills the form for raw -- different rankings, different answers.
+        Still keyed by variant either way, so a note saved while reviewing
+        sif_abtt never prefills the form for raw -- different rankings,
+        different answers.
+
+        `idx_feedback_latest_variant` covers the scoped call outright. The
+        team-wide call uses only its first three columns, leaving the ORDER BY
+        to a sort: a handful of rows per query/model/variant in the pilot, so
+        not worth a second index.
         """
         assert self._db is not None
-        row = await (
-            await self._db.execute(
-                _FEEDBACK_SELECT
-                + """
-                WHERE feedback.query_id = ?
-                  AND feedback.model_slug = ?
-                  AND feedback.variant = ?
-                ORDER BY feedback.timestamp DESC, feedback.id DESC
-                LIMIT 1
-                """,
-                (query_id, model_slug, variant),
-            )
-        ).fetchone()
+        query = (
+            _FEEDBACK_SELECT
+            + """
+            WHERE feedback.query_id = ?
+              AND feedback.model_slug = ?
+              AND feedback.variant = ?
+            """
+        )
+        params: list = [query_id, model_slug, variant]
+        if reviewer_account_id is not None:
+            query += " AND feedback.reviewer_account_id = ?"
+            params.append(reviewer_account_id)
+        query += " ORDER BY feedback.timestamp DESC, feedback.id DESC LIMIT 1"
+        row = await (await self._db.execute(query, params)).fetchone()
         return _feedback_row(row) if row is not None else None
 
     async def get_next_unreviewed(self, all_file_ids: list[int], limit: int = 5) -> list[int]:

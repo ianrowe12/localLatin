@@ -5,7 +5,13 @@ from fastapi.responses import PlainTextResponse
 
 from web.dependencies import get_current_user, get_db, get_store, require_pi_admin
 from web.exceptions import InvalidModelError, QueryNotFoundError, VariantUnavailableError
-from web.models import FeedbackCreate, FeedbackEntry, PredictionVariant, UserPublic
+from web.models import (
+    FeedbackCreate,
+    FeedbackEntry,
+    FeedbackOutcome,
+    PredictionVariant,
+    UserPublic,
+)
 from web.routers.predictions import resolve_variant
 from web.services.data_store import DataStore, normalize_slug
 from web.services.feedback_db import FeedbackDB
@@ -71,16 +77,24 @@ async def latest_feedback(
     ),
     store: DataStore = Depends(get_store),
     db: FeedbackDB = Depends(get_db),
-    _current_user: UserPublic = Depends(get_current_user),
+    current_user: UserPublic = Depends(get_current_user),
 ) -> FeedbackEntry | None:
-    """Most recent assessment recorded for this query, from any reviewer.
+    """What to prefill for this query: the team's newest note, the caller's own decision.
 
-    Shared across the team by design (issue #96). Sign-in is still required --
-    the dependency is what enforces that -- but the caller's identity no longer
-    filters the result, so the returned row carries `reviewer` and
-    `reviewer_username` for the UI to attribute it to its author. Saving never
-    edits this row: POST /api/feedback appends a new one under whoever is
-    signed in.
+    Issue #96 splits the two halves of a review deliberately (the meeting asked
+    for shared *notes*, not shared answers):
+
+    - **Notes are shared.** Two reviewers on the same query should read each
+      other's reasoning rather than silently duplicate it, so the note, its
+      timestamp and its attribution come from the newest row by ANY reviewer.
+    - **Decisions are not.** A rank pressed by somebody else is an answer the
+      caller never gave, and one they could submit as their own by reflex, so
+      the selection comes from the caller's OWN newest row and is left unset
+      when they have none.
+
+    The response is therefore a merged view rather than a verbatim DB row --
+    see `_merge_shared_note_with_own_decision`. Saving never edits either
+    source row: POST /api/feedback appends a new one under whoever is signed in.
     """
     if query_id not in store.file_id_to_filename:
         raise QueryNotFoundError(query_id)
@@ -89,12 +103,20 @@ async def latest_feedback(
     resolved = resolve_variant(store, variant)
     await _check_model_variant(store, slug, resolved)
 
-    row = await db.get_latest_feedback(
+    shared = await db.get_latest_feedback(
         query_id=query_id,
         model_slug=slug,
         variant=resolved,
     )
-    return FeedbackEntry(**row) if row is not None else None
+    if shared is None:
+        return None
+    own = await db.get_latest_feedback(
+        query_id=query_id,
+        model_slug=slug,
+        variant=resolved,
+        reviewer_account_id=current_user.id,
+    )
+    return FeedbackEntry(**_merge_shared_note_with_own_decision(shared, own))
 
 
 @router.get("/feedback/export")
@@ -134,6 +156,40 @@ async def export_feedback(
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=feedback_export.csv"},
     )
+
+
+#: The reviewer's answer, as opposed to their prose. Never inherited from
+#: another reviewer's row -- see `latest_feedback`.
+_DECISION_FIELDS = ("outcome", "correct_rank", "correct_dir", "selected_ranks")
+
+
+def _merge_shared_note_with_own_decision(shared: dict, own: dict | None) -> dict:
+    """Combine the team's newest note with the caller's own newest decision.
+
+    The result keeps `shared`'s identity fields -- `id`, `timestamp`, `notes`,
+    `reviewer`, `reviewer_username` -- because those describe the note being
+    displayed and the attribution line rendered above it. Only the decision
+    fields are replaced. When the caller has never reviewed this query, the
+    decision is cleared to `legacy_unresolved`, which is the outcome the panel
+    already reads as "no selection to restore".
+
+    Callers should treat the result as a prefill view, not as a stored row: it
+    can pair one reviewer's note with another's (absent) answer, which is the
+    whole point.
+    """
+    merged = dict(shared)
+    if own is not None:
+        merged.update({field: own[field] for field in _DECISION_FIELDS})
+    else:
+        merged.update(
+            {
+                "outcome": FeedbackOutcome.LEGACY_UNRESOLVED.value,
+                "correct_rank": None,
+                "correct_dir": None,
+                "selected_ranks": None,
+            }
+        )
+    return merged
 
 
 def _dir_for_rank(

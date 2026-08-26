@@ -87,6 +87,12 @@ def _install_append_only_triggers(root: Path) -> None:
     Triggers live in the schema, so the app's own connection is bound by them:
     any code path that tried to edit a stored review instead of appending a new
     one turns into a visible 500 rather than silent data loss.
+
+    Test-only, and installed only after startup. These must NOT be promoted
+    into `_SCHEMA`: two of `_migrate()`'s normalization UPDATEs are
+    unconditional and re-fire on already-normalized rows at every boot, so an
+    in-schema trigger would abort startup on any DB holding a `none_of_top_k`
+    or `skipped` row. See the warning on `FeedbackDB._migrate`.
     """
     db_path = root / "runs" / "active" / "resubmit" / "webapp" / "feedback.db"
     connection = sqlite3.connect(db_path)
@@ -254,8 +260,8 @@ def test_latest_feedback_is_shared_across_reviewers_and_normalized_model(
 
         _sign_in_as(client, "reviewer")
 
-        # Reviewer B has written nothing here, and still sees reviewer A's note,
-        # A's decision, and enough identity to attribute both.
+        # Reviewer B has written nothing here, and still sees reviewer A's note
+        # with enough identity to attribute it.
         shared = client.get(
             "/api/feedback/latest",
             params={"query_id": 0, "model": "bowphs_LaTa"},
@@ -263,7 +269,6 @@ def test_latest_feedback_is_shared_across_reviewers_and_normalized_model(
         assert shared.status_code == 200
         assert shared.json()["id"] == pi_feedback.json()["id"]
         assert shared.json()["notes"] == "pi note"
-        assert shared.json()["correct_rank"] == 1
         assert shared.json()["reviewer"] == "PI"
         assert shared.json()["reviewer_username"] == "pi"
         assert shared.json()["timestamp"]
@@ -291,7 +296,8 @@ def test_latest_feedback_is_shared_across_reviewers_and_normalized_model(
         assert latest.json()["reviewer_username"] == "reviewer"
         assert latest.json()["notes"] == "reviewer note"
 
-        # Sharing runs both ways: A now sees B's newer note.
+        # Sharing runs both ways: A now sees B's newer note, while keeping the
+        # rank A themself chose.
         _sign_in_as(client, "pi")
         back_to_pi = client.get(
             "/api/feedback/latest",
@@ -299,6 +305,78 @@ def test_latest_feedback_is_shared_across_reviewers_and_normalized_model(
         )
         assert back_to_pi.json()["id"] == reviewer_feedback.json()["id"]
         assert back_to_pi.json()["reviewer_username"] == "reviewer"
+        assert back_to_pi.json()["notes"] == "reviewer note"
+        assert back_to_pi.json()["correct_rank"] == 1
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_latest_feedback_shares_the_note_but_not_the_decision(tmp_path: Path) -> None:
+    """Notes are the team's, answers are each reviewer's own (issue #96).
+
+    A rank pressed by somebody else is an answer the caller never gave, and one
+    they could submit as their own by reflex, so the prefill takes prose from
+    the newest row by anyone and the selection from the caller's own newest row.
+    """
+    client = _signed_in_client(tmp_path)
+    try:
+        _add_reviewer(client, "reviewer", "Reviewer")
+
+        pi_feedback = client.post(
+            "/api/feedback",
+            json={
+                "query_id": 0,
+                "model_slug": "bowphs/LaTa",
+                "selected_ranks": [2, 5],
+                "notes": "two plausible readings here",
+            },
+        )
+        assert pi_feedback.status_code == 201
+        assert pi_feedback.json()["selected_ranks"] == [2, 5]
+
+        _sign_in_as(client, "reviewer")
+        first_look = client.get(
+            "/api/feedback/latest",
+            params={"query_id": 0, "model": "bowphs/LaTa"},
+        )
+        assert first_look.status_code == 200
+        body = first_look.json()
+        # The note and its attribution come from the PI...
+        assert body["notes"] == "two plausible readings here"
+        assert body["reviewer_username"] == "pi"
+        # ...but none of the PI's answer does.
+        assert body["selected_ranks"] is None
+        assert body["correct_rank"] is None
+        assert body["correct_dir"] is None
+        assert body["outcome"] == "legacy_unresolved"
+
+        # Once reviewer B answers, their own answer is what comes back, still
+        # paired with whichever note is newest.
+        own = client.post(
+            "/api/feedback",
+            json={
+                "query_id": 0,
+                "model_slug": "bowphs/LaTa",
+                "correct_rank": 7,
+                "correct_dir": "candidate-7",
+                "notes": "",
+            },
+        )
+        assert own.status_code == 201
+
+        second_look = client.get(
+            "/api/feedback/latest",
+            params={"query_id": 0, "model": "bowphs/LaTa"},
+        )
+        merged = second_look.json()
+        assert merged["correct_rank"] == 7
+        assert merged["outcome"] == "matched_rank"
+        # The shared half tracks the newest row unconditionally, so B's own
+        # empty note now displaces the PI's. Deliberate: "latest" means latest.
+        # The PI's note is still in the export and in the review packet, it is
+        # just no longer the one prefilled.
+        assert merged["notes"] == ""
+        assert merged["reviewer_username"] == "reviewer"
     finally:
         client.__exit__(None, None, None)
 

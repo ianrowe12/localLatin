@@ -341,20 +341,29 @@ export default function FeedbackPanel() {
         onChange={handleMatchChange}
       />
 
-      {/* Whose review the panel is showing. Notes are shared across the team,
-          so this may credit another reviewer; when a local unsaved draft wins
-          the box, say so rather than letting the credit read as the content. */}
+      {/* Whose note the panel is showing. Notes are shared across the team, so
+          this often credits another reviewer; when a local unsaved draft wins
+          the box, say so rather than letting the credit read as the content.
+          Both conditions are needed: !showSeededHint alone is also true right
+          after a save, when submitFeedback has deleted the draft and the panel
+          is still mounted for the advance timeout. Claiming an unsaved draft is
+          on screen, over an empty box, under someone else's name, is the last
+          thing a reviewer who just saved should see. */}
       {attribution ? (
         <p
           data-testid="note-attribution"
           className="text-xs font-ui text-stone-500 dark:text-stone-400"
         >
           {attribution}
-          {!showSeededHint && (
+          {!showSeededHint && !isFeedbackDraftEmpty(draft ?? undefined) && (
             <span className="italic"> (your unsaved draft is shown below)</span>
           )}
         </p>
       ) : (
+        // Reachable only if the author has neither a login name nor a display
+        // name. `reviewer` is NOT NULL, so this needs a row stored with an
+        // empty string; kept as a cheap floor rather than rendering a bare
+        // prefilled box with no explanation at all.
         showSeededHint && (
           <p className="text-xs font-ui italic text-stone-400 dark:text-stone-500">
             Prefilled from the last submitted review

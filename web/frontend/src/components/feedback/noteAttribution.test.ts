@@ -26,8 +26,15 @@ describe('formatNoteDate', () => {
     expect(formatNoteDate('2026-08-24 23:45:00')).toBe('2026-08-24')
   })
 
-  it('still handles an ISO timestamp', () => {
+  it('reads an ISO timestamp off the same prefix', () => {
+    // ISO shares the YYYY-MM-DD prefix, so this never reaches the Date branch.
     expect(formatNoteDate('2026-08-24T09:15:00.000Z')).toBe('2026-08-24')
+  })
+
+  it('parses a date that has no YYYY-MM-DD prefix at all', () => {
+    // The only input that actually exercises the Date fallback. Anchored at
+    // midday UTC so the assertion cannot flip a day under the runner's zone.
+    expect(formatNoteDate('Aug 24, 2026 12:00:00 UTC')).toBe('2026-08-24')
   })
 
   it('passes an unparseable value straight through', () => {

@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import FeedbackPanel from './FeedbackPanel'
 import { AppProvider, useApp } from '../../contexts/AppContext'
@@ -11,22 +12,35 @@ const QUERY_ID = 7
 const MODEL = 'bowphs_LaTa'
 const DRAFT_STORAGE_KEY = 'locallatin-feedback-drafts'
 
-/** A note saved by reviewer A, as GET /api/feedback/latest returns it. */
+/**
+ * What GET /api/feedback/latest returns to reviewer B when reviewer A has left
+ * a note and B has answered nothing: A's note and attribution, and no decision.
+ * The server does that merge (issue #96) -- notes are the team's, answers are
+ * each reviewer's own -- so the panel only ever sees one already-merged entry.
+ */
 const NOTE_FROM_ALICE: FeedbackEntry = {
   id: 41,
   query_id: QUERY_ID,
   timestamp: '2026-08-24 09:15:00',
   model_slug: MODEL,
   variant: 'sif_abtt',
-  outcome: 'matched_rank',
-  correct_rank: 2,
-  correct_dir: 'candidate-2',
+  outcome: 'legacy_unresolved',
+  correct_rank: null,
+  correct_dir: null,
   selected_ranks: null,
   notes: 'Second candidate shares the incipit.',
   reviewer: 'Alice Antiqua',
   reviewer_account_id: 1,
   reviewer_username: 'alice',
   schema_version: 2,
+}
+
+/** The same note, merged with reviewer B's own earlier answer of rank 4. */
+const ALICE_NOTE_WITH_MY_RANK: FeedbackEntry = {
+  ...NOTE_FROM_ALICE,
+  outcome: 'matched_rank',
+  correct_rank: 4,
+  correct_dir: 'candidate-4',
 }
 
 let latestEntry: FeedbackEntry | null = NOTE_FROM_ALICE
@@ -56,13 +70,18 @@ function installFetch(): void {
       if (url.includes('/api/feedback/latest')) {
         return jsonResponse(latestEntry)
       }
+      if (url.includes('/api/queries/next')) {
+        // The adversarial case for the post-submit render: the panel stays on
+        // this query, so it is still mounted with the draft already deleted.
+        return jsonResponse({ file_id: QUERY_ID })
+      }
       if (url.includes('/predictions')) {
         return jsonResponse({
           file_id: QUERY_ID,
           filename: 'query-7.txt',
           model: MODEL,
           variant: 'sif_abtt',
-          predictions: [1, 2, 3].map((rank) => ({
+          predictions: [1, 2, 3, 4, 5].map((rank) => ({
             rank,
             dir_name: `candidate-${rank}`,
             score: 1 - rank / 100,
@@ -113,23 +132,43 @@ afterEach(() => {
 })
 
 describe('shared notes across reviewers', () => {
-  it('prefills another reviewer’s note and decision, attributed to them', async () => {
+  it('prefills another reviewer’s note, attributed, and presses no rank', async () => {
     renderPanel()
 
     await waitFor(() =>
       expect(notesBox().value).toBe('Second candidate shares the incipit.'),
     )
-    // The decision travels with the note: rank 2 comes back pressed.
-    expect(
-      screen
-        .getByRole('button', { name: 'Match prediction #2' })
-        .getAttribute('aria-pressed'),
-    ).toBe('true')
+    // Alice's prose arrives; Alice's answer does not. Nothing is pressed, so
+    // reviewer B cannot submit somebody else's decision by reflex.
+    for (const rank of [1, 2, 3]) {
+      expect(
+        screen
+          .getByRole('button', { name: `Match prediction #${rank}` })
+          .getAttribute('aria-pressed'),
+      ).toBe('false')
+    }
 
     const attribution = screen.getByTestId('note-attribution')
     expect(attribution.textContent).toContain('Last note by alice')
     expect(attribution.textContent).toContain('2026-08-24')
     expect(attribution.textContent).not.toContain('unsaved draft')
+  })
+
+  it('restores the caller’s own rank alongside the shared note', async () => {
+    latestEntry = ALICE_NOTE_WITH_MY_RANK
+    renderPanel()
+
+    await waitFor(() =>
+      expect(
+        screen
+          .getByRole('button', { name: 'Match prediction #4' })
+          .getAttribute('aria-pressed'),
+      ).toBe('true'),
+    )
+    expect(notesBox().value).toBe('Second candidate shares the incipit.')
+    expect(screen.getByTestId('note-attribution').textContent).toContain(
+      'Last note by alice',
+    )
   })
 
   it('falls back to the display name when the author has no account row', async () => {
@@ -182,5 +221,27 @@ describe('shared notes across reviewers', () => {
         .getByRole('button', { name: 'Match prediction #3' })
         .getAttribute('aria-pressed'),
     ).toBe('true')
+  })
+
+  it('does not claim an unsaved draft after the draft has been saved', async () => {
+    // submitFeedback deletes the draft, and the panel stays mounted for the
+    // advance timeout. An "unsaved draft is shown below" line over an empty
+    // box, under somebody else's name, is exactly the wrong thing to flash at
+    // a reviewer who just saved.
+    localStorage.setItem(
+      DRAFT_STORAGE_KEY,
+      JSON.stringify([
+        [`${QUERY_ID}-${MODEL}-sif_abtt`, { correctRank: 1, notes: 'my answer' }],
+      ]),
+    )
+    renderPanel()
+
+    await waitFor(() => expect(notesBox().value).toBe('my answer'))
+    await userEvent.click(screen.getByRole('button', { name: /Submit/ }))
+
+    await waitFor(() => expect(notesBox().value).toBe(''))
+    const attribution = screen.getByTestId('note-attribution')
+    expect(attribution.textContent).toContain('Last note by alice')
+    expect(attribution.textContent).not.toContain('unsaved draft')
   })
 })

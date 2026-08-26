@@ -128,9 +128,11 @@ On Query B, with SIF+ABTT selected:
    chapter number.`
 4. Submit.
 5. Navigate to another query and come back. The note and both selected pills are prefilled, above
-   an attribution line reading "Last note by &lt;username&gt; - &lt;date&gt;". Notes are shared across the
-   review team, so that line credits whoever last recorded a review on the query, which is often
-   somebody else. Saving never edits their row; it appends a new one under whoever is signed in.
+   an attribution line reading "Last note by &lt;username&gt; - &lt;date&gt;". The two halves come from
+   different places: the **note** is the newest one from anyone on the review team, which is why
+   the line credits an author and is often somebody else's, while the **pills** are always your own
+   last answer and stay empty until you give one. Saving never edits anybody's row; it appends a
+   new one under whoever is signed in.
 6. Now switch the toggle to **Raw**. The note does not follow. Feedback is recorded against the
    variant it was given for, so a reviewer's judgement of the SIF+ABTT ranking is never silently
    attributed to the Raw ranking. Switch back to SIF+ABTT and the note returns.
