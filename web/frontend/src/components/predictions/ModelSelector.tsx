@@ -1,16 +1,19 @@
 import { useEffect } from 'react'
 import { useApp } from '../../contexts/AppContext'
-import { useModels } from '../../api/models'
+import { useModels, DEFAULT_MODEL_SLUG } from '../../api/models'
 
 export default function ModelSelector() {
   const { activeModel, setActiveModel } = useApp()
   const { data: models } = useModels()
 
-  // Auto-select first model when models load and none is selected
+  // Pick the deployment's preferred model once the list loads (issue #94:
+  // mT5-base). /api/models is sorted by display name, so "the first entry" is
+  // an accident of the alphabet and must not decide what reviewers see.
+  // Falls back to the first served model where mT5-base is not deployed.
   useEffect(() => {
-    if (!activeModel && models && models.length > 0) {
-      setActiveModel(models[0].slug)
-    }
+    if (activeModel || !models || models.length === 0) return
+    const preferred = models.find((m) => m.slug === DEFAULT_MODEL_SLUG)
+    setActiveModel((preferred ?? models[0]).slug)
   }, [activeModel, models, setActiveModel])
 
   return (

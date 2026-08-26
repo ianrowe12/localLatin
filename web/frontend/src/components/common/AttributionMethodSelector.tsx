@@ -16,10 +16,11 @@ export const METHODS: { key: AttributionMethod; label: string; title: string }[]
  * PI/admin-only picker for WHICH attribution method drives the evidence
  * highlighting.
  *
- * The Raw/ABTT variant row this component used to carry is gone: the
- * post-processing variant is now one reviewer-facing, app-wide choice
- * (VariantSelector, issue #48) shared with the prediction list. The method
- * choice stays gated, preserving the evidence gating from commit e71a7ad.
+ * The Raw/ABTT variant row this component used to carry is gone, and so is the
+ * reviewer-facing variant picker that replaced it: since issue #94 the app
+ * serves one pipeline (SIF+ABTT) everywhere, so the evidence highlighting has
+ * no variant to choose. The method choice stays gated, preserving the evidence
+ * gating from commit e71a7ad.
  */
 export default function AttributionMethodSelector() {
   const { selectedMethod, availableMethods, setSelectedMethod } = useTokens()

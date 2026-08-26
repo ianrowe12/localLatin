@@ -12,7 +12,7 @@ import DocumentPanel from '../document/DocumentPanel'
 import DraggableDivider from './DraggableDivider'
 import { buildWordMatchMap } from '../../utils/wordSimilarity'
 import { useTokenMap, type TokenMapResponse, type TopMatch } from '../../api/tokenMap'
-import { toAttributionVariant, VARIANT_OPTIONS } from '../../api/variants'
+import { toAttributionVariant } from '../../api/variants'
 import { useTokens } from '../../contexts/TokenContext'
 import { METHODS } from '../common/AttributionMethodSelector'
 
@@ -39,20 +39,26 @@ export default function CenterArea() {
 
   // Derive current prediction.
   //
-  // The variant check is load-bearing, not defensive. `setActiveVariant`
-  // updates activeVariant during render; usePredictions only clears its data
-  // from an effect, one commit later. Without the guard, that in-between
-  // render pairs the OLD variant's rank-1 candidate with the NEW variant and
-  // fires a multi-MB token-map fetch for a (candidate, variant) combination
-  // the reviewer never selected -- which then paints as the "current"
-  // evidence (issue #73). PredictionResponse.variant echoes the request
-  // exactly (web/routers/predictions.py resolves it or raises), so comparing
-  // it is an exact key check.
+  // The key check is load-bearing, not defensive. Selecting a model updates
+  // activeModel during render; usePredictions only clears its data from an
+  // effect, one commit later. Without the guard, that in-between render pairs
+  // the OLD selection's rank-1 candidate with the NEW one and fires a
+  // multi-MB token-map fetch for a (candidate, model) combination the
+  // reviewer never selected -- which then paints as the "current" evidence
+  // (issue #73). PredictionResponse echoes both `model` and `variant` from
+  // the request exactly (web/routers/predictions.py resolves them or raises),
+  // so comparing them is an exact key check.
+  //
+  // Since issue #94 the model is the half a reviewer can actually move: there
+  // is one pipeline, so `variant` can no longer diverge. It is still compared
+  // because the field is still on the wire and the day a second pipeline is
+  // served again, this guard should already be right.
   const currentPrediction = useMemo(() => {
     if (!predictions.data?.predictions) return null
     if (predictions.data.variant !== activeVariant) return null
+    if (predictions.data.model !== activeModel) return null
     return predictions.data.predictions[activePredictionRank - 1] ?? null
-  }, [predictions.data, activePredictionRank, activeVariant])
+  }, [predictions.data, activePredictionRank, activeVariant, activeModel])
 
   // Derive candidate info — override wins over the normal prediction path
   const candidateDir = overrideCandidateDir ?? currentPrediction?.dir_name ?? null
@@ -90,14 +96,12 @@ export default function CenterArea() {
 
   const { selectedMethod, viewMode, setAvailableMethods, clearAllPins } = useTokens()
 
-  // The reviewer's post-processing choice drives the highlights too, so the
-  // evidence they read always belongs to the ranking they are judging. The
-  // artifacts call the uncorrected variant "baseline" where the prediction
+  // The highlights are computed from the same pipeline as the ranking, so the
+  // evidence a reviewer reads always belongs to the ranking they are judging.
+  // The artifacts call the uncorrected variant "baseline" where the prediction
   // CSVs call it "raw" -- toAttributionVariant is the one place that bridges
   // the two vocabularies.
   const attributionVariant = toAttributionVariant(activeVariant)
-  const variantLabel =
-    VARIANT_OPTIONS.find((o) => o.key === activeVariant)?.label ?? activeVariant
   // The reviewer-facing method name, not the artifact slug: a PI-admin on
   // attention_weighted should read "Attn-W", the label the method picker uses.
   const methodLabel =
@@ -137,11 +141,13 @@ export default function CenterArea() {
   }, [tokenMapResult.data, selectedMethod, attributionVariant])
 
   // The payload's own `similarity_matrix` is plain cosine over the raw hidden
-  // states: identical for every post-processing variant. Falling through to it
-  // when the selected variant's matrix is absent is what made the highlights
-  // look frozen across a variant switch (issue #73) -- the view had silently
-  // stopped showing attribution at all. Say so instead of showing a grid that
-  // cannot answer the question the reviewer just asked.
+  // states: identical for every attribution method and every post-processing
+  // variant. Falling through to it when the selected cell of `pair_matrices`
+  // is absent is what made the highlights look frozen across a switch (issue
+  // #73) -- the view had silently stopped showing attribution at all. Since
+  // issue #94 removed the variant picker, the switch a PI-admin can still make
+  // is the method one, and the failure mode is identical. Say so instead of
+  // showing a grid that cannot answer the question just asked.
   //
   // `available_methods` is the test, NOT the shape of `pair_matrices`. Both
   // are declared with a default factory (web/models.py:117,121), so the API
@@ -231,14 +237,14 @@ export default function CenterArea() {
           >
             {attributionUnavailable ? (
               <>
-                No {methodLabel} attribution for the {variantLabel} variant on
-                this pair. Highlights are off rather than showing another
-                variant&apos;s.
+                No {methodLabel} attribution for this pair. Highlights are off
+                rather than falling back to a plain similarity grid, which
+                would look the same for every method.
               </>
             ) : (
               <>
-                No attribution available for this pair under the {variantLabel}{' '}
-                variant. Highlights are off; the ranking above is unaffected.
+                No attribution available for this pair. Highlights are off; the
+                ranking above is unaffected.
               </>
             )}
           </div>

@@ -2,7 +2,6 @@ import { useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useFeedback } from '../../contexts/FeedbackContext'
 import ModelSelector from '../predictions/ModelSelector'
-import VariantSelector from '../predictions/VariantSelector'
 import ModelDiversityNudge from '../predictions/ModelDiversityNudge'
 import PredictionList from '../predictions/PredictionList'
 import FeedbackPanel from '../feedback/FeedbackPanel'
@@ -67,13 +66,9 @@ export default function RightSidebar({ isOpen, onToggle }: RightSidebarProps) {
               <ModelDiversityNudge />
             </div>
 
-            {/* Post-processing variant — drives predictions AND highlights */}
-            <div>
-              <label className="text-xs font-semibold uppercase tracking-wider text-stone-400 mb-1.5 block">
-                Post-Processing
-              </label>
-              <VariantSelector />
-            </div>
+            {/* No post-processing picker: the app serves one pipeline
+                (SIF+ABTT) for predictions, highlights and feedback alike
+                (issue #94). */}
 
             {/* Prediction list — scrollable */}
             <div className="flex-1 overflow-y-auto rounded-lg bg-stone-50 dark:bg-surface-900/50">

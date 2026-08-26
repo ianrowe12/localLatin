@@ -345,13 +345,15 @@ function handleQueryDetail(id: number): QueryDetail | { error: { message: string
 
 function handlePredictions(
   queryId: number,
-  _model: string,
+  model: string,
   variant: PredictionVariant = DEFAULT_VARIANT,
 ): ReturnType<typeof MOCK_PREDICTIONS.get> | { error: { message: string } } {
   const pred = MOCK_PREDICTIONS.get(queryId)
-  // Echo back the requested variant: the canned entries are all sif_abtt, and
-  // returning them unchanged would report the wrong variant under #48.
-  if (pred) return { ...pred, variant }
+  // Echo back the requested model and variant, as the real API does. The
+  // canned entries carry one hardcoded pair, and CenterArea drops a response
+  // whose key does not match the current selection (issue #73), so an
+  // unechoed model would blank the evidence panel under dev:mock.
+  if (pred) return { ...pred, model: model || pred.model, variant }
 
   // Return a minimal prediction set for synthetic queries
   const item = ALL_QUERIES.find((q) => q.file_id === queryId)
@@ -360,7 +362,7 @@ function handlePredictions(
   return {
     file_id: queryId,
     filename: item.filename,
-    model: 'bowphs_LaTa',
+    model: model || 'bowphs_LaTa',
     variant,
     predictions: [
       {

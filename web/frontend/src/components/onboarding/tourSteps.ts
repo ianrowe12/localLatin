@@ -73,17 +73,10 @@ export const REVIEW_TOUR_STEPS: TourStep[] = [
     placement: 'left',
   },
   {
-    target: 'variant-selector',
-    title: 'Post-Processing Variant',
-    description:
-      'Choose how the embeddings are corrected before ranking. Raw applies nothing, ABTT removes dominant directions, SIF down-weights frequent words, and SIF+ABTT (the default) applies both. Your choice re-ranks the sources below and re-draws the word highlights.',
-    placement: 'left',
-  },
-  {
     target: 'predictions',
     title: 'Predicted Sources',
     description:
-      'The model\u2019s top candidate sources for this fragment, ranked by similarity. Click any one to inspect it.',
+      'The model\u2019s top candidate sources for this fragment, ranked by similarity. The banner above the list tells you how much to trust the top hit: red means the fragment may have no match in the corpus at all, amber means read the evidence carefully, and a plain note means it is a likely match to verify.',
     placement: 'left',
   },
   {
@@ -132,8 +125,9 @@ export const REVIEW_TOUR_STEPS: TourStep[] = [
 
 // The attribution-controls step targets a PI/admin-only control; ordinary
 // reviewers never see it, so omit that step from their tour entirely.
-// The variant-selector step is deliberately NOT filtered: that control is
-// reviewer-facing (issue #48).
+// There is no post-processing step any more: the variant picker was removed
+// for every role in issue #94, and the tour must not point at a control that
+// is not on screen.
 export function getReviewTourSteps(isPiAdmin: boolean): TourStep[] {
   return REVIEW_TOUR_STEPS.filter(
     (step) => isPiAdmin || step.target !== 'attribution-controls',
