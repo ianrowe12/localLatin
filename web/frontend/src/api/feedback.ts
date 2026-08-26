@@ -47,9 +47,9 @@ export async function submitFeedback(payload: FeedbackPayload): Promise<void> {
 }
 
 // What to prefill for this query/model/variant, or null if nobody has reviewed
-// it. Not a verbatim DB row: the server merges the team's newest NOTE (issue
-// #96 -- hence `reviewer_username` / `reviewer`, which often name somebody
-// else) with the CALLER's own newest decision, so `correct_rank` /
+// it. Not a verbatim DB row: the server merges the team's newest non-empty NOTE
+// (issue #96 -- hence `reviewer_username` / `reviewer`, which often name
+// somebody else) with the CALLER's own newest decision, so `correct_rank` /
 // `selected_ranks` are never another reviewer's answer.
 export async function fetchLatestFeedback(
   queryId: number,

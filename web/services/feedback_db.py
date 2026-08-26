@@ -735,6 +735,7 @@ class FeedbackDB:
         model_slug: str,
         variant: str = DEFAULT_VARIANT,
         reviewer_account_id: int | None = None,
+        require_note: bool = False,
     ) -> dict | None:
         """Latest row on (query, model, variant), team-wide or for one reviewer.
 
@@ -742,7 +743,13 @@ class FeedbackDB:
         NOTE a reviewer sees is the newest one from ANY reviewer, so two people
         working the same query read each other's reasoning instead of silently
         duplicating it, while the DECISION stays each reviewer's own. Pass
-        `reviewer_account_id` for the second; omit it for the first.
+        `reviewer_account_id` for the second; `require_note` for the first.
+
+        `require_note` skips rows whose notes are blank. The notes box exists to
+        surface notes, so an answer saved without prose must not displace a
+        colleague's substantive note -- "latest" there means latest row that
+        actually says something. The decision lookup never sets it: an answer
+        counts whether or not the reviewer explained it.
 
         Still keyed by variant either way, so a note saved while reviewing
         sif_abtt never prefills the form for raw -- different rankings,
@@ -766,6 +773,10 @@ class FeedbackDB:
         if reviewer_account_id is not None:
             query += " AND feedback.reviewer_account_id = ?"
             params.append(reviewer_account_id)
+        if require_note:
+            # COALESCE for safety: the column is NOT NULL today, but pre-schema
+            # rows have surprised this table before.
+            query += " AND TRIM(COALESCE(feedback.notes, '')) != ''"
         query += " ORDER BY feedback.timestamp DESC, feedback.id DESC LIMIT 1"
         row = await (await self._db.execute(query, params)).fetchone()
         return _feedback_row(row) if row is not None else None

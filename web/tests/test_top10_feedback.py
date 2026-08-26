@@ -371,12 +371,111 @@ def test_latest_feedback_shares_the_note_but_not_the_decision(tmp_path: Path) ->
         merged = second_look.json()
         assert merged["correct_rank"] == 7
         assert merged["outcome"] == "matched_rank"
-        # The shared half tracks the newest row unconditionally, so B's own
-        # empty note now displaces the PI's. Deliberate: "latest" means latest.
-        # The PI's note is still in the export and in the review packet, it is
-        # just no longer the one prefilled.
-        assert merged["notes"] == ""
-        assert merged["reviewer_username"] == "reviewer"
+        # B's row is newer but says nothing, so it does not displace the PI's
+        # note. The notes box exists to surface notes; an answer saved in
+        # silence must not blank out a colleague's reasoning.
+        assert merged["notes"] == "two plausible readings here"
+        assert merged["reviewer_username"] == "pi"
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_an_empty_note_never_displaces_an_older_real_one(tmp_path: Path) -> None:
+    """The newest row wins the notes box only if it has something to say.
+
+    Three reviewers: A writes a note, B answers in silence, C opens the query.
+    C must read A's note under A's name, not an empty box under B's.
+    """
+    client = _signed_in_client(tmp_path)
+    try:
+        _add_reviewer(client, "silent", "Silent Reviewer")
+        _add_reviewer(client, "carol", "Carol Codex")
+
+        # A (the PI) leaves the substantive note.
+        assert (
+            client.post(
+                "/api/feedback",
+                json={
+                    "query_id": 0,
+                    "model_slug": "bowphs/LaTa",
+                    "correct_rank": 2,
+                    "correct_dir": "candidate-2",
+                    "notes": "the hand matches the Verona scribe",
+                },
+            ).status_code
+            == 201
+        )
+
+        # B answers later without explaining. Newest row, blank prose.
+        _sign_in_as(client, "silent")
+        silent = client.post(
+            "/api/feedback",
+            json={
+                "query_id": 0,
+                "model_slug": "bowphs/LaTa",
+                "correct_rank": 9,
+                "correct_dir": "candidate-9",
+                "notes": "   ",
+            },
+        )
+        assert silent.status_code == 201
+
+        # C sees A's note, attributed to A, with no decision of their own.
+        _sign_in_as(client, "carol")
+        body = client.get(
+            "/api/feedback/latest",
+            params={"query_id": 0, "model": "bowphs/LaTa"},
+        ).json()
+        assert body["notes"] == "the hand matches the Verona scribe"
+        assert body["reviewer"] == "PI"
+        assert body["reviewer_username"] == "pi"
+        assert body["correct_rank"] is None
+        assert body["outcome"] == "legacy_unresolved"
+
+        # And B, whose own row is the blank one, still gets their rank back
+        # alongside A's note: the filter costs nobody their own answer.
+        _sign_in_as(client, "silent")
+        for_silent = client.get(
+            "/api/feedback/latest",
+            params={"query_id": 0, "model": "bowphs/LaTa"},
+        ).json()
+        assert for_silent["notes"] == "the hand matches the Verona scribe"
+        assert for_silent["reviewer_username"] == "pi"
+        assert for_silent["correct_rank"] == 9
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_a_decision_saved_with_no_note_anywhere_still_prefills(tmp_path: Path) -> None:
+    """The note filter must not cost a reviewer their own answer.
+
+    When nobody has written a note at all, the shared half finds nothing. The
+    caller's own row has to carry the response on its own, or reopening a query
+    would silently lose the rank they picked.
+    """
+    client = _signed_in_client(tmp_path)
+    try:
+        created = client.post(
+            "/api/feedback",
+            json={
+                "query_id": 0,
+                "model_slug": "bowphs/LaTa",
+                "correct_rank": 4,
+                "correct_dir": "candidate-4",
+                "notes": "",
+            },
+        )
+        assert created.status_code == 201
+
+        body = client.get(
+            "/api/feedback/latest",
+            params={"query_id": 0, "model": "bowphs/LaTa"},
+        ).json()
+        assert body is not None
+        assert body["correct_rank"] == 4
+        assert body["outcome"] == "matched_rank"
+        assert body["notes"] == ""
+        assert body["reviewer_username"] == "pi"
     finally:
         client.__exit__(None, None, None)
 

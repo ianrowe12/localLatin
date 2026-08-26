@@ -86,7 +86,10 @@ async def latest_feedback(
 
     - **Notes are shared.** Two reviewers on the same query should read each
       other's reasoning rather than silently duplicate it, so the note, its
-      timestamp and its attribution come from the newest row by ANY reviewer.
+      timestamp and its attribution come from the newest row by ANY reviewer
+      that actually carries a note. Rows saved without prose are skipped for
+      this half: the box exists to surface notes, so an answer recorded in
+      silence must not blank out a colleague's substantive note.
     - **Decisions are not.** A rank pressed by somebody else is an answer the
       caller never gave, and one they could submit as their own by reflex, so
       the selection comes from the caller's OWN newest row and is left unset
@@ -103,20 +106,20 @@ async def latest_feedback(
     resolved = resolve_variant(store, variant)
     await _check_model_variant(store, slug, resolved)
 
-    shared = await db.get_latest_feedback(
+    shared_note = await db.get_latest_feedback(
         query_id=query_id,
         model_slug=slug,
         variant=resolved,
+        require_note=True,
     )
-    if shared is None:
-        return None
     own = await db.get_latest_feedback(
         query_id=query_id,
         model_slug=slug,
         variant=resolved,
         reviewer_account_id=current_user.id,
     )
-    return FeedbackEntry(**_merge_shared_note_with_own_decision(shared, own))
+    merged = _merge_shared_note_with_own_decision(shared_note, own)
+    return FeedbackEntry(**merged) if merged is not None else None
 
 
 @router.get("/feedback/export")
@@ -163,21 +166,34 @@ async def export_feedback(
 _DECISION_FIELDS = ("outcome", "correct_rank", "correct_dir", "selected_ranks")
 
 
-def _merge_shared_note_with_own_decision(shared: dict, own: dict | None) -> dict:
+def _merge_shared_note_with_own_decision(
+    shared: dict | None, own: dict | None
+) -> dict | None:
     """Combine the team's newest note with the caller's own newest decision.
 
-    The result keeps `shared`'s identity fields -- `id`, `timestamp`, `notes`,
-    `reviewer`, `reviewer_username` -- because those describe the note being
-    displayed and the attribution line rendered above it. Only the decision
-    fields are replaced. When the caller has never reviewed this query, the
-    decision is cleared to `legacy_unresolved`, which is the outcome the panel
-    already reads as "no selection to restore".
+    The result keeps the note row's identity fields -- `id`, `timestamp`,
+    `notes`, `reviewer`, `reviewer_username` -- because those describe the note
+    being displayed and the attribution line rendered above it. Only the
+    decision fields are replaced. When the caller has never reviewed this query,
+    the decision is cleared to `legacy_unresolved`, which is the outcome the
+    panel already reads as "no selection to restore".
+
+    Either half can be missing:
+
+    - No note anywhere, but the caller has an answer: their own row becomes the
+      base, so their selection is still restored. Nothing is lost by the
+      note filter.
+    - A note but no answer from the caller: the note shows, unselected.
+    - Neither: None, and the panel stays empty.
 
     Callers should treat the result as a prefill view, not as a stored row: it
     can pair one reviewer's note with another's (absent) answer, which is the
     whole point.
     """
-    merged = dict(shared)
+    base = shared if shared is not None else own
+    if base is None:
+        return None
+    merged = dict(base)
     if own is not None:
         merged.update({field: own[field] for field in _DECISION_FIELDS})
     else:

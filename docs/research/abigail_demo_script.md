@@ -131,8 +131,9 @@ On Query B, with SIF+ABTT selected:
    an attribution line reading "Last note by &lt;username&gt; - &lt;date&gt;". The two halves come from
    different places: the **note** is the newest one from anyone on the review team, which is why
    the line credits an author and is often somebody else's, while the **pills** are always your own
-   last answer and stay empty until you give one. Saving never edits anybody's row; it appends a
-   new one under whoever is signed in.
+   last answer and stay empty until you give one. A colleague who saves an answer without writing
+   anything does not blank the box: the newest row that actually carries a note is the one shown.
+   Saving never edits anybody's row; it appends a new one under whoever is signed in.
 6. Now switch the toggle to **Raw**. The note does not follow. Feedback is recorded against the
    variant it was given for, so a reviewer's judgement of the SIF+ABTT ranking is never silently
    attributed to the Raw ranking. Switch back to SIF+ABTT and the note returns.
