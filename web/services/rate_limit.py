@@ -16,14 +16,16 @@ from __future__ import annotations
 
 import math
 import time
-from collections import defaultdict, deque
+from collections import deque
 
 
 class RateLimiter:
     """Counts recorded failures per key inside a rolling time window."""
 
     def __init__(self, monotonic=time.monotonic) -> None:
-        self._hits: dict[str, deque[float]] = defaultdict(deque)
+        # A plain dict, not a defaultdict: reading an unknown key must not create
+        # an entry, or every probe would grow the key space for good.
+        self._hits: dict[str, deque[float]] = {}
         self._monotonic = monotonic
 
     def allows(self, key: str, max_attempts: int, window_seconds: float) -> bool:
@@ -34,7 +36,7 @@ class RateLimiter:
 
     def record(self, key: str) -> None:
         """Count one failed attempt against ``key``."""
-        self._hits[key].append(self._monotonic())
+        self._hits.setdefault(key, deque()).append(self._monotonic())
 
     def reset(self, key: str) -> None:
         """Forget every recorded failure for ``key`` (call after a success)."""
@@ -48,9 +50,20 @@ class RateLimiter:
         remaining = window_seconds - (self._monotonic() - hits[0])
         return max(1, int(math.ceil(remaining)))
 
+    def tracked_keys(self) -> int:
+        """How many keys currently hold at least one hit (for tests/diagnostics)."""
+        return len(self._hits)
+
     def _live_hits(self, key: str, window_seconds: float) -> deque[float]:
-        hits = self._hits[key]
+        hits = self._hits.get(key)
+        if hits is None:
+            return deque()
         cutoff = self._monotonic() - window_seconds
         while hits and hits[0] <= cutoff:
             hits.popleft()
+        if not hits:
+            # Evict rather than keep an empty deque around: without this the key
+            # space would only ever grow, one entry per address ever seen.
+            del self._hits[key]
+            return deque()
         return hits

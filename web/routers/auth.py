@@ -321,16 +321,29 @@ def _signin_limit_key(request: Request, username: str) -> str:
     """Throttle key for sign-in: the client address plus the account.
 
     Keyed per (client, account) rather than per account so a stranger cannot lock
-    a reviewer out of their own account by guessing at it. Behind a proxy that
-    does not forward X-Forwarded-For every client collapses to the proxy address,
-    which degrades this to a per-account window; sign-in still lets a correct
-    password through in that case, because only failures are ever recorded.
+    a reviewer out of their own account by guessing at it.
+
+    Only proxy-written values are trusted. `deploy/nginx.conf` sets
+    `X-Real-IP $remote_addr`, which nginx *overwrites* on every request, so it is
+    the one address a client cannot choose. `X-Forwarded-For` there is
+    `$proxy_add_x_forwarded_for`, which *appends* the peer to whatever the client
+    sent: its leftmost hops are attacker-chosen, and only the rightmost one was
+    written by the proxy. Taking the left hop would let one attacker rotate a
+    fake address per request and never fill a window (while growing the key space
+    unboundedly), so it is deliberately not used.
+
+    This holds because the app binds 127.0.0.1 and is only reachable through that
+    proxy; a deployment that exposes uvicorn directly must not trust either
+    header.
     """
-    forwarded = request.headers.get("x-forwarded-for", "")
-    client = forwarded.split(",")[0].strip() if forwarded else ""
-    if not client:
-        client = request.client.host if request.client else "unknown"
-    return f"signin:{client}:{username.strip().lower()}"
+    real_ip = request.headers.get("x-real-ip", "").strip()
+    if not real_ip:
+        forwarded = request.headers.get("x-forwarded-for", "")
+        hops = [hop.strip() for hop in forwarded.split(",") if hop.strip()]
+        real_ip = hops[-1] if hops else ""
+    if not real_ip:
+        real_ip = request.client.host if request.client else "unknown"
+    return f"signin:{real_ip}:{username.strip().lower()}"
 
 
 async def _registration_role(

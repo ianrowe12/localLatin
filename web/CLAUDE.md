@@ -41,8 +41,15 @@ Scholar review web application for the localLatin Latin manuscript retrieval pro
   self-reset is refused with 400 — an admin changes their own password, and a second PI/admin resets
   one who is locked out. Sign-in and change-password verify the password *before* consulting the
   rate-limit window and record a hit only on a failed verification, so a correct password always
-  gets through and a stranger cannot lock a reviewer out. Sign-in is keyed per
-  (client address, username); 429s carry `Retry-After`.
+  gets through and a stranger cannot lock a reviewer out. 429s carry `Retry-After`.
+- Sign-in throttle keying: `(client address, username)`, where the address comes from `X-Real-IP`,
+  falling back to the **rightmost** `X-Forwarded-For` hop and then the socket peer. `deploy/nginx.conf`
+  sets `X-Real-IP $remote_addr` (overwritten per request) but `X-Forwarded-For $proxy_add_x_forwarded_for`,
+  which *appends* the peer to whatever the client sent — so XFF's leftmost hops are attacker-chosen
+  and only the rightmost is proxy-written. Trusting the left hop would let one attacker rotate a fake
+  address per request, never fill a window, and grow the limiter's key space without bound. This is
+  safe only because uvicorn binds `127.0.0.1` and is reachable solely through that proxy; exposing it
+  directly would make both headers forgeable.
 - `routers/` — One file per API domain (queries, predictions, token_map, feedback, stats)
 - `models.py` — All Pydantic request/response models
 

@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from web.app import create_app
 from web.services.feedback_db import FeedbackDB
+from web.services.rate_limit import RateLimiter
 
 ADMIN_PASSWORD = "correct horse battery staple"
 REVIEWER_PASSWORD = "reviewer horse battery staple"
@@ -324,9 +325,105 @@ def test_signin_throttles_failures_without_locking_the_owner_out(
         elsewhere = client.post(
             "/api/auth/signin",
             json={"username": "pi", "password": "wrong password"},
-            headers={"X-Forwarded-For": "203.0.113.9"},
+            headers={"X-Real-IP": "203.0.113.9"},
         )
         assert elsewhere.status_code == 401
+
+
+def _nginx_headers(spoofed: str, real: str) -> dict[str, str]:
+    """Headers as deploy/nginx.conf delivers them.
+
+    `X-Forwarded-For $proxy_add_x_forwarded_for` appends the peer to whatever the
+    client sent, so the leftmost hop is attacker-chosen and only the rightmost
+    was written by the proxy. `X-Real-IP $remote_addr` is overwritten every time.
+    """
+    return {"X-Forwarded-For": f"{spoofed}, {real}", "X-Real-IP": real}
+
+
+def test_signin_throttle_ignores_a_spoofed_forwarded_for_hop(tmp_path: Path) -> None:
+    config_path = _write_fixture_data(tmp_path, rate_limit_attempts=3)
+
+    with _client(config_path) as client:
+        _register_admin(client)
+        client.cookies.clear()
+
+        # One attacker at 198.51.100.7 rotating a fake leftmost hop per request.
+        codes = []
+        for attempt in range(6):
+            codes.append(
+                client.post(
+                    "/api/auth/signin",
+                    json={"username": "pi", "password": "wrong password"},
+                    headers=_nginx_headers(f"10.0.0.{attempt}", "198.51.100.7"),
+                ).status_code
+            )
+        assert codes[:3] == [401, 401, 401]
+        # The throttle fires on the real client despite every spoofed hop differing.
+        assert codes[3:] == [429, 429, 429], codes
+
+        # The key space tracks the real address only, not the six spoofed ones.
+        limiter = client.app.state.rate_limiter
+        assert limiter.tracked_keys() == 1
+
+        # A genuinely different client is unaffected by that window.
+        other = client.post(
+            "/api/auth/signin",
+            json={"username": "pi", "password": "wrong password"},
+            headers=_nginx_headers("10.0.0.99", "203.0.113.9"),
+        )
+        assert other.status_code == 401
+
+        # And the owner still gets in from the attacker's address.
+        allowed = client.post(
+            "/api/auth/signin",
+            json={"username": "pi", "password": ADMIN_PASSWORD},
+            headers=_nginx_headers("10.0.0.42", "198.51.100.7"),
+        )
+        assert allowed.status_code == 200
+
+
+def test_signin_throttle_falls_back_to_the_rightmost_forwarded_hop(
+    tmp_path: Path,
+) -> None:
+    """A proxy that sets only X-Forwarded-For still cannot be spoofed."""
+    config_path = _write_fixture_data(tmp_path, rate_limit_attempts=2)
+
+    with _client(config_path) as client:
+        _register_admin(client)
+        client.cookies.clear()
+
+        codes = []
+        for attempt in range(3):
+            codes.append(
+                client.post(
+                    "/api/auth/signin",
+                    json={"username": "pi", "password": "wrong password"},
+                    headers={"X-Forwarded-For": f"10.0.0.{attempt}, 198.51.100.7"},
+                ).status_code
+            )
+        assert codes == [401, 401, 429], codes
+
+
+def test_rate_limiter_evicts_keys_whose_window_has_emptied() -> None:
+    now = [1000.0]
+    limiter = RateLimiter(monotonic=lambda: now[0])
+
+    limiter.record("signin:198.51.100.7:pi")
+    assert limiter.tracked_keys() == 1
+    assert limiter.allows("signin:198.51.100.7:pi", 1, 900) is False
+
+    # Peeking an address that never failed must not allocate an entry.
+    assert limiter.allows("signin:203.0.113.9:pi", 1, 900) is True
+    assert limiter.tracked_keys() == 1
+
+    # Once the window lapses the key is dropped, so the map cannot grow forever.
+    now[0] += 901
+    assert limiter.allows("signin:198.51.100.7:pi", 1, 900) is True
+    assert limiter.tracked_keys() == 0
+
+    limiter.record("signin:198.51.100.7:pi")
+    limiter.reset("signin:198.51.100.7:pi")
+    assert limiter.tracked_keys() == 0
 
 
 def test_change_password_floor_matches_registration(tmp_path: Path) -> None:
