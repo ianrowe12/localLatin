@@ -2,7 +2,7 @@ import { motion } from 'framer-motion'
 import { useTokens } from '../../contexts/TokenContext'
 import type { AttributionMethod } from '../../api/tokenMap'
 
-const METHODS: { key: AttributionMethod; label: string; title: string }[] = [
+export const METHODS: { key: AttributionMethod; label: string; title: string }[] = [
   { key: 'ig', label: 'IG', title: 'Integrated gradients attribution' },
   { key: 'bertscore', label: 'BERTScore', title: 'Token similarity score' },
   { key: 'ot', label: 'OT', title: 'Optimal transport alignment' },

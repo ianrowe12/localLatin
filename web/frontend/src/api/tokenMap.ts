@@ -183,7 +183,13 @@ export function useTokenMap(
     }
 
     let cancelled = false
-    setState((prev) => ({ ...prev, loading: true, error: null }))
+    // Drop the previous key's matrices rather than keeping them under
+    // `loading`. Holding them renders the OLD (candidate, variant) pairing's
+    // highlights under the NEW variant's label for as long as the multi-MB
+    // fetch takes -- and forever if it 404s, since the error branch below only
+    // sets `error`. That is the "highlights don't update after switching
+    // post-processing" report in issue #73.
+    setState({ data: null, loading: true, error: null })
 
     const params = new URLSearchParams({ candidate_dir: candidateId })
     if (model) params.set('model', model)
@@ -199,9 +205,15 @@ export function useTokenMap(
       })
       .catch((err: Error) => {
         if (cancelled) return
-        setState((prev) => ({ ...prev, loading: false, error: err.message }))
+        // No data for this key: a pair with no artifact for the requested
+        // variant must render as "nothing to show", never as the last pair
+        // that happened to load.
+        setState({ data: null, loading: false, error: err.message })
       })
 
+    // React runs this cleanup before the next effect, so `cancelled` also
+    // settles the two-fetches-in-flight race: a slow response for a superseded
+    // key can never land after a newer one.
     return () => {
       cancelled = true
     }
