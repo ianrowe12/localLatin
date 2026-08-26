@@ -90,8 +90,8 @@ export function createAccount(
   })
 }
 
-/** Mirrors MIN_PASSWORD_LENGTH in web/models.py. */
-export const MIN_PASSWORD_LENGTH = 10
+/** Mirrors MIN_PASSWORD_LENGTH in web/models.py (same floor as registration). */
+export const MIN_PASSWORD_LENGTH = 12
 
 export interface PasswordChangePayload {
   current_password: string

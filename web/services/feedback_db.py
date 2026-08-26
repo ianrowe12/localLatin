@@ -70,6 +70,15 @@ CREATE INDEX IF NOT EXISTS idx_account_sessions_account ON account_sessions(acco
 CREATE INDEX IF NOT EXISTS idx_account_sessions_expires ON account_sessions(expires_at);
 """
 
+# Columns the auth layer reads unconditionally; verified after every migration.
+_REQUIRED_ACCOUNT_COLUMNS = {
+    "approval_status",
+    "is_active",
+    "must_change_password",
+    "password_hash",
+    "role",
+}
+
 _EXPORT_COLUMNS = [
     "id",
     "query_id",
@@ -108,6 +117,7 @@ class FeedbackDB:
         self._db.row_factory = aiosqlite.Row
         await self._db.executescript(_SCHEMA)
         await self._migrate()
+        await self._assert_account_schema()
         await self._db.commit()
         logger.info("Feedback DB ready at %s", self.db_path)
 
@@ -315,6 +325,25 @@ class FeedbackDB:
         await self._db.execute(
             "CREATE INDEX IF NOT EXISTS idx_accounts_approval_status ON accounts(approval_status)"
         )
+
+    async def _assert_account_schema(self) -> None:
+        """Refuse to serve if the accounts table lost a security-relevant column.
+
+        `must_change_password` gates every authenticated route, so a database
+        that somehow skipped the migration must fail loudly at startup rather
+        than answer requests with the flag silently absent.
+        """
+        assert self._db is not None
+        rows = await (
+            await self._db.execute("PRAGMA table_info(accounts)")
+        ).fetchall()
+        columns = {r["name"] for r in rows}
+        missing = _REQUIRED_ACCOUNT_COLUMNS - columns
+        if missing:
+            raise RuntimeError(
+                "accounts table is missing required column(s): "
+                f"{', '.join(sorted(missing))}"
+            )
 
     async def account_count(self) -> int:
         await self._ensure_auth_connection()
@@ -931,18 +960,12 @@ def _public_account(row: aiosqlite.Row) -> dict:
         "display_name": row["display_name"],
         "role": row["role"],
         "approval_status": row["approval_status"],
-        # Rows read through a connection opened before _migrate() ran would not
-        # have the column; default to "no forced change" rather than blowing up.
-        "must_change_password": bool(_row_value(row, "must_change_password", 0)),
+        # Read straight from the row rather than through a tolerant getter: this
+        # is a security flag, and _open_connection() asserts the column exists
+        # after _migrate(), so a missing column must surface as an error instead
+        # of silently defaulting to "no forced change".
+        "must_change_password": bool(row["must_change_password"]),
     }
-
-
-def _row_value(row: aiosqlite.Row, column: str, default):
-    try:
-        value = row[column]
-    except (IndexError, KeyError):
-        return default
-    return default if value is None else value
 
 
 def _account_public(row: aiosqlite.Row) -> dict:

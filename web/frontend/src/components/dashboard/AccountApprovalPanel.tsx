@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useReviewer } from '../../contexts/ReviewerContext'
 import {
   approveAccount,
   createAccount,
@@ -21,6 +22,7 @@ function formatCreatedAt(value: string): string {
 }
 
 export default function AccountApprovalPanel() {
+  const { user } = useReviewer()
   const [accounts, setAccounts] = useState<AccountPublic[]>([])
   const [approved, setApproved] = useState<AccountPublic[]>([])
   const [resettingId, setResettingId] = useState<number | null>(null)
@@ -79,6 +81,15 @@ export default function AccountApprovalPanel() {
       setActingId(null)
     }
   }
+
+  // The caller is never in this list. A self-reset would kill their own session
+  // and leave the only copy of the temporary password in a browser tab, with no
+  // email recovery; the backend refuses it too. Admins use Change password
+  // instead, and a second PI/admin resets one who is genuinely locked out.
+  const resettable = useMemo(
+    () => approved.filter((account) => account.id !== user?.id),
+    [approved, user],
+  )
 
   const resetPassword = async (account: AccountPublic) => {
     if (resettingId !== null) return
@@ -335,6 +346,19 @@ export default function AccountApprovalPanel() {
               </code>
               <button
                 type="button"
+                onClick={() => {
+                  setResetResult(null)
+                  setCopied(false)
+                }}
+                className="h-7 px-2 rounded-md font-ui text-xs font-medium
+                           bg-white dark:bg-surface-900 text-stone-600 dark:text-stone-300
+                           border border-stone-200 dark:border-stone-700
+                           hover:bg-stone-100 dark:hover:bg-stone-700 transition-colors"
+              >
+                Dismiss
+              </button>
+              <button
+                type="button"
                 onClick={() => void copyTemporaryPassword()}
                 className="h-7 px-2 rounded-md font-ui text-xs font-medium
                            bg-white dark:bg-surface-900 text-stone-600 dark:text-stone-300
@@ -347,13 +371,14 @@ export default function AccountApprovalPanel() {
           </div>
         )}
 
-        {approved.length === 0 ? (
+        {resettable.length === 0 ? (
           <div className="px-4 pb-5 font-ui text-sm text-stone-500 dark:text-stone-400">
-            No approved accounts yet.
+            No other approved accounts. Use the account menu to change your own
+            password.
           </div>
         ) : (
           <div className="divide-y divide-stone-100 dark:divide-stone-700/70">
-            {approved.map((account) => (
+            {resettable.map((account) => (
               <div
                 key={account.id}
                 className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"

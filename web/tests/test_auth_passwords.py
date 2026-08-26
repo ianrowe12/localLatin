@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import asyncio
 import csv
+import sqlite3
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from web.app import create_app
+from web.services.feedback_db import FeedbackDB
 
 ADMIN_PASSWORD = "correct horse battery staple"
 REVIEWER_PASSWORD = "reviewer horse battery staple"
@@ -198,23 +202,151 @@ def test_change_password_rejects_a_too_short_new_password(tmp_path: Path) -> Non
         _sign_in(client, "pi", ADMIN_PASSWORD)
 
 
-def test_change_password_is_rate_limited(tmp_path: Path) -> None:
+def test_change_password_throttles_wrong_guesses_only(tmp_path: Path) -> None:
     config_path = _write_fixture_data(tmp_path, rate_limit_attempts=2)
 
     with _client(config_path) as client:
         _register_admin(client)
+
+        # Wrong guesses fill the window and are then refused outright.
         for _ in range(2):
             attempt = client.post(
                 "/api/auth/change_password",
                 json={"current_password": "wrong", "new_password": "long enough pass"},
             )
             assert attempt.status_code == 403
-
         throttled = client.post(
             "/api/auth/change_password",
-            json={"current_password": ADMIN_PASSWORD, "new_password": "long enough pass"},
+            json={"current_password": "wrong", "new_password": "long enough pass"},
         )
         assert throttled.status_code == 429
+        assert int(throttled.headers["retry-after"]) > 0
+
+        # The correct password still gets through: the window counts failed
+        # attempts only, so an account can always clear its own gate.
+        changed = client.post(
+            "/api/auth/change_password",
+            json={
+                "current_password": ADMIN_PASSWORD,
+                "new_password": "long enough pass",
+            },
+        )
+        assert changed.status_code == 200
+
+        # ...and the success cleared the counter.
+        retry = client.post(
+            "/api/auth/change_password",
+            json={"current_password": "wrong", "new_password": "another long pass"},
+        )
+        assert retry.status_code == 403
+
+
+def test_forced_change_survives_ten_wrong_temp_password_attempts(
+    tmp_path: Path,
+) -> None:
+    """The reviewer's brick repro: ten wrong guesses, then the right one."""
+    config_path = _write_fixture_data(tmp_path, rate_limit_attempts=10)
+
+    with _client(config_path) as client:
+        _register_admin(client)
+        reviewer_id = _create_reviewer(client)
+        reset = client.post(f"/api/auth/accounts/{reviewer_id}/reset_password")
+        temporary_password = reset.json()["temporary_password"]
+
+        _sign_in(client, "reviewer", temporary_password)
+        for _ in range(10):
+            wrong = client.post(
+                "/api/auth/change_password",
+                json={
+                    "current_password": "not the temp password",
+                    "new_password": "reviewer chosen passphrase",
+                },
+            )
+            assert wrong.status_code in (403, 429)
+
+        recovered = client.post(
+            "/api/auth/change_password",
+            json={
+                "current_password": temporary_password,
+                "new_password": "reviewer chosen passphrase",
+            },
+        )
+        assert recovered.status_code == 200, recovered.text
+        assert recovered.json()["must_change_password"] is False
+        assert client.get("/api/queries").status_code == 200
+
+
+def test_admin_cannot_reset_their_own_password(tmp_path: Path) -> None:
+    config_path = _write_fixture_data(tmp_path)
+
+    with _client(config_path) as client:
+        _register_admin(client)
+        me = client.get("/api/auth/me").json()
+
+        refused = client.post(f"/api/auth/accounts/{me['id']}/reset_password")
+        assert refused.status_code == 400
+        assert "Change password" in refused.json()["detail"]
+
+        # The admin is still signed in and their password is untouched.
+        assert client.get("/api/auth/me").status_code == 200
+        assert client.get("/api/stats").status_code == 200
+        _sign_in(client, "pi", ADMIN_PASSWORD)
+
+
+def test_signin_throttles_failures_without_locking_the_owner_out(
+    tmp_path: Path,
+) -> None:
+    config_path = _write_fixture_data(tmp_path, rate_limit_attempts=3)
+
+    with _client(config_path) as client:
+        _register_admin(client)
+        client.cookies.clear()
+
+        for _ in range(3):
+            wrong = client.post(
+                "/api/auth/signin",
+                json={"username": "pi", "password": "wrong password"},
+            )
+            assert wrong.status_code == 401
+        throttled = client.post(
+            "/api/auth/signin",
+            json={"username": "pi", "password": "wrong password"},
+        )
+        assert throttled.status_code == 429
+        assert int(throttled.headers["retry-after"]) > 0
+
+        # A guesser cannot lock the owner out: the correct password is verified
+        # before the window is consulted.
+        _sign_in(client, "pi", ADMIN_PASSWORD)
+
+        # A different client address carries its own window.
+        client.cookies.clear()
+        elsewhere = client.post(
+            "/api/auth/signin",
+            json={"username": "pi", "password": "wrong password"},
+            headers={"X-Forwarded-For": "203.0.113.9"},
+        )
+        assert elsewhere.status_code == 401
+
+
+def test_change_password_floor_matches_registration(tmp_path: Path) -> None:
+    config_path = _write_fixture_data(tmp_path)
+
+    with _client(config_path) as client:
+        _register_admin(client)
+        assert len("elevenchars") == 11
+        eleven = client.post(
+            "/api/auth/change_password",
+            json={"current_password": ADMIN_PASSWORD, "new_password": "elevenchars"},
+        )
+        assert eleven.status_code == 422
+
+        assert len("twelvecharsx") == 12
+        twelve = client.post(
+            "/api/auth/change_password",
+            json={"current_password": ADMIN_PASSWORD, "new_password": "twelvecharsx"},
+        )
+        assert twelve.status_code == 200
 
 
 def test_admin_reset_forces_a_change_before_any_other_route(tmp_path: Path) -> None:
@@ -316,3 +448,87 @@ def test_reset_password_is_pi_admin_only(tmp_path: Path) -> None:
 
         # The reviewer password is untouched by the refused attempts.
         _sign_in(client, "reviewer", REVIEWER_PASSWORD)
+
+
+def test_legacy_accounts_migrate_with_must_change_password_off(tmp_path: Path) -> None:
+    """A pre-flag database gains the column, defaulted to 0, never forced."""
+    db_path = tmp_path / "legacy.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE accounts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL COLLATE NOCASE UNIQUE,
+                display_name TEXT NOT NULL,
+                password_hash TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'reviewer',
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                last_login_at TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO accounts (username, display_name, password_hash, role)
+            VALUES ('legacy_pi', 'Legacy PI', 'not-a-real-hash', 'pi_admin')
+            """
+        )
+
+    async def exercise() -> list[dict]:
+        db = FeedbackDB(db_path)
+        await db.connect()
+        try:
+            return await db.list_accounts()
+        finally:
+            await db.close()
+
+    accounts = asyncio.run(exercise())
+    assert accounts[0]["username"] == "legacy_pi"
+    assert accounts[0]["must_change_password"] is False
+
+    with sqlite3.connect(db_path) as conn:
+        columns = {row[1]: row for row in conn.execute("PRAGMA table_info(accounts)")}
+        stored = conn.execute("SELECT must_change_password FROM accounts").fetchone()
+    assert "must_change_password" in columns
+    # NOT NULL DEFAULT 0, so the flag can never read back as NULL.
+    assert columns["must_change_password"][3] == 1
+    assert stored[0] == 0
+
+
+def test_connect_fails_closed_when_the_flag_column_is_missing(tmp_path: Path) -> None:
+    """If the migration ever stopped adding the gate column, startup must die."""
+    db_path = tmp_path / "unmigrated.db"
+
+    async def exercise() -> None:
+        db = FeedbackDB(db_path)
+
+        async def skip_account_columns() -> None:
+            assert db._db is not None
+            await db._db.execute("DROP TABLE IF EXISTS accounts")
+            await db._db.execute(
+                """
+                CREATE TABLE accounts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT NOT NULL COLLATE NOCASE UNIQUE,
+                    display_name TEXT NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    role TEXT NOT NULL DEFAULT 'reviewer',
+                    is_active INTEGER NOT NULL DEFAULT 1,
+                    approval_status TEXT NOT NULL DEFAULT 'approved',
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    last_login_at TEXT
+                )
+                """
+            )
+
+        db._migrate = skip_account_columns  # type: ignore[method-assign]
+        try:
+            await db.connect()
+        finally:
+            await db.close()
+
+    with pytest.raises(RuntimeError, match="must_change_password"):
+        asyncio.run(exercise())

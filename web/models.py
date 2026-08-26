@@ -170,9 +170,10 @@ class AccountApprovalStatus(StrEnum):
     REJECTED = "rejected"
 
 
-# Self-serve changes and admin-generated temporary passwords are checked
-# against this; registration keeps its own, stricter minimum.
-MIN_PASSWORD_LENGTH = 10
+# Floor for self-serve password changes. Kept equal to the RegisterRequest and
+# AccountCreateRequest minimums so a user cannot lower their own password below
+# the registration policy.
+MIN_PASSWORD_LENGTH = 12
 
 
 class UserPublic(BaseModel):
@@ -198,7 +199,7 @@ class AccountPublic(UserPublic):
 class RegisterRequest(BaseModel):
     username: str = Field(min_length=2, max_length=64)
     display_name: str = Field(min_length=1, max_length=120)
-    password: str = Field(min_length=12, max_length=256)
+    password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=256)
     admin_code: Optional[str] = None
 
 
@@ -221,7 +222,9 @@ class AccountCreateRequest(BaseModel):
     username: str = Field(min_length=2, max_length=128)
     display_name: str = Field(min_length=1, max_length=120)
     role: Literal["reviewer", "pi_admin"] = "reviewer"
-    password: Optional[str] = Field(default=None, min_length=12, max_length=256)
+    password: Optional[str] = Field(
+        default=None, min_length=MIN_PASSWORD_LENGTH, max_length=256
+    )
     approval_note: str = Field(default="", max_length=500)
 
 

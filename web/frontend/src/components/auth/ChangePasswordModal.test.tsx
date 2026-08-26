@@ -80,7 +80,7 @@ describe('ChangePasswordModal', () => {
     })
   })
 
-  it('keeps submit disabled for a password under ten characters', async () => {
+  it('keeps submit disabled for a password under the twelve character floor', async () => {
     const user = userEvent.setup()
     renderModal()
 
@@ -88,7 +88,7 @@ describe('ChangePasswordModal', () => {
     await user.type(screen.getByLabelText('New password'), 'short123')
     await user.type(screen.getByLabelText('Confirm new password'), 'short123')
 
-    expect(screen.getByText('Use at least 10 characters.')).toBeTruthy()
+    expect(screen.getByText('Use at least 12 characters.')).toBeTruthy()
     const submit = screen.getByRole('button', {
       name: 'Change password',
     }) as HTMLButtonElement

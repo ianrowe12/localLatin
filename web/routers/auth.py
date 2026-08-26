@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import sqlite3
 import secrets
 import string
@@ -28,6 +29,8 @@ from web.models import (
 )
 from web.services.feedback_db import FeedbackDB
 from web.services.rate_limit import RateLimiter
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -68,10 +71,13 @@ async def register(
 @router.post("/signin", response_model=UserPublic)
 async def signin(
     body: SignInRequest,
+    request: Request,
     response: Response,
     db: FeedbackDB = Depends(get_db),
     settings: Settings = Depends(get_settings),
+    limiter: RateLimiter = Depends(get_rate_limiter),
 ) -> UserPublic:
+    limit_key = _signin_limit_key(request, body.username)
     account, reason = await db.verify_account(body.username, body.password)
     if account is None:
         if reason == "pending":
@@ -80,7 +86,10 @@ async def signin(
             raise HTTPException(status_code=403, detail="Account registration was rejected")
         if reason == "inactive":
             raise HTTPException(status_code=403, detail="Account is inactive")
+        # Only a bad username/password counts as a guess.
+        _record_failure(limiter, settings, limit_key)
         raise HTTPException(status_code=401, detail="Invalid username or password")
+    limiter.reset(limit_key)
     await _set_session_cookie(response, db, settings, account["id"])
     return UserPublic(**account)
 
@@ -117,13 +126,20 @@ async def change_password(
     limiter: RateLimiter = Depends(get_rate_limiter),
     current_user: UserPublic = Depends(get_current_user),
 ) -> UserPublic:
-    _enforce_rate_limit(limiter, settings, f"change:{current_user.id}")
+    limit_key = f"change:{current_user.id}"
+    # Verification runs BEFORE the window is consulted, and only a wrong password
+    # is ever recorded. This route is the sole escape hatch out of a forced-change
+    # gate and there is no email recovery, so a correct password must always get
+    # through: throttling a success would brick the account for the whole window.
     if not await db.verify_account_password(current_user.id, body.current_password):
+        _record_failure(limiter, settings, limit_key)
         raise HTTPException(status_code=403, detail="Current password is incorrect")
     if body.new_password == body.current_password:
+        # A validation error, not a failed guess: nothing recorded.
         raise HTTPException(
             status_code=400, detail="New password must differ from the current one"
         )
+    limiter.reset(limit_key)
     account = await db.set_account_password(
         account_id=current_user.id,
         new_password=body.new_password,
@@ -134,6 +150,11 @@ async def change_password(
     )
     if account is None:
         raise HTTPException(status_code=404, detail="Account not found")
+    logger.info(
+        "Password changed account_id=%s forced=%s",
+        current_user.id,
+        current_user.must_change_password,
+    )
     return UserPublic(**{key: account[key] for key in UserPublic.model_fields})
 
 
@@ -220,7 +241,20 @@ async def reset_account_password(
     limiter: RateLimiter = Depends(get_rate_limiter),
     current_user: UserPublic = Depends(require_pi_admin),
 ) -> PasswordResetResponse:
-    _enforce_rate_limit(limiter, settings, f"reset:{current_user.id}")
+    if account_id == current_user.id:
+        # Self-reset is a lockout trap: it would kill the caller's own session and
+        # leave the only copy of the temporary password in a browser tab, with no
+        # email recovery behind it. Admins change their own password instead, and
+        # a second PI/admin resets an admin who is locked out.
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Use Change password for your own account. "
+                "Another PI/admin must reset it for you."
+            ),
+        )
+    limit_key = f"reset:{current_user.id}"
+    _enforce_rate_limit(limiter, settings, limit_key)
     temporary_password = _generate_temporary_password()
     account = await db.set_account_password(
         account_id=account_id,
@@ -231,6 +265,13 @@ async def reset_account_password(
     )
     if account is None:
         raise HTTPException(status_code=404, detail="Account not found")
+    # Audit trail: ids only, never the generated password.
+    logger.info(
+        "Password reset actor_account_id=%s target_account_id=%s",
+        current_user.id,
+        account_id,
+    )
+    limiter.record(limit_key)
     return PasswordResetResponse(
         account=AccountPublic(**account),
         temporary_password=temporary_password,
@@ -238,15 +279,58 @@ async def reset_account_password(
 
 
 def _enforce_rate_limit(limiter: RateLimiter, settings: Settings, key: str) -> None:
-    allowed = limiter.check(
+    """Refuse the request when ``key`` has filled its window."""
+    if limiter.allows(
         key,
         settings.auth.password_rate_limit_max_attempts,
         settings.auth.password_rate_limit_window_seconds,
+    ):
+        return
+    raise _too_many_attempts(limiter, settings, key)
+
+
+def _record_failure(limiter: RateLimiter, settings: Settings, key: str) -> None:
+    """Count one failed attempt, or refuse when the window is already full.
+
+    A refused attempt is not itself recorded, so a client hammering the endpoint
+    cannot keep pushing its own window forward indefinitely.
+    """
+    if not limiter.allows(
+        key,
+        settings.auth.password_rate_limit_max_attempts,
+        settings.auth.password_rate_limit_window_seconds,
+    ):
+        raise _too_many_attempts(limiter, settings, key)
+    limiter.record(key)
+
+
+def _too_many_attempts(
+    limiter: RateLimiter, settings: Settings, key: str
+) -> HTTPException:
+    retry_after = limiter.retry_after(
+        key, settings.auth.password_rate_limit_window_seconds
     )
-    if not allowed:
-        raise HTTPException(
-            status_code=429, detail="Too many password attempts. Try again later."
-        )
+    return HTTPException(
+        status_code=429,
+        detail=f"Too many failed attempts. Try again in {retry_after} seconds.",
+        headers={"Retry-After": str(retry_after)},
+    )
+
+
+def _signin_limit_key(request: Request, username: str) -> str:
+    """Throttle key for sign-in: the client address plus the account.
+
+    Keyed per (client, account) rather than per account so a stranger cannot lock
+    a reviewer out of their own account by guessing at it. Behind a proxy that
+    does not forward X-Forwarded-For every client collapses to the proxy address,
+    which degrades this to a per-account window; sign-in still lets a correct
+    password through in that case, because only failures are ever recorded.
+    """
+    forwarded = request.headers.get("x-forwarded-for", "")
+    client = forwarded.split(",")[0].strip() if forwarded else ""
+    if not client:
+        client = request.client.host if request.client else "unknown"
+    return f"signin:{client}:{username.strip().lower()}"
 
 
 async def _registration_role(
