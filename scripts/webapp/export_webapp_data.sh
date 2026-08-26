@@ -86,12 +86,21 @@ for variant in raw abtt sif sif_abtt; do
 done
 
 # Query-query cosine matrices, one per model. Reviewer-created directories are
-# scored from these (issue #95); without them the webapp still runs but serves
-# no reviewer-directory candidates, so a missing matrix is worth reporting.
-# Checked as a group: the count is the number of models that can score them.
-check "q-q matrices" \
-    "$ROOT/runs/active/resubmit/unlabelled" dir \
-    "find '$ROOT/runs/active/resubmit/unlabelled' -maxdepth 1 -name 'qq_sim_*.npz' -size +0 | wc -l | tr -d ' '"
+# scored from these (issue #95).
+#
+# Checked per model, not as a count. A model whose matrix is missing still
+# serves predictions perfectly well and simply never offers reviewer-created
+# directories as candidates, so the feature disappears silently for that model
+# alone -- the failure a group count of "at least one" would wave through.
+# scripts/webapp/smoke_reviewer_pilot.py treats any model reporting
+# supports_reviewer_dirs=false as fatal, and this check is the build-side half
+# of that same contract.
+for slug in bowphs_LaTa bowphs_PhilTa google_mt5-base \
+            sentence-transformers_LaBSE Qwen_Qwen3-Embedding-0.6B \
+            KaLM-Embedding_KaLM-embedding-multilingual-mini-instruct-v2.5; do
+    check "q-q matrix ($slug)" \
+        "$ROOT/runs/active/resubmit/unlabelled/qq_sim_${slug}.npz" file
+done
 
 check "IG examples CSV" \
     "$ROOT/runs/active/ig_examples/phase12f_examples.csv" file \

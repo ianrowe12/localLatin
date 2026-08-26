@@ -16,14 +16,21 @@ class SmokeClient:
         self.base_url = base_url.rstrip("/")
         self.opener = build_opener(HTTPCookieProcessor(CookieJar()))
 
-    def request(
+    def send(
         self,
         method: str,
         path: str,
         *,
         json_body: dict | None = None,
-        expect: int = 200,
-    ) -> tuple[bytes, dict[str, str]]:
+    ) -> tuple[int, bytes, dict[str, str]]:
+        """Perform the request and report the status instead of asserting one.
+
+        Used by checks whose expected outcome is genuinely one of several -- a
+        reviewer directory can only be seeded from a query that has neither been
+        seeded already (409) nor been guard-excluded (422), and which of those a
+        given query is cannot be known before asking. Every check that expects a
+        single status still goes through request(), which asserts it.
+        """
         data = None
         headers = {}
         if json_body is not None:
@@ -37,16 +44,21 @@ class SmokeClient:
         )
         try:
             with self.opener.open(req, timeout=60) as response:
-                body = response.read()
-                status = response.status
-                response_headers = dict(response.headers.items())
+                return response.status, response.read(), dict(response.headers.items())
         except HTTPError as exc:
-            body = exc.read()
-            status = exc.code
-            response_headers = dict(exc.headers.items())
+            return exc.code, exc.read(), dict(exc.headers.items())
         except URLError as exc:
             raise RuntimeError(f"{method} {path} failed: {exc}") from exc
 
+    def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        json_body: dict | None = None,
+        expect: int = 200,
+    ) -> tuple[bytes, dict[str, str]]:
+        status, body, response_headers = self.send(method, path, json_body=json_body)
         if status != expect:
             snippet = body[:300].decode("utf-8", errors="replace")
             raise RuntimeError(f"{method} {path} returned {status}, expected {expect}: {snippet}")
@@ -84,6 +96,159 @@ ATTRIBUTION_VARIANT = {
     "sif": "sif",
     "sif_abtt": "sif_abtt",
 }
+
+# web/bands.py. The PI fixed these two numbers in the 2026-08-25 meeting, and the
+# backend now owns them so that the reviewer-directory badge and the frontend
+# banding cannot drift apart. The smoke run pins the values, not just the shape:
+# a deploy that quietly moved the no-match line would change what every reviewer
+# is told to do without anybody noticing.
+EXPECTED_BANDS = {"no_match": 0.5, "verify": 0.7}
+
+# The label on the single reusable reviewer directory the write check owns. It
+# is how a later run recognises the fixture it must reuse instead of creating
+# another, and it tells a reviewer who meets this directory in a candidate list
+# why it is there. See check_reviewer_dir_create_round_trip.
+SMOKE_DIR_LABEL = "DEPLOY SMOKE fixture - not a real directory, please ignore"
+
+# The shape web/models.py::FeedbackEntry promises. reviewer_username is the
+# issue #96 addition that lets a shared note be attributed to a person.
+FEEDBACK_ENTRY_KEYS = (
+    "query_id",
+    "model_slug",
+    "variant",
+    "outcome",
+    "notes",
+    "reviewer",
+    "reviewer_username",
+    "timestamp",
+)
+
+
+def check_confidence_bands(models: list) -> dict:
+    """/api/models serves the 0.5 / 0.7 confidence thresholds the frontend renders.
+
+    The frontend keeps literals of its own only as a pre-flight fallback and
+    otherwise reads these (utils/confidenceBands.ts::bandsFrom). If the key is
+    absent the UI silently falls back, so reviewers would still see bands and
+    nobody would learn that the deployed backend is older than the frontend.
+    That makes the presence of the key, not the appearance of the banner, the
+    thing worth asserting here.
+    """
+    for entry in models:
+        bands = entry.get("confidence_bands")
+        if not isinstance(bands, dict):
+            raise RuntimeError(
+                f"/api/models: {entry.get('slug')} carries no confidence_bands object "
+                f"(got {bands!r}) — the deployed backend predates issue #94"
+            )
+        for name, expected in EXPECTED_BANDS.items():
+            actual = bands.get(name)
+            if not isinstance(actual, (int, float)):
+                raise RuntimeError(
+                    f"/api/models: {entry.get('slug')} confidence_bands.{name} is {actual!r}, "
+                    "expected a number"
+                )
+            if abs(float(actual) - expected) > 1e-9:
+                raise RuntimeError(
+                    f"/api/models: {entry.get('slug')} confidence_bands.{name} is {actual}, "
+                    f"expected {expected} — the deployed thresholds are not the ones agreed "
+                    "with the PI"
+                )
+        if float(bands["no_match"]) >= float(bands["verify"]):
+            raise RuntimeError(
+                f"/api/models: {entry.get('slug')} bands are not ordered: "
+                f"no_match {bands['no_match']} >= verify {bands['verify']}"
+            )
+    print(f"  /api/models serves confidence bands {EXPECTED_BANDS} for {len(models)} model(s)")
+    return dict(EXPECTED_BANDS)
+
+
+def check_reviewer_dir_support(client: SmokeClient, models: list) -> None:
+    """Every model must advertise reviewer-directory support and list its directories.
+
+    supports_reviewer_dirs is `slug in store.qq_paths`, so a false here means the
+    model's qq_sim_<slug>.npz did not reach the host. That is the same class of
+    failure as a missing predictions CSV -- the feature degrades silently, with
+    reviewer-created directories simply never appearing as candidates -- and the
+    data release exists to prevent exactly it, so it is fatal rather than a
+    warning.
+    """
+    unsupported = [m.get("slug") for m in models if not m.get("supports_reviewer_dirs")]
+    if unsupported:
+        raise RuntimeError(
+            f"/api/models: {unsupported} report supports_reviewer_dirs=false — their "
+            "qq_sim_<slug>.npz matrices are missing from the host, so reviewer-created "
+            "directories would never be scored as candidates"
+        )
+
+    slug = models[0]["slug"]
+    listed = client.json("GET", f"/api/reviewer_dirs?{urlencode({'model': slug})}")
+    if not isinstance(listed, list):
+        raise RuntimeError(f"/api/reviewer_dirs returned {type(listed).__name__}, expected a list")
+    print(
+        f"  reviewer directories supported by all {len(models)} model(s); "
+        f"{len(listed)} existing for {slug!r}"
+    )
+
+
+def check_predictions_carry_reviewer_dirs(
+    client: SmokeClient, query_id: int, model: str, variant: str
+) -> None:
+    """A predictions response carries the seeded_dirs field the new-directory UI reads.
+
+    Read-only: the field is present and well-typed even when the reviewer has
+    created nothing, which is the state a fresh deploy is in.
+    """
+    params = urlencode({"model": model, "variant": variant, "top_k": 3})
+    payload = client.json("GET", f"/api/query/{query_id}/predictions?{params}")
+    seeded = payload.get("seeded_dirs")
+    if not isinstance(seeded, list):
+        raise RuntimeError(
+            f"/api/query/{query_id}/predictions has no seeded_dirs list (got {seeded!r}) — "
+            "the deployed backend predates issue #95"
+        )
+    for prediction in payload.get("predictions") or []:
+        if prediction.get("source") not in ("model", "reviewer"):
+            raise RuntimeError(
+                f"prediction rank {prediction.get('rank')} has source "
+                f"{prediction.get('source')!r}, expected 'model' or 'reviewer'"
+            )
+    print(f"  predictions carry seeded_dirs and per-candidate source for query {query_id}")
+
+
+def check_shared_note_shape(client: SmokeClient, query_id: int, model: str, variant: str) -> None:
+    """/api/feedback/latest answers with the shared-note prefill shape, or null.
+
+    Read-only, so it must tolerate a query nobody has reviewed yet: the endpoint
+    legitimately answers JSON null there. When a row does come back, every field
+    the reviewer's reload path reads must be present -- in particular
+    reviewer_username, which is what lets the UI say whose note it is showing.
+    A backend predating issue #96 answers without that key and the attribution
+    line would silently render blank.
+    """
+    params = urlencode({"query_id": query_id, "model": model, "variant": variant})
+    latest = client.json("GET", f"/api/feedback/latest?{params}")
+    if latest is None:
+        print(f"  /api/feedback/latest shape OK for query {query_id} (no notes filed yet)")
+        return
+    if not isinstance(latest, dict):
+        raise RuntimeError(
+            f"/api/feedback/latest returned {type(latest).__name__}, expected an object or null"
+        )
+    missing = [key for key in FEEDBACK_ENTRY_KEYS if key not in latest]
+    if missing:
+        raise RuntimeError(
+            f"/api/feedback/latest is missing field(s) {missing} — the deployed backend "
+            "predates issue #96 and shared-note attribution would render blank"
+        )
+    if latest.get("variant") != variant:
+        raise RuntimeError(
+            f"/api/feedback/latest returned variant {latest.get('variant')!r}, asked for {variant!r}"
+        )
+    print(
+        f"  /api/feedback/latest shape OK for query {query_id} "
+        f"(note by {latest.get('reviewer_username') or latest.get('reviewer')!r})"
+    )
 
 
 def check_models_advertise_variants(models: list) -> tuple[list[str], str]:
@@ -228,6 +393,179 @@ def check_notes_round_trip(
     print(f"  notes + multi-select round-tripped for variant {variant!r} (1 row written)")
 
 
+def check_reviewer_dir_create_round_trip(
+    client: SmokeClient,
+    model: str,
+    variant: str,
+    candidate_query_ids: list[int],
+) -> None:
+    """Exercise the reviewer-directory create path against a single reusable fixture.
+
+    WRITE CHECK, and the most invasive one in this file, because a reviewer
+    directory is **permanent and undeletable** and, once it exists, is scored
+    against every future query and can surface in a real reviewer's candidate
+    list. A check that seeded a fresh directory per run would inject a new
+    piece of furniture into the pilot on every deploy, for ever, and no amount
+    of name-prefixing would keep it out of the ranked slate that Siddique and
+    Abigail actually work from.
+
+    So the deployment holds **at most one** smoke directory, ever:
+
+    * The first run that ever executes this check creates it, labelled with
+      SMOKE_DIR_LABEL, and asserts the 201 shape.
+    * Every later run finds it by that label and asserts only the duplicate
+      guard, which is the invariant worth re-proving on each deploy: re-seeding
+      its seed query must be refused with 409.
+
+    Discovery is by label, but the label is not the safety property -- the cap
+    of one directory is. The label only lets a later run recognise the fixture
+    it must reuse instead of making another, and tells a human reader why an
+    unfamiliar directory is sitting in the list.
+
+    Seeding a given query can legitimately be refused: 409 when something has
+    already seeded it, 422 when the document is guard-excluded and so could
+    never be matched. The first-run path therefore walks candidates rather than
+    assuming the first one is usable.
+    """
+    listing = client.json("GET", f"/api/reviewer_dirs?{urlencode({'model': model})}")
+    fixture = next((d for d in listing if d.get("label") == SMOKE_DIR_LABEL), None)
+
+    if fixture is None:
+        skipped: list[str] = []
+        for query_id in candidate_query_ids:
+            status, body, _ = client.send(
+                "POST",
+                "/api/reviewer_dirs",
+                json_body={
+                    "query_file_id": query_id,
+                    "label": SMOKE_DIR_LABEL,
+                    "model_slug": model,
+                    "variant": variant,
+                },
+            )
+            if status == 201:
+                fixture = json.loads(body.decode("utf-8"))
+                if fixture.get("status") != "awaiting_match":
+                    raise RuntimeError(
+                        f"a freshly created reviewer directory reported status "
+                        f"{fixture.get('status')!r}, expected 'awaiting_match'"
+                    )
+                if fixture.get("member_query_ids") != [query_id]:
+                    raise RuntimeError(
+                        f"new reviewer directory members are "
+                        f"{fixture.get('member_query_ids')!r}, expected exactly [{query_id}]"
+                    )
+                print(f"  created the one-time smoke reviewer directory from query {query_id}")
+                break
+            if status in (409, 422):
+                skipped.append(f"{query_id}:{status}")
+                continue
+            snippet = body[:300].decode("utf-8", errors="replace")
+            raise RuntimeError(
+                f"POST /api/reviewer_dirs for query {query_id} returned {status}, "
+                f"expected 201, 409 or 422: {snippet}"
+            )
+        if fixture is None:
+            raise RuntimeError(
+                "could not seed the smoke reviewer directory from any candidate query "
+                f"(tried {len(candidate_query_ids)}: {skipped}) — every one was already "
+                "seeded or guard-excluded"
+            )
+
+    seed_query = fixture.get("seed_query_id")
+    dir_id = fixture.get("dir_id")
+
+    # The duplicate guard is what stops a double-click, or a repeat of this very
+    # check, turning into a second permanent artefact. It is therefore both the
+    # assertion and the mechanism that keeps this check idempotent.
+    duplicate, dup_body, _ = client.send(
+        "POST",
+        "/api/reviewer_dirs",
+        json_body={"query_file_id": seed_query, "model_slug": model, "variant": variant},
+    )
+    if duplicate != 409:
+        snippet = dup_body[:300].decode("utf-8", errors="replace")
+        raise RuntimeError(
+            f"re-seeding query {seed_query} returned {duplicate}, expected 409 — the "
+            f"duplicate guard is not holding, so this check would accumulate "
+            f"undeletable directories: {snippet}"
+        )
+
+    fetched = client.json("GET", f"/api/reviewer_dirs/{dir_id}?{urlencode({'model': model})}")
+    if fetched.get("seed_query_id") != seed_query:
+        raise RuntimeError(
+            f"reviewer directory {dir_id} reports seed_query_id "
+            f"{fetched.get('seed_query_id')!r}, expected {seed_query}"
+        )
+
+    smoke_dirs = [d for d in listing if d.get("label") == SMOKE_DIR_LABEL]
+    if len(smoke_dirs) > 1:
+        raise RuntimeError(
+            f"found {len(smoke_dirs)} smoke reviewer directories, expected at most one — "
+            "this check has been accumulating undeletable directories"
+        )
+    print(
+        f"  reviewer directory {dir_id} (seed query {seed_query}) refused a duplicate "
+        "seed with 409; no new directory created"
+    )
+
+
+def check_password_change_round_trip(base_url: str, username: str, password: str) -> None:
+    """Change the smoke account's password and change it straight back.
+
+    WRITE CHECK. This is the one check that can invalidate the credentials the
+    deploy pipeline itself depends on, so it is deliberately narrow: it runs on
+    its own session, restores the original password, and then proves the
+    restore by signing in again from a clean client.
+
+    The interim password is derived from the original by a fixed rule rather
+    than generated, so that a failure between the two changes is recoverable by
+    reading this source -- no secret is ever printed, and there is no random
+    value that would be lost with the process.
+    """
+    interim = f"{password}.smoke-rotate"
+
+    session = SmokeClient(base_url)
+    session.json("POST", "/api/auth/signin", json_body={"username": username, "password": password})
+
+    changed = session.json(
+        "POST",
+        "/api/auth/change_password",
+        json_body={"current_password": password, "new_password": interim},
+    )
+    if changed.get("must_change_password"):
+        raise RuntimeError("change_password left must_change_password set")
+
+    status, body, _ = session.send(
+        "POST",
+        "/api/auth/change_password",
+        json_body={"current_password": interim, "new_password": password},
+    )
+    if status != 200:
+        snippet = body[:300].decode("utf-8", errors="replace")
+        raise RuntimeError(
+            f"RESTORE FAILED: the smoke account password is still the interim value "
+            f"(original + '.smoke-rotate'). Rotate it with the 'Provision smoke account' "
+            f"workflow before the next deploy. Server said {status}: {snippet}"
+        )
+
+    verifier = SmokeClient(base_url)
+    verify_status, verify_body, _ = verifier.send(
+        "POST", "/api/auth/signin", json_body={"username": username, "password": password}
+    )
+    if verify_status != 200:
+        snippet = verify_body[:300].decode("utf-8", errors="replace")
+        raise RuntimeError(
+            f"RESTORE UNVERIFIED: signing in with the original password returned "
+            f"{verify_status}. Rotate the smoke account with the 'Provision smoke account' "
+            f"workflow: {snippet}"
+        )
+
+    # The old session must be gone: change_password keeps only the caller's.
+    session.request("GET", "/api/auth/me")
+    print("  password change round-tripped on the smoke account (original password restored)")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Smoke check the deployed LocalLatin reviewer pilot.")
     parser.add_argument("--base-url", required=True, help="Origin to check, e.g. https://ai.csr.uky.edu")
@@ -253,6 +591,7 @@ def main() -> int:
     model = models[0]["slug"]
     variants, default_variant = check_models_advertise_variants(models)
     print(f"  /api/models advertises {variants}, default {default_variant!r}")
+    check_confidence_bands(models)
 
     signed_in = client.json(
         "POST",
@@ -313,10 +652,16 @@ def main() -> int:
     approved_client.request("GET", "/api/stats", expect=403)
     client.json("POST", f"/api/auth/accounts/{account_id}/reject")
 
-    queries = client.json("GET", "/api/queries?status=all&page_size=1")
+    # A page rather than a single row: the reviewer-directory write check needs
+    # spare candidates to walk when the first is already seeded or is
+    # guard-excluded.
+    queries = client.json("GET", "/api/queries?status=all&page_size=25")
     if not queries.get("items"):
         raise RuntimeError("/api/queries returned no query items")
-    query_id = queries["items"][0]["file_id"]
+    candidate_query_ids = [item["file_id"] for item in queries["items"]]
+    query_id = candidate_query_ids[0]
+
+    check_reviewer_dir_support(client, models)
 
     predictions = client.json(
         "GET",
@@ -326,6 +671,8 @@ def main() -> int:
         raise RuntimeError("/api/query/{id}/predictions returned no predictions")
 
     check_predictions_per_variant(client, query_id, model, variants, default_variant)
+    check_predictions_carry_reviewer_dirs(client, query_id, model, default_variant)
+    check_shared_note_shape(client, query_id, model, default_variant)
 
     examples = client.json("GET", "/api/token_map_examples")
     if not examples:
@@ -357,6 +704,18 @@ def main() -> int:
         # additional coverage.
         other = next(v for v in variants if v != default_variant)
         check_notes_round_trip(client, query_id, model, default_variant, other)
+
+        # Also permanent, and also deliberately one per run: reviewer
+        # directories can never be deleted, so this leaves a single directory
+        # behind. Read-only deploys prove the endpoint is reachable and the
+        # matrices are present (check_reviewer_dir_support) without creating
+        # anything.
+        check_reviewer_dir_create_round_trip(client, model, default_variant, candidate_query_ids)
+
+        # Last, because it is the only check that can invalidate the credentials
+        # the deploy pipeline itself uses. It restores the original password and
+        # verifies the restore before returning.
+        check_password_change_round_trip(args.base_url, args.username, args.password)
 
     print("Reviewer pilot smoke checks passed.")
     return 0
