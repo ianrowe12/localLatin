@@ -41,6 +41,11 @@ carry irreplaceable human work. This script asserts their row counts are
 unchanged before it commits, and rolls back if they are not. It never issues a
 DELETE or UPDATE against them.
 
+It also refuses to touch any account whose username does not start with
+``locallatin-smoke``. Rotating a human PI/admin account would be an account
+takeover dressed as a maintenance run, and this script is not the place from
+which that should ever be possible.
+
 USAGE
 -----
     python3 scripts/webapp/provision_smoke_account.py \
@@ -64,7 +69,22 @@ import sys
 # Mirrors web/services/feedback_db.py::_hash_password. Kept as a literal pattern
 # rather than an import because this script runs on the deploy host with the
 # system python and no dependency on the web package being importable.
-HASH_PATTERN = re.compile(r"^pbkdf2_sha256\$\d+\$[0-9a-f]{32}\$[0-9a-f]{64}$")
+HASH_PATTERN = re.compile(r"^pbkdf2_sha256\$200000\$[0-9a-f]{32}\$[0-9a-f]{64}$")
+
+# The account this script exists to manage. Enforced on BOTH modes, and the
+# reason is asymmetric:
+#
+#   rotate is a takeover primitive. Without this guard, anyone who can dispatch
+#   the workflow could re-point a human PI/admin account at a password hash they
+#   generated, and the audit trail would read as a routine maintenance run.
+#
+#   create is a privilege-grant primitive: it mints pi_admin accounts. Confining
+#   it to the same prefix keeps every account this script can produce
+#   recognisable as machine-owned.
+#
+# Anything outside the prefix belongs to a person and is managed through the
+# application's own account screens.
+SMOKE_USERNAME_PREFIX = "locallatin-smoke"
 
 # web/services/feedback_db.py::_REQUIRED_ACCOUNT_COLUMNS. The app fails closed at
 # startup when one is missing; so does this script, because an INSERT that omits
@@ -152,6 +172,13 @@ def main() -> int:
     username = args.username.strip().lower()
     if not username:
         raise SystemExit("--username is empty")
+    if not username.startswith(SMOKE_USERNAME_PREFIX):
+        raise SystemExit(
+            f"Refusing to touch {username!r}: this script only manages accounts whose "
+            f"name starts with {SMOKE_USERNAME_PREFIX!r}. Accounts outside that prefix "
+            "belong to people and are managed from the application's account screens. "
+            "Rotating one here would be an account takeover, not a maintenance step."
+        )
     if not HASH_PATTERN.match(args.password_hash):
         # Deliberately does not echo the value: it is not secret-equivalent, but
         # there is no reason to widen its exposure on a bad-input path.

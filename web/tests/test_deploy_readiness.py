@@ -330,14 +330,18 @@ def test_smoke_write_checks_are_all_behind_the_write_flag() -> None:
     leaked = must_be_guarded & unguarded
     assert not leaked, f"write checks run unconditionally: {sorted(leaked)}"
 
-    # The reviewer-directory create must remain a single permanent artefact.
-    source = script.read_text(encoding="utf-8")
-    assert source.count('"/api/reviewer_dirs",') == 2, (
-        "expected exactly two POST sites to /api/reviewer_dirs (the create and its "
-        "duplicate probe) — each additional one leaves another undeletable directory"
-    )
-    assert source.count("check_reviewer_dir_create_round_trip") == 2  # the def and one call
-    assert source.count("check_password_change_round_trip") == 2
+    # Each write check must be reached from exactly one call site, so the cost
+    # of a run cannot quietly double. Counted over the AST rather than the
+    # source text, which also mentions these names in prose.
+    for name in must_be_guarded:
+        call_sites = sum(
+            1
+            for node in ast.walk(main_fn)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == name
+        )
+        assert call_sites == 1, f"{name} is called {call_sites} times in main(), expected 1"
 
 
 def test_smoke_password_round_trip_restores_and_verifies() -> None:
@@ -352,6 +356,82 @@ def test_smoke_password_round_trip_restores_and_verifies() -> None:
     # The interim value is derived by a fixed rule, so a crash between the two
     # changes is recoverable from this source rather than lost with the process.
     assert 'interim = f"{password}.smoke-rotate"' in source
+
+
+def test_smoke_reviewer_dir_check_cannot_accumulate_directories() -> None:
+    """Reviewer directories are permanent and surface in real candidate lists.
+
+    The write check therefore reuses one labelled fixture rather than seeding a
+    fresh directory per deploy. The label is only how a later run finds it; the
+    cap of one is the actual safety property, so both are pinned here.
+    """
+    source = (ROOT / "scripts" / "webapp" / "smoke_reviewer_pilot.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "SMOKE_DIR_LABEL" in source
+    # Reuse before create: the listing is consulted for an existing fixture.
+    assert 'd.get("label") == SMOKE_DIR_LABEL' in source
+    # And the invariant is asserted, not merely intended.
+    assert "expected at most one" in source
+    assert source.count('"/api/reviewer_dirs",') == 2, (
+        "expected exactly two POST sites to /api/reviewer_dirs (the one-time create "
+        "and the duplicate probe) — each additional one risks another undeletable "
+        "directory in the reviewers' candidate lists"
+    )
+
+
+def test_provision_script_pins_the_hash_iteration_count() -> None:
+    """A weaker PBKDF2 hash must not be installable through the provisioning path."""
+    source = (ROOT / "scripts" / "webapp" / "provision_smoke_account.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert r"pbkdf2_sha256\$200000\$" in source, "iteration count is not pinned to 200000"
+    # And the script only manages machine-owned accounts.
+    assert 'SMOKE_USERNAME_PREFIX = "locallatin-smoke"' in source
+    assert "startswith(SMOKE_USERNAME_PREFIX)" in source
+
+
+def test_provision_workflow_never_interpolates_inputs_into_a_shell_body() -> None:
+    """`run:` is assembled by text substitution, so an interpolated input is code.
+
+    Every input must reach the shell through `env:` instead. This reads the
+    parsed YAML rather than grepping, so a new step cannot reintroduce the
+    pattern unnoticed.
+    """
+    import yaml
+
+    workflow = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "provision-smoke-account.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    offenders = []
+    for job in workflow["jobs"].values():
+        for step in job.get("steps", []):
+            body = step.get("run")
+            if body and "${{" in body and "inputs." in body:
+                offenders.append(step.get("name"))
+    assert not offenders, (
+        f"steps interpolate a dispatch input directly into their shell body: {offenders}. "
+        "Pass it through env: and reference it as a shell variable."
+    )
+
+
+def test_provision_workflow_runs_the_reviewed_script_and_backs_up_safely() -> None:
+    source = (ROOT / ".github" / "workflows" / "provision-smoke-account.yml").read_text(
+        encoding="utf-8"
+    )
+
+    # The production write must run main's script, never a branch's version.
+    assert "ref: main" in source
+    # A live database cannot be snapshotted with cp: committed state can sit in
+    # a journal the copy does not take.
+    assert "cp -p" not in source
+    assert "source.backup(snapshot)" in source
+    assert "PRAGMA integrity_check" in source
 
 
 def test_provision_workflow_never_takes_a_plaintext_password() -> None:

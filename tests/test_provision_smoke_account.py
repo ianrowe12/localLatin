@@ -241,6 +241,32 @@ def test_the_append_only_tables_are_left_untouched(db: Path) -> None:
         conn.close()
 
 
+@pytest.mark.parametrize("mode", ["create", "rotate"])
+def test_refuses_any_account_outside_the_smoke_prefix(db: Path, mode: str) -> None:
+    """Rotating a human PI account would be a takeover dressed as maintenance."""
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO accounts (username, display_name, password_hash, role)"
+        " VALUES ('abigail', 'Abigail', 'pbkdf2_sha256$200000$deadbeef$cafe', 'pi_admin')"
+    )
+    conn.commit()
+    conn.close()
+
+    result = run(db, username="abigail", mode=mode)
+    assert result.returncode != 0
+    assert "locallatin-smoke" in result.stdout + result.stderr
+    # The PI's password hash is untouched.
+    assert account_row(db, "abigail")["password_hash"] == "pbkdf2_sha256$200000$deadbeef$cafe"
+
+
+def test_a_non_200000_iteration_count_is_refused(db: Path) -> None:
+    """A weaker hash must not be installable through this path."""
+    weak = f"pbkdf2_sha256$1000${'a' * 32}${'b' * 64}"
+    result = run(db, password_hash=weak)
+    assert result.returncode != 0
+    assert account_row(db) is None
+
+
 def test_missing_accounts_table_is_a_readable_error(tmp_path: Path) -> None:
     empty = tmp_path / "empty.db"
     sqlite3.connect(empty).close()

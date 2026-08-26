@@ -104,6 +104,12 @@ ATTRIBUTION_VARIANT = {
 # is told to do without anybody noticing.
 EXPECTED_BANDS = {"no_match": 0.5, "verify": 0.7}
 
+# The label on the single reusable reviewer directory the write check owns. It
+# is how a later run recognises the fixture it must reuse instead of creating
+# another, and it tells a reviewer who meets this directory in a candidate list
+# why it is there. See check_reviewer_dir_create_round_trip.
+SMOKE_DIR_LABEL = "DEPLOY SMOKE fixture - not a real directory, please ignore"
+
 # The shape web/models.py::FeedbackEntry promises. reviewer_username is the
 # issue #96 addition that lets a shared note be attributed to a person.
 FEEDBACK_ENTRY_KEYS = (
@@ -393,66 +399,85 @@ def check_reviewer_dir_create_round_trip(
     variant: str,
     candidate_query_ids: list[int],
 ) -> None:
-    """Seed one reviewer directory, then prove a second seed on the same query is 409.
+    """Exercise the reviewer-directory create path against a single reusable fixture.
 
-    WRITE CHECK. Reviewer directories are append-only and nothing can ever delete
-    one, so this leaves exactly one permanent directory on the deployment per
-    run -- which is why it sits behind the write flag rather than running on
-    every deploy. It is scoped to one directory deliberately: the 409 half needs
-    no second create, because the duplicate guard is keyed on the seed query.
+    WRITE CHECK, and the most invasive one in this file, because a reviewer
+    directory is **permanent and undeletable** and, once it exists, is scored
+    against every future query and can surface in a real reviewer's candidate
+    list. A check that seeded a fresh directory per run would inject a new
+    piece of furniture into the pilot on every deploy, for ever, and no amount
+    of name-prefixing would keep it out of the ranked slate that Siddique and
+    Abigail actually work from.
 
-    Seeding can legitimately fail on a given query -- 409 if some earlier run or
-    a real reviewer already seeded it, 422 if the document is guard-excluded and
-    could therefore never be matched -- so the check walks candidates until one
-    is accepted rather than assuming the first is usable.
+    So the deployment holds **at most one** smoke directory, ever:
+
+    * The first run that ever executes this check creates it, labelled with
+      SMOKE_DIR_LABEL, and asserts the 201 shape.
+    * Every later run finds it by that label and asserts only the duplicate
+      guard, which is the invariant worth re-proving on each deploy: re-seeding
+      its seed query must be refused with 409.
+
+    Discovery is by label, but the label is not the safety property -- the cap
+    of one directory is. The label only lets a later run recognise the fixture
+    it must reuse instead of making another, and tells a human reader why an
+    unfamiliar directory is sitting in the list.
+
+    Seeding a given query can legitimately be refused: 409 when something has
+    already seeded it, 422 when the document is guard-excluded and so could
+    never be matched. The first-run path therefore walks candidates rather than
+    assuming the first one is usable.
     """
-    seeded_id = None
-    seed_query = None
-    skipped: list[str] = []
-    for query_id in candidate_query_ids:
-        status, body, _ = client.send(
-            "POST",
-            "/api/reviewer_dirs",
-            json_body={
-                "query_file_id": query_id,
-                "label": f"DEPLOY SMOKE directory {int(time.time())}",
-                "model_slug": model,
-                "variant": variant,
-            },
-        )
-        if status == 201:
-            created = json.loads(body.decode("utf-8"))
-            seeded_id = created.get("dir_id")
-            seed_query = query_id
-            if created.get("status") != "awaiting_match":
-                raise RuntimeError(
-                    f"a freshly created reviewer directory reported status "
-                    f"{created.get('status')!r}, expected 'awaiting_match'"
-                )
-            if created.get("member_query_ids") != [query_id]:
-                raise RuntimeError(
-                    f"new reviewer directory members are {created.get('member_query_ids')!r}, "
-                    f"expected exactly [{query_id}]"
-                )
-            break
-        if status in (409, 422):
-            skipped.append(f"{query_id}:{status}")
-            continue
-        snippet = body[:300].decode("utf-8", errors="replace")
-        raise RuntimeError(
-            f"POST /api/reviewer_dirs for query {query_id} returned {status}, "
-            f"expected 201, 409 or 422: {snippet}"
-        )
+    listing = client.json("GET", f"/api/reviewer_dirs?{urlencode({'model': model})}")
+    fixture = next((d for d in listing if d.get("label") == SMOKE_DIR_LABEL), None)
 
-    if seeded_id is None:
-        raise RuntimeError(
-            "could not seed a reviewer directory from any candidate query "
-            f"(tried {len(candidate_query_ids)}: {skipped}) — every one was already "
-            "seeded or guard-excluded"
-        )
+    if fixture is None:
+        skipped: list[str] = []
+        for query_id in candidate_query_ids:
+            status, body, _ = client.send(
+                "POST",
+                "/api/reviewer_dirs",
+                json_body={
+                    "query_file_id": query_id,
+                    "label": SMOKE_DIR_LABEL,
+                    "model_slug": model,
+                    "variant": variant,
+                },
+            )
+            if status == 201:
+                fixture = json.loads(body.decode("utf-8"))
+                if fixture.get("status") != "awaiting_match":
+                    raise RuntimeError(
+                        f"a freshly created reviewer directory reported status "
+                        f"{fixture.get('status')!r}, expected 'awaiting_match'"
+                    )
+                if fixture.get("member_query_ids") != [query_id]:
+                    raise RuntimeError(
+                        f"new reviewer directory members are "
+                        f"{fixture.get('member_query_ids')!r}, expected exactly [{query_id}]"
+                    )
+                print(f"  created the one-time smoke reviewer directory from query {query_id}")
+                break
+            if status in (409, 422):
+                skipped.append(f"{query_id}:{status}")
+                continue
+            snippet = body[:300].decode("utf-8", errors="replace")
+            raise RuntimeError(
+                f"POST /api/reviewer_dirs for query {query_id} returned {status}, "
+                f"expected 201, 409 or 422: {snippet}"
+            )
+        if fixture is None:
+            raise RuntimeError(
+                "could not seed the smoke reviewer directory from any candidate query "
+                f"(tried {len(candidate_query_ids)}: {skipped}) — every one was already "
+                "seeded or guard-excluded"
+            )
 
-    # The duplicate guard is what stops a double-click creating a second
-    # permanent artefact, so it is the half most worth proving.
+    seed_query = fixture.get("seed_query_id")
+    dir_id = fixture.get("dir_id")
+
+    # The duplicate guard is what stops a double-click, or a repeat of this very
+    # check, turning into a second permanent artefact. It is therefore both the
+    # assertion and the mechanism that keeps this check idempotent.
     duplicate, dup_body, _ = client.send(
         "POST",
         "/api/reviewer_dirs",
@@ -462,18 +487,26 @@ def check_reviewer_dir_create_round_trip(
         snippet = dup_body[:300].decode("utf-8", errors="replace")
         raise RuntimeError(
             f"re-seeding query {seed_query} returned {duplicate}, expected 409 — the "
-            f"duplicate guard is not holding: {snippet}"
+            f"duplicate guard is not holding, so this check would accumulate "
+            f"undeletable directories: {snippet}"
         )
 
-    fetched = client.json("GET", f"/api/reviewer_dirs/{seeded_id}?{urlencode({'model': model})}")
+    fetched = client.json("GET", f"/api/reviewer_dirs/{dir_id}?{urlencode({'model': model})}")
     if fetched.get("seed_query_id") != seed_query:
         raise RuntimeError(
-            f"reviewer directory {seeded_id} reports seed_query_id "
+            f"reviewer directory {dir_id} reports seed_query_id "
             f"{fetched.get('seed_query_id')!r}, expected {seed_query}"
         )
+
+    smoke_dirs = [d for d in listing if d.get("label") == SMOKE_DIR_LABEL]
+    if len(smoke_dirs) > 1:
+        raise RuntimeError(
+            f"found {len(smoke_dirs)} smoke reviewer directories, expected at most one — "
+            "this check has been accumulating undeletable directories"
+        )
     print(
-        f"  reviewer directory {seeded_id} seeded from query {seed_query} "
-        "and re-seeding it returned 409 (1 permanent directory created)"
+        f"  reviewer directory {dir_id} (seed query {seed_query}) refused a duplicate "
+        "seed with 409; no new directory created"
     )
 
 

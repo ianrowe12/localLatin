@@ -41,8 +41,10 @@ on:
         required: true
         default: "Deploy Smoke Check"
       password_hash:
-        description: "pbkdf2_sha256$200000$<salt>$<digest> — NOT the password"
-        required: true
+        description: >-
+          pbkdf2_sha256$200000$<salt>$<digest> — NOT the password. Required
+          unless dry_run is set.
+        required: false
       role:
         description: >-
           pi_admin is required by smoke_reviewer_pilot.py (it checks /api/stats,
@@ -62,8 +64,17 @@ on:
           - create
           - rotate
       confirm:
-        description: "Type PROVISION to confirm this writes to the production database"
-        required: true
+        description: >-
+          Type PROVISION to confirm this writes to the production database. Not
+          needed when dry_run is set, since that path writes nothing.
+        required: false
+      dry_run:
+        description: >-
+          Report host disk usage and stop, without touching the database. Use
+          this to check free space before a large data release.
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -83,24 +94,112 @@ jobs:
       - production
 
     steps:
+      # dry_run writes nothing, so it does not need the destructive
+      # confirmation. Requiring it there would only train the operator to type
+      # PROVISION out of habit.
+      # CONFIRM goes through env, never through ${{ }} interpolation into the
+      # script body: `run:` is assembled by substituting the expression as text
+      # and then handing the result to bash, so an input containing shell
+      # metacharacters would execute on this runner, next to the live reviewer
+      # database. Via env it is only ever a variable's value.
       - name: Refuse an unconfirmed dispatch
-        if: inputs.confirm != 'PROVISION'
+        if: ${{ !inputs.dry_run && inputs.confirm != 'PROVISION' }}
+        env:
+          CONFIRM: ${{ inputs.confirm }}
         run: |
-          echo "confirm was '${{ inputs.confirm }}', expected 'PROVISION'." >&2
+          printf 'confirm was %q, expected PROVISION.\n' "${CONFIRM}" >&2
           echo "This job writes to the live reviewer database; type it exactly." >&2
           exit 1
+
+      # Runs before the write and on every dispatch, because this is the only
+      # job that reaches the deploy host outside a deploy. deploy/deploy.sh
+      # refuses to unpack a data release unless free space is at least 4x the
+      # downloaded archives, and the issue #98 release is ~4.5 GB of parts, so a
+      # short-of-space host would abort a deploy that has already restarted the
+      # service. Better to learn it here.
+      #
+      # REPORT ONLY. It deletes nothing: every candidate below is listed with
+      # its size so a human can decide. `set -u` without `-e` so a path that
+      # does not exist yet never fails the report.
+      - name: Report host disk usage
+        env:
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+        run: |
+          set -uo pipefail
+          DEPLOY_PATH="${DEPLOY_PATH:-/homes/ipro222/localLatin}"
+          CACHE="${DEPLOY_PATH}/.deploy-cache"
+
+          echo "=== Filesystem holding ${DEPLOY_PATH} ==="
+          df -h "${DEPLOY_PATH}" || true
+          avail_kb="$(df -Pk "${DEPLOY_PATH}" 2>/dev/null | awk 'NR==2 {print $4}')"
+          if [[ -n "${avail_kb:-}" ]]; then
+            echo ""
+            echo "Free: $((avail_kb / 1024 / 1024)) GB"
+            echo "Needed for the issue #98 release: ~18 GB transient (4x the ~4.5 GB"
+            echo "of parts, deploy.sh's preflight) plus ~4.4 GB for the installed payload."
+            if [[ "${avail_kb}" -lt 23000000 ]]; then
+              echo ""
+              echo "::warning::Free space is under ~22 GB. The data sync may abort at"
+              echo "deploy.sh's preflight. Review the reclaimable list below before deploying."
+            fi
+          fi
+
+          echo ""
+          echo "=== Largest consumers under ${DEPLOY_PATH} ==="
+          du -sh "${DEPLOY_PATH}"/* 2>/dev/null | sort -rh | head -15 || true
+          echo ""
+          echo "--- runs/active ---"
+          du -sh "${DEPLOY_PATH}/runs/active/"* 2>/dev/null | sort -rh | head -10 || true
+
+          echo ""
+          echo "=== Reclaimable without touching reviewer data (NOTHING IS DELETED) ==="
+          echo "--- cached release archives ---"
+          ls -lh "${CACHE}"/locallatin-*.tar.gz* 2>/dev/null \
+            || echo "  (none)"
+          echo "  deploy.sh prunes superseded archives only AFTER a successful install, so"
+          echo "  the previous tag's parts still occupy space during the download that"
+          echo "  replaces them. Removing archives for a tag other than the one being"
+          echo "  deployed is safe: they are re-downloadable from the GitHub Release."
+          echo ""
+          echo "--- leftover staging directories from an interrupted extract ---"
+          du -sh "${CACHE}"/stage-* 2>/dev/null || echo "  (none)"
+          echo "  Safe to remove; deploy.sh recreates its staging directory each run."
+          echo ""
+          echo "--- rebuilt by every deploy ---"
+          du -sh "${DEPLOY_PATH}/.venv" 2>/dev/null || echo "  no .venv"
+          du -sh "${DEPLOY_PATH}/web/frontend/node_modules" 2>/dev/null || echo "  no node_modules"
+          echo "  Both are recreated by deploy.sh; safe to remove to free space."
+          echo ""
+          echo "--- provisioning backups of the reviewer database ---"
+          ls -lh "${DEPLOY_PATH}/data"/feedback.db.pre-provision-* 2>/dev/null \
+            || echo "  (none)"
+          echo "  Each is a FULL copy of the reviewer database, including every password"
+          echo "  hash. Keep the most recent. Never delete one without confirming another"
+          echo "  good copy exists: scripts/webapp/backup_feedback_db.py is the maintained"
+          echo "  backup path and has retention handling."
+
+      - name: Stop after the disk report
+        if: inputs.dry_run
+        run: |
+          echo "dry_run was requested: reporting only, the database was not touched."
 
       # Into the runner's own workspace, not DEPLOY_PATH: this job must not
       # move the deploy checkout's HEAD as a side effect, and the script it
       # needs may not have been pulled onto the host yet (the account has to
       # exist *before* the deploy whose smoke checks use it).
       - name: Check out the provisioning script
+        if: ${{ !inputs.dry_run }}
         uses: actions/checkout@v6
         with:
+          # Pinned to main rather than the dispatch ref: this job writes to the
+          # production database, so it must run the reviewed script from the
+          # default branch and never a version proposed on some other branch.
+          ref: main
           filter: blob:none
           sparse-checkout: scripts/webapp
 
       - name: Provision the account
+        if: ${{ !inputs.dry_run }}
         env:
           DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
           USERNAME: ${{ inputs.username }}
@@ -122,8 +221,31 @@ jobs:
           # Back the database up before touching it. It holds reviewer feedback
           # that cannot be regenerated, and this is the only job that writes to
           # it outside the application itself.
+          #
+          # sqlite3's online backup API, not `cp`: the service is running, so a
+          # plain file copy can capture a main database whose committed state
+          # lives partly in a rollback journal or WAL that the copy does not
+          # take, yielding a snapshot that is silently short of the rows it
+          # appears to hold. Same pattern as scripts/webapp/backup_feedback_db.py.
           BACKUP="${DB}.pre-provision-$(date -u +%Y%m%dT%H%M%SZ)"
-          cp -p "${DB}" "${BACKUP}"
+          python3 - "${DB}" "${BACKUP}" <<'PY'
+          import sqlite3
+          import sys
+
+          src_path, dest_path = sys.argv[1], sys.argv[2]
+          source = sqlite3.connect(f"file:{src_path}?mode=ro", uri=True)
+          snapshot = sqlite3.connect(dest_path)
+          try:
+              with snapshot:
+                  source.backup(snapshot)
+              status = snapshot.execute("PRAGMA integrity_check").fetchone()[0]
+          finally:
+              source.close()
+              snapshot.close()
+          if status != "ok":
+              raise SystemExit(f"backup integrity_check failed: {status}")
+          print("backup integrity_check: ok")
+          PY
           echo "Backed up to ${BACKUP}"
 
           python3 scripts/webapp/provision_smoke_account.py \
