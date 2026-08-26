@@ -49,12 +49,20 @@ The webapp reads these from `data_root`:
 - Mock mode: `npm run dev:mock` — uses synthetic data from `src/mock/`
 - API types in `src/api/` mirror backend `models.py`
 - Unit tests: `npm test` (vitest, jsdom + Testing Library; setup in `src/test/setup.ts`)
-- Post-processing variant: one app-wide choice in `AppContext.activeVariant`, set by
-  `components/predictions/VariantSelector.tsx` and persisted under `locallatin-variant`.
-  It drives predictions, feedback drafts and the token highlights. The attribution
-  artifacts name the uncorrected variant `baseline` where the prediction CSVs name it
-  `raw`; `toAttributionVariant` in `src/api/variants.ts` is the only place that bridges
-  the two vocabularies.
+- Post-processing variant: fixed at `DEFAULT_VARIANT` (`sif_abtt`) in
+  `AppContext.activeVariant`. The reviewer-facing picker was removed for every role in
+  issue #94, so predictions, candidate texts, feedback drafts and token highlights all
+  come from one pipeline. The backend still serves all four variants and feedback rows
+  still carry a variant column. The attribution artifacts name the uncorrected variant
+  `baseline` where the prediction CSVs name it `raw`; `toAttributionVariant` in
+  `src/api/variants.ts` is the only place that bridges the two vocabularies.
+- Confidence bands: `src/utils/confidenceBands.ts` owns the two thresholds (0.5 / 0.7) on
+  the displayed similarity and the copy/styling for each band. Nothing else hardcodes
+  them. Below 0.5 the prediction list renders `NoMatchCallout`, whose CTA posts
+  `POST /api/reviewer_dirs` (issue #95) and degrades to a "coming with the next update"
+  message when that endpoint is not deployed.
+- Default model: `DEFAULT_MODEL_SLUG` in `src/api/models.ts` (`google_mt5-base`, displayed
+  as "mT5-base" by `services/data_store.py`), with a fallback to the first served model.
 - Token classification duplicated in `src/utils/tokens.ts` (matches `services/text_tokenizer.py`)
 
 ## Running

@@ -25,6 +25,9 @@ export default {
         highlight: {
           DEFAULT: '#f59e0b',
           light: '#fbbf24',
+          // Readable amber for text on a light surface (the "review carefully"
+          // confidence band, issue #94).
+          dark: '#b45309',
         },
         correct: {
           DEFAULT: '#10b981',

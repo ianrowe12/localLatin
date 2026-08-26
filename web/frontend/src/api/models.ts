@@ -7,13 +7,23 @@ import type { PredictionVariant } from './variants'
 // Types
 // ---------------------------------------------------------------------------
 
+/**
+ * Model the reviewer lands on when they have not picked one (issue #94).
+ *
+ * The slug is the filesystem-safe form of the HuggingFace id, exactly as
+ * `web/services/data_store.py` builds it: `google/mt5-base` -> `google_mt5-base`,
+ * displayed as "mT5-base" by that module's `_DISPLAY_NAMES`.
+ */
+export const DEFAULT_MODEL_SLUG = 'google_mt5-base'
+
 export interface ModelInfo {
   slug: string
   display_name: string
   layer: number | null
   pooling: string | null
   prediction_count: number
-  // Populated by GET /api/models; consumed by the variant selector (#48).
+  // Populated by GET /api/models. The reviewer-facing variant picker is gone
+  // (#94), but the deployment still describes what it serves here.
   available_variants: PredictionVariant[]
   default_variant: PredictionVariant
 }
@@ -65,8 +75,8 @@ interface HookState<T> {
 }
 
 // Module-level rather than per-hook: the model list is immutable for the life
-// of a deployment and has more than one consumer (ModelSelector and the
-// variant selector), which would otherwise each fetch it.
+// of a deployment and has more than one consumer, which would otherwise each
+// fetch it.
 let modelsCache: ModelInfo[] | null = null
 
 /**
