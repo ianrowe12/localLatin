@@ -54,8 +54,10 @@ export default function FeedbackPanel() {
   } = useFeedback()
   const { reviewerName, clearReviewer } = useReviewer()
   // Drafts, the latest-feedback prefill and the submitted row are all keyed on
-  // the reviewer's active variant, so switching variants shows the assessment
-  // that belongs to the ranking now on screen (issue #48).
+  // the active variant (issue #48), which issue #94 pinned to DEFAULT_VARIANT:
+  // reviewers no longer switch pipelines, but the keying stays so a deployment
+  // that served a different one could not silently pair an old assessment with
+  // a new ranking.
   const { data: predictionData } = usePredictions(
     activeQueryId,
     activeModel,

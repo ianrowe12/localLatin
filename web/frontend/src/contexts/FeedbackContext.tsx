@@ -63,7 +63,9 @@ const FeedbackContext = createContext<FeedbackContextValue | null>(null)
 const STORAGE_KEY = 'locallatin-feedback-drafts'
 
 // The variant is part of the key: the same query/model ranks differently per
-// variant, so drafts must not bleed across them once the selector lands (#48).
+// variant, so drafts must not bleed across them (#48). The selector it was
+// written for is gone (#94 pinned the app to one pipeline), but the key stays:
+// it is what stops a stored draft from resurfacing against a different ranking.
 function makeDraftKey(
   queryId: number,
   model: string,
