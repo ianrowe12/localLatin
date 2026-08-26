@@ -153,6 +153,8 @@ def test_data_contract_rejects_present_but_empty_files() -> None:
     assert 'phase12f_examples.csv" file' in contract
     # An artifacts directory of zero-byte NPZ files must not count.
     assert "-name '*.npz' -size +0" in contract
+    # Same for the q-q matrices reviewer directories are scored from (#95).
+    assert "-name 'qq_sim_*.npz' -size +0" in contract
 
 
 def test_deploy_script_preserves_the_feedback_database() -> None:
@@ -194,6 +196,10 @@ def test_data_release_builder_confines_the_payload_to_runs_active() -> None:
         assert f"unlabelled_predictions_${{variant}}.csv" in source or variant in source
     assert "runs/active/ig_examples/artifacts" in source
     assert "runs/active/ig_examples/phase12f_examples.csv" in source
+    # The q-q matrices ship too, added by glob so a partial model set still
+    # packs (issue #95). Still under runs/active/, so the confinement holds.
+    assert "qq_sim_*.npz" in source
+    assert 'MEMBERS+=("runs/active/resubmit/unlabelled/$(basename "${matrix}")")' in source
     # data/feedback.db lives outside this prefix and can never be in the payload.
     assert "Payload member outside runs/active/" in source
     assert "member outside runs/active/" in source

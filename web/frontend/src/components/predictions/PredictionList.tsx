@@ -1,8 +1,13 @@
 import { useEffect, useMemo } from 'react'
 import { useApp } from '../../contexts/AppContext'
 import { usePredictions } from '../../api/queries'
+import { bandsFrom } from '../../api/bands'
+import { useModels } from '../../api/models'
 import { useKeyboardShortcuts } from '../../utils/keyboard'
+import AwaitingMatchBadge from './AwaitingMatchBadge'
+import NewDirectoryCta from './NewDirectoryCta'
 import PredictionCard from './PredictionCard'
+import ReviewerDirCard from './ReviewerDirCard'
 
 export default function PredictionList() {
   const {
@@ -29,8 +34,23 @@ export default function PredictionList() {
     }
   }, [overrideCandidateDir, data, setActivePredictionRank, setOverrideCandidateDir])
 
-  const predictions = data?.predictions?.slice(0, 10) ?? []
-  const maxRank = predictions.length
+  const { data: models } = useModels()
+  const bands = bandsFrom(models)
+
+  // The model contributes at most ten candidates; reviewer-created directories
+  // are appended after them by the API and are not subject to that cap, so the
+  // two groups are sliced separately rather than truncating the whole list.
+  const all = data?.predictions ?? []
+  const modelPredictions = all
+    .filter((p) => (p.source ?? 'model') === 'model')
+    .slice(0, 10)
+  const reviewerPredictions = all.filter((p) => p.source === 'reviewer')
+  const predictions = [...modelPredictions, ...reviewerPredictions]
+  const maxRank = predictions.length > 0 ? predictions[predictions.length - 1].rank : 0
+
+  const seededDirs = data?.seeded_dirs ?? []
+  const topScore = modelPredictions[0]?.score ?? 0
+  const noLabelledMatch = modelPredictions.length === 0 || topScore < bands.no_match
 
   const handlers = useMemo(
     () => ({
@@ -74,10 +94,18 @@ export default function PredictionList() {
     )
   }
 
+  const select = (rank: number) => {
+    setActivePredictionRank(rank)
+    setOverrideCandidateDir(null)
+  }
+
   return (
     <div data-tour="predictions" className="px-2 py-2">
-      <div className="text-xs font-semibold uppercase tracking-wider text-stone-400 mb-1 px-2">
-        Predicted Sources
+      <div className="flex items-center gap-2 mb-1 px-2">
+        <span className="text-xs font-semibold uppercase tracking-wider text-stone-400">
+          Predicted Sources
+        </span>
+        <AwaitingMatchBadge seededDirs={seededDirs} />
       </div>
       <p className="font-ui text-xs text-stone-400 dark:text-stone-500 px-2 mb-2">
         Ranked by similarity
@@ -90,7 +118,7 @@ export default function PredictionList() {
         </p>
       ) : (
         <div className="flex flex-col gap-1">
-          {predictions.map((pred) => (
+          {modelPredictions.map((pred) => (
             <PredictionCard
               key={pred.rank}
               prediction={pred}
@@ -98,13 +126,33 @@ export default function PredictionList() {
               isActive={
                 !overrideCandidateDir && pred.rank === activePredictionRank
               }
-              onClick={() => {
-                setActivePredictionRank(pred.rank)
-                setOverrideCandidateDir(null)
-              }}
+              onClick={() => select(pred.rank)}
+            />
+          ))}
+          {reviewerPredictions.length > 0 && (
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-indigo-500/80 dark:text-indigo-300/70 px-2 pt-2">
+              Reviewer directories
+            </div>
+          )}
+          {reviewerPredictions.map((pred) => (
+            <ReviewerDirCard
+              key={pred.rank}
+              prediction={pred}
+              isActive={
+                !overrideCandidateDir && pred.rank === activePredictionRank
+              }
+              onClick={() => select(pred.rank)}
             />
           ))}
         </div>
+      )}
+      {activeQueryId !== null && (
+        <NewDirectoryCta
+          queryId={activeQueryId}
+          model={activeModel}
+          emphasised={noLabelledMatch}
+          filename={data?.filename}
+        />
       )}
     </div>
   )

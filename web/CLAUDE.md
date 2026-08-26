@@ -26,9 +26,39 @@ Scholar review web application for the localLatin Latin manuscript retrieval pro
 - `services/data_store.py` — `build_store()` loads all data at startup. The `DataStore` dataclass is the central data cache.
 - `services/token_map_svc.py` — Loads NPZ artifacts, computes cosine similarity matrices, optional HuggingFace tokenizer decoding. The token-map endpoints take `?method=&variant=`; without them the response carries every persisted method x variant matrix (7 x 4 dense grids), so the UI always sends both. `available_methods` / `available_variants` always report the artifact's full contents regardless of the filters.
 - `services/text_tokenizer.py` — Mirrors `src/token_filtering.classify_token()` from the research repo without torch dependency
-- `services/feedback_db.py` — SQLite CRUD for reviewer feedback
-- `routers/` — One file per API domain (queries, predictions, token_map, feedback, stats)
+- `services/feedback_db.py` — SQLite CRUD for reviewer feedback, plus the append-only
+  `reviewer_dirs` / `reviewer_dir_members` tables. Both are created in `_migrate()` with
+  `CREATE TABLE IF NOT EXISTS`, so opening a pre-#95 database adds them and touches no
+  existing row. The feedback log stays append-only: nothing on the reviewer-directory path
+  updates or deletes a feedback row.
+- `services/qq_matrix.py` — reads `qq_sim_<slug>.npz` and answers "how similar is this query
+  to this set of member queries" (max over members, self excluded).
+- `services/reviewer_dirs.py` — scoring and shaping of reviewer directories, shared by the
+  predictions, reviewer_dirs and feedback routers. Status is **derived**, never stored: a
+  directory is `matched` once any non-member query reaches `NO_MATCH_BAND` against it.
+- `bands.py` — the 0.5 / 0.7 confidence thresholds. **The backend owns these numbers** because
+  it decides directory status with them; `GET /api/models` serves them as `confidence_bands`
+  and the frontend's `src/api/bands.ts` reads them rather than hardcoding a copy.
+- `routers/` — One file per API domain (queries, predictions, token_map, feedback,
+  reviewer_dirs, stats)
 - `models.py` — All Pydantic request/response models
+
+## Reviewer directories (issue #95)
+
+`POST /api/reviewer_dirs {query_file_id, label?}` -> 201 `ReviewerDir`. Any signed-in, approved
+reviewer may call it; there is no extra role gate, since reviewers are exactly who the feature
+is for. The response carries the *computed* status, which is `awaiting_match` unless some other
+query already scores at or above the band against the seed.
+
+Created directories merge into every subsequent predictions response as extra candidates with
+`source: 'reviewer'`, scored live from the q-q matrix (max over member documents). They are
+**appended after** the model's ten, never interleaved, so a model candidate's rank still means
+what it always did and every historical feedback row keeps pointing at the candidate its
+reviewer actually chose. `MAX_CANDIDATE_RANK` in `models.py` is what lets feedback record a
+rank past 10.
+
+Confirming a reviewer directory as the correct answer appends that query to the directory's
+members (idempotent, `INSERT OR IGNORE`), so later queries are scored against the whole group.
 
 ## Data Contract
 
@@ -41,6 +71,14 @@ The webapp reads these from `data_root`:
   The path pattern, the served variant list, and the default (`sif_abtt`) come from
   `PathsConfig`. Only the default variant is read at startup; the others load on first
   request. The pre-variant `unlabelled_predictions.csv` is stale and is never a fallback.
+- `runs/active/resubmit/unlabelled/qq_sim_<model_slug>.npz` — query-query cosine matrix per
+  model (2,238 x 2,238 float16, ~10 MB), keys: `sim`, `file_ids`, `excluded`, `meta`. Built at
+  exactly the deployed `sif_abtt` configuration by
+  `scripts/resubmit/build_qq_matrices.py`, which verifies itself against
+  `unlabelled_predictions_sif_abtt.csv` before writing. Reviewer-created directories are scored
+  from these. Path pattern is `PathsConfig.qq_matrix_pattern`; matrices are discovered at
+  startup and loaded lazily on first use. A model with no matrix serves no reviewer-directory
+  candidates and reports `supports_reviewer_dirs: false` on `/api/models`.
 - `runs/active/ig_examples/phase12f_examples.csv` — IG example metadata
 - `runs/active/ig_examples/artifacts/<model_slug>/` — NPZ files with keys: query_embeddings, candidate_embeddings, query_ig_baseline, query_ig_abtt, candidate_ig_baseline, candidate_ig_abtt, query_input_ids, candidate_input_ids, layer, D
 

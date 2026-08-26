@@ -11,6 +11,8 @@ import {
   type PredictionVariant,
 } from '../api/variants'
 import type { AuthUser } from '../api/auth'
+import { FALLBACK_BANDS } from '../api/bands'
+import type { ReviewerDir } from '../api/reviewerDirs'
 import type { TokenMapResponse } from '../api/tokenMap'
 import { MOCK_QUERIES, MOCK_QUERY_DETAILS } from './queries'
 import { MOCK_PREDICTIONS } from './predictions'
@@ -298,10 +300,11 @@ function handlePredictions(
   _model: string,
   variant: PredictionVariant = DEFAULT_VARIANT,
 ): ReturnType<typeof MOCK_PREDICTIONS.get> | { error: { message: string } } {
+  const seeded = mockReviewerDirs.filter((dir) => dir.seed_query_id === queryId)
   const pred = MOCK_PREDICTIONS.get(queryId)
   // Echo back the requested variant: the canned entries are all sif_abtt, and
   // returning them unchanged would report the wrong variant under #48.
-  if (pred) return { ...pred, variant }
+  if (pred) return { ...pred, variant, seeded_dirs: seeded }
 
   // Return a minimal prediction set for synthetic queries
   const item = ALL_QUERIES.find((q) => q.file_id === queryId)
@@ -312,6 +315,7 @@ function handlePredictions(
     filename: item.filename,
     model: 'bowphs_LaTa',
     variant,
+    seeded_dirs: seeded,
     predictions: [
       {
         rank: 1,
@@ -398,8 +402,38 @@ function handleModels(): ModelInfo[] {
       prediction_count: 2238,
       available_variants: PREDICTION_VARIANTS,
       default_variant: DEFAULT_VARIANT,
+      confidence_bands: FALLBACK_BANDS,
+      supports_reviewer_dirs: true,
     },
   ]
+}
+
+// ---------------------------------------------------------------------------
+// Reviewer directories
+// ---------------------------------------------------------------------------
+
+// Mock mode has no q-q matrix, so a created directory is simply remembered and
+// echoed back on the seed query. That is enough to exercise the creation flow
+// and the badge; the merge into *other* queries' candidate lists needs real
+// similarity data and is covered by the backend tests.
+const mockReviewerDirs: ReviewerDir[] = []
+
+function handleCreateReviewerDir(init?: RequestInit): ReviewerDir {
+  const body = JSON.parse(String(init?.body ?? '{}'))
+  const dir: ReviewerDir = {
+    dir_id: `reviewer-dir-${mockReviewerDirs.length + 1}`,
+    label: body.label || `New directory from query ${body.query_file_id}`,
+    status: 'awaiting_match',
+    seed_query_id: body.query_file_id,
+    member_query_ids: [body.query_file_id],
+    created_at: new Date().toISOString(),
+    created_by: 'scholar',
+    model_slug: body.model_slug ?? 'bowphs_LaTa',
+    variant: body.variant ?? DEFAULT_VARIANT,
+    best_match_score: 0.31,
+  }
+  mockReviewerDirs.push(dir)
+  return dir
 }
 
 // ---------------------------------------------------------------------------
@@ -487,6 +521,14 @@ export function installMockHandler(): void {
     // Stats
     if (url.includes('/api/stats')) {
       return mockResponse(handleStats())
+    }
+
+    // Reviewer directories
+    if (url.includes('/api/reviewer_dirs')) {
+      if (init?.method === 'POST') {
+        return mockResponse(handleCreateReviewerDir(init), 201)
+      }
+      return mockResponse(mockReviewerDirs)
     }
 
     // Models

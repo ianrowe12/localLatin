@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
 
-from web.dependencies import get_current_user, get_store
+from web.dependencies import get_current_user, get_db, get_store
 from web.exceptions import InvalidModelError, QueryNotFoundError, VariantUnavailableError
 from web.models import (
     CandidateFile,
@@ -11,7 +11,9 @@ from web.models import (
     PredictionVariant,
     UserPublic,
 )
+from web.services import reviewer_dirs as reviewer_dirs_svc
 from web.services.data_store import DataStore, normalize_slug
+from web.services.feedback_db import FeedbackDB
 
 router = APIRouter(prefix="/api", tags=["predictions"])
 
@@ -64,6 +66,7 @@ async def get_predictions(
     variant: PredictionVariant | None = VariantParam,
     top_k: int = Query(10, ge=1, le=10),
     store: DataStore = Depends(get_store),
+    db: FeedbackDB = Depends(get_db),
     current_user: UserPublic = Depends(get_current_user),
 ) -> PredictionResponse:
     slug = normalize_slug(model)
@@ -97,12 +100,37 @@ async def get_predictions(
             candidate_files=candidate_files,
         ))
 
+    # --- reviewer-created directories (issue #95) ---------------------------
+    # Appended after the model's candidates, never interleaved: the model's
+    # ranks stay exactly what the retrieval CSV produced, so every feedback row
+    # ever written -- each of which records a rank -- keeps pointing at the
+    # candidate its reviewer actually chose.
+    reviewer_records = await db.list_reviewer_dirs()
+    seeded_dirs = []
+    if reviewer_records:
+        qq = await store.ensure_qq_async(slug)
+        predictions.extend(
+            reviewer_dirs_svc.candidates_for_query(
+                store=store,
+                records=reviewer_records,
+                qq=qq,
+                query_id=file_id,
+                first_rank=len(predictions) + 1,
+            )
+        )
+        seeded_dirs = [
+            reviewer_dirs_svc.to_api(record, qq, slug)
+            for record in reviewer_records
+            if int(record["seed_query_id"]) == file_id
+        ]
+
     return PredictionResponse(
         file_id=file_id,
         filename=store.file_id_to_filename[file_id],
         model=slug,
         variant=resolved,
         predictions=predictions,
+        seeded_dirs=seeded_dirs,
     )
 
 
@@ -113,6 +141,7 @@ async def get_candidates(
     model: str = Query(..., description="Model slug"),
     variant: PredictionVariant | None = VariantParam,
     store: DataStore = Depends(get_store),
+    db: FeedbackDB = Depends(get_db),
     current_user: UserPublic = Depends(get_current_user),
 ) -> list[CandidateFile]:
     slug = normalize_slug(model)
@@ -126,7 +155,9 @@ async def get_candidates(
     preds = row["predictions"]
     pred = next((p for p in preds if p["rank"] == rank), None)
     if pred is None:
-        return []
+        # Ranks past the model's own candidates belong to reviewer-created
+        # directories, which are appended by get_predictions in the same order.
+        return await _reviewer_candidate_files(store, db, slug, file_id, rank, len(preds))
 
     dir_name = pred["dir_name"]
     texts = store.labelled_texts.get(dir_name, {})
@@ -136,14 +167,45 @@ async def get_candidates(
     ]
 
 
+async def _reviewer_candidate_files(
+    store: DataStore,
+    db: FeedbackDB,
+    slug: str,
+    file_id: int,
+    rank: int,
+    model_rank_count: int,
+) -> list[CandidateFile]:
+    records = await db.list_reviewer_dirs()
+    if not records:
+        return []
+    qq = await store.ensure_qq_async(slug)
+    candidates = reviewer_dirs_svc.candidates_for_query(
+        store=store,
+        records=records,
+        qq=qq,
+        query_id=file_id,
+        first_rank=model_rank_count + 1,
+    )
+    match = next((c for c in candidates if c.rank == rank), None)
+    return list(match.candidate_files or []) if match else []
+
+
 @router.get("/candidate_dir/{candidate_dir}/files", response_model=list[CandidateFile])
 async def get_candidate_dir_files(
     candidate_dir: str,
     store: DataStore = Depends(get_store),
+    db: FeedbackDB = Depends(get_db),
     current_user: UserPublic = Depends(get_current_user),
 ) -> list[CandidateFile]:
-    """Return all files in a labelled candidate directory. Used by the example gallery
-    when navigating to an off-top-10 candidate that's not in the predictions list."""
+    """Return all files in a candidate directory, labelled or reviewer-created.
+
+    Used by the example gallery when navigating to an off-top-10 candidate
+    that's not in the predictions list, and by the reviewer-directory card,
+    which addresses its directory by id rather than by rank.
+    """
+    if reviewer_dirs_svc.is_reviewer_dir_id(candidate_dir):
+        record = await db.get_reviewer_dir(candidate_dir)
+        return reviewer_dirs_svc.member_files(store, record) if record else []
     texts = store.labelled_texts.get(candidate_dir)
     if texts is None:
         return []

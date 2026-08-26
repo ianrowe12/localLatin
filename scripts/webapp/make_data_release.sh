@@ -75,6 +75,24 @@ done
 MEMBERS+=("runs/active/ig_examples/phase12f_examples.csv")
 MEMBERS+=("runs/active/ig_examples/artifacts")
 
+# Query-query cosine matrices (issue #95), one ~10 MB .npz per model. Added by
+# glob rather than by name: a deployment may serve a subset of the six models,
+# and a hard-coded per-model list would fail the existence check below on any
+# host that does. Absent entirely, reviewer directories simply cannot be
+# scored, which is a degraded-but-working webapp -- so this is not fatal here.
+shopt -s nullglob
+QQ_MATRICES=("${REPO_ROOT}"/runs/active/resubmit/unlabelled/qq_sim_*.npz)
+shopt -u nullglob
+if [[ "${#QQ_MATRICES[@]}" -eq 0 ]]; then
+    error "No qq_sim_*.npz found — reviewer-created directories will not be scorable."
+    error "Build them with: python scripts/resubmit/build_qq_matrices.py"
+else
+    for matrix in "${QQ_MATRICES[@]}"; do
+        MEMBERS+=("runs/active/resubmit/unlabelled/$(basename "${matrix}")")
+    done
+    info "Query-query matrices: ${#QQ_MATRICES[@]}"
+fi
+
 for member in "${MEMBERS[@]}"; do
     if [[ ! -e "${REPO_ROOT}/${member}" ]]; then
         error "Missing payload member: ${REPO_ROOT}/${member}"

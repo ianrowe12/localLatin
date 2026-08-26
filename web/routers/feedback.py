@@ -5,8 +5,15 @@ from fastapi.responses import PlainTextResponse
 
 from web.dependencies import get_current_user, get_db, get_store, require_pi_admin
 from web.exceptions import InvalidModelError, QueryNotFoundError, VariantUnavailableError
-from web.models import FeedbackCreate, FeedbackEntry, PredictionVariant, UserPublic
+from web.models import (
+    FeedbackCreate,
+    FeedbackEntry,
+    FeedbackOutcome,
+    PredictionVariant,
+    UserPublic,
+)
 from web.routers.predictions import resolve_variant
+from web.services import reviewer_dirs as reviewer_dirs_svc
 from web.services.data_store import DataStore, normalize_slug
 from web.services.feedback_db import FeedbackDB
 
@@ -39,8 +46,8 @@ async def create_feedback(
         # Legacy consumers still read correct_rank/correct_dir as a single choice.
         # For multi-select submissions, the first selected rank is the canonical
         # legacy choice while selected_ranks carries the full reviewer answer.
-        correct_dir = _dir_for_rank(
-            store, slug, variant, body.query_id, body.selected_ranks[0]
+        correct_dir = await _dir_for_rank(
+            store, db, slug, variant, body.query_id, body.selected_ranks[0]
         )
 
     row = await db.insert(
@@ -55,6 +62,25 @@ async def create_feedback(
         reviewer_account_id=current_user.id,
         selected_ranks=body.selected_ranks,
     )
+
+    # Confirming a reviewer-created directory is what makes it grow: the query
+    # joins the directory's members, so the next query is scored against both
+    # documents rather than only the seed. Append-only and idempotent -- the
+    # feedback row above is untouched, and re-submitting the same answer adds
+    # nothing. Recording feedback itself is unconditional; membership is the
+    # extra consequence of naming a reviewer directory as the correct one.
+    if (
+        correct_dir
+        and reviewer_dirs_svc.is_reviewer_dir_id(correct_dir)
+        and body.outcome == FeedbackOutcome.MATCHED_RANK
+    ):
+        await db.add_reviewer_dir_member(
+            dir_id=correct_dir,
+            query_id=body.query_id,
+            added_by=current_user.display_name,
+            added_by_account_id=current_user.id,
+        )
+
     return FeedbackEntry(**row)
 
 
@@ -128,17 +154,41 @@ async def export_feedback(
     )
 
 
-def _dir_for_rank(
+async def _dir_for_rank(
     store: DataStore,
+    db: FeedbackDB,
     model_slug: str,
     variant: str,
     query_id: int,
     rank: int,
 ) -> str | None:
+    """Directory name at `rank` in the list this query was shown.
+
+    Model candidates first, exactly as the retrieval CSV ranked them, then the
+    reviewer-created directories appended after them -- the same ordering
+    `get_predictions` builds, so a rank the client sent back always resolves to
+    the card the reviewer clicked.
+    """
+    model_rank_count = 0
     for row in store.predictions.get((model_slug, variant), []):
         if row["file_id"] != query_id:
             continue
+        model_rank_count = len(row["predictions"])
         for prediction in row["predictions"]:
             if prediction["rank"] == rank:
                 return prediction["dir_name"]
+
+    records = await db.list_reviewer_dirs()
+    if not records:
+        return None
+    qq = await store.ensure_qq_async(model_slug)
+    for candidate in reviewer_dirs_svc.candidates_for_query(
+        store=store,
+        records=records,
+        qq=qq,
+        query_id=query_id,
+        first_rank=model_rank_count + 1,
+    ):
+        if candidate.rank == rank:
+            return candidate.dir_name
     return None

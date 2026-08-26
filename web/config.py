@@ -31,6 +31,12 @@ class PathsConfig(BaseModel):
     variants: list[str] = list(VARIANTS)
     default_variant: str = DEFAULT_VARIANT
     predictions_dir: str = "runs/active/resubmit/unlabelled"
+    # Query-query cosine matrices, one per model, at the deployed sif_abtt
+    # configuration. Reviewer-created directories are scored from these; a
+    # deployment without them simply serves no reviewer-directory candidates.
+    qq_matrix_pattern: str = (
+        "runs/active/resubmit/unlabelled/qq_sim_{model_slug}.npz"
+    )
     ig_artifacts_dir: str = "runs/active/ig_examples/artifacts"
     ig_examples_csv: str = "runs/active/ig_examples/phase12f_examples.csv"
     feedback_db: str = "runs/active/resubmit/webapp/feedback.db"
@@ -59,6 +65,10 @@ class PathsConfig(BaseModel):
     def resolve_variant(self, variant: str) -> Path:
         """Path to the predictions CSV for one post-processing variant."""
         return self.resolve(self.predictions_variant_pattern.format(variant=variant))
+
+    def resolve_qq_matrix(self, model_slug: str) -> Path:
+        """Path to one model's query-query cosine matrix."""
+        return self.resolve(self.qq_matrix_pattern.format(model_slug=model_slug))
 
 
 class CorsConfig(BaseModel):

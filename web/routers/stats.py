@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 
 from web.dependencies import get_db, get_store, require_pi_admin
 from web.models import (
+    ConfidenceBands,
     ModelInfo,
     NeedsAttentionItem,
     RecentReview,
@@ -95,6 +96,10 @@ async def list_models(
             prediction_count=meta.prediction_count,
             available_variants=list(store.variants),
             default_variant=store.default_variant,
+            # Bands come from the backend so the UI and the reviewer-directory
+            # status logic can never disagree about what counts as a match.
+            confidence_bands=ConfidenceBands(),
+            supports_reviewer_dirs=meta.slug in store.qq_paths,
         )
         for meta in sorted(metas, key=lambda m: m.display_name)
     ]

@@ -20,7 +20,16 @@ from web.exceptions import (
     VariantUnavailableError,
 )
 from web.models import ErrorResponse, ErrorDetail
-from web.routers import auth, feedback, packets, predictions, queries, stats, token_map
+from web.routers import (
+    auth,
+    feedback,
+    packets,
+    predictions,
+    queries,
+    reviewer_dirs,
+    stats,
+    token_map,
+)
 from web.services.data_store import build_store
 from web.services.feedback_db import FeedbackDB
 
@@ -121,6 +130,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
     app.include_router(predictions.router)
     app.include_router(token_map.router)
     app.include_router(feedback.router)
+    app.include_router(reviewer_dirs.router)
     app.include_router(packets.router)
     app.include_router(stats.router)
 

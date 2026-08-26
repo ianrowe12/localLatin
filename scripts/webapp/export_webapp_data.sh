@@ -85,6 +85,14 @@ for variant in raw abtt sif sif_abtt; do
         "tail -n +2 '$ROOT/runs/active/resubmit/unlabelled/unlabelled_predictions_${variant}.csv' | wc -l | tr -d ' '"
 done
 
+# Query-query cosine matrices, one per model. Reviewer-created directories are
+# scored from these (issue #95); without them the webapp still runs but serves
+# no reviewer-directory candidates, so a missing matrix is worth reporting.
+# Checked as a group: the count is the number of models that can score them.
+check "q-q matrices" \
+    "$ROOT/runs/active/resubmit/unlabelled" dir \
+    "find '$ROOT/runs/active/resubmit/unlabelled' -maxdepth 1 -name 'qq_sim_*.npz' -size +0 | wc -l | tr -d ' '"
+
 check "IG examples CSV" \
     "$ROOT/runs/active/ig_examples/phase12f_examples.csv" file \
     "tail -n +2 '$ROOT/runs/active/ig_examples/phase12f_examples.csv' | wc -l | tr -d ' '"

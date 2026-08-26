@@ -10,6 +10,7 @@ import pandas as pd
 from starlette.concurrency import run_in_threadpool
 
 from web.config import Settings
+from web.services.qq_matrix import QQMatrix, load_qq_matrix
 from web.variants import DEFAULT_VARIANT
 
 logger = logging.getLogger(__name__)
@@ -89,9 +90,55 @@ class DataStore:
         default_factory=threading.Lock, repr=False, compare=False
     )
 
+    # Query-query cosine matrices (issue #95), one per model, lazily loaded on
+    # the same principle as the non-default prediction variants: ~10 MB each,
+    # and a session usually touches one model.
+    qq_paths: dict[str, Path] = field(default_factory=dict)
+    qq_matrices: dict[str, QQMatrix] = field(default_factory=dict)
+    _qq_lock: threading.Lock = field(
+        default_factory=threading.Lock, repr=False, compare=False
+    )
+
     # IG examples
     ig_examples: pd.DataFrame | None = None
     ig_artifact_paths: dict[int, Path] = field(default_factory=dict)
+
+    # --- Query-query matrix access ---
+
+    def ensure_qq(self, slug: str) -> QQMatrix | None:
+        """Load a model's q-q matrix if needed. None when the deployment has none.
+
+        Blocking (reads ~10 MB). Async callers must use `ensure_qq_async`.
+        """
+        if slug in self.qq_matrices:
+            return self.qq_matrices[slug]
+        if slug not in self.qq_paths:
+            return None
+        with self._qq_lock:
+            if slug not in self.qq_matrices:
+                try:
+                    self.qq_matrices[slug] = load_qq_matrix(self.qq_paths[slug])
+                except Exception:
+                    # A corrupt matrix must degrade to "no reviewer-directory
+                    # candidates for this model", not take the request down.
+                    # Forget the path so the next request does not retry the
+                    # same 10 MB read and fail again.
+                    logger.exception(
+                        "Failed to load q-q matrix for '%s' from %s",
+                        slug,
+                        self.qq_paths[slug],
+                    )
+                    del self.qq_paths[slug]
+                    return None
+        return self.qq_matrices.get(slug)
+
+    async def ensure_qq_async(self, slug: str) -> QQMatrix | None:
+        """`ensure_qq` off the event loop."""
+        if slug in self.qq_matrices:
+            return self.qq_matrices[slug]
+        if slug not in self.qq_paths:
+            return None
+        return await run_in_threadpool(self.ensure_qq, slug)
 
     # --- Variant-aware prediction access ---
 
@@ -257,6 +304,28 @@ def build_store(settings: Settings) -> DataStore:
         store.file_id_to_filename[fid] = row["filename"]
         store.file_id_to_path[fid] = f"data/canon_unlabelled/{row['filename']}"
     store.file_ids.sort()
+
+    # --- Discover per-model query-query matrices ---
+    # Paths only; the arrays load on the first request that needs one. A model
+    # without a matrix serves no reviewer-directory candidates, which is the
+    # right degradation: the rest of the app is unaffected.
+    for slug in store.model_slugs:
+        qq_path = paths.resolve_qq_matrix(slug)
+        if qq_path.exists():
+            store.qq_paths[slug] = qq_path
+    if store.qq_paths:
+        logger.info(
+            "Found q-q matrices for %d/%d models: %s",
+            len(store.qq_paths),
+            len(store.model_slugs),
+            sorted(store.qq_paths),
+        )
+    else:
+        logger.warning(
+            "No q-q matrices found under %s; reviewer-created directories will "
+            "not be scored as candidates",
+            paths.resolve(paths.predictions_dir),
+        )
 
     # --- Cache unlabelled text files ---
     unlabelled_dir = paths.resolve(paths.canon_unlabelled)

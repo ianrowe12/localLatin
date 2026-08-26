@@ -9,6 +9,7 @@ import {
 import { TokenRefProvider } from '../connections/TokenRefRegistry'
 import ConnectionOverlay from '../connections/ConnectionOverlay'
 import DocumentPanel from '../document/DocumentPanel'
+import AwaitingMatchBadge from '../predictions/AwaitingMatchBadge'
 import DraggableDivider from './DraggableDivider'
 import { buildWordMatchMap } from '../../utils/wordSimilarity'
 import { useTokenMap, type TokenMapResponse, type TopMatch } from '../../api/tokenMap'
@@ -183,6 +184,13 @@ export default function CenterArea() {
             tokenMap={effectiveTokenMap}
             loading={queryDetail.loading}
             scrollRef={queryScrollRef}
+            // The badge reports the fate of directories *this* document
+            // seeded, so it belongs on the query panel, not on a candidate.
+            badge={
+              <AwaitingMatchBadge
+                seededDirs={predictions.data?.seeded_dirs ?? []}
+              />
+            }
           />
         </div>
 
@@ -219,7 +227,11 @@ export default function CenterArea() {
                 side="candidate"
                 filename={candidateFile?.filename}
                 dirLabel={
-                  overrideCandidateDir ?? currentPrediction?.dir_name
+                  // Reviewer directories show their human label; the opaque
+                  // reviewer-dir-N id would tell the reviewer nothing.
+                  overrideCandidateDir ??
+                  currentPrediction?.label ??
+                  currentPrediction?.dir_name
                 }
                 score={overrideCandidateDir ? undefined : currentPrediction?.score}
                 rank={overrideCandidateDir ? undefined : activePredictionRank}

@@ -308,6 +308,179 @@ class FeedbackDB:
             "CREATE INDEX IF NOT EXISTS idx_accounts_approval_status ON accounts(approval_status)"
         )
 
+        # --- reviewer directories (issue #95) -------------------------------
+        # Purely additive: two new tables, no column added to and no row
+        # touched in `feedback`. A database written before this release gains
+        # them on next open and its existing rows are read back byte-identical.
+        # Both tables are append-only like `feedback` itself -- a directory is
+        # never renamed or deleted and a membership is never withdrawn, so the
+        # log stays a faithful record of what each reviewer actually asserted.
+        await self._db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS reviewer_dirs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                dir_id TEXT NOT NULL UNIQUE,
+                label TEXT NOT NULL,
+                seed_query_id INTEGER NOT NULL,
+                model_slug TEXT NOT NULL DEFAULT '',
+                variant TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                created_by TEXT NOT NULL DEFAULT '',
+                created_by_account_id INTEGER
+            )
+            """
+        )
+        await self._db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_reviewer_dirs_seed ON reviewer_dirs(seed_query_id)"
+        )
+        await self._db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS reviewer_dir_members (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                dir_id TEXT NOT NULL,
+                query_id INTEGER NOT NULL,
+                role TEXT NOT NULL DEFAULT 'member',
+                added_at TEXT NOT NULL DEFAULT (datetime('now')),
+                added_by TEXT NOT NULL DEFAULT '',
+                added_by_account_id INTEGER,
+                UNIQUE (dir_id, query_id)
+            )
+            """
+        )
+        await self._db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_reviewer_dir_members_dir ON reviewer_dir_members(dir_id)"
+        )
+        await self._db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_reviewer_dir_members_query ON reviewer_dir_members(query_id)"
+        )
+
+    # --- reviewer directories -------------------------------------------------
+
+    async def create_reviewer_dir(
+        self,
+        *,
+        label: str,
+        seed_query_id: int,
+        model_slug: str,
+        variant: str,
+        created_by: str,
+        created_by_account_id: int | None,
+    ) -> dict:
+        """Insert a reviewer directory and its seed membership.
+
+        ``dir_id`` is derived from the autoincrement id rather than the label:
+        labels are reviewer prose, may repeat, and are never authoritative. The
+        ``reviewer-dir-`` prefix keeps the id disjoint from every labelled
+        directory name and safe in a URL path segment.
+        """
+        assert self._db is not None
+        cursor = await self._db.execute(
+            """
+            INSERT INTO reviewer_dirs
+                (dir_id, label, seed_query_id, model_slug, variant,
+                 created_by, created_by_account_id)
+            VALUES ('', ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                label.strip(),
+                seed_query_id,
+                model_slug,
+                variant,
+                created_by,
+                created_by_account_id,
+            ),
+        )
+        row_id = cursor.lastrowid
+        dir_id = f"reviewer-dir-{row_id}"
+        await self._db.execute(
+            "UPDATE reviewer_dirs SET dir_id = ? WHERE id = ?", (dir_id, row_id)
+        )
+        await self._db.execute(
+            """
+            INSERT OR IGNORE INTO reviewer_dir_members
+                (dir_id, query_id, role, added_by, added_by_account_id)
+            VALUES (?, ?, 'seed', ?, ?)
+            """,
+            (dir_id, seed_query_id, created_by, created_by_account_id),
+        )
+        await self._db.commit()
+        row = await (
+            await self._db.execute("SELECT * FROM reviewer_dirs WHERE id = ?", (row_id,))
+        ).fetchone()
+        return dict(row)
+
+    async def list_reviewer_dirs(self) -> list[dict]:
+        """Every reviewer directory, each with its member query ids.
+
+        The whole table is read at once: it is reviewer-authored and grows by
+        hand, so it stays small enough that per-request filtering in Python
+        beats a query per candidate list.
+        """
+        assert self._db is not None
+        dir_rows = await (
+            await self._db.execute(
+                "SELECT * FROM reviewer_dirs ORDER BY id"
+            )
+        ).fetchall()
+        member_rows = await (
+            await self._db.execute(
+                "SELECT dir_id, query_id, role FROM reviewer_dir_members ORDER BY id"
+            )
+        ).fetchall()
+        members: dict[str, list[int]] = {}
+        for row in member_rows:
+            members.setdefault(row["dir_id"], []).append(int(row["query_id"]))
+        return [
+            {**dict(row), "member_query_ids": members.get(row["dir_id"], [])}
+            for row in dir_rows
+        ]
+
+    async def get_reviewer_dir(self, dir_id: str) -> dict | None:
+        assert self._db is not None
+        row = await (
+            await self._db.execute(
+                "SELECT * FROM reviewer_dirs WHERE dir_id = ?", (dir_id,)
+            )
+        ).fetchone()
+        if row is None:
+            return None
+        member_rows = await (
+            await self._db.execute(
+                "SELECT query_id FROM reviewer_dir_members WHERE dir_id = ? ORDER BY id",
+                (dir_id,),
+            )
+        ).fetchall()
+        return {
+            **dict(row),
+            "member_query_ids": [int(r["query_id"]) for r in member_rows],
+        }
+
+    async def add_reviewer_dir_member(
+        self,
+        *,
+        dir_id: str,
+        query_id: int,
+        added_by: str,
+        added_by_account_id: int | None,
+    ) -> bool:
+        """Append a query to a reviewer directory. Idempotent, never updates.
+
+        Returns True when a new membership row was written. The UNIQUE
+        constraint plus INSERT OR IGNORE means re-submitting the same feedback
+        adds nothing rather than duplicating or overwriting.
+        """
+        assert self._db is not None
+        cursor = await self._db.execute(
+            """
+            INSERT OR IGNORE INTO reviewer_dir_members
+                (dir_id, query_id, role, added_by, added_by_account_id)
+            VALUES (?, ?, 'member', ?, ?)
+            """,
+            (dir_id, query_id, added_by, added_by_account_id),
+        )
+        await self._db.commit()
+        return cursor.rowcount > 0
+
     async def account_count(self) -> int:
         await self._ensure_auth_connection()
         assert self._db is not None

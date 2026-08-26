@@ -20,6 +20,10 @@ paths:
   variants: ["raw", "abtt", "sif", "sif_abtt"]
   default_variant: "sif_abtt"
   predictions_dir: "runs/active/resubmit/unlabelled"
+  # Query-query cosine matrices, one per model, used to score reviewer-created
+  # directories as live candidates. Optional: a model with no matrix simply
+  # serves no reviewer-directory candidates.
+  qq_matrix_pattern: "runs/active/resubmit/unlabelled/qq_sim_{model_slug}.npz"
   ig_artifacts_dir: "runs/active/ig_examples/artifacts"
   ig_examples_csv: "runs/active/ig_examples/phase12f_examples.csv"
   feedback_db: "runs/active/resubmit/webapp/feedback.db"

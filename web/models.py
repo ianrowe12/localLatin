@@ -5,6 +5,8 @@ from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
+from web.bands import NO_MATCH_BAND, VERIFY_BAND
+
 # Re-exported so API consumers can keep importing the variant vocabulary from
 # web.models; the canonical definition lives in web/variants.py.
 from web.variants import DEFAULT_VARIANT, PredictionVariant
@@ -54,6 +56,24 @@ class CandidateFile(BaseModel):
     text: str
 
 
+class CandidateSource(StrEnum):
+    """Where a candidate directory came from.
+
+    ``model`` is a labelled directory ranked by the retrieval run; ``reviewer``
+    is a directory a reviewer created for a query that matched nothing, scored
+    live from the query-query matrix. The two are on the same similarity scale
+    but not the same kind of evidence, so the UI marks them differently.
+    """
+
+    MODEL = "model"
+    REVIEWER = "reviewer"
+
+
+class ReviewerDirStatus(StrEnum):
+    AWAITING_MATCH = "awaiting_match"
+    MATCHED = "matched"
+
+
 class Prediction(BaseModel):
     rank: int
     dir_name: str
@@ -61,6 +81,35 @@ class Prediction(BaseModel):
     dir_files: List[str]
     preview_text: str
     candidate_files: Optional[List[CandidateFile]] = None
+    source: CandidateSource = CandidateSource.MODEL
+    # Set only on reviewer-created candidates.
+    label: Optional[str] = None
+    created_by: Optional[str] = None
+    seed_query_id: Optional[int] = None
+
+
+class ReviewerDirCreate(BaseModel):
+    """POST /api/reviewer_dirs body, per the #94 <-> #95 contract."""
+
+    query_file_id: int
+    label: Optional[str] = Field(default=None, max_length=200)
+    model_slug: Optional[str] = None
+    variant: Optional[PredictionVariant] = None
+
+
+class ReviewerDir(BaseModel):
+    dir_id: str
+    label: str
+    status: ReviewerDirStatus
+    seed_query_id: int
+    member_query_ids: List[int] = Field(default_factory=list)
+    created_at: str
+    created_by: str
+    model_slug: str = ""
+    variant: Optional[str] = None
+    # Best score any non-member query reaches against this directory under the
+    # model it is being reported for. None when that model has no q-q matrix.
+    best_match_score: Optional[float] = None
 
 
 class PredictionResponse(BaseModel):
@@ -69,6 +118,10 @@ class PredictionResponse(BaseModel):
     model: str
     variant: PredictionVariant
     predictions: List[Prediction]
+    # Reviewer directories seeded by *this* query. Drives the "Awaiting future
+    # match" badge on the document, which is about the query's own directories
+    # rather than about its candidates.
+    seeded_dirs: List[ReviewerDir] = Field(default_factory=list)
 
 
 # --- Token Map ---
@@ -224,13 +277,26 @@ class AccountCreateResponse(BaseModel):
     temporary_password: Optional[str] = None
 
 
+#: The retrieval CSVs rank ten labelled directories, so a model candidate's
+#: rank is always 1..10 and every feedback row written before reviewer
+#: directories existed is within that range.
+MAX_MODEL_RANK = 10
+
+#: Reviewer-created directories are *appended* after the model's ten, so they
+#: occupy ranks 11 and up. Model candidate ranks are therefore unchanged by
+#: this feature and every historical feedback row keeps its exact meaning. The
+#: ceiling exists only to bound the input; a query with 90 reviewer directories
+#: on it is not a case worth supporting.
+MAX_CANDIDATE_RANK = 99
+
+
 class FeedbackCreate(BaseModel):
     query_id: int
     model_slug: str
     # None means "the deployment's configured default", resolved in the router.
     variant: Optional[PredictionVariant] = None
     outcome: Optional[FeedbackOutcome] = None
-    correct_rank: Optional[int] = Field(None, ge=0, le=10)
+    correct_rank: Optional[int] = Field(None, ge=0, le=MAX_CANDIDATE_RANK)
     correct_dir: Optional[str] = None
     selected_ranks: Optional[List[int]] = None
     notes: str = ""
@@ -252,18 +318,23 @@ class FeedbackCreate(BaseModel):
         if selected_ranks is not None:
             if not isinstance(selected_ranks, list) or len(selected_ranks) == 0:
                 raise ValueError("selected_ranks must be a non-empty list")
+            rank_range = f"1 to {MAX_CANDIDATE_RANK}"
             normalized_ranks = []
             for selected_rank in selected_ranks:
                 if isinstance(selected_rank, bool):
-                    raise ValueError("selected_ranks must contain integers from 1 to 10")
+                    raise ValueError(
+                        f"selected_ranks must contain integers from {rank_range}"
+                    )
                 try:
                     normalized_rank = int(selected_rank)
                 except (TypeError, ValueError) as exc:
                     raise ValueError(
-                        "selected_ranks must contain integers from 1 to 10"
+                        f"selected_ranks must contain integers from {rank_range}"
                     ) from exc
-                if not 1 <= normalized_rank <= 10:
-                    raise ValueError("selected_ranks must contain integers from 1 to 10")
+                if not 1 <= normalized_rank <= MAX_CANDIDATE_RANK:
+                    raise ValueError(
+                        f"selected_ranks must contain integers from {rank_range}"
+                    )
                 normalized_ranks.append(normalized_rank)
             if len(set(normalized_ranks)) != len(normalized_ranks):
                 raise ValueError("selected_ranks cannot contain duplicates")
@@ -286,8 +357,10 @@ class FeedbackCreate(BaseModel):
             raise ValueError("legacy_unresolved cannot be created explicitly")
 
         if outcome == FeedbackOutcome.MATCHED_RANK.value:
-            if rank is None or not 1 <= int(rank) <= 10:
-                raise ValueError("matched_rank requires correct_rank from 1 to 10")
+            if rank is None or not 1 <= int(rank) <= MAX_CANDIDATE_RANK:
+                raise ValueError(
+                    f"matched_rank requires correct_rank from 1 to {MAX_CANDIDATE_RANK}"
+                )
         elif outcome == FeedbackOutcome.NONE_OF_TOP_K.value:
             if rank is not None and int(rank) != 0:
                 raise ValueError("none_of_top_k requires correct_rank 0")
@@ -363,6 +436,18 @@ class StatsResponse(BaseModel):
 
 # --- Models ---
 
+class ConfidenceBands(BaseModel):
+    """The similarity thresholds the UI paints and the backend decides with.
+
+    Served from the backend so there is exactly one source of truth: the
+    ``no_match`` band is not merely presentational, it is what flips a reviewer
+    directory out of ``awaiting_match``. See web/bands.py.
+    """
+
+    no_match: float = NO_MATCH_BAND
+    verify: float = VERIFY_BAND
+
+
 class ModelInfo(BaseModel):
     slug: str
     display_name: str
@@ -373,6 +458,11 @@ class ModelInfo(BaseModel):
     # used when a client omits ?variant=.
     available_variants: List[str] = Field(default_factory=list)
     default_variant: str = DEFAULT_VARIANT
+    # Deployment-wide, replicated per entry like default_variant.
+    confidence_bands: ConfidenceBands = Field(default_factory=ConfidenceBands)
+    # Whether this model can score reviewer-created directories, i.e. whether
+    # its q-q matrix shipped with the data release.
+    supports_reviewer_dirs: bool = False
 
 
 # --- Errors ---
