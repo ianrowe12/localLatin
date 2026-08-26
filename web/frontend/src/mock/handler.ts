@@ -421,7 +421,7 @@ const mockReviewerDirs: ReviewerDir[] = []
 function handleCreateReviewerDir(init?: RequestInit): ReviewerDir {
   const body = JSON.parse(String(init?.body ?? '{}'))
   const dir: ReviewerDir = {
-    dir_id: `reviewer-dir-${mockReviewerDirs.length + 1}`,
+    dir_id: `reviewer-dir-mock${mockReviewerDirs.length + 1}`,
     label: body.label || `New directory from query ${body.query_file_id}`,
     status: 'awaiting_match',
     seed_query_id: body.query_file_id,
@@ -431,6 +431,7 @@ function handleCreateReviewerDir(init?: RequestInit): ReviewerDir {
     model_slug: body.model_slug ?? 'bowphs_LaTa',
     variant: body.variant ?? DEFAULT_VARIANT,
     best_match_score: 0.31,
+    has_potential_match: false,
   }
   mockReviewerDirs.push(dir)
   return dir

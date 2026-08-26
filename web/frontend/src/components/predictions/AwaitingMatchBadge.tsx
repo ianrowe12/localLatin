@@ -24,16 +24,29 @@ export default function AwaitingMatchBadge({ seededDirs }: AwaitingMatchBadgePro
   const awaiting = seededDirs.filter((dir) => dir.status === 'awaiting_match')
   const matched = seededDirs.filter((dir) => dir.status === 'matched')
 
+  // "· lead" means the model already ranks another document above the band
+  // against this directory, but no reviewer has confirmed it. Deliberately not
+  // the same visual as a confirmed match.
+  const leads = awaiting.filter((dir) => dir.has_potential_match)
+  const awaitingTitle = awaiting
+    .map((dir) =>
+      dir.has_potential_match
+        ? `${dir.label} — a related document scores ${dir.best_match_score?.toFixed(2)}, unconfirmed`
+        : dir.label,
+    )
+    .join(', ')
+
   return (
     <span className="flex items-center gap-1.5">
       {awaiting.length > 0 && (
         <span
           data-testid="awaiting-match-badge"
-          title={awaiting.map((dir) => dir.label).join(', ')}
+          title={awaitingTitle}
           className="bg-amber-100 dark:bg-amber-500/15 text-amber-800 dark:text-amber-300 text-xs px-2 py-0.5 rounded-full whitespace-nowrap font-ui"
         >
           Awaiting future match
           {awaiting.length > 1 ? ` (${awaiting.length})` : ''}
+          {leads.length > 0 ? ' · lead' : ''}
         </span>
       )}
       {matched.length > 0 && (

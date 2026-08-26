@@ -130,11 +130,26 @@ def build_review_packet_pdf(
     pdf.add_heading("Top Predictions")
     for prediction in predictions[:top_k]:
         dir_name = prediction["dir_name"]
+        # A reviewer-created directory has no entry in labelled_texts -- its
+        # members are unlabelled queries -- so it carries its own texts. Show
+        # the reviewer's label and provenance rather than the opaque dir id.
+        is_reviewer = prediction.get("source") == "reviewer"
+        title = prediction.get("label") or dir_name if is_reviewer else dir_name
         pdf.add_heading(
-            f"Match {prediction['rank']}: {dir_name} | similarity {prediction['score']:.3f}",
+            f"Match {prediction['rank']}: {title} | similarity {prediction['score']:.3f}",
             size=12,
         )
-        texts = store.labelled_texts.get(dir_name, {})
+        if is_reviewer:
+            created_by = prediction.get("created_by") or "unknown"
+            pdf.add_text(
+                f"Reviewer-created directory ({dir_name}), created by {created_by}.",
+                size=9,
+            )
+
+        texts: dict[str, str] = {
+            entry["filename"]: entry.get("text", "")
+            for entry in (prediction.get("candidate_files") or [])
+        } or store.labelled_texts.get(dir_name, {})
         if not texts:
             pdf.add_text("Candidate text unavailable.")
             continue

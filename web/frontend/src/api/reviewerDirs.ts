@@ -10,6 +10,10 @@ import type { PredictionVariant } from './variants'
  * matrix and appears in their candidate lists like any other option.
  */
 
+/**
+ * `matched` means a reviewer filed a second document into the directory.
+ * Similarity alone never produces it.
+ */
 export type ReviewerDirStatus = 'awaiting_match' | 'matched'
 
 // Mirrors backend models.py ReviewerDir.
@@ -23,7 +27,12 @@ export interface ReviewerDir {
   created_by: string
   model_slug: string
   variant: PredictionVariant | null
+  // Informational only. Status is decided by human confirmation, never by this
+  // number -- see web/services/reviewer_dirs.py.
   best_match_score: number | null
+  // best_match_score crosses the no-match band: the model sees something
+  // related that nobody has confirmed yet.
+  has_potential_match: boolean
 }
 
 export interface CreateReviewerDirPayload {

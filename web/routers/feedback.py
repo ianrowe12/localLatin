@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+import logging
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 
 from web.dependencies import get_current_user, get_db, get_store, require_pi_admin
@@ -17,6 +19,7 @@ from web.services import reviewer_dirs as reviewer_dirs_svc
 from web.services.data_store import DataStore, normalize_slug
 from web.services.feedback_db import FeedbackDB
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["feedback"])
 
 
@@ -41,14 +44,40 @@ async def create_feedback(
     variant = resolve_variant(store, body.variant)
     await _check_model_variant(store, slug, variant)
 
-    correct_dir = body.correct_dir
-    if body.selected_ranks:
-        # Legacy consumers still read correct_rank/correct_dir as a single choice.
-        # For multi-select submissions, the first selected rank is the canonical
-        # legacy choice while selected_ranks carries the full reviewer answer.
-        correct_dir = await _dir_for_rank(
-            store, db, slug, variant, body.query_id, body.selected_ranks[0]
-        )
+    # `correct_dir` is ALWAYS resolved server-side from the rank, never taken
+    # from the request body. Trusting the body let a client file a query into an
+    # arbitrary directory: posting {correct_rank: 1, correct_dir:
+    # "reviewer-dir-X"} appended query 900 to a reviewer directory it had never
+    # been offered, permanently changing the score that directory shows to all
+    # 2,238 queries, and a nonexistent id wrote an unreachable orphan row. A
+    # stale `correct_dir` left over from a previously rendered card produces the
+    # same corruption without any ill intent, and both tables are append-only
+    # with no removal route, so there is no way back.
+    #
+    # Resolving from the rank also *is* the rank validation: `_dir_for_rank`
+    # walks the candidate list actually served for this query, so a rank with no
+    # candidate behind it -- 47, or 11 when no reviewer directory is scorable
+    # here -- is rejected rather than persisted into the pilot's primary
+    # research output.
+    correct_dir = None
+    if body.outcome == FeedbackOutcome.MATCHED_RANK:
+        # For multi-select submissions the first selected rank is the canonical
+        # legacy choice, while selected_ranks carries the full reviewer answer.
+        ranks = body.selected_ranks or [body.correct_rank]
+        resolved = [
+            await _dir_for_rank(store, db, slug, variant, body.query_id, rank)
+            for rank in ranks
+        ]
+        unknown = [rank for rank, dir_name in zip(ranks, resolved) if dir_name is None]
+        if unknown:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"No candidate at rank {unknown[0]} for query {body.query_id} "
+                    f"under model '{slug}' (variant '{variant}')."
+                ),
+            )
+        correct_dir = resolved[0]
 
     row = await db.insert(
         query_id=body.query_id,
@@ -65,21 +94,32 @@ async def create_feedback(
 
     # Confirming a reviewer-created directory is what makes it grow: the query
     # joins the directory's members, so the next query is scored against both
-    # documents rather than only the seed. Append-only and idempotent -- the
-    # feedback row above is untouched, and re-submitting the same answer adds
-    # nothing. Recording feedback itself is unconditional; membership is the
-    # extra consequence of naming a reviewer directory as the correct one.
-    if (
-        correct_dir
-        and reviewer_dirs_svc.is_reviewer_dir_id(correct_dir)
-        and body.outcome == FeedbackOutcome.MATCHED_RANK
-    ):
-        await db.add_reviewer_dir_member(
-            dir_id=correct_dir,
-            query_id=body.query_id,
-            added_by=current_user.display_name,
-            added_by_account_id=current_user.id,
-        )
+    # documents rather than only the seed, and the directory's badge flips from
+    # "Awaiting future match" to matched. That flip is precisely why this write
+    # must follow a server-resolved `correct_dir` and nothing else -- it is the
+    # record of a human confirmation.
+    #
+    # Append-only and idempotent: the feedback row above is untouched, and
+    # re-submitting the same answer adds nothing. Recording feedback is
+    # unconditional; membership is the extra consequence of confirming a
+    # reviewer directory.
+    if correct_dir and reviewer_dirs_svc.is_reviewer_dir_id(correct_dir):
+        try:
+            await db.add_reviewer_dir_member(
+                dir_id=correct_dir,
+                query_id=body.query_id,
+                added_by=current_user.display_name,
+                added_by_account_id=current_user.id,
+            )
+        except KeyError:
+            # Unreachable via _dir_for_rank, which only ever returns directories
+            # read out of this same table. Logged rather than raised so a race
+            # cannot lose an otherwise valid feedback row, which is already
+            # committed above and is the more valuable record.
+            logger.warning(
+                "Reviewer directory %s vanished between resolution and membership write",
+                correct_dir,
+            )
 
     return FeedbackEntry(**row)
 
@@ -162,32 +202,32 @@ async def _dir_for_rank(
     query_id: int,
     rank: int,
 ) -> str | None:
-    """Directory name at `rank` in the list this query was shown.
+    """Directory name at `rank` in the list this query was shown, or None.
 
-    Model candidates first, exactly as the retrieval CSV ranked them, then the
-    reviewer-created directories appended after them -- the same ordering
-    `get_predictions` builds, so a rank the client sent back always resolves to
-    the card the reviewer clicked.
+    Model candidates exactly as the retrieval CSV ranked them, then the
+    reviewer-created directories anchored at MAX_MODEL_RANK + 1 -- the same
+    ordering `get_predictions` builds, so a rank the client sends back always
+    resolves to the card the reviewer clicked, independently of `top_k`.
+
+    None means "no candidate at that rank", which the caller turns into a 422.
+    This is the only rank validation that can be trusted, since the candidate
+    count depends on the query, the model and how many reviewer directories are
+    currently scorable.
     """
-    model_rank_count = 0
     for row in store.predictions.get((model_slug, variant), []):
         if row["file_id"] != query_id:
             continue
-        model_rank_count = len(row["predictions"])
         for prediction in row["predictions"]:
             if prediction["rank"] == rank:
                 return prediction["dir_name"]
+        break
 
     records = await db.list_reviewer_dirs()
     if not records:
         return None
     qq = await store.ensure_qq_async(model_slug)
     for candidate in reviewer_dirs_svc.candidates_for_query(
-        store=store,
-        records=records,
-        qq=qq,
-        query_id=query_id,
-        first_rank=model_rank_count + 1,
+        store=store, records=records, qq=qq, query_id=query_id
     ):
         if candidate.rank == rank:
             return candidate.dir_name

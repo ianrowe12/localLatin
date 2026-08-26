@@ -8,8 +8,9 @@ from fastapi.responses import Response
 
 from web.dependencies import get_db, get_store, require_pi_admin
 from web.exceptions import QueryNotFoundError
-from web.models import PredictionVariant, UserPublic
+from web.models import MAX_CANDIDATE_RANK, PredictionVariant, UserPublic
 from web.routers.predictions import resolve_variant, resolve_variant_rows
+from web.services import reviewer_dirs as reviewer_dirs_svc
 from web.services.data_store import DataStore, normalize_slug
 from web.services.feedback_db import FeedbackDB
 from web.services.pdf_packets import build_review_packet_pdf
@@ -48,7 +49,7 @@ async def get_review_packet(
             "with the variant it was recorded against."
         ),
     ),
-    top_k: int = Query(10, ge=1, le=10),
+    top_k: int = Query(MAX_CANDIDATE_RANK, ge=1, le=MAX_CANDIDATE_RANK),
     store: DataStore = Depends(get_store),
     db: FeedbackDB = Depends(get_db),
     current_user: UserPublic = Depends(require_pi_admin),
@@ -60,6 +61,23 @@ async def get_review_packet(
     row = _get_prediction_row(rows, file_id)
     if row is None:
         raise QueryNotFoundError(file_id)
+
+    # Reviewer-created directories are part of the candidate list the reviewer
+    # saw, so they belong in the packet. Without them a reviewer who confirmed a
+    # directory at rank 11 produced a packet whose candidate list stopped at 10
+    # while the feedback section recorded correct_rank 11, pointing at nothing.
+    # `top_k` is capped at MAX_CANDIDATE_RANK rather than 10 for the same
+    # reason: the ceiling has to be able to reach those ranks.
+    predictions = list(row["predictions"])
+    reviewer_records = await db.list_reviewer_dirs()
+    if reviewer_records:
+        qq = await store.ensure_qq_async(slug)
+        predictions.extend(
+            candidate.model_dump()
+            for candidate in reviewer_dirs_svc.candidates_for_packet(
+                store=store, records=reviewer_records, qq=qq, query_id=file_id
+            )
+        )
 
     # The feedback section is variant-agnostic by default. Filtering it by the
     # requested variant would silently drop every pre-variant review (those rows
@@ -78,7 +96,7 @@ async def get_review_packet(
         model_slug=slug,
         variant=resolved,
         feedback_variant=feedback_variant.value if feedback_variant else None,
-        predictions=row["predictions"],
+        predictions=predictions,
         feedback_rows=feedback_rows,
         actor=current_user.display_name,
         top_k=top_k,

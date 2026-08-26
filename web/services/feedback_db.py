@@ -9,6 +9,7 @@ import json
 import logging
 import secrets
 import sqlite3
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -366,48 +367,95 @@ class FeedbackDB:
         created_by: str,
         created_by_account_id: int | None,
     ) -> dict:
-        """Insert a reviewer directory and its seed membership.
+        """Insert a reviewer directory and its seed membership, atomically.
 
-        ``dir_id`` is derived from the autoincrement id rather than the label:
-        labels are reviewer prose, may repeat, and are never authoritative. The
+        ``dir_id`` is generated *before* the INSERT, from `uuid4`. The obvious
+        alternative -- insert a placeholder, read back the autoincrement id,
+        then UPDATE the real id in -- is what the first version of this did, and
+        it is broken: `dir_id` is NOT NULL UNIQUE, the sequence spans several
+        awaits, and two overlapping requests therefore both try to hold the
+        placeholder. Nineteen of twenty concurrent creations failed with
+        IntegrityError, surfacing as 500s. A pre-generated id has no such window
+        and needs no second statement, which also lets the "never renamed"
+        promise in the schema comment above be literally true.
+
+        Sequential ids were the only thing that scheme bought, and they are not
+        worth it: `dir_id` is opaque plumbing that the UI already demotes behind
+        the reviewer's label. Labels are reviewer prose, may repeat, and are
+        never authoritative, so they cannot be the id either. The
         ``reviewer-dir-`` prefix keeps the id disjoint from every labelled
         directory name and safe in a URL path segment.
+
+        Both rows commit together, or neither does.
         """
         assert self._db is not None
-        cursor = await self._db.execute(
-            """
-            INSERT INTO reviewer_dirs
-                (dir_id, label, seed_query_id, model_slug, variant,
-                 created_by, created_by_account_id)
-            VALUES ('', ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                label.strip(),
-                seed_query_id,
-                model_slug,
-                variant,
-                created_by,
-                created_by_account_id,
-            ),
-        )
-        row_id = cursor.lastrowid
-        dir_id = f"reviewer-dir-{row_id}"
-        await self._db.execute(
-            "UPDATE reviewer_dirs SET dir_id = ? WHERE id = ?", (dir_id, row_id)
-        )
-        await self._db.execute(
-            """
-            INSERT OR IGNORE INTO reviewer_dir_members
-                (dir_id, query_id, role, added_by, added_by_account_id)
-            VALUES (?, ?, 'seed', ?, ?)
-            """,
-            (dir_id, seed_query_id, created_by, created_by_account_id),
-        )
-        await self._db.commit()
+        dir_id = f"reviewer-dir-{uuid.uuid4().hex[:12]}"
+        try:
+            await self._db.execute(
+                """
+                INSERT INTO reviewer_dirs
+                    (dir_id, label, seed_query_id, model_slug, variant,
+                     created_by, created_by_account_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    dir_id,
+                    label.strip(),
+                    seed_query_id,
+                    model_slug,
+                    variant,
+                    created_by,
+                    created_by_account_id,
+                ),
+            )
+            await self._db.execute(
+                """
+                INSERT INTO reviewer_dir_members
+                    (dir_id, query_id, role, added_by, added_by_account_id)
+                VALUES (?, ?, 'seed', ?, ?)
+                """,
+                (dir_id, seed_query_id, created_by, created_by_account_id),
+            )
+            await self._db.commit()
+        except Exception:
+            await self._db.rollback()
+            raise
         row = await (
-            await self._db.execute("SELECT * FROM reviewer_dirs WHERE id = ?", (row_id,))
+            await self._db.execute(
+                "SELECT * FROM reviewer_dirs WHERE dir_id = ?", (dir_id,)
+            )
         ).fetchone()
         return dict(row)
+
+    async def count_reviewer_dirs_by_account(self, account_id: int | None) -> int:
+        """How many directories this account has created. Feeds the per-reviewer cap."""
+        assert self._db is not None
+        row = await (
+            await self._db.execute(
+                "SELECT COUNT(*) FROM reviewer_dirs WHERE created_by_account_id IS ?",
+                (account_id,),
+            )
+        ).fetchone()
+        return int(row[0])
+
+    async def get_reviewer_dir_by_seed(self, seed_query_id: int) -> dict | None:
+        """The directory already seeded by this query, if any.
+
+        One document seeds at most one directory. A second "create" on the same
+        query is a double-click or a stale form, not a second discovery, and
+        both tables are append-only with no removal route -- so the duplicate
+        would be a permanent extra card on all 2,238 queries.
+        """
+        assert self._db is not None
+        row = await (
+            await self._db.execute(
+                "SELECT dir_id FROM reviewer_dirs WHERE seed_query_id = ? ORDER BY id LIMIT 1",
+                (seed_query_id,),
+            )
+        ).fetchone()
+        if row is None:
+            return None
+        return await self.get_reviewer_dir(row["dir_id"])
 
     async def list_reviewer_dirs(self) -> list[dict]:
         """Every reviewer directory, each with its member query ids.
@@ -468,8 +516,20 @@ class FeedbackDB:
         Returns True when a new membership row was written. The UNIQUE
         constraint plus INSERT OR IGNORE means re-submitting the same feedback
         adds nothing rather than duplicating or overwriting.
+
+        The directory must already exist. Without this check an unknown
+        ``dir_id`` wrote an orphan membership row that nothing could ever read
+        or remove -- both tables are append-only with no DELETE and no admin
+        removal route, so a typo or a stale client value was permanent.
         """
         assert self._db is not None
+        exists = await (
+            await self._db.execute(
+                "SELECT 1 FROM reviewer_dirs WHERE dir_id = ?", (dir_id,)
+            )
+        ).fetchone()
+        if exists is None:
+            raise KeyError(dir_id)
         cursor = await self._db.execute(
             """
             INSERT OR IGNORE INTO reviewer_dir_members

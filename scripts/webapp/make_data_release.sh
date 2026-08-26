@@ -91,6 +91,16 @@ else
         MEMBERS+=("runs/active/resubmit/unlabelled/$(basename "${matrix}")")
     done
     info "Query-query matrices: ${#QQ_MATRICES[@]}"
+
+    # Provenance for what is actually deployed: which layer and D each matrix
+    # was built at, and the 5-decimal check against the predictions CSV that
+    # licensed it. The webapp never reads these; they travel with the payload so
+    # a deployed host can answer "where did these numbers come from".
+    for sidecar in qq_sim_index.json qq_sim_verification_sif_abtt.csv; do
+        if [[ -f "${REPO_ROOT}/runs/active/resubmit/unlabelled/${sidecar}" ]]; then
+            MEMBERS+=("runs/active/resubmit/unlabelled/${sidecar}")
+        fi
+    done
 fi
 
 for member in "${MEMBERS[@]}"; do

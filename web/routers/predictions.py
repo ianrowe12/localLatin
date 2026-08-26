@@ -111,11 +111,7 @@ async def get_predictions(
         qq = await store.ensure_qq_async(slug)
         predictions.extend(
             reviewer_dirs_svc.candidates_for_query(
-                store=store,
-                records=reviewer_records,
-                qq=qq,
-                query_id=file_id,
-                first_rank=len(predictions) + 1,
+                store=store, records=reviewer_records, qq=qq, query_id=file_id
             )
         )
         seeded_dirs = [
@@ -156,8 +152,8 @@ async def get_candidates(
     pred = next((p for p in preds if p["rank"] == rank), None)
     if pred is None:
         # Ranks past the model's own candidates belong to reviewer-created
-        # directories, which are appended by get_predictions in the same order.
-        return await _reviewer_candidate_files(store, db, slug, file_id, rank, len(preds))
+        # directories, anchored at the same fixed offset get_predictions uses.
+        return await _reviewer_candidate_files(store, db, slug, file_id, rank)
 
     dir_name = pred["dir_name"]
     texts = store.labelled_texts.get(dir_name, {})
@@ -168,23 +164,14 @@ async def get_candidates(
 
 
 async def _reviewer_candidate_files(
-    store: DataStore,
-    db: FeedbackDB,
-    slug: str,
-    file_id: int,
-    rank: int,
-    model_rank_count: int,
+    store: DataStore, db: FeedbackDB, slug: str, file_id: int, rank: int
 ) -> list[CandidateFile]:
     records = await db.list_reviewer_dirs()
     if not records:
         return []
     qq = await store.ensure_qq_async(slug)
     candidates = reviewer_dirs_svc.candidates_for_query(
-        store=store,
-        records=records,
-        qq=qq,
-        query_id=file_id,
-        first_rank=model_rank_count + 1,
+        store=store, records=records, qq=qq, query_id=file_id
     )
     match = next((c for c in candidates if c.rank == rank), None)
     return list(match.candidate_files or []) if match else []

@@ -88,6 +88,7 @@ function installFetch(createResponse?: () => Response): void {
               model_slug: MODEL,
               variant: 'sif_abtt',
               best_match_score: 0.31,
+              has_potential_match: false,
             },
             201,
           )
@@ -141,7 +142,7 @@ afterEach(() => {
 describe('reviewer directory candidates', () => {
   it('renders a distinct card, labelled and attributed', async () => {
     predictions = {
-      predictions: [modelCard(1, 0.44), reviewerCard(2, 0.62)],
+      predictions: [modelCard(1, 0.44), reviewerCard(11, 0.62)],
       seeded_dirs: [],
     }
     renderList()
@@ -150,7 +151,7 @@ describe('reviewer directory candidates', () => {
     // Distinct from a model card: its own testid, its own accessible name, and
     // the reviewer's label rather than the opaque directory id.
     expect(card.getAttribute('aria-label')).toBe(
-      'Reviewer directory Unattested homily, rank 2',
+      'Reviewer directory Unattested homily, rank 11',
     )
     expect(card.textContent).toContain('Reviewer directory')
     expect(card.textContent).toContain('Unattested homily')
@@ -185,9 +186,38 @@ describe('reviewer directory candidates', () => {
     ).toContain('rank 11')
   })
 
+  it('arrow keys step across the gap between model and reviewer ranks', async () => {
+    // Ranks are 1, 2 then 11: reviewer cards are anchored, not contiguous, so
+    // stepping numerically would land on rank 3, which has no card.
+    predictions = {
+      predictions: [modelCard(1, 0.44), modelCard(2, 0.2), reviewerCard(11, 0.62)],
+      seeded_dirs: [],
+    }
+    renderList()
+    await screen.findByTestId('reviewer-dir-card-reviewer-dir-1')
+
+    await userEvent.keyboard('{ArrowDown}{ArrowDown}')
+    await waitFor(() => {
+      expect(
+        screen
+          .getByTestId('reviewer-dir-card-reviewer-dir-1')
+          .getAttribute('aria-pressed'),
+      ).toBe('true')
+    })
+
+    await userEvent.keyboard('{ArrowUp}')
+    await waitFor(() => {
+      expect(
+        screen
+          .getByRole('button', { name: 'Prediction rank 2: candidate-2' })
+          .getAttribute('aria-pressed'),
+      ).toBe('true')
+    })
+  })
+
   it('selects the reviewer card on click', async () => {
     predictions = {
-      predictions: [modelCard(1, 0.44), reviewerCard(2, 0.62)],
+      predictions: [modelCard(1, 0.44), reviewerCard(11, 0.62)],
       seeded_dirs: [],
     }
     renderList()
@@ -217,6 +247,7 @@ describe('AwaitingMatchBadge', () => {
     created_by: 'Abigail',
     model_slug: MODEL,
     variant: 'sif_abtt' as const,
+    has_potential_match: false,
   }
 
   it('renders nothing for a document that seeded no directory', () => {
@@ -246,6 +277,28 @@ describe('AwaitingMatchBadge', () => {
       'New directory matched',
     )
     expect(screen.queryByTestId('awaiting-match-badge')).toBeNull()
+  })
+
+  it('marks an unconfirmed above-band neighbour as a lead, not a match', () => {
+    // The old behaviour turned this green. On the real corpus that fired for
+    // 57-70% of directories at creation, before any human confirmed anything.
+    render(
+      <AwaitingMatchBadge
+        seededDirs={[
+          {
+            ...base,
+            status: 'awaiting_match',
+            best_match_score: 0.82,
+            has_potential_match: true,
+          },
+        ]}
+      />,
+    )
+    const badge = screen.getByTestId('awaiting-match-badge')
+    expect(badge.textContent).toBe('Awaiting future match · lead')
+    expect(badge.getAttribute('title')).toContain('0.82')
+    expect(badge.getAttribute('title')).toContain('unconfirmed')
+    expect(screen.queryByTestId('matched-dir-badge')).toBeNull()
   })
 
   it('counts multiple directories in the same state', () => {
@@ -287,6 +340,32 @@ describe('new-directory creation flow', () => {
     renderList()
     const cta = await screen.findByTestId('new-directory-cta')
     expect(cta.textContent).toBe('None of these — start a new directory')
+  })
+
+  it('is hidden once this document already seeds a directory', async () => {
+    // The backend answers a second create on the same seed with 409, so the
+    // button must not be offered in the first place.
+    predictions = {
+      predictions: [modelCard(1, 0.41)],
+      seeded_dirs: [
+        {
+          dir_id: 'reviewer-dir-1',
+          label: 'Unattested homily',
+          status: 'awaiting_match',
+          seed_query_id: QUERY_ID,
+          member_query_ids: [QUERY_ID],
+          created_at: '2026-08-26 00:00:00',
+          created_by: 'Abigail',
+          model_slug: MODEL,
+          variant: 'sif_abtt',
+          best_match_score: 0.31,
+          has_potential_match: false,
+        },
+      ],
+    }
+    renderList()
+    await screen.findByTestId('awaiting-match-badge')
+    expect(screen.queryByTestId('new-directory-cta')).toBeNull()
   })
 
   it('is a quiet escape hatch when the top candidate is above the band', async () => {

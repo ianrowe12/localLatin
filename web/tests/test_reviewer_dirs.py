@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 import sqlite3
 from pathlib import Path
 
@@ -52,7 +53,35 @@ F16_080 = 0.7998046875
 F16_030 = 0.300048828125
 
 
-def _write_fixture_data(root: Path, *, with_matrix: bool = True) -> Path:
+def _build_matrix(n: int) -> tuple[np.ndarray, np.ndarray]:
+    """An n x n fixture matrix that extends QQ without disturbing it.
+
+    The first four rows and columns are exactly QQ, so every test that names a
+    literal score keeps its meaning at any corpus size. Pairs involving q4 and
+    beyond fall off with distance, which gives the cap test a deterministic
+    best-first ordering without any of those scores colliding.
+    """
+    if n <= len(QQ):
+        return QQ[:n, :n].copy(), EXCLUDED[:n].copy()
+
+    sim = np.zeros((n, n), dtype=np.float32)
+    sim[: len(QQ), : len(QQ)] = QQ
+    for i in range(n):
+        for j in range(n):
+            if i < len(QQ) and j < len(QQ):
+                continue
+            sim[i, j] = 1.0 if i == j else max(0.0, 0.60 - 0.02 * abs(i - j))
+    excluded = np.zeros(n, dtype=bool)
+    excluded[: len(EXCLUDED)] = EXCLUDED
+    # q3 stays the blank one at every size.
+    sim[excluded, :] = 0.0
+    sim[:, excluded] = 0.0
+    return sim, excluded
+
+
+def _write_fixture_data(
+    root: Path, *, with_matrix: bool = True, n_queries: int = len(QUERIES)
+) -> Path:
     unlabelled = root / "data" / "canon_unlabelled"
     labelled = root / "data" / "canon_labelled"
     predictions = root / "runs" / "active" / "resubmit" / "unlabelled"
@@ -61,7 +90,10 @@ def _write_fixture_data(root: Path, *, with_matrix: bool = True) -> Path:
     unlabelled.mkdir(parents=True)
     predictions.mkdir(parents=True)
     feedback.mkdir(parents=True)
-    for name in QUERIES:
+    names = [
+        QUERIES[i] if i < len(QUERIES) else f"query-{i}.txt" for i in range(n_queries)
+    ]
+    for name in names:
         (unlabelled / name).write_text(f"text of {name}", encoding="utf-8")
 
     (labelled / "candidate-a").mkdir(parents=True)
@@ -86,7 +118,7 @@ def _write_fixture_data(root: Path, *, with_matrix: bool = True) -> Path:
     ) as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
-        for file_id, name in enumerate(QUERIES):
+        for file_id, name in enumerate(names):
             writer.writerow(
                 {
                     "file_id": file_id,
@@ -103,11 +135,12 @@ def _write_fixture_data(root: Path, *, with_matrix: bool = True) -> Path:
             )
 
     if with_matrix:
+        sim, excluded = _build_matrix(n_queries)
         np.savez(
             predictions / f"qq_sim_{MODEL_SLUG}.npz",
-            sim=QQ.astype(np.float16),
-            file_ids=np.arange(len(QUERIES), dtype=np.int32),
-            excluded=EXCLUDED,
+            sim=sim.astype(np.float16),
+            file_ids=np.arange(n_queries, dtype=np.int32),
+            excluded=excluded,
             meta=np.array(json.dumps({"model": "bowphs/LaTa", "layer": 12, "D": 3})),
         )
 
@@ -133,8 +166,12 @@ auth:
     return config_path
 
 
-def _client(tmp_path: Path, *, with_matrix: bool = True) -> TestClient:
-    config_path = _write_fixture_data(tmp_path, with_matrix=with_matrix)
+def _client(
+    tmp_path: Path, *, with_matrix: bool = True, n_queries: int = len(QUERIES)
+) -> TestClient:
+    config_path = _write_fixture_data(
+        tmp_path, with_matrix=with_matrix, n_queries=n_queries
+    )
     client = TestClient(create_app(str(config_path)))
     client.__enter__()
     return client
@@ -154,8 +191,10 @@ def _register(client: TestClient, username: str, display_name: str) -> dict:
     return response.json()
 
 
-def _signed_in(tmp_path: Path, *, with_matrix: bool = True) -> TestClient:
-    client = _client(tmp_path, with_matrix=with_matrix)
+def _signed_in(
+    tmp_path: Path, *, with_matrix: bool = True, n_queries: int = len(QUERIES)
+) -> TestClient:
+    client = _client(tmp_path, with_matrix=with_matrix, n_queries=n_queries)
     _register(client, "pi", "PI")
     return client
 
@@ -176,7 +215,9 @@ def test_creation_returns_the_contract_shape(tmp_path: Path) -> None:
     client = _signed_in(tmp_path)
     try:
         body = _create_dir(client, 2, "Unattested homily")
-        assert body["dir_id"] == "reviewer-dir-1"
+        # The id is generated before the INSERT (see create_reviewer_dir), so it
+        # is a uuid rather than a sequence position. Opaque by design.
+        assert re.fullmatch(r"reviewer-dir-[0-9a-f]{12}", body["dir_id"])
         assert body["label"] == "Unattested homily"
         assert body["seed_query_id"] == 2
         assert body["member_query_ids"] == [2]
@@ -197,20 +238,32 @@ def test_creation_defaults_the_label_to_the_seed_filename(tmp_path: Path) -> Non
         client.__exit__(None, None, None)
 
 
-def test_creation_reports_matched_when_the_seed_already_has_a_neighbour(
-    tmp_path: Path,
-) -> None:
-    """The 201 carries the computed status, not a hardcoded 'awaiting_match'.
+def test_creation_is_awaiting_even_with_a_strong_neighbour(tmp_path: Path) -> None:
+    """Similarity never produces 'matched'; only a human confirmation does.
 
-    q0's best neighbour is q1 at 0.80, over the band, so the directory is
-    matched from the moment it exists -- which is the discovery the feature is
-    for, and reporting 'awaiting_match' there would be a lie.
+    q0's best neighbour is q1 at 0.80, well over the band. On the real corpus
+    57-70% of new directories have such a neighbour, so deriving the status
+    from similarity turned the badge green at creation for most directories and
+    made "Awaiting future match" the rare state. The lead is reported
+    separately, as a lead.
     """
     client = _signed_in(tmp_path)
     try:
         body = _create_dir(client, 0)
-        assert body["status"] == "matched"
+        assert body["status"] == "awaiting_match"
+        assert body["member_query_ids"] == [0]
         assert body["best_match_score"] > REVIEWER_DIR_MATCH_BAND
+        assert body["has_potential_match"] is True
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_a_seed_without_a_lead_reports_no_potential_match(tmp_path: Path) -> None:
+    client = _signed_in(tmp_path)
+    try:
+        body = _create_dir(client, 2)
+        assert body["status"] == "awaiting_match"
+        assert body["has_potential_match"] is False
     finally:
         client.__exit__(None, None, None)
 
@@ -307,7 +360,9 @@ def test_reviewer_dirs_merge_into_predictions_as_extra_candidates(
 
         assert len(reviewer_cards) == 1
         card = reviewer_cards[0]
-        assert card["rank"] == 3  # appended after the model's candidates
+        # Anchored at MAX_MODEL_RANK + 1, NOT "one past however many model
+        # candidates came back" -- this fixture only has two of those.
+        assert card["rank"] == 11
         assert card["dir_name"] == created["dir_id"]
         assert card["label"] == "Seeded by q0"
         assert card["seed_query_id"] == 0
@@ -369,9 +424,22 @@ def test_guard_excluded_queries_are_never_scored(tmp_path: Path) -> None:
         ).json()
         assert [p for p in body["predictions"] if p["source"] == "reviewer"] == []
 
-        seeded = _create_dir(client, 3)
-        assert seeded["status"] == "awaiting_match"
-        assert seeded["best_match_score"] == 0.0
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_seeding_a_guard_excluded_query_is_refused(tmp_path: Path) -> None:
+    """q3 can never be scored, so a directory seeded there is a permanent dead end.
+
+    It could never appear as a candidate and never leave 'awaiting_match',
+    leaving a permanent amber badge on a document nothing can ever match.
+    """
+    client = _signed_in(tmp_path)
+    try:
+        response = client.post("/api/reviewer_dirs", json={"query_file_id": 3})
+        assert response.status_code == 422
+        assert "no usable embedding" in response.json()["detail"]
+        assert client.get("/api/reviewer_dirs").json() == []
     finally:
         client.__exit__(None, None, None)
 
@@ -413,11 +481,11 @@ def test_matrices_load_lazily(tmp_path: Path) -> None:
 
 
 def test_badge_lifecycle_awaiting_then_matched(tmp_path: Path) -> None:
-    """A directory seeded by q2 has no neighbour above the band until q1 joins.
+    """The badge flips when a human confirms a second document, not before.
 
-    q2's best neighbour is q0 at 0.30, so it starts awaiting. Adding q0 as a
-    member makes q1 (0.80 against q0) an external match, and the seed's badge
-    flips.
+    A directory seeded by q2 stays awaiting through creation and through
+    everything the matrix has to say about it; it turns matched only once q0
+    is filed into it by a submitted review.
     """
     client = _signed_in(tmp_path)
     try:
@@ -456,6 +524,323 @@ def test_band_is_served_to_the_frontend(tmp_path: Path) -> None:
         client.__exit__(None, None, None)
 
 
+# --- regressions: the defects the independent review reproduced -------------
+
+
+def test_concurrent_creation_does_not_collide(tmp_path: Path) -> None:
+    """20 overlapping creations on distinct queries all succeed.
+
+    The first implementation inserted `dir_id = ''` and UPDATEd the real id in
+    afterwards. `dir_id` is NOT NULL UNIQUE and the sequence spans awaits, so
+    overlapping requests fought over the placeholder: the reviewer measured 19
+    of 20 failing with IntegrityError, i.e. 500s. The id is now generated
+    before the INSERT, so there is no window to collide in.
+    """
+    import asyncio
+
+    import httpx
+
+    from web.app import create_app as _create_app
+
+    config_path = _write_fixture_data(tmp_path, n_queries=40)
+
+    async def hammer() -> list[int]:
+        app = _create_app(str(config_path))
+        transport = httpx.ASGITransport(app=app)
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(
+                transport=transport, base_url="http://test"
+            ) as ac:
+                registration = await ac.post(
+                    "/api/auth/register",
+                    json={
+                        "username": "pi",
+                        "display_name": "PI",
+                        "password": "correct horse battery staple",
+                    },
+                )
+                assert registration.status_code == 201
+                # q3 is the guard-excluded document, which creation refuses.
+                seeds = [q for q in range(21) if q != 3][:20]
+                responses = await asyncio.gather(
+                    *(
+                        ac.post("/api/reviewer_dirs", json={"query_file_id": q})
+                        for q in seeds
+                    )
+                )
+                listed = await ac.get("/api/reviewer_dirs")
+                return [r.status_code for r in responses], listed.json(), seeds
+
+    codes, dirs, seeds = asyncio.run(hammer())
+    assert codes == [201] * 20, codes
+    assert len({d["dir_id"] for d in dirs}) == 20
+    assert sorted(d["seed_query_id"] for d in dirs) == sorted(seeds)
+
+
+def test_correct_dir_is_resolved_server_side_not_taken_from_the_body(
+    tmp_path: Path,
+) -> None:
+    """A client cannot file a query into a directory it was never offered.
+
+    The reviewer's repro: POST feedback for query 900 with `correct_rank: 1` (a
+    *labelled* candidate) and `correct_dir: "reviewer-dir-1"`. It returned 201
+    and permanently appended 900 to that reviewer directory, changing the score
+    it shows to all 2,238 queries, with no removal route. The same thing happens
+    by accident when a stale `correct_dir` survives a re-render.
+    """
+    client = _signed_in(tmp_path)
+    try:
+        created = _create_dir(client, 0)
+        before = client.get(f"/api/reviewer_dirs/{created['dir_id']}").json()
+        assert before["member_query_ids"] == [0]
+
+        spoofed = client.post(
+            "/api/feedback",
+            json={
+                "query_id": 2,
+                "model_slug": "bowphs/LaTa",
+                "outcome": "matched_rank",
+                "correct_rank": 1,  # a labelled candidate
+                "correct_dir": created["dir_id"],  # ... claimed as the reviewer dir
+                "notes": "",
+            },
+        )
+        # The row is still recorded, against the directory rank 1 really names.
+        assert spoofed.status_code == 201
+        assert spoofed.json()["correct_dir"] == "candidate-a"
+
+        after = client.get(f"/api/reviewer_dirs/{created['dir_id']}").json()
+        assert after["member_query_ids"] == [0]
+        assert after["status"] == "awaiting_match"
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_a_nonexistent_correct_dir_cannot_write_an_orphan_membership(
+    tmp_path: Path,
+) -> None:
+    client = _signed_in(tmp_path)
+    try:
+        response = client.post(
+            "/api/feedback",
+            json={
+                "query_id": 1,
+                "model_slug": "bowphs/LaTa",
+                "outcome": "matched_rank",
+                "correct_rank": 1,
+                "correct_dir": "reviewer-dir-99999",
+                "notes": "",
+            },
+        )
+        assert response.status_code == 201
+        assert response.json()["correct_dir"] == "candidate-a"
+
+        db_path = tmp_path / "runs" / "active" / "resubmit" / "webapp" / "feedback.db"
+        connection = sqlite3.connect(db_path)
+        try:
+            rows = connection.execute(
+                "SELECT COUNT(*) FROM reviewer_dir_members"
+            ).fetchone()[0]
+        finally:
+            connection.close()
+        assert rows == 0
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_a_rank_with_no_candidate_behind_it_is_rejected(tmp_path: Path) -> None:
+    """Rank validation is against the real candidate list, not a flat ceiling.
+
+    With no reviewer directory scorable for this query there are two candidates,
+    so ranks 3 and 11 name nothing and must not reach the append-only feedback
+    log, which has no correction path.
+    """
+    client = _signed_in(tmp_path)
+    try:
+        for rank in (3, 11, 15):
+            response = client.post(
+                "/api/feedback",
+                json={
+                    "query_id": 1,
+                    "model_slug": "bowphs/LaTa",
+                    "outcome": "matched_rank",
+                    "correct_rank": rank,
+                    "notes": "",
+                },
+            )
+            assert response.status_code == 422, rank
+            assert "No candidate at rank" in response.json()["detail"]
+
+        # Above the outer bound pydantic rejects it before the lookup.
+        too_big = client.post(
+            "/api/feedback",
+            json={
+                "query_id": 1,
+                "model_slug": "bowphs/LaTa",
+                "outcome": "matched_rank",
+                "correct_rank": 99,
+                "notes": "",
+            },
+        )
+        assert too_big.status_code == 422
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_reviewer_rank_is_anchored_and_agrees_across_endpoints(
+    tmp_path: Path,
+) -> None:
+    """`top_k` must not move a reviewer card's rank.
+
+    The offset-based version numbered reviewer cards "one past however many
+    model candidates were returned", but `get_predictions` counted the sliced
+    list and `get_candidates` the unsliced row. At top_k=1 a card served at one
+    rank resolved to a different directory when its files were fetched by that
+    same rank -- and feedback records the rank.
+    """
+    client = _signed_in(tmp_path)
+    try:
+        created = _create_dir(client, 0)
+        for top_k in (1, 2):
+            body = client.get(
+                "/api/query/1/predictions",
+                params={"model": "bowphs/LaTa", "top_k": top_k},
+            ).json()
+            card = next(p for p in body["predictions"] if p["source"] == "reviewer")
+            assert card["rank"] == 11, top_k
+            assert card["dir_name"] == created["dir_id"]
+
+            files = client.get(
+                f"/api/query/1/predictions/{card['rank']}/candidates",
+                params={"model": "bowphs/LaTa", "top_k": top_k},
+            ).json()
+            assert [f["filename"] for f in files] == ["query-0.txt"], top_k
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_one_directory_per_seed_query(tmp_path: Path) -> None:
+    """A double-click must not mint a second permanent card corpus-wide."""
+    client = _signed_in(tmp_path)
+    try:
+        created = _create_dir(client, 0, "First")
+        duplicate = client.post(
+            "/api/reviewer_dirs", json={"query_file_id": 0, "label": "Second"}
+        )
+        assert duplicate.status_code == 409
+        assert created["dir_id"] in duplicate.json()["detail"]
+        assert len(client.get("/api/reviewer_dirs").json()) == 1
+
+        cards = [
+            p
+            for p in client.get(
+                "/api/query/1/predictions", params={"model": "bowphs/LaTa"}
+            ).json()["predictions"]
+            if p["source"] == "reviewer"
+        ]
+        assert len(cards) == 1
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_candidate_list_caps_the_number_of_reviewer_cards(tmp_path: Path) -> None:
+    """Reviewer directories are permanent, so the list they can fill is bounded."""
+    from web.services.reviewer_dirs import MAX_REVIEWER_CANDIDATES
+
+    client = _signed_in(tmp_path, n_queries=12)
+    try:
+        # q3 is guard-excluded and cannot seed a directory.
+        for query_id in [q for q in range(2, 12) if q != 3]:
+            assert (
+                client.post(
+                    "/api/reviewer_dirs", json={"query_file_id": query_id}
+                ).status_code
+                == 201
+            ), query_id
+
+        cards = [
+            p
+            for p in client.get(
+                "/api/query/0/predictions", params={"model": "bowphs/LaTa"}
+            ).json()["predictions"]
+            if p["source"] == "reviewer"
+        ]
+        assert len(cards) == MAX_REVIEWER_CANDIDATES
+        # Best first, and contiguous from the anchor.
+        assert [c["rank"] for c in cards] == [
+            11 + i for i in range(MAX_REVIEWER_CANDIDATES)
+        ]
+        assert cards == sorted(cards, key=lambda c: -c["score"])
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_per_account_creation_cap(tmp_path: Path) -> None:
+    from web.services import reviewer_dirs as svc
+
+    client = _signed_in(tmp_path, n_queries=8)
+    try:
+        original = svc.MAX_REVIEWER_DIRS_PER_ACCOUNT
+        svc.MAX_REVIEWER_DIRS_PER_ACCOUNT = 3
+        try:
+            for query_id in (0, 1, 2):
+                assert (
+                    client.post(
+                        "/api/reviewer_dirs", json={"query_file_id": query_id}
+                    ).status_code
+                    == 201
+                )
+            blocked = client.post("/api/reviewer_dirs", json={"query_file_id": 4})
+            assert blocked.status_code == 429
+            assert "maximum is 3" in blocked.json()["detail"]
+        finally:
+            svc.MAX_REVIEWER_DIRS_PER_ACCOUNT = original
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_unknown_model_slug_is_rejected(tmp_path: Path) -> None:
+    """Silently accepting it returned 201 with a null score, looking like success."""
+    client = _signed_in(tmp_path)
+    try:
+        response = client.post(
+            "/api/reviewer_dirs",
+            json={"query_file_id": 0, "model_slug": "not/a/model"},
+        )
+        # Same error the predictions and feedback routes raise for a bad slug.
+        assert response.status_code == 400
+        assert response.json()["error"]["code"] == "INVALID_MODEL"
+        assert client.get("/api/reviewer_dirs").json() == []
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_review_packet_includes_reviewer_directories(tmp_path: Path) -> None:
+    """A packet must not stop at rank 10 while the feedback says rank 11."""
+    client = _signed_in(tmp_path)
+    try:
+        created = _create_dir(client, 0, "Unattested homily")
+        rank = before_rank(client, 1, created["dir_id"])
+        _submit_match(client, query_id=1, rank=rank)
+
+        response = client.get(
+            "/api/packets/review/1", params={"model": "bowphs/LaTa"}
+        )
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "application/pdf"
+
+        import fitz
+
+        with fitz.open(stream=response.content, filetype="pdf") as doc:
+            text = "\n".join(page.get_text() for page in doc)
+        assert f"Match {rank}: Unattested homily" in text
+        assert created["dir_id"] in text
+        assert "text of query-0.txt" in text
+        assert f"rank {rank}" in text
+    finally:
+        client.__exit__(None, None, None)
+
+
 # --- feedback integration --------------------------------------------------
 
 
@@ -474,20 +859,31 @@ def test_feedback_on_a_reviewer_dir_records_normally(tmp_path: Path) -> None:
 
 
 def test_joining_a_directory_is_idempotent(tmp_path: Path) -> None:
-    """Re-submitting the same answer appends a feedback row and nothing else.
+    """A replayed submission must not duplicate or re-open a membership.
 
-    Note the directory stops being offered to q1 once q1 joins it, so the
-    second submission is posted by dir_id rather than re-read from the list --
-    which is exactly the shape of a client replaying a stale form.
+    Once q1 joins, the directory stops being offered to q1, so the replay is a
+    rank that no longer resolves -- a 422 rather than a silent second write.
+    Either way the membership list is unchanged.
     """
     client = _signed_in(tmp_path)
     try:
         created = _create_dir(client, 0)
         rank = before_rank(client, 1, created["dir_id"])
         _submit_match(client, query_id=1, rank=rank)
-        _post_feedback(
-            client, query_id=1, rank=rank, dir_name=created["dir_id"]
+
+        replay = client.post(
+            "/api/feedback",
+            json={
+                "query_id": 1,
+                "model_slug": "bowphs/LaTa",
+                "outcome": "matched_rank",
+                "correct_rank": rank,
+                "correct_dir": created["dir_id"],
+                "notes": "",
+            },
         )
+        assert replay.status_code == 422
+
         members = client.get(f"/api/reviewer_dirs/{created['dir_id']}").json()
         assert sorted(members["member_query_ids"]) == [0, 1]
     finally:
@@ -532,7 +928,7 @@ def test_migration_is_additive_on_a_legacy_database(tmp_path: Path) -> None:
     try:
         _register(client, "pi", "PI")
         created = _create_dir(client, 0, "New from a legacy DB")
-        assert created["dir_id"] == "reviewer-dir-1"
+        assert re.fullmatch(r"reviewer-dir-[0-9a-f]{12}", created["dir_id"])
 
         connection = sqlite3.connect(db_path)
         connection.row_factory = sqlite3.Row

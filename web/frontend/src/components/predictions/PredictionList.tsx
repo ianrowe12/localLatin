@@ -46,37 +46,42 @@ export default function PredictionList() {
     .slice(0, 10)
   const reviewerPredictions = all.filter((p) => p.source === 'reviewer')
   const predictions = [...modelPredictions, ...reviewerPredictions]
-  const maxRank = predictions.length > 0 ? predictions[predictions.length - 1].rank : 0
 
   const seededDirs = data?.seeded_dirs ?? []
+  // One directory per seed document, enforced by the backend with a 409.
+  const alreadySeeded = seededDirs.length > 0
   const topScore = modelPredictions[0]?.score ?? 0
   const noLabelledMatch = modelPredictions.length === 0 || topScore < bands.no_match
 
-  const handlers = useMemo(
-    () => ({
-      ArrowUp: (e: KeyboardEvent) => {
-        e.preventDefault()
-        setActivePredictionRank(Math.max(1, activePredictionRank - 1))
-      },
-      ArrowDown: (e: KeyboardEvent) => {
-        e.preventDefault()
-        if (maxRank > 0) {
-          setActivePredictionRank(Math.min(maxRank, activePredictionRank + 1))
-        }
-      },
+  // Arrow keys walk the ranks that actually exist rather than counting by one.
+  // Reviewer directories are anchored at rank 11 whatever the model returned,
+  // so the sequence can jump (…, 10, 11) or have a gap (2, 11), and stepping
+  // numerically would land on a rank with no card behind it.
+  const handlers = useMemo(() => {
+    const ranks = predictions.map((p) => p.rank)
+    const step = (delta: number) => (e: KeyboardEvent) => {
+      e.preventDefault()
+      if (ranks.length === 0) return
+      const current = ranks.indexOf(activePredictionRank)
+      const next = current === -1 ? 0 : current + delta
+      const clamped = Math.min(Math.max(next, 0), ranks.length - 1)
+      setActivePredictionRank(ranks[clamped])
+    }
+    return {
+      ArrowUp: step(-1),
+      ArrowDown: step(1),
+      // Number keys address the nth card in the list, which for the model's own
+      // candidates is also its rank.
       ...Object.fromEntries(
         Array.from({ length: 9 }, (_, i) => [
           String(i + 1),
           () => {
-            if (i + 1 <= maxRank) {
-              setActivePredictionRank(i + 1)
-            }
+            if (i < ranks.length) setActivePredictionRank(ranks[i])
           },
         ]),
       ),
-    }),
-    [activePredictionRank, maxRank, setActivePredictionRank],
-  )
+    }
+  }, [activePredictionRank, predictions, setActivePredictionRank])
 
   useKeyboardShortcuts(handlers)
 
@@ -146,7 +151,7 @@ export default function PredictionList() {
           ))}
         </div>
       )}
-      {activeQueryId !== null && (
+      {activeQueryId !== null && !alreadySeeded && (
         <NewDirectoryCta
           queryId={activeQueryId}
           model={activeModel}

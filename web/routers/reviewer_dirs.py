@@ -5,18 +5,23 @@ The API contract fixed with issue #94:
     POST /api/reviewer_dirs {query_file_id, label?}
       -> 201 {dir_id, label, status: 'awaiting_match', ...}
 
-One deliberate generalisation of that contract: the 201 reports the *computed*
-status rather than the literal string ``awaiting_match``. It is
-``awaiting_match`` in the ordinary case, and the only way it comes back
-``matched`` is that some other unlabelled query already scores at or above the
-band against the seed -- which is precisely the discovery this feature exists
-to surface, so hiding it behind a hardcoded initial status would be a bug.
-Everything downstream reads ``status``, never assumes it.
+The 201 always reports ``awaiting_match``, and that is now true by construction
+rather than by assertion: status is "a human has filed a second document into
+this directory", a new directory has exactly one member, so there is no path by
+which creation can report anything else. (An earlier version derived status from
+q-q similarity and would have reported ``matched`` at creation for 57-70% of
+directories, depending on model -- see services/reviewer_dirs.py.)
 
 AUTH: any signed-in, approved reviewer. ``get_current_user`` already rejects
 pending, rejected, inactive and unauthenticated callers, so no extra role gate
 is needed -- and adding one would wrongly exclude reviewers, who are the users
 this feature is for.
+
+REFUSED CREATIONS, all because nothing can ever remove a directory:
+  409  the query already seeds one (double-click, stale form)
+  422  the seed is a guard-excluded document, so it could never be matched
+  429  this account is at MAX_REVIEWER_DIRS_PER_ACCOUNT
+  400  the named model does not exist
 
 APPEND-ONLY: creation writes to ``reviewer_dirs`` and ``reviewer_dir_members``
 and to nothing else. No feedback row is read, written, updated or deleted on
@@ -28,7 +33,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from web.dependencies import get_current_user, get_db, get_store
-from web.exceptions import QueryNotFoundError
+from web.exceptions import InvalidModelError, QueryNotFoundError
 from web.models import (
     CandidateFile,
     ReviewerDir,
@@ -46,13 +51,18 @@ router = APIRouter(prefix="/api", tags=["reviewer_dirs"])
 def _resolve_model(store: DataStore, model: str | None) -> str:
     """The model a directory is reported under.
 
-    Defaults to the first served model rather than erroring: `model` only
-    selects which q-q matrix scores the status, and a client that does not care
-    should not have to name one.
+    Omitting `model` falls back to the first served model: it only selects which
+    q-q matrix supplies the informational score, and a client that does not care
+    should not have to name one. A model that *is* named must exist, exactly as
+    the predictions and feedback routes require -- an unknown slug used to
+    return 201 with a null score, which looks like success.
     """
-    if model:
-        return normalize_slug(model)
-    return store.model_slugs[0] if store.model_slugs else ""
+    if not model:
+        return store.model_slugs[0] if store.model_slugs else ""
+    slug = normalize_slug(model)
+    if slug not in store.model_slugs:
+        raise InvalidModelError(slug, store.model_slugs)
+    return slug
 
 
 @router.post("/reviewer_dirs", response_model=ReviewerDir, status_code=201)
@@ -66,12 +76,52 @@ async def create_reviewer_dir(
     if query_id not in store.file_id_to_filename:
         raise QueryNotFoundError(query_id)
 
+    slug = _resolve_model(store, body.model_slug)
+    variant = resolve_variant(store, body.variant)
+    qq = await store.ensure_qq_async(slug)
+
+    # One directory per seed document. A second create on the same query is a
+    # double-click or a stale form, not a second discovery -- and since nothing
+    # can remove a directory, the duplicate would be a permanent extra card on
+    # every query in the corpus. The reviewer gets the existing one back.
+    existing = await db.get_reviewer_dir_by_seed(query_id)
+    if existing is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Query {query_id} already seeds reviewer directory "
+                f"'{existing['dir_id']}' ({existing['label']})."
+            ),
+        )
+
+    # A query the degenerate-file guard excluded is unscorable in both
+    # directions forever, so a directory seeded there could never appear as a
+    # candidate and never leave 'awaiting_match': a permanent dead end with a
+    # permanent badge. Refuse rather than create it.
+    if qq is not None and qq.row_of(query_id) is None:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Query {query_id} ({store.file_id_to_filename[query_id]}) has no "
+                "usable embedding (empty or whitespace-only source), so a directory "
+                "seeded here could never be matched."
+            ),
+        )
+
+    created_count = await db.count_reviewer_dirs_by_account(current_user.id)
+    if created_count >= svc.MAX_REVIEWER_DIRS_PER_ACCOUNT:
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                f"You have created {created_count} reviewer directories, the "
+                f"maximum is {svc.MAX_REVIEWER_DIRS_PER_ACCOUNT}. Ask a PI/admin "
+                "if you genuinely need more."
+            ),
+        )
+
     label = (body.label or "").strip()
     if not label:
         label = svc.default_label(store.file_id_to_filename[query_id])
-
-    slug = _resolve_model(store, body.model_slug)
-    variant = resolve_variant(store, body.variant)
 
     record = await db.create_reviewer_dir(
         label=label,
@@ -83,7 +133,8 @@ async def create_reviewer_dir(
     )
     full = await db.get_reviewer_dir(record["dir_id"])
     assert full is not None
-    qq = await store.ensure_qq_async(slug)
+    # Always 'awaiting_match' here by construction: the directory has exactly
+    # one member, and only a human confirmation adds a second.
     return svc.to_api(full, qq, slug)
 
 

@@ -38,9 +38,14 @@ export default function CenterArea() {
   const predictions = usePredictions(activeQueryId, activeModel, activeVariant)
 
   // Derive current prediction
+  // Looked up BY RANK, not by array index. Reviewer directories are anchored at
+  // rank 11 regardless of how many model candidates came back, so the list can
+  // have a gap in it and index arithmetic would pair a rank with the wrong card.
   const currentPrediction = useMemo(() => {
     if (!predictions.data?.predictions) return null
-    return predictions.data.predictions[activePredictionRank - 1] ?? null
+    return (
+      predictions.data.predictions.find((p) => p.rank === activePredictionRank) ?? null
+    )
   }, [predictions.data, activePredictionRank])
 
   // Derive candidate info — override wins over the normal prediction path

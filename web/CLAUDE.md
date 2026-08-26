@@ -34,11 +34,13 @@ Scholar review web application for the localLatin Latin manuscript retrieval pro
 - `services/qq_matrix.py` — reads `qq_sim_<slug>.npz` and answers "how similar is this query
   to this set of member queries" (max over members, self excluded).
 - `services/reviewer_dirs.py` — scoring and shaping of reviewer directories, shared by the
-  predictions, reviewer_dirs and feedback routers. Status is **derived**, never stored: a
-  directory is `matched` once any non-member query reaches `NO_MATCH_BAND` against it.
-- `bands.py` — the 0.5 / 0.7 confidence thresholds. **The backend owns these numbers** because
-  it decides directory status with them; `GET /api/models` serves them as `confidence_bands`
-  and the frontend's `src/api/bands.ts` reads them rather than hardcoding a copy.
+  predictions, reviewer_dirs, feedback and packets routers. Status is **derived**, never
+  stored: a directory is `matched` once a human has filed a second document into it
+  (`len(members) > 1`), never from similarity alone.
+- `bands.py` — the 0.5 / 0.7 confidence thresholds. **The backend owns these numbers**;
+  `GET /api/models` serves them as `confidence_bands` and the frontend's `src/api/bands.ts`
+  reads them rather than hardcoding a copy. Issue #101 should consume `bandsFrom()` instead
+  of keeping its own literals in `utils/confidenceBands.ts`.
 - `routers/` — One file per API domain (queries, predictions, token_map, feedback,
   reviewer_dirs, stats)
 - `models.py` — All Pydantic request/response models
@@ -47,18 +49,26 @@ Scholar review web application for the localLatin Latin manuscript retrieval pro
 
 `POST /api/reviewer_dirs {query_file_id, label?}` -> 201 `ReviewerDir`. Any signed-in, approved
 reviewer may call it; there is no extra role gate, since reviewers are exactly who the feature
-is for. The response carries the *computed* status, which is `awaiting_match` unless some other
-query already scores at or above the band against the seed.
+is for. The 201 always reports `awaiting_match`.
+
+Creation is refused with 409 (the query already seeds one), 422 (the seed is a guard-excluded
+document, so it could never be matched), 429 (`MAX_REVIEWER_DIRS_PER_ACCOUNT`) or 400 (unknown
+model). All of these exist because **nothing can ever remove a directory** — both tables are
+append-only — so a permanent artefact must not be creatable by a double-click or a typo.
 
 Created directories merge into every subsequent predictions response as extra candidates with
-`source: 'reviewer'`, scored live from the q-q matrix (max over member documents). They are
-**appended after** the model's ten, never interleaved, so a model candidate's rank still means
-what it always did and every historical feedback row keeps pointing at the candidate its
-reviewer actually chose. `MAX_CANDIDATE_RANK` in `models.py` is what lets feedback record a
-rank past 10.
+`source: 'reviewer'`, scored live from the q-q matrix (max over member documents), capped at
+`MAX_REVIEWER_CANDIDATES` best-first. Their ranks are **anchored at `MAX_MODEL_RANK + 1`**, not
+offset by however many model candidates a given `top_k` returned, so a rank means the same
+thing in every response and in every feedback row. Model ranks are untouched.
+
+**`correct_dir` is always resolved server-side from `correct_rank`**, never read from the
+request body, and a rank with no candidate behind it is a 422. That is both the anti-spoof
+guard and the real rank validation — `MAX_CANDIDATE_RANK` is only an outer bound.
 
 Confirming a reviewer directory as the correct answer appends that query to the directory's
-members (idempotent, `INSERT OR IGNORE`), so later queries are scored against the whole group.
+members (idempotent, `INSERT OR IGNORE`, and the directory must exist). That membership row is
+what flips the badge to `matched`, which is why it may only follow a server-resolved choice.
 
 ## Data Contract
 

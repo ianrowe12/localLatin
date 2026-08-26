@@ -109,7 +109,12 @@ class ReviewerDir(BaseModel):
     variant: Optional[str] = None
     # Best score any non-member query reaches against this directory under the
     # model it is being reported for. None when that model has no q-q matrix.
+    # Informational only: `status` is decided by human confirmation, never by
+    # this number. See services/reviewer_dirs.py.
     best_match_score: Optional[float] = None
+    # best_match_score crosses the no-match band, i.e. the model sees something
+    # related that no reviewer has confirmed yet.
+    has_potential_match: bool = False
 
 
 class PredictionResponse(BaseModel):
@@ -278,16 +283,18 @@ class AccountCreateResponse(BaseModel):
 
 
 #: The retrieval CSVs rank ten labelled directories, so a model candidate's
-#: rank is always 1..10 and every feedback row written before reviewer
-#: directories existed is within that range.
+#: rank is always 1..10, every feedback row written before reviewer directories
+#: existed is within that range, and reviewer candidates start at 11.
 MAX_MODEL_RANK = 10
 
-#: Reviewer-created directories are *appended* after the model's ten, so they
-#: occupy ranks 11 and up. Model candidate ranks are therefore unchanged by
-#: this feature and every historical feedback row keeps its exact meaning. The
-#: ceiling exists only to bound the input; a query with 90 reviewer directories
-#: on it is not a case worth supporting.
-MAX_CANDIDATE_RANK = 99
+#: Outer bound on `correct_rank`, and nothing more. It is NOT the validation
+#: that matters: the router resolves every submitted rank against the candidate
+#: list actually served for that query and rejects any rank with no candidate
+#: behind it, so a rank of 47 with no reviewer directories in the database is a
+#: 422 exactly as it was before this feature existed. This constant only keeps
+#: absurd input from reaching that lookup, and is deliberately just above
+#: MAX_MODEL_RANK + MAX_REVIEWER_CANDIDATES.
+MAX_CANDIDATE_RANK = MAX_MODEL_RANK + 5
 
 
 class FeedbackCreate(BaseModel):
