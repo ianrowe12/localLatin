@@ -251,6 +251,128 @@ def test_smoke_script_checks_every_variant_and_the_notes_reload_path() -> None:
     assert "write-check CSV export" in source
 
 
+def test_smoke_script_checks_the_ux_v2_features() -> None:
+    """Issue #98: bands, reviewer directories and shared notes are smoke-covered.
+
+    Each of these degrades silently rather than erroring when its data is
+    missing on the host -- the frontend falls back to its own band literals, a
+    model without a q-q matrix simply serves no reviewer-directory candidates,
+    and a pre-#96 backend renders a blank attribution line. A deploy would go
+    green through all three, so the smoke run has to assert them explicitly.
+    """
+    source = (ROOT / "scripts" / "webapp" / "smoke_reviewer_pilot.py").read_text(
+        encoding="utf-8"
+    )
+
+    # Bands: the values, not just the key. These are the numbers the PI fixed.
+    assert 'EXPECTED_BANDS = {"no_match": 0.5, "verify": 0.7}' in source
+    assert "check_confidence_bands" in source
+    assert "confidence_bands" in source
+
+    # Reviewer directories: a missing qq_sim_<slug>.npz must be fatal.
+    assert "check_reviewer_dir_support" in source
+    assert "supports_reviewer_dirs" in source
+    assert "seeded_dirs" in source
+
+    # Shared notes: attribution is the field that proves #96 is deployed.
+    assert "check_shared_note_shape" in source
+    assert "reviewer_username" in source
+
+
+def test_smoke_write_checks_are_all_behind_the_write_flag() -> None:
+    """Nothing that mutates production may run on an ordinary deploy.
+
+    Reviewer directories can never be deleted and the password round-trip can
+    invalidate the pipeline's own credentials, so both must sit inside the
+    `if args.write_check:` block. This test reads the parsed module rather than
+    grepping, so a call moved out of the block is caught even if the text is
+    unchanged.
+    """
+    import ast
+
+    script = ROOT / "scripts" / "webapp" / "smoke_reviewer_pilot.py"
+    tree = ast.parse(script.read_text(encoding="utf-8"))
+
+    main_fn = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == "main"
+    )
+    guarded_block = next(
+        node
+        for node in main_fn.body
+        if isinstance(node, ast.If)
+        and isinstance(node.test, ast.Attribute)
+        and node.test.attr == "write_check"
+    )
+
+    def called_names(nodes) -> set[str]:
+        names = set()
+        for node in nodes:
+            for inner in ast.walk(node):
+                if isinstance(inner, ast.Call) and isinstance(inner.func, ast.Name):
+                    names.add(inner.func.id)
+        return names
+
+    guarded = called_names(guarded_block.body)
+    unguarded = called_names(
+        [node for node in main_fn.body if node is not guarded_block]
+    )
+
+    must_be_guarded = {
+        "check_notes_round_trip",
+        "check_reviewer_dir_create_round_trip",
+        "check_password_change_round_trip",
+    }
+    assert must_be_guarded <= guarded, (
+        f"write checks missing from the --write-check block: {sorted(must_be_guarded - guarded)}"
+    )
+    leaked = must_be_guarded & unguarded
+    assert not leaked, f"write checks run unconditionally: {sorted(leaked)}"
+
+    # The reviewer-directory create must remain a single permanent artefact.
+    source = script.read_text(encoding="utf-8")
+    assert source.count('"/api/reviewer_dirs",') == 2, (
+        "expected exactly two POST sites to /api/reviewer_dirs (the create and its "
+        "duplicate probe) — each additional one leaves another undeletable directory"
+    )
+    assert source.count("check_reviewer_dir_create_round_trip") == 2  # the def and one call
+    assert source.count("check_password_change_round_trip") == 2
+
+
+def test_smoke_password_round_trip_restores_and_verifies() -> None:
+    """A failed restore must name the recovery path, and never print the password."""
+    source = (ROOT / "scripts" / "webapp" / "smoke_reviewer_pilot.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "RESTORE FAILED" in source
+    assert "RESTORE UNVERIFIED" in source
+    assert "Provision smoke account" in source
+    # The interim value is derived by a fixed rule, so a crash between the two
+    # changes is recoverable from this source rather than lost with the process.
+    assert 'interim = f"{password}.smoke-rotate"' in source
+
+
+def test_provision_workflow_never_takes_a_plaintext_password() -> None:
+    """workflow_dispatch inputs are readable by anyone with repo access.
+
+    So the provisioning workflow takes a PBKDF2 hash, and the plaintext goes
+    straight into the repo secret from the operator's machine.
+    """
+    workflow = ROOT / ".github" / "workflows" / "provision-smoke-account.yml"
+    source = workflow.read_text(encoding="utf-8")
+
+    assert "password_hash:" in source
+    assert "NOT the password" in source
+    assert "confirm" in source and "PROVISION" in source
+    # It must never accept a bare `password` input.
+    assert "\n      password:" not in source
+    # Guarded to the production runner, and backs the DB up before writing.
+    assert "self-hosted" in source and "production" in source
+    assert "pre-provision-" in source
+
+
 def test_feedback_backup_script_is_valid_and_change_aware() -> None:
     script = ROOT / "scripts" / "webapp" / "backup_feedback_db.py"
     source = script.read_text(encoding="utf-8")
