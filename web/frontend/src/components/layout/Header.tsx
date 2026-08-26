@@ -215,9 +215,15 @@ export default function Header() {
           <button
             type="button"
             onClick={() => {
+              // No `top_k`: the server owns the default, the same way it owns
+              // the confidence bands. This used to hardcode `top_k=10`, which
+              // silently truncated every reviewer-created directory out of the
+              // downloaded packet while the backend test — which omitted the
+              // parameter and so got the default — passed. A caller that names
+              // no bound cannot drift away from the server's one.
               const model = encodeURIComponent(activeModel)
               window.open(
-                apiUrl(`/api/packets/review/${activeQueryId}?model=${model}&top_k=10`),
+                apiUrl(`/api/packets/review/${activeQueryId}?model=${model}`),
                 '_blank',
               )
             }}

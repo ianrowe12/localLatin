@@ -48,6 +48,7 @@ from __future__ import annotations
 from web.bands import REVIEWER_DIR_MATCH_BAND
 from web.models import (
     MAX_MODEL_RANK,
+    MAX_REVIEWER_CANDIDATES,
     CandidateFile,
     CandidateSource,
     Prediction,
@@ -61,10 +62,6 @@ from web.services.qq_matrix import QQMatrix
 #: directory name in the corpus, so `correct_dir` and the candidate-files route
 #: can tell the two apart by name alone.
 REVIEWER_DIR_PREFIX = "reviewer-dir-"
-
-#: How many reviewer directories one candidate list may show, best first.
-#: Bounds a permanent, append-only, reviewer-authored list.
-MAX_REVIEWER_CANDIDATES = 5
 
 #: How many directories one reviewer account may create. A guard against a
 #: runaway client, not a scholarly limit; every one of these is permanent.
@@ -139,42 +136,70 @@ def member_files(store: DataStore, record: dict) -> list[CandidateFile]:
     return files
 
 
-def candidates_for_packet(
+def packet_dirs_for_query(
     *,
     store: DataStore,
     records: list[dict],
     qq: QQMatrix | None,
     query_id: int,
-) -> list[Prediction]:
-    """What the review packet documents: directories this query could pick, plus
-    the one it already did.
+) -> list[dict]:
+    """Reviewer directories a packet should document for this query. NO RANKS.
 
-    `candidates_for_query` deliberately hides a directory from its own members,
-    which is right for a live candidate list and wrong for a packet: confirming
-    a directory makes the query a member, so the very directory the feedback
-    section names at rank 11 would be the one missing from the candidate list.
-    Member directories are listed first, since a confirmed answer is the most
-    relevant thing on the page.
+    Two groups, both unranked:
+
+    * ``filed_into`` -- the query is a member, so it is no longer offered them;
+    * ``offered``    -- currently scorable candidates for it.
+
+    RANKS ARE DELIBERATELY ABSENT, and that is the whole fix. A reviewer
+    directory's rank is computed live, and confirming one *changes* that
+    ranking: the query joins the directory, the directory stops being offered to
+    it, and everything below shifts up. A packet built after the confirmation
+    therefore cannot reproduce the ranks the reviewer saw.
+
+    Measured on a real packet rather than reasoned about: a reviewer confirmed
+    rank 12, and the regenerated list put a different directory at 12, on the
+    same page as a feedback row reading "rank 12". Renumbering a concatenated
+    list was one way to get that wrong; recomputing the live list is another,
+    and the second survived the first fix.
+
+    Printing no rank removes the class of error. `dir_id` is the join key
+    instead, and it is the same string the Reviewer Outcomes section prints
+    beside the recorded rank -- both sides read the stored, server-resolved
+    `correct_dir`, so they cannot disagree.
+
+    `score` is still reported for an offered directory: it is a property of the
+    pair, not a position in a list, so it does not drift the same way.
     """
-    member_records = [
-        record
-        for record in records
-        if int(query_id) in [int(m) for m in record.get("member_query_ids", [])]
-    ]
-    predictions: list[Prediction] = []
-    for record in member_records:
+    out: list[dict] = []
+    for record in records:
         members = [int(m) for m in record.get("member_query_ids", [])]
-        score = qq.score(int(query_id), members) if qq is not None else None
-        predictions.append(
-            _to_prediction(store, record, score if score is not None else 0.0, 0)
+        is_member = int(query_id) in members
+        score = (
+            None
+            if is_member
+            else (qq.score(int(query_id), members) if qq is not None else None)
         )
-    predictions.extend(
-        candidates_for_query(store=store, records=records, qq=qq, query_id=query_id)
-    )
-    # Renumber so the concatenation is contiguous from the anchor.
-    for offset, prediction in enumerate(predictions):
-        prediction.rank = MAX_MODEL_RANK + 1 + offset
-    return predictions
+        if not is_member and score is None:
+            continue  # neither offered to this query nor filed into by it
+        files = member_files(store, record)
+        out.append(
+            {
+                "dir_id": record["dir_id"],
+                "label": record["label"],
+                "created_by": str(record["created_by"] or ""),
+                "seed_query_id": int(record["seed_query_id"]),
+                "group": "filed_into" if is_member else "offered",
+                "is_seed": int(record["seed_query_id"]) == int(query_id),
+                "score": score,
+                "member_query_ids": members,
+                "candidate_files": [
+                    {"filename": f.filename, "text": f.text} for f in files
+                ],
+            }
+        )
+    # Filed-into first (that is the answer of record), then best-scoring offers.
+    out.sort(key=lambda e: (e["group"] != "filed_into", -(e["score"] or 0.0)))
+    return out
 
 
 def candidates_for_query(

@@ -27,6 +27,7 @@ from fastapi.testclient import TestClient
 
 from web.app import create_app
 from web.bands import REVIEWER_DIR_MATCH_BAND
+from web.models import MAX_CANDIDATE_RANK
 
 QUERIES = ["query-0.txt", "query-1.txt", "query-2.txt", "query-3.txt"]
 
@@ -815,30 +816,156 @@ def test_unknown_model_slug_is_rejected(tmp_path: Path) -> None:
         client.__exit__(None, None, None)
 
 
-def test_review_packet_includes_reviewer_directories(tmp_path: Path) -> None:
-    """A packet must not stop at rank 10 while the feedback says rank 11."""
+def _packet_text(client: TestClient, query_id: int, **params) -> str:
+    response = client.get(
+        f"/api/packets/review/{query_id}", params={"model": "bowphs/LaTa", **params}
+    )
+    assert response.status_code == 200, response.text
+    assert response.headers["content-type"] == "application/pdf"
+
+    import fitz
+
+    with fitz.open(stream=response.content, filetype="pdf") as doc:
+        text = "\n".join(page.get_text() for page in doc)
+    return " ".join(text.split())
+
+
+def _squashed(client: TestClient, query_id: int, **params) -> str:
+    """Packet text with ALL whitespace removed.
+
+    The renderer hard-wraps long lines *mid-token*, so a directory id can be
+    split across two lines with no hyphen to mark the break. Collapsing runs of
+    whitespace to one space is not enough -- it leaves "reviewer- dir-abc123".
+    Removing whitespace entirely is what makes an id assertion test the packet's
+    content rather than its typography.
+    """
+    return "".join(_packet_text(client, query_id, **params).split())
+
+
+def test_review_packet_includes_reviewer_dirs_at_the_top_k_the_ui_sends(
+    tmp_path: Path,
+) -> None:
+    """The packet a human downloads must contain the reviewer directories.
+
+    `top_k=10` is what Header.tsx used to hardcode, and it is the largest legal
+    value. The previous version passed only because the test omitted `top_k`
+    and got the new default, while the real caller truncated every reviewer
+    directory away -- the component was verified, the path was not. `top_k` now
+    bounds the MODEL half only, so this holds at every legal value and for a
+    caller that names none.
+    """
     client = _signed_in(tmp_path)
     try:
         created = _create_dir(client, 0, "Unattested homily")
-        rank = before_rank(client, 1, created["dir_id"])
-        _submit_match(client, query_id=1, rank=rank)
 
-        response = client.get(
-            "/api/packets/review/1", params={"model": "bowphs/LaTa"}
-        )
-        assert response.status_code == 200
-        assert response.headers["content-type"] == "application/pdf"
-
-        import fitz
-
-        with fitz.open(stream=response.content, filetype="pdf") as doc:
-            text = "\n".join(page.get_text() for page in doc)
-        assert f"Match {rank}: Unattested homily" in text
-        assert created["dir_id"] in text
-        assert "text of query-0.txt" in text
-        assert f"rank {rank}" in text
+        for top_k in (1, 2, 10, None):
+            params = {} if top_k is None else {"top_k": top_k}
+            text = _packet_text(client, 1, **params)
+            squashed = "".join(text.split())
+            assert "Reviewer-Created Directories" in text, top_k
+            assert "Unattested homily" in text, top_k
+            assert created["dir_id"] in squashed, top_k
+            assert "text of query-0.txt" in text, top_k
     finally:
         client.__exit__(None, None, None)
+
+
+def test_review_packet_still_bounds_the_model_candidates(tmp_path: Path) -> None:
+    """`top_k` keeps its original meaning for the model's own ranks."""
+    client = _signed_in(tmp_path)
+    try:
+        _create_dir(client, 0)
+        text = _packet_text(client, 1, top_k=1)
+        assert "Match 1: candidate-a" in text
+        assert "candidate-b" not in text
+        assert "Match 2:" not in text
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_packet_never_prints_a_rank_for_a_reviewer_directory(
+    tmp_path: Path,
+) -> None:
+    """No reviewer directory may appear under any "Match N" heading.
+
+    This is the whole fix for the misattribution. A reviewer directory's rank
+    is live: confirming one makes the query a member, drops it out of the
+    candidate list, and shifts every directory below it up. So a packet
+    generated after the confirmation cannot reproduce the ranks the reviewer
+    saw -- measured, not assumed. Renumbering was one way to print the wrong
+    directory under a rank; recomputing is another, and it survived the first
+    fix. Printing no rank at all is what removes the class of error.
+
+    The reviewer's own repro, reproduced here: confirm the SECOND live reviewer
+    directory, then check that no "Match <that rank>" names any reviewer
+    directory, and that the feedback row and the unranked section agree via
+    dir_id.
+    """
+    client = _signed_in(tmp_path, n_queries=12)
+    try:
+        for query_id in (0, 2, 4, 5):
+            assert (
+                client.post(
+                    "/api/reviewer_dirs", json={"query_file_id": query_id}
+                ).status_code
+                == 201
+            )
+
+        live = [
+            (p["rank"], p["dir_name"])
+            for p in client.get(
+                "/api/query/1/predictions", params={"model": "bowphs/LaTa"}
+            ).json()["predictions"]
+            if p["source"] == "reviewer"
+        ]
+        assert len(live) >= 3, live
+        chosen_rank, chosen_dir = live[1]  # deliberately NOT the first
+        _submit_match(client, query_id=1, rank=chosen_rank)
+
+        text = _packet_text(client, 1, top_k=10)
+
+        squashed = _squashed(client, 1, top_k=10)
+
+        # The feedback row is the authoritative pairing, and names the id.
+        assert f"rank{chosen_rank}|{chosen_dir}" in squashed
+
+        # No reviewer directory is printed under ANY rank -- so in particular
+        # none is printed under the rank the reviewer's answer refers to.
+        for _rank, dir_id in live:
+            label = _label_of(client, dir_id).replace(" ", "")
+            assert f"Match{_rank}:{label}" not in squashed, (_rank, dir_id)
+        for n in range(1, MAX_CANDIDATE_RANK + 1):
+            assert f"Match{n}:Newdirectory" not in squashed, n
+
+        # They are all present, unranked, joined by dir_id.
+        assert "Reviewer-Created Directories" in text
+        assert "Listed WITHOUT a rank" in text
+        chosen_label = _label_of(client, chosen_dir).replace(" ", "")
+        assert f"{chosen_label}({chosen_dir})" in squashed
+        assert "Filedinto:" in squashed
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_packet_model_ranks_are_unaffected_by_reviewer_directories(
+    tmp_path: Path,
+) -> None:
+    client = _signed_in(tmp_path, n_queries=12)
+    try:
+        text_before = _packet_text(client, 1, top_k=10)
+        for query_id in (0, 2, 4):
+            client.post("/api/reviewer_dirs", json={"query_file_id": query_id})
+        text_after = _packet_text(client, 1, top_k=10)
+        for line in ("Match 1: candidate-a", "Match 2: candidate-b"):
+            assert line in text_before
+            assert line in text_after
+    finally:
+        client.__exit__(None, None, None)
+
+
+def _label_of(client: TestClient, dir_id: str) -> str:
+    return client.get(f"/api/reviewer_dirs/{dir_id}").json()["label"]
+
 
 
 # --- feedback integration --------------------------------------------------

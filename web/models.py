@@ -307,14 +307,20 @@ class PasswordResetResponse(BaseModel):
 #: existed is within that range, and reviewer candidates start at 11.
 MAX_MODEL_RANK = 10
 
+#: How many reviewer directories one candidate list may show, best first.
+#: Bounds a permanent, append-only, reviewer-authored list. Lives here rather
+#: than in services/reviewer_dirs.py so MAX_CANDIDATE_RANK can be *derived*
+#: from it: the two used to agree only numerically, across modules, which is
+#: exactly how a pair of constants drifts apart.
+MAX_REVIEWER_CANDIDATES = 5
+
 #: Outer bound on `correct_rank`, and nothing more. It is NOT the validation
 #: that matters: the router resolves every submitted rank against the candidate
 #: list actually served for that query and rejects any rank with no candidate
 #: behind it, so a rank of 47 with no reviewer directories in the database is a
 #: 422 exactly as it was before this feature existed. This constant only keeps
-#: absurd input from reaching that lookup, and is deliberately just above
-#: MAX_MODEL_RANK + MAX_REVIEWER_CANDIDATES.
-MAX_CANDIDATE_RANK = MAX_MODEL_RANK + 5
+#: absurd input from reaching that lookup.
+MAX_CANDIDATE_RANK = MAX_MODEL_RANK + MAX_REVIEWER_CANDIDATES
 
 
 class FeedbackCreate(BaseModel):
