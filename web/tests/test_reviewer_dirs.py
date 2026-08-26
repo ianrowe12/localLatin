@@ -917,6 +917,47 @@ def _legacy_db(path: Path) -> None:
     connection.close()
 
 
+def test_tables_exist_immediately_after_connect(tmp_path: Path) -> None:
+    """Opening the database is enough to have the reviewer-directory tables.
+
+    Pins the invariant directly -- no app, no request, no session -- so it would
+    catch the DDL being dropped, or moved somewhere `_open_connection` never
+    calls.
+
+    It is deliberately NOT claimed to catch more than that. Merging #100 moved
+    this block into `_assert_account_schema`, and the honest finding is that
+    doing so broke nothing: that method's `raise` is inside an `if missing:`,
+    so the block stayed reachable, and `_open_connection` calls `_migrate()`
+    and `_assert_account_schema()` back to back before the same commit. The
+    tables were still created on every connect. Moving it back was a
+    readability fix -- a migration belongs in the migration -- not a bug fix,
+    and this test passes either way. Recorded here because the first write-up
+    of that merge called it dead code and claimed a test caught it; neither was
+    true, and the next person to read this diff deserves the accurate version.
+    """
+    import asyncio
+
+    from web.services.feedback_db import FeedbackDB
+
+    db_path = tmp_path / "fresh.db"
+
+    async def tables_after_connect() -> set[str]:
+        db = FeedbackDB(db_path)
+        await db.connect()
+        try:
+            rows = await (
+                await db._db.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                )
+            ).fetchall()
+            return {r["name"] for r in rows}
+        finally:
+            await db.close()
+
+    tables = asyncio.run(tables_after_connect())
+    assert {"reviewer_dirs", "reviewer_dir_members"} <= tables, sorted(tables)
+
+
 def test_migration_is_additive_on_a_legacy_database(tmp_path: Path) -> None:
     config_path = _write_fixture_data(tmp_path)
     db_path = tmp_path / "runs" / "active" / "resubmit" / "webapp" / "feedback.db"
