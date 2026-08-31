@@ -113,7 +113,9 @@ Task B uses the same embeddings in a scholar-facing retrieval workflow. Given a 
 
 \subsection{Dataset Construction}
 
-The corpus contains 1,705 Medieval Latin manuscript fragments from canon law. The labelled files belong to 840 directories, where each directory represents one legal text and its manuscript copies. Directory sizes range from one to ten files. The benchmark asks for strict equivalence, so variants inside a directory count as positive matches and files from different directories count as negatives.
+The corpus contains 1,705 Medieval Latin canon-law fragments from the Carolingian Canon Law project (CCL), an ongoing digital edition founded in 2009 \citep{firey2009ccl, eichbauer2014ccl}. Its manuscripts are mostly ninth-century, and most have never been edited to modern standards, so these texts exist in machine-readable form nowhere else. Transcribers work from manuscript images under published protocols, since 2019 in an online editor beside a IIIF image of the folio. Every transcription then passes a proofreading desk, where an approved proofreader verifies it against the image to the letter and adds TEI-P5 markup before publication. The CCL interface credits the transcriber and proofreader of each unit.
+
+CCL labels every unit twice, and our directories reuse the second label. A siglum names the manuscript witness by place, library, and shelfmark. A key names the original source, such as a fourth-century council or a papal decretal, and encodes its date and type. Each of our 840 directories is one key, and the files inside it are surviving hand copies of that source, each free to vary from the others. The benchmark therefore asks a scholarly question: does an unidentified witness belong to a known source? Directory sizes range from one to ten files. Variants inside a directory count as positive matches and files from different directories count as negatives.
 
 \subsection{Train/Test Split}
 
@@ -301,6 +303,28 @@ The attribution results need a narrow reading. Because ABTT changes the cosine f
 The study covers one domain, medieval canon law, and one language, Latin. The 1,705-fragment corpus is large for this field, but small by current NLP standards. We test six models; others may behave differently. The mid-depth retrieval collapse we document holds for the three T5 encoders in our set, and we cannot separate architecture, pre-training objective, and checkpoint as its cause. ABTT also needs enough text to estimate principal components, so smaller archives need separate study.
 
 Task B simulates a human-in-the-loop workflow by counting a query as successful when its labelled directory appears in the shortlist. That measures ranking quality, not the full judgment load a working scholar carries. Our attribution analysis is also local to fixed query-candidate scores. It does not explain model behavior globally, and it does not replace expert reading of retrieved passages. The consistent attribution effect is improved leave-one-out rank faithfulness; other rationale metrics remain threshold-dependent and should not be reported as a broad attribution-quality gain.
+
+% ---------------------------------------------------------------------------
+% ACKNOWLEDGMENTS placeholder. ACL/ARR: omit under [review], restore under
+% [final] or [preprint]. Uncomment the block below when de-anonymising.
+%
+% \section*{Acknowledgments}
+% The corpus in this paper is drawn from the Carolingian Canon Law project
+% (CCL), directed by Abigail Firey at the University of Kentucky. We thank
+% the CCL transcribers and proofreaders, credited individually in the CCL
+% interface, whose to-the-letter work makes this benchmark possible.
+%
+% OPEN DECISIONS for Ian and Siddique (issue #39):
+%   (a) CO-AUTHORSHIP. Prof. Firey created the CCL in 2009 and has supervised
+%       it since; the dataset is her project's output. Decide whether to offer
+%       her co-authorship rather than an acknowledgment. This changes the
+%       author block, the anonymity handling, and the acknowledgment text.
+%   (b) LICENSING AND USAGE. Her email does NOT state a licence or any terms
+%       for redistributing the transcriptions. This must be asked before we
+%       release the benchmark or write the ARR responsible-research checklist
+%       and Ethics/data-statement language. She offered to meet in person;
+%       settle licence, attribution wording and release scope there.
+% ---------------------------------------------------------------------------
 
 \bibliography{custom}
 

@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 NLP research project studying **Latin manuscript text retrieval** using internal representations of pre-trained language models. The core question: can embeddings from intermediate transformer layers retrieve related Latin manuscript fragments, and can post-processing (SIF weighting + ABTT/PC removal) fix the "anisotropy dip" that collapses retrieval in middle layers?
 
+**Dataset provenance**: the corpus comes from the Carolingian Canon Law project (CCL, <https://ccl.rch.uky.edu>), created by Prof. Abigail Firey at the University of Kentucky in 2009 and supervised by her since. It is NOT from a Latin department; do not write that anywhere. Texts are early medieval (mostly 9th-century) canon-law manuscripts, transcribed manually from manuscript images under published protocols and then checked to the letter by an approved proofreader who adds TEI-P5 markup. Directories correspond to CCL source *keys* (the original text: a conciliar canon, papal decretal, royal capitulary, or patristic excerpt); files are *witnesses*, individual hand copies identified by siglum (Place-Library-Shelfmark). Licensing terms are still unconfirmed.
+
 The dataset is 1,278 `.txt` files in 538 directories under `data/canon/`, where each directory represents one original text. The labelled retrieval corpus is 1,705 files in 840 directories under `data/canon_labelled/`, and the unlabelled query set is 2,238 files under `data/canon_unlabelled/`. Active work is paper resubmission — see GAMEPLAN.md. Primary metric: Assignment Accuracy.
 
 ## Environment & Running Code
