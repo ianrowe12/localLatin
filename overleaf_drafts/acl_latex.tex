@@ -113,9 +113,9 @@ Task B uses the same embeddings in a scholar-facing retrieval workflow. Given a 
 
 \subsection{Dataset Construction}
 
-The corpus contains 1,705 Medieval Latin canon-law fragments from the Carolingian Canon Law project (CCL), an ongoing digital edition founded in 2009 \citep{firey2009ccl, eichbauer2014ccl}. Its manuscripts are mostly ninth-century, and most have never been edited to modern standards, so these texts exist in machine-readable form nowhere else. Transcribers work from manuscript images under published protocols, since 2019 in an online editor beside a IIIF image of the folio. Every transcription then passes a proofreading desk, where an approved proofreader verifies it against the image to the letter and adds TEI-P5 markup before publication. The CCL interface credits the transcriber and proofreader of each unit.
+The corpus contains 1,705 Medieval Latin canon-law fragments from the Carolingian Canon Law project (CCL), an ongoing digital edition founded in 2009 \citep{firey2009ccl, eichbauer2014ccl}. Its manuscripts are mostly ninth-century, and most have never been edited to modern standards. Transcription is manual, mostly from manuscript images and for some texts from eighteenth-century printings. Before 2019 transcribers worked from microfilm, and CCL contributors converted the files to TEI-P5. Since 2019 they work in an editor beside a IIIF image of the folio, and each transcription then passes a proofreading desk, where an approved proofreader verifies it against the image to the letter and adds TEI markup. The interface credits each unit's transcriber and proofreader. We hold the fragments as plain text with the labels as supplied, and we are confirming with CCL how they were extracted from the TEI.
 
-CCL labels every unit twice, and our directories reuse the second label. A siglum names the manuscript witness by place, library, and shelfmark. A key names the original source, such as a fourth-century council or a papal decretal, and encodes its date and type. Each of our 840 directories is one key, and the files inside it are surviving hand copies of that source, each free to vary from the others. The benchmark therefore asks a scholarly question: does an unidentified witness belong to a known source? Directory sizes range from one to ten files. Variants inside a directory count as positive matches and files from different directories count as negatives.
+CCL labels every unit twice, and our directories reuse the second label. A siglum names the manuscript witness; a key names the original source, such as a fourth-century council or a papal decretal. Most of our 840 directories are keys, a minority name the source by a modern edition citation or a biblical reference, and a handful group passages whose source is unidentified, all of them singletons that contribute no positive pairs. The files in a directory are surviving hand copies of one source, each free to vary from the others, so the benchmark asks whether an unidentified witness belongs to a known source. Directory sizes range from one to ten files. Variants inside a directory count as positive matches and files from different directories count as negatives.
 
 \subsection{Train/Test Split}
 
@@ -314,7 +314,7 @@ Task B simulates a human-in-the-loop workflow by counting a query as successful 
 % the CCL transcribers and proofreaders, credited individually in the CCL
 % interface, whose to-the-letter work makes this benchmark possible.
 %
-% OPEN DECISIONS for Ian and Siddique (issue #39):
+% OPEN DECISIONS for the authors (issue #39):
 %   (a) CO-AUTHORSHIP. Prof. Firey created the CCL in 2009 and has supervised
 %       it since; the dataset is her project's output. Decide whether to offer
 %       her co-authorship rather than an acknowledgment. This changes the
@@ -324,6 +324,11 @@ Task B simulates a human-in-the-loop workflow by counting a query as successful 
 %       release the benchmark or write the ARR responsible-research checklist
 %       and Ethics/data-statement language. She offered to meet in person;
 %       settle licence, attribution wording and release scope there.
+%   (c) DATA DERIVATION. We hold the fragments as plain-text files; no script
+%       in this repo produces data/canon_labelled, and the published CCL form
+%       is TEI. Confirm with the project how the plain text and the directory
+%       labels were extracted from the TEI, so the paper can state the step
+%       instead of implying we redistribute the TEI verbatim.
 % ---------------------------------------------------------------------------
 
 \bibliography{custom}
