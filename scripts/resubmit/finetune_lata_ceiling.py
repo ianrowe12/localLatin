@@ -860,7 +860,9 @@ def main() -> None:
                 print(f"    mseed: no embeddings for {r['system']}, skipping")
                 continue
             label = args.ft_model_label if r["finetuned"] else args.model_name
-            configs.append((label, emb_dir, int(r["taskB_layer"]), r["method"]))
+            cfg = (label, emb_dir, int(r["taskB_layer"]), r["method"])
+            if cfg not in configs:  # two systems can select the same layer
+                configs.append(cfg)
         print(f"Task B multi-seed ({args.mseed_M} seeds from {args.mseed_base_seed})...")
         mseed_all, mseed_agg = run_mseed(
             split_meta, configs, args.mseed_M, args.mseed_base_seed, D_values
