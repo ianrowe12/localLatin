@@ -25,7 +25,7 @@ Suggested attach order for email: PDF table first (headline), then the two T5 ch
   - `overleaf_drafts/tables/attribution_metrics.tex` (full auto-generated)
   - `overleaf_drafts/tables/attribution_metrics_main.tex` (LaTa+PhilTa × IG+MaRC, main text)
   - `overleaf_drafts/tables/attribution_metrics_appendix.tex` (4 models × 9 methods)
-- Honest findings write-up: `overleaf_drafts/tables/FINDINGS_attribution.md`
+- Honest findings write-up: `docs/analyses/FINDINGS_attribution.md`
 - Chart script: `professor_share/make_charts.py`
 - Standalone table source: `professor_share/attribution_main_standalone.tex`
 
