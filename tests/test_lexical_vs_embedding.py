@@ -2,7 +2,9 @@
 
 Everything here runs on a tiny hand-built fixture whose right answers can be
 checked by eye, so the numbers the real run produces are backed by something
-other than "it ran without crashing". No embeddings, no corpus, no sklearn.
+other than "it ran without crashing". No corpus and no cached embeddings; the
+one test of the leak-free protocol builds its own 40x8 matrix and reaches
+scikit-learn through the evaluator, which CI installs.
 """
 from __future__ import annotations
 
@@ -25,7 +27,11 @@ from lexical_vs_embedding import (  # noqa: E402
     directed_rank_table,
     enumerate_pairs,
     frac_above_tau,
+    mcnemar_exact_p,
+    negative_confusion_flags,
     negative_confusion_rate,
+    operating_point,
+    paired_discordance,
     partner_ranks,
     rank_metrics,
     stratum_bounds,
@@ -322,3 +328,304 @@ def test_collect_rows_emits_one_row_per_stratum_with_the_reverse_slice(sim, over
     assert pd.notna(neg_row["neg_confusion_rate"])
     assert pd.isna(neg_row["recall_at_1"])
     assert frame[frame["stratum"] != NEG_STRATUM]["neg_confusion_rate"].isna().all()
+
+
+# --------------------------------------------------------------------------
+# Paired significance
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "b, c, expected",
+    [
+        (0, 0, 1.0),          # nothing discordant: no evidence of a difference
+        (1, 1, 1.0),          # one each way
+        (10, 0, 2 / 2 ** 10), # every discordant observation on one side
+        (3, 1, 0.625),        # 2 * (C(4,0) + C(4,1)) / 2**4
+        (1, 3, 0.625),        # and it is symmetric
+    ],
+)
+def test_mcnemar_exact_p_matches_the_hand_computed_binomial(b, c, expected):
+    assert mcnemar_exact_p(b, c) == pytest.approx(expected)
+
+
+def test_mcnemar_exact_p_is_never_above_one():
+    # b == c doubles a tail that is already more than half the mass.
+    assert all(mcnemar_exact_p(k, k) <= 1.0 for k in range(1, 12))
+
+
+def test_mcnemar_exact_p_rejects_negative_counts():
+    with pytest.raises(ValueError):
+        mcnemar_exact_p(-1, 3)
+
+
+def test_paired_discordance_counts_each_side_separately():
+    reference = np.array([True, True, False, False, True])
+    other = np.array([True, False, True, False, False])
+    assert paired_discordance(reference, other) == (2, 1)
+
+
+def test_paired_discordance_rejects_unaligned_vectors():
+    with pytest.raises(ValueError):
+        paired_discordance(np.array([True, False]), np.array([True]))
+
+
+def test_operating_point_reports_tpr_fpr_and_precision(sim, overlap):
+    pos = enumerate_pairs(FOLDER_IDS, overlap, positive=True)
+    neg = enumerate_pairs(FOLDER_IDS, overlap, positive=False)
+    op = operating_point(sim, pos, neg, tau=0.50)
+    n_pos_hit = int((sim[pos.i, pos.j] >= 0.50).sum())
+    n_neg_hit = int((sim[neg.i, neg.j] >= 0.50).sum())
+    assert op["op_n_tp"] == n_pos_hit
+    assert op["op_n_fp"] == n_neg_hit
+    assert op["op_tpr"] == pytest.approx(n_pos_hit / len(pos))
+    assert op["op_fpr"] == pytest.approx(n_neg_hit / len(neg))
+    assert op["op_precision"] == pytest.approx(n_pos_hit / (n_pos_hit + n_neg_hit))
+
+
+def test_negative_confusion_flags_line_up_with_the_rate(sim, overlap):
+    neg = enumerate_pairs(FOLDER_IDS, overlap, positive=False)
+    mask = neg.overlap >= 0.05
+    flags = negative_confusion_flags(sim, neg, mask, FOLDER_IDS)
+    rate, n = negative_confusion_rate(sim, neg, mask, FOLDER_IDS)
+    assert flags.size == n
+    assert flags.mean() == pytest.approx(rate)
+
+
+def test_negative_confusion_flags_are_aligned_across_methods(sim, overlap):
+    """A different score matrix must not change *which* observations exist.
+
+    That is what makes the reverse-slice McNemar pairing legitimate: usability
+    depends on the directory structure alone.
+    """
+    neg = enumerate_pairs(FOLDER_IDS, overlap, positive=False)
+    mask = neg.overlap >= 0.05
+    other = np.zeros_like(sim)
+    np.fill_diagonal(other, 1.0)
+    assert (
+        negative_confusion_flags(sim, neg, mask, FOLDER_IDS).size
+        == negative_confusion_flags(other, neg, mask, FOLDER_IDS).size
+    )
+
+
+def test_collect_rows_carries_mcnemar_columns_against_a_reference(sim, overlap):
+    from lexical_vs_embedding import (
+        COLUMN_ORDER,
+        NEG_STRATUM,
+        Method,
+        collect_rows,
+        method_outcomes,
+    )
+
+    pos = enumerate_pairs(FOLDER_IDS, overlap, positive=True)
+    neg = enumerate_pairs(FOLDER_IDS, overlap, positive=False)
+    edges = (0.25, 0.60)
+    masks = stratum_masks(pos, edges, hard_threshold=0.40)
+    bounds = stratum_bounds(pos, edges, hard_threshold=0.40)
+    neg_mask = neg.overlap >= 0.10
+
+    reference = Method("ref", "lexical", "ref", None, None, 0.5, sim)
+    # Blunt the second method on exactly one positive pair, (0, 1), the only
+    # member of the high tercile. The reference puts that partner at rank 1 from
+    # both endpoints; the copy drops it below every distractor, so it loses two
+    # directed observations and wins none back.
+    worse_sim = sim.copy()
+    worse_sim[0, 1] = worse_sim[1, 0] = 0.001
+    other = Method("other", "abtt", "other", 1, 10, 0.5, worse_sim)
+
+    ref_out = method_outcomes(reference, pos, neg, neg_mask, FOLDER_IDS)
+    rows = pd.DataFrame(
+        collect_rows(other, pos, masks, neg, neg_mask, FOLDER_IDS, bounds, 0.10,
+                     reference=ref_out)
+    )[COLUMN_ORDER]
+
+    high = rows[rows["stratum"] == TERCILE_STRATA[2]].iloc[0]
+    assert (high["mcnemar_b"], high["mcnemar_c"]) == (2, 0)
+    assert high["mcnemar_p"] == pytest.approx(0.5)
+    # The routing outcome moves too: that pair drops below tau for the copy only.
+    assert (high["routing_b"], high["routing_c"]) == (1, 0)
+    assert high["routing_p"] == pytest.approx(1.0)
+    # Nothing changed in the low tercile, so both sides agree there.
+    low = rows[rows["stratum"] == TERCILE_STRATA[0]].iloc[0]
+    assert (low["mcnemar_b"], low["mcnemar_c"]) == (0, 0)
+    assert low["mcnemar_p"] == pytest.approx(1.0)
+
+    # The reference method itself is compared against nothing.
+    self_rows = pd.DataFrame(
+        collect_rows(reference, pos, masks, neg, neg_mask, FOLDER_IDS, bounds, 0.10)
+    )[COLUMN_ORDER]
+    assert self_rows["mcnemar_p"].isna().all()
+    assert self_rows["routing_p"].isna().all()
+    # Operating-point columns are method-level, so they repeat on every row.
+    assert self_rows["op_tpr"].nunique() == 1
+    assert pd.notna(self_rows[self_rows["stratum"] == NEG_STRATUM].iloc[0]["op_tpr"])
+
+
+# --------------------------------------------------------------------------
+# Configuration selection and the embedding cache
+# --------------------------------------------------------------------------
+
+
+def test_paper_config_takes_the_highest_train_aucroc_row():
+    from lexical_vs_embedding import paper_config
+
+    results = pd.DataFrame(
+        {
+            "model": ["m", "m", "m", "other"],
+            "method": ["abtt_optimal", "abtt_optimal", "baseline", "abtt_optimal"],
+            "layer": [3, 7, 7, 1],
+            "train_aucroc": [0.80, 0.91, 0.99, 0.99],
+        }
+    )
+    assert int(paper_config(results, "m", "abtt_optimal")["layer"]) == 7
+
+
+def test_paper_config_ignores_rows_without_a_train_aucroc():
+    from lexical_vs_embedding import paper_config
+
+    results = pd.DataFrame(
+        {
+            "model": ["m", "m"],
+            "method": ["baseline", "baseline"],
+            "layer": [3, 7],
+            "train_aucroc": [0.80, np.nan],
+        }
+    )
+    assert int(paper_config(results, "m", "baseline")["layer"]) == 3
+
+
+def test_paper_config_refuses_to_guess_when_the_model_is_absent():
+    from lexical_vs_embedding import paper_config
+
+    results = pd.DataFrame(
+        {"model": ["m"], "method": ["baseline"], "layer": [1], "train_aucroc": [0.9]}
+    )
+    with pytest.raises(SystemExit):
+        paper_config(results, "missing", "baseline")
+
+
+@pytest.mark.parametrize(
+    "pooling, tail",
+    [
+        ("mean", "hidden_mean_tokempty/hidden_layer4_embeddings.npy"),
+        ("sif", "hidden_sif_tokempty/hidden_layer4_embeddings_sif.npy"),
+        ("lasttok", "hidden_lasttok_tokempty/hidden_layer4_embeddings_lasttok.npy"),
+    ],
+)
+def test_embedding_path_follows_the_repr_and_pooling_columns(pooling, tail):
+    from lexical_vs_embedding import embedding_path
+
+    path = embedding_path(Path("/bases"), "org/Model", "hidden", pooling, 4)
+    assert path == Path("/bases/phase9_bases/org_Model") / tail
+
+
+def test_embedding_path_rejects_an_unknown_pooling():
+    from lexical_vs_embedding import embedding_path
+
+    with pytest.raises(SystemExit):
+        embedding_path(Path("/bases"), "org/Model", "hidden", "weighted", 4)
+
+
+def _write_row_order(tmp_path: Path, names) -> Path:
+    path = tmp_path / "row_order.csv"
+    pd.DataFrame(
+        {"file_id": range(len(names)), "path": [f"canon_labelled/d/{n}" for n in names]}
+    ).to_csv(path, index=False)
+    return path
+
+
+def test_embedding_row_index_permutes_the_cache_into_split_order(tmp_path):
+    from lexical_vs_embedding import embedding_row_index
+
+    order = _write_row_order(tmp_path, ["a.txt", "b.txt", "c.txt"])
+    index = embedding_row_index(order, ["c.txt", "a.txt", "b.txt"])
+    assert index.tolist() == [2, 0, 1]
+
+    cache = np.array([[10.0], [20.0], [30.0]])
+    assert cache[index].ravel().tolist() == [30.0, 10.0, 20.0]
+
+
+def test_embedding_row_index_is_the_identity_when_nothing_moved(tmp_path):
+    from lexical_vs_embedding import embedding_row_index
+
+    order = _write_row_order(tmp_path, ["a.txt", "b.txt", "c.txt"])
+    index = embedding_row_index(order, ["a.txt", "b.txt", "c.txt"])
+    assert index.tolist() == [0, 1, 2]
+
+
+def test_embedding_row_index_rejects_a_split_file_the_cache_never_saw(tmp_path):
+    from lexical_vs_embedding import embedding_row_index
+
+    order = _write_row_order(tmp_path, ["a.txt", "b.txt"])
+    with pytest.raises(SystemExit):
+        embedding_row_index(order, ["a.txt", "z.txt"])
+
+
+def test_embedding_row_index_rejects_a_row_order_with_repeated_filenames(tmp_path):
+    from lexical_vs_embedding import embedding_row_index
+
+    order = _write_row_order(tmp_path, ["a.txt", "a.txt"])
+    with pytest.raises(SystemExit):
+        embedding_row_index(order, ["a.txt"])
+
+
+def test_embedding_row_index_refuses_to_run_without_a_row_order(tmp_path):
+    from lexical_vs_embedding import embedding_row_index
+
+    with pytest.raises(SystemExit):
+        embedding_row_index(tmp_path / "absent.csv", ["a.txt"])
+
+
+def test_load_layer_embeddings_reorders_the_cached_rows(tmp_path):
+    from lexical_vs_embedding import embedding_path, load_layer_embeddings
+
+    path = embedding_path(tmp_path, "org/Model", "hidden", "mean", 2)
+    path.parent.mkdir(parents=True)
+    np.save(path, np.array([[1.0, 1.0], [2.0, 2.0], [3.0, 3.0]]))
+
+    loaded = load_layer_embeddings(
+        tmp_path, "org/Model", 2, "hidden", "mean", np.array([2, 0, 1])
+    )
+    assert loaded[:, 0].tolist() == [3.0, 1.0, 2.0]
+
+
+def test_load_layer_embeddings_rejects_a_cache_that_is_too_short(tmp_path):
+    from lexical_vs_embedding import embedding_path, load_layer_embeddings
+
+    path = embedding_path(tmp_path, "org/Model", "hidden", "mean", 2)
+    path.parent.mkdir(parents=True)
+    np.save(path, np.array([[1.0], [2.0]]))
+
+    with pytest.raises(SystemExit):
+        load_layer_embeddings(
+            tmp_path, "org/Model", 2, "hidden", "mean", np.array([0, 1, 2])
+        )
+
+
+def test_build_embedding_method_fits_the_cleaner_on_train_rows_only():
+    """The leak-free invariant: test rows must not reach the PC fit.
+
+    Rewriting the test block while leaving the train block alone changes
+    nothing the cleaner or ``tau`` are allowed to see, so the learned ``tau``
+    must be identical. If the cleaner were fitted on all rows, the removed
+    components would move and the train similarities with them.
+    """
+    from lexical_vs_embedding import _ensure_import_paths, build_embedding_method
+
+    _ensure_import_paths()
+    rng = np.random.default_rng(0)
+    emb = rng.normal(size=(40, 8))
+    train_mask = np.arange(40) < 24
+    test_mask = ~train_mask
+    train_folder_ids = np.repeat(np.arange(12), 2)
+
+    def run(matrix):
+        return build_embedding_method(
+            "k", "abtt", "M", matrix, train_mask, test_mask,
+            train_folder_ids, layer=5, D=3,
+        )
+
+    shifted = emb.copy()
+    shifted[test_mask] = rng.normal(loc=50.0, scale=20.0, size=(16, 8))
+
+    assert run(emb).tau == run(shifted).tau

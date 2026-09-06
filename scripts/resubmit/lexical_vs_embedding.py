@@ -31,8 +31,18 @@ Three method families are scored on exactly the same pairs:
     to all. This is ABTT only, no SIF weighting, matching the ABTT column of the
     headline tables.
 
-Layer, ``D`` and the method family all come from ``phase_resubmit_results.csv``
-rather than being re-tuned here, so the configurations are the paper's.
+Layer, ``D``, the representation and the pooling all come from
+``phase_resubmit_results.csv`` rather than being re-tuned here, so the
+configurations are the paper's. The check that they really are is that each
+``tau`` re-learned here reproduces the one in that CSV; a disagreement stops the
+run rather than warning, because it means the results CSV and the split have
+come apart and nothing computed afterwards would be the paper's configuration.
+
+Cached embedding matrices are keyed by row index, and issue #131's key
+corrections renumbered 17 ``file_id``s without touching a byte of text, so the
+caches are re-ordered here by **filename** (``phase9_bases/row_order.csv``)
+rather than read positionally. That makes the run immune to that permutation and
+to any future one.
 
 Metrics, per method and per stratum
 -----------------------------------
@@ -49,7 +59,18 @@ Metrics, per method and per stratum
 ``frac_above_tau``
     Fraction of the (undirected) positive pairs scored at or above the method's
     own train-learned ``tau``, the Task-B existing-versus-new cut. This is the
-    routing question rather than the ranking question.
+    routing question rather than the ranking question. Two methods' ``tau``
+    values are only comparable if they are the same operating point, so
+    ``op_tpr`` / ``op_fpr`` / ``op_precision`` report where each ``tau`` sits on
+    the whole test block.
+``mcnemar_*`` / ``routing_*``
+    Exact two-sided McNemar test of the lexical scorer against this method,
+    paired observation by observation inside the stratum: ``mcnemar_*`` on the
+    ranking outcome (partner at residual rank 1), ``routing_*`` on the routing
+    outcome (pair at or above ``tau``). ``b`` counts observations only TF-IDF
+    gets, ``c`` observations only this method gets. On the reverse slice the
+    ``mcnemar_*`` columns compare confusions instead, so a large ``b`` is the
+    lexical scorer's failure, not its win.
 
 Reverse slice
 -------------
@@ -72,14 +93,17 @@ Run it in one command from the repo root, CPU only, a few minutes:
     python scripts/resubmit/lexical_vs_embedding.py
 
 Re-run it with the same command if PR #130's TF-IDF implementation changes, or
-after issue #112, which relabels two directories and so changes the positive
-pair set.
+whenever the split changes. Issue #131 already did that once: it relabels two
+directories, which adds a positive test pair and renumbers part of the embedding
+cache.
 """
 from __future__ import annotations
 
 import argparse
+import math
 import sys
 from dataclasses import dataclass
+from fractions import Fraction
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -297,30 +321,98 @@ def best_partner_similarity(sim: np.ndarray, folder_ids: np.ndarray) -> np.ndarr
     return masked.max(axis=1)
 
 
+def negative_confusion_flags(
+    sim: np.ndarray,
+    neg_pairs: PairSet,
+    mask: np.ndarray,
+    folder_ids: np.ndarray,
+) -> np.ndarray:
+    """Per directed observation, whether the impostor outranks every true partner.
+
+    One observation per endpoint of a masked negative pair, kept only when that
+    endpoint actually has a test partner to be confused with. Which endpoints
+    are usable depends on ``folder_ids`` alone, so the returned vector is
+    aligned across methods and can be paired.
+    """
+    mask = np.asarray(mask)
+    best = best_partner_similarity(sim, folder_ids)
+    i, j = neg_pairs.i[mask], neg_pairs.j[mask]
+
+    flags: List[np.ndarray] = []
+    for query, impostor in ((i, j), (j, i)):
+        usable = np.isfinite(best[query])
+        flags.append(sim[query[usable], impostor[usable]] > best[query[usable]])
+    return np.concatenate(flags) if flags else np.zeros(0, dtype=bool)
+
+
 def negative_confusion_rate(
     sim: np.ndarray,
     neg_pairs: PairSet,
     mask: np.ndarray,
     folder_ids: np.ndarray,
 ) -> Tuple[float, int]:
-    """How often a high-overlap impostor outranks every true partner.
-
-    One directed observation per endpoint of a masked negative pair, kept only
-    when that endpoint actually has a test partner to be confused with.
-    """
-    mask = np.asarray(mask)
-    best = best_partner_similarity(sim, folder_ids)
-    i, j = neg_pairs.i[mask], neg_pairs.j[mask]
-
-    hits = 0
-    total = 0
-    for query, impostor in ((i, j), (j, i)):
-        usable = np.isfinite(best[query])
-        total += int(usable.sum())
-        hits += int((sim[query[usable], impostor[usable]] > best[query[usable]]).sum())
-    if total == 0:
+    """Rate and observation count of :func:`negative_confusion_flags`."""
+    flags = negative_confusion_flags(sim, neg_pairs, mask, folder_ids)
+    if flags.size == 0:
         return float("nan"), 0
-    return hits / total, total
+    return float(flags.mean()), int(flags.size)
+
+
+# --------------------------------------------------------------------------
+# Paired significance and matched operating points
+# --------------------------------------------------------------------------
+
+
+def mcnemar_exact_p(b: int, c: int) -> float:
+    """Two-sided exact McNemar p-value for discordant counts ``b`` and ``c``.
+
+    The binomial test of ``b ~ Binom(b + c, 1/2)``, doubled and capped at 1.
+    Exact rather than chi-square because several strata here have well under
+    the 25 discordant observations the asymptotic form wants. With no
+    discordant observations at all the two methods agree everywhere and the
+    p-value is 1.0: no evidence of a difference.
+    """
+    b, c = int(b), int(c)
+    if b < 0 or c < 0:
+        raise ValueError(f"Discordant counts must be non-negative, got ({b}, {c}).")
+    n = b + c
+    if n == 0:
+        return 1.0
+    tail = sum(math.comb(n, k) for k in range(min(b, c) + 1))
+    return float(min(Fraction(1), Fraction(2 * tail, 1 << n)))
+
+
+def paired_discordance(reference: np.ndarray, other: np.ndarray) -> Tuple[int, int]:
+    """``(reference-only successes, other-only successes)`` over aligned outcomes."""
+    reference = np.asarray(reference, dtype=bool)
+    other = np.asarray(other, dtype=bool)
+    if reference.shape != other.shape:
+        raise ValueError(
+            f"Outcome vectors are not aligned: {reference.shape} vs {other.shape}."
+        )
+    return int((reference & ~other).sum()), int((~reference & other).sum())
+
+
+def operating_point(
+    sim: np.ndarray, pos_pairs: PairSet, neg_pairs: PairSet, tau: float
+) -> Dict[str, float]:
+    """Where a method's own train-learned ``tau`` sits on the whole test block.
+
+    Two methods can only be compared on ``frac_above_tau`` inside a stratum if
+    their thresholds are the same operating point overall; these are the
+    numbers that establish that, or fail to.
+    """
+    pos = sim[pos_pairs.i, pos_pairs.j]
+    neg = sim[neg_pairs.i, neg_pairs.j]
+    n_tp = int((pos >= tau).sum())
+    n_fp = int((neg >= tau).sum())
+    return {
+        "op_tpr": float(n_tp / len(pos)) if len(pos) else float("nan"),
+        "op_fpr": float(n_fp / len(neg)) if len(neg) else float("nan"),
+        "op_precision": float(n_tp / (n_tp + n_fp)) if (n_tp + n_fp) else float("nan"),
+        "op_n_tp": n_tp,
+        "op_n_fp": n_fp,
+    }
 
 
 # --------------------------------------------------------------------------
@@ -357,14 +449,81 @@ def paper_config(results: pd.DataFrame, model: str, method: str) -> pd.Series:
     return sub.loc[sub["train_aucroc"].idxmax()]
 
 
-def load_layer_embeddings(
-    bases_root: Path, model: str, layer: int, subdir: str
-) -> np.ndarray:
+# Cached embedding matrices are written as ``{repr}_layer{N}_embeddings{suffix}``
+# inside ``{repr}_{pooling}_tokempty`` (see CLAUDE.md, "Embedding file naming").
+POOLING_SUFFIX = {"mean": "", "sif": "_sif", "lasttok": "_lasttok"}
+
+
+def embedding_path(bases_root: Path, model: str, repr_name: str, pooling: str, layer: int) -> Path:
+    """Cache path for one (model, repr, pooling, layer), from the results-CSV columns.
+
+    The results CSV carries ``repr`` and ``pooling`` per row, so a future CSV
+    whose train-AUROC winner is an ``ff1`` or ``lasttok`` row resolves to those
+    vectors instead of silently scoring mean-pooled hidden states.
+    """
+    if pooling not in POOLING_SUFFIX:
+        raise SystemExit(
+            f"Unknown pooling {pooling!r} for {model!r}; expected one of "
+            f"{sorted(POOLING_SUFFIX)}."
+        )
     slug = model.replace("/", "_")
-    path = bases_root / "phase9_bases" / slug / subdir / f"hidden_layer{layer}_embeddings.npy"
+    subdir = f"{repr_name}_{pooling}_tokempty"
+    fname = f"{repr_name}_layer{layer}_embeddings{POOLING_SUFFIX[pooling]}.npy"
+    return bases_root / "phase9_bases" / slug / subdir / fname
+
+
+def embedding_row_index(row_order_csv: Path, filenames: Sequence[str]) -> np.ndarray:
+    """Positions in the cached matrices that line up with the split CSV's rows.
+
+    The caches are keyed by row index, and issue #131's key corrections
+    renumbered 17 ``file_id``s without changing a single byte of text, so a
+    positional read would hand seventeen files each other's vectors. Filenames
+    are unique across the corpus (that is what the corrected split's
+    carry-over is matched on), so aligning on them is immune to any future
+    renumbering as well.
+    """
+    if not row_order_csv.exists():
+        raise SystemExit(
+            f"Missing embedding row order: {row_order_csv}. It records which file "
+            "each cached row belongs to and is what keeps the vectors aligned "
+            "with the split CSV; pass --row_order_csv if it lives elsewhere."
+        )
+    order = pd.read_csv(row_order_csv)
+    if "path" not in order.columns:
+        raise SystemExit(f"{row_order_csv} has no 'path' column.")
+    cached = [Path(str(rel)).name for rel in order["path"].values]
+    if len(set(cached)) != len(cached):
+        raise SystemExit(f"{row_order_csv} repeats a filename; cannot align by name.")
+    position = {name: k for k, name in enumerate(cached)}
+    missing = [f for f in filenames if f not in position]
+    if missing:
+        raise SystemExit(
+            f"{len(missing)} split files are absent from {row_order_csv} "
+            f"(first: {missing[0]}). The caches predate the current corpus; "
+            "re-extract before re-running."
+        )
+    return np.array([position[f] for f in filenames], dtype=int)
+
+
+def load_layer_embeddings(
+    bases_root: Path,
+    model: str,
+    layer: int,
+    repr_name: str,
+    pooling: str,
+    row_index: np.ndarray,
+) -> np.ndarray:
+    """Load one cached layer and reorder its rows into split-CSV order."""
+    path = embedding_path(bases_root, model, repr_name, pooling, layer)
     if not path.exists():
         raise SystemExit(f"Missing embeddings: {path}")
-    return np.load(path).astype(np.float64)
+    emb = np.load(path)
+    if emb.shape[0] <= int(row_index.max()):
+        raise SystemExit(
+            f"{path} has {emb.shape[0]} rows; the row order needs at least "
+            f"{int(row_index.max()) + 1}."
+        )
+    return emb[row_index].astype(np.float64)
 
 
 def build_embedding_method(
@@ -378,8 +537,11 @@ def build_embedding_method(
     layer: int,
     D: Optional[int],
 ) -> Method:
-    """Post-process, L2-normalise, and learn ``tau`` on train, as the paper does."""
-    _ensure_import_paths()
+    """Post-process, L2-normalise, and learn ``tau`` on train, as the paper does.
+
+    The cleaner is fitted on the train rows only and then applied to both
+    blocks, which is the leak-free protocol CLAUDE.md requires.
+    """
     from canon_retrieval import l2_normalize, similarity_matrix
     from run_resubmit_evaluate import learn_tau_from_similarity
     from sif_abtt import EmbeddingCleaner
@@ -413,6 +575,50 @@ def load_texts(split_meta: pd.DataFrame, data_root: Path) -> List[str]:
     return texts
 
 
+@dataclass(frozen=True)
+class Outcomes:
+    """One method's per-observation successes, in an order shared by all methods.
+
+    ``rank_ok`` follows :func:`directed_rank_table`'s row order, ``routing_ok``
+    follows the positive ``PairSet``, and ``neg_confused`` follows
+    :func:`negative_confusion_flags`. None of those orders depends on the
+    method, which is what makes the McNemar pairing legitimate.
+    """
+
+    ranks: pd.DataFrame
+    rank_ok: np.ndarray
+    routing_ok: np.ndarray
+    neg_confused: np.ndarray
+
+
+def method_outcomes(
+    method: Method,
+    pos_pairs: PairSet,
+    neg_pairs: PairSet,
+    neg_mask: np.ndarray,
+    test_folder_ids: np.ndarray,
+) -> Outcomes:
+    ranks = directed_rank_table(method.test_sim, pos_pairs, test_folder_ids)
+    return Outcomes(
+        ranks=ranks,
+        rank_ok=ranks["rank_residual"].to_numpy() == 1,
+        routing_ok=method.test_sim[pos_pairs.i, pos_pairs.j] >= method.tau,
+        neg_confused=negative_confusion_flags(
+            method.test_sim, neg_pairs, neg_mask, test_folder_ids
+        ),
+    )
+
+
+def _paired_columns(
+    reference: Optional[np.ndarray], other: np.ndarray, prefix: str
+) -> Dict[str, object]:
+    """McNemar counts and p-value for one comparison, or NA when self-compared."""
+    if reference is None or other.size == 0:
+        return {f"{prefix}_b": pd.NA, f"{prefix}_c": pd.NA, f"{prefix}_p": pd.NA}
+    b, c = paired_discordance(reference, other)
+    return {f"{prefix}_b": b, f"{prefix}_c": c, f"{prefix}_p": mcnemar_exact_p(b, c)}
+
+
 def collect_rows(
     method: Method,
     pos_pairs: PairSet,
@@ -422,9 +628,17 @@ def collect_rows(
     test_folder_ids: np.ndarray,
     bounds: Dict[str, Tuple[float, float]],
     neg_cut: float,
+    reference: Optional[Outcomes] = None,
 ) -> List[Dict]:
-    """Every output row for one method: the positive strata, then the reverse slice."""
-    ranks = directed_rank_table(method.test_sim, pos_pairs, test_folder_ids)
+    """Every output row for one method: the positive strata, then the reverse slice.
+
+    ``reference`` is the lexical method's outcomes. When it is given, each row
+    also carries the exact McNemar comparison of that method against this one,
+    on the ranking outcome (``mcnemar_*``) and on the routing outcome
+    (``routing_*``), paired observation by observation inside the stratum. The
+    reference method itself is compared against nothing and gets NA.
+    """
+    own = method_outcomes(method, pos_pairs, neg_pairs, neg_mask, test_folder_ids)
     base = {
         "method": method.key,
         "family": method.family,
@@ -433,10 +647,12 @@ def collect_rows(
         "D": method.D if method.D is not None else pd.NA,
         "tau": method.tau,
     }
+    base.update(operating_point(method.test_sim, pos_pairs, neg_pairs, method.tau))
 
     rows: List[Dict] = []
     for stratum in (*TERCILE_STRATA, HARD_STRATUM, ALL_STRATUM):
-        mask = pos_masks[stratum]
+        mask = np.asarray(pos_masks[stratum])
+        directed = mask[own.ranks["pair_index"].to_numpy()]
         row = dict(base)
         row.update(
             {
@@ -448,26 +664,51 @@ def collect_rows(
                 "neg_confusion_rate": pd.NA,
             }
         )
-        row.update(rank_metrics(ranks, mask))
+        row.update(rank_metrics(own.ranks, mask))
+        row.update(
+            _paired_columns(
+                None if reference is None else reference.rank_ok[directed],
+                own.rank_ok[directed],
+                "mcnemar",
+            )
+        )
+        row.update(
+            _paired_columns(
+                None if reference is None else reference.routing_ok[mask],
+                own.routing_ok[mask],
+                "routing",
+            )
+        )
         rows.append(row)
 
-    rate, n_directed = negative_confusion_rate(
-        method.test_sim, neg_pairs, neg_mask, test_folder_ids
-    )
     neg_row = dict(base)
     neg_row.update(
         {
             "stratum": NEG_STRATUM,
             "overlap_lo": neg_cut,
             "overlap_hi": float(neg_pairs.overlap.max()),
-            "n_pairs": int(neg_mask.sum()),
-            "n_directed": n_directed,
+            "n_pairs": int(np.asarray(neg_mask).sum()),
+            "n_directed": int(own.neg_confused.size),
             "recall_at_1": pd.NA,
             "recall_at_1_all": pd.NA,
             "mrr": pd.NA,
             "frac_above_tau": pd.NA,
-            "neg_confusion_rate": rate,
+            "neg_confusion_rate": (
+                float(own.neg_confused.mean()) if own.neg_confused.size else float("nan")
+            ),
+            "routing_b": pd.NA,
+            "routing_c": pd.NA,
+            "routing_p": pd.NA,
         }
+    )
+    # On the reverse slice the McNemar columns compare *confusions*, so b counts
+    # the impostors only the reference falls for.
+    neg_row.update(
+        _paired_columns(
+            None if reference is None else reference.neg_confused,
+            own.neg_confused,
+            "mcnemar",
+        )
     )
     rows.append(neg_row)
     return rows
@@ -478,6 +719,9 @@ COLUMN_ORDER = [
     "overlap_lo", "overlap_hi", "n_pairs", "n_directed",
     "recall_at_1", "recall_at_1_all", "mrr", "frac_above_tau",
     "neg_confusion_rate",
+    "mcnemar_b", "mcnemar_c", "mcnemar_p",
+    "routing_b", "routing_c", "routing_p",
+    "op_tpr", "op_fpr", "op_precision", "op_n_tp", "op_n_fp",
 ]
 
 
@@ -491,17 +735,29 @@ def render_figure(results: pd.DataFrame, out_pdf: Path) -> None:
     x = np.arange(len(TERCILE_STRATA))
     # Bounds are identical across methods, so any one row per stratum carries them.
     bounds = results.drop_duplicates("stratum").set_index("stratum")
+    n_pairs = [int(bounds.loc[st, "n_pairs"]) for st in TERCILE_STRATA]
     tick_labels = [
-        f"low\n(<{bounds.loc[TERCILE_STRATA[0], 'overlap_hi']:.2f})",
+        f"low\n(<{bounds.loc[TERCILE_STRATA[0], 'overlap_hi']:.2f})\nn={n_pairs[0]}",
         f"mid\n({bounds.loc[TERCILE_STRATA[1], 'overlap_lo']:.2f}"
-        f"-{bounds.loc[TERCILE_STRATA[1], 'overlap_hi']:.2f})",
-        f"high\n(>{bounds.loc[TERCILE_STRATA[2], 'overlap_lo']:.2f})",
+        f"-{bounds.loc[TERCILE_STRATA[1], 'overlap_hi']:.2f})\nn={n_pairs[1]}",
+        f"high\n(>{bounds.loc[TERCILE_STRATA[2], 'overlap_lo']:.2f})\nn={n_pairs[2]}",
     ]
     colors = plt.get_cmap("tab10").colors
 
     def series(df: pd.DataFrame) -> np.ndarray:
         by_stratum = df.set_index("stratum")["recall_at_1"]
         return np.array([by_stratum.get(s, np.nan) for s in TERCILE_STRATA], dtype=float)
+
+    def stderr(values: np.ndarray) -> np.ndarray:
+        """Binomial SE on the *pair* count, not the directed count.
+
+        Each pair contributes two directed observations that share a text, so
+        the directed count would understate the error. This is the conservative
+        reading, and it is what makes the tercile orderings here readable as
+        the noise they mostly are.
+        """
+        n = np.asarray(n_pairs, dtype=float)
+        return np.sqrt(np.clip(values * (1.0 - values), 0.0, None) / n)
 
     lexical = series(results[results["method"] == LEXICAL_KEY])
     models = [m for m in MODEL_DISPLAY.values() if m in set(results["model"])]
@@ -511,14 +767,17 @@ def render_figure(results: pd.DataFrame, out_pdf: Path) -> None:
         axes, ("baseline", "abtt"),
         ("Mean-pool baseline embeddings", "ABTT embeddings (paper's layer, $D$)"),
     ):
-        ax.plot(x, lexical, color="black", marker="s", linewidth=2.4,
-                zorder=5, label="char 3-5-gram TF-IDF")
+        ax.errorbar(x, lexical, yerr=stderr(lexical), color="black", marker="s",
+                    linewidth=2.4, capsize=3, zorder=5,
+                    label="char 3-5-gram TF-IDF")
         for c, model in enumerate(models):
             sub = results[(results["family"] == family) & (results["model"] == model)]
             if sub.empty:
                 continue
-            ax.plot(x, series(sub), marker="o", markersize=4, linewidth=1.3,
-                    color=colors[c % len(colors)], label=model)
+            values = series(sub)
+            ax.errorbar(x, values, yerr=stderr(values), marker="o", markersize=4,
+                        linewidth=1.3, capsize=2, elinewidth=0.8,
+                        color=colors[c % len(colors)], label=model)
         ax.set_xticks(x)
         ax.set_xticklabels(tick_labels)
         ax.set_xlabel("char 3-5-gram TF-IDF cosine of the positive pair")
@@ -550,7 +809,24 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     )
     p.add_argument("--bases_root", default=str(REPO_ROOT / "runs/active/resubmit_bases"),
                    help="Root holding phase9_bases/<slug>/<subdir>/.")
-    p.add_argument("--mean_subdir", default="hidden_mean_tokempty")
+    p.add_argument(
+        "--row_order_csv",
+        default=str(
+            REPO_ROOT / "runs/active/resubmit_bases/phase9_bases/row_order.csv"
+        ),
+        help="file_id -> path listing of the cached embedding rows, used to "
+             "align the caches to the split CSV by filename.",
+    )
+    p.add_argument(
+        "--allow-tau-drift", "--allow_tau_drift", dest="allow_tau_drift",
+        action="store_true",
+        help="Continue when a re-learned tau disagrees with the results CSV. "
+             "Off by default: agreement is the check that these really are the "
+             "paper's configurations, so a drift means the results CSV and the "
+             "split have come apart and the numbers must not be published.",
+    )
+    p.add_argument("--tau_tolerance", type=float, default=5e-3,
+                   help="How far a re-learned tau may sit from the results CSV.")
     p.add_argument(
         "--out_csv",
         default=str(REPO_ROOT / "runs/active/resubmit/results/lexical_vs_embedding.csv"),
@@ -614,6 +890,16 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     # ── the paper's embedding configurations ──────────────────────────────
     results = pd.read_csv(args.results_csv)
     bases_root = Path(args.bases_root)
+    row_index = embedding_row_index(
+        Path(args.row_order_csv), list(split_meta["filename"].astype(str))
+    )
+    n_moved = int((row_index != np.arange(row_index.size)).sum())
+    print(
+        f"Embedding rows aligned to the split by filename via {args.row_order_csv} "
+        f"({n_moved} of {row_index.size} rows sit at a different cached index)"
+    )
+
+    drifted: List[str] = []
     for model, display in MODEL_DISPLAY.items():
         base_cfg = paper_config(results, model, "baseline")
         abtt_cfg = paper_config(results, model, "abtt_optimal")
@@ -622,7 +908,9 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
             ("abtt", abtt_cfg, int(abtt_cfg["D"])),
         ):
             layer = int(cfg["layer"])
-            emb = load_layer_embeddings(bases_root, model, layer, args.mean_subdir)
+            emb = load_layer_embeddings(
+                bases_root, model, layer, str(cfg["repr"]), str(cfg["pooling"]), row_index
+            )
             if emb.shape[0] != len(split_meta):
                 raise SystemExit(
                     f"{display} layer {layer}: {emb.shape[0]} rows for "
@@ -633,18 +921,38 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
                 train_mask, test_mask, train_folder_ids, layer, D,
             )
             drift = abs(method.tau - float(cfg["tau"]))
-            flag = "" if drift < 5e-3 else "  <-- tau drift vs results CSV"
+            flag = "" if drift < args.tau_tolerance else "  <-- tau drift vs results CSV"
+            if flag:
+                drifted.append(
+                    f"{display} {family}: tau={method.tau:.4f} vs csv "
+                    f"{float(cfg['tau']):.4f} (drift {drift:.4f})"
+                )
             print(
-                f"{display:>11s} {family:<8s} layer={layer:<3d} D={D} "
+                f"{display:>11s} {family:<8s} {cfg['repr']}/{cfg['pooling']} "
+                f"layer={layer:<3d} D={D} "
                 f"tau={method.tau:.4f} (csv {float(cfg['tau']):.4f}){flag}"
             )
             methods.append(method)
 
+    if drifted and not args.allow_tau_drift:
+        raise SystemExit(
+            "Re-learned tau disagrees with the results CSV on "
+            f"{len(drifted)} of {len(methods) - 1} configurations:\n  "
+            + "\n  ".join(drifted)
+            + "\nThat agreement is what certifies these as the paper's "
+            "configurations, so the run stops rather than writing numbers that "
+            "look like the paper's and are not. Regenerate "
+            f"{args.results_csv} against {args.split_csv}, or pass "
+            "--allow-tau-drift if you know why they differ."
+        )
+
+    reference = method_outcomes(methods[0], pos_pairs, neg_pairs, neg_mask, test_folder_ids)
     rows: List[Dict] = []
-    for method in methods:
+    for k, method in enumerate(methods):
         rows.extend(
             collect_rows(method, pos_pairs, pos_masks, neg_pairs, neg_mask,
-                         test_folder_ids, pos_bounds, neg_cut)
+                         test_folder_ids, pos_bounds, neg_cut,
+                         reference=None if k == 0 else reference)
         )
 
     out = pd.DataFrame(rows)[COLUMN_ORDER]
@@ -665,8 +973,24 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     print("\nhard slice (positives below the TF-IDF tau)\n")
     print(hard[["n_pairs", "recall_at_1", "mrr", "frac_above_tau"]].round(3).to_string())
     neg = out[out["stratum"] == NEG_STRATUM].set_index(["family", "model"])
-    print("\nhigh-overlap negative confusion rate\n")
-    print(neg[["n_pairs", "n_directed", "neg_confusion_rate"]].round(3).to_string())
+    print("\nhigh-overlap negative confusion rate (mcnemar_* vs TF-IDF)\n")
+    print(neg[["n_pairs", "n_directed", "neg_confusion_rate",
+               "mcnemar_b", "mcnemar_c", "mcnemar_p"]].round(4).to_string())
+
+    print("\nmatched operating points (each method at its own train-learned tau)\n")
+    ops = out[out["stratum"] == ALL_STRATUM].set_index("method")
+    print(ops[["tau", "op_tpr", "op_fpr", "op_precision", "op_n_tp",
+               "op_n_fp"]].round(5).to_string())
+
+    print("\npaired McNemar vs char TF-IDF (recall@1 | frac_above_tau)\n")
+    stats = out[out["stratum"].isin((*TERCILE_STRATA, HARD_STRATUM, ALL_STRATUM))]
+    stats = stats[stats["method"] != LEXICAL_KEY]
+    print(
+        stats.set_index(["method", "stratum"])[
+            ["recall_at_1", "mcnemar_b", "mcnemar_c", "mcnemar_p",
+             "frac_above_tau", "routing_b", "routing_c", "routing_p"]
+        ].round(4).to_string()
+    )
 
 
 if __name__ == "__main__":
