@@ -1,0 +1,20 @@
+% Generated file. Edit the generator, not this file.
+\begin{table*}[t]
+\centering
+\small
+\setlength{\tabcolsep}{6pt}
+\begin{tabular}{lrrrrr}
+\toprule
+\textbf{Model} & \textbf{Top-1} & \textbf{Top-2} & \textbf{Top-3} & \textbf{Top-4} & \textbf{Top-5} \\
+\midrule
+LaTa       & 90.0 $\pm$ 1.1 & 96.1 $\pm$ 0.5 & 97.3 $\pm$ 0.2 & 97.8 $\pm$ 0.5 & 97.9 $\pm$ 0.5 \\
+PhilTa     & 90.0 $\pm$ 0.9 & 95.9 $\pm$ 0.4 & 97.0 $\pm$ 0.4 & 97.5 $\pm$ 0.4 & 97.9 $\pm$ 0.2 \\
+mT5-base   & 89.9 $\pm$ 0.5 & 95.8 $\pm$ 0.4 & 96.7 $\pm$ 0.4 & 97.0 $\pm$ 0.3 & 97.3 $\pm$ 0.4 \\
+LaBSE      & 90.6 $\pm$ 1.0 & 95.5 $\pm$ 0.5 & 96.4 $\pm$ 0.5 & 97.2 $\pm$ 0.6 & 97.8 $\pm$ 0.5 \\
+Qwen3-0.6B & 90.3 $\pm$ 0.6 & 95.6 $\pm$ 0.6 & 96.8 $\pm$ 0.5 & 97.2 $\pm$ 0.6 & 97.5 $\pm$ 0.5 \\
+KaLM-mini  & 89.5 $\pm$ 0.4 & 95.3 $\pm$ 0.7 & 97.0 $\pm$ 0.5 & 97.3 $\pm$ 0.5 & 97.4 $\pm$ 0.4 \\
+\bottomrule
+\end{tabular}
+\caption{Cumulative top-$K$ accuracy for Task B, as mean $\pm$ standard deviation over five query/reference reseedings at a fixed v2 split, using the best per-model SIF+ABTT configuration. Each cell is the percentage of test queries whose labelled directory appears within the top $K$ options. Per-layer top-$k$ rankings: Appendix Tables~\ref{tab:taskB_ranking_main}, \ref{tab:taskB_ranking_appendix}, and~\ref{tab:taskB_ranking_appendix_mseed}.}
+\label{tab:taskb}
+\end{table*}

@@ -22,6 +22,7 @@ import pandas as pd
 sys.path.append(str(Path(__file__).resolve().parents[2] / "src"))
 
 from canon_retrieval import l2_normalize, similarity_matrix, upper_triangle, upper_triangle_labels
+from embedding_alignment import AlignmentResolver
 from sif_abtt import EmbeddingCleaner
 
 MAX_LAYERS = {
@@ -74,6 +75,7 @@ def main():
 
     results = pd.read_csv(args.results_csv)
     split_meta = pd.read_csv(args.split_csv)
+    aligner = AlignmentResolver(split_meta)
     runs_root = Path(args.runs_root)
     dist_dir = Path(args.dist_dir)
     dist_dir.mkdir(parents=True, exist_ok=True)
@@ -140,7 +142,7 @@ def main():
         if not emb_path.exists():
             emb_path = find_embedding_file(runs_root, slug, "hidden", "mean", last_layer)
         if emb_path:
-            emb = np.load(emb_path)
+            emb = aligner.load(emb_path)
             compute_and_save(emb[test_mask], test_folder_ids,
                              dist_dir / f"{slug}_baseline_last.npz")
 
@@ -149,7 +151,7 @@ def main():
         if not emb_path.exists():
             emb_path = find_embedding_file(runs_root, slug, "hidden", "mean", mid_layer)
         if emb_path:
-            emb = np.load(emb_path)
+            emb = aligner.load(emb_path)
             compute_and_save(emb[test_mask], test_folder_ids,
                              dist_dir / f"{slug}_baseline_middle.npz")
 
@@ -158,7 +160,7 @@ def main():
         if not emb_path.exists():
             emb_path = find_embedding_file(runs_root, slug, "hidden", "sif", last_layer)
         if emb_path:
-            emb = np.load(emb_path)
+            emb = aligner.load(emb_path)
             D = get_D(last_layer)
             cleaner = EmbeddingCleaner(num_components=D, center=True)
             cleaner.fit(emb[train_mask])
@@ -171,7 +173,7 @@ def main():
         if not emb_path.exists():
             emb_path = find_embedding_file(runs_root, slug, "hidden", "sif", mid_layer)
         if emb_path:
-            emb = np.load(emb_path)
+            emb = aligner.load(emb_path)
             D = get_D(mid_layer)
             cleaner = EmbeddingCleaner(num_components=D, center=True)
             cleaner.fit(emb[train_mask])
@@ -184,7 +186,7 @@ def main():
         if not emb_path.exists():
             emb_path = find_embedding_file(runs_root, slug, "hidden", "mean", last_layer)
         if emb_path:
-            emb = np.load(emb_path)
+            emb = aligner.load(emb_path)
             D = get_abtt_D(last_layer)
             cleaner = EmbeddingCleaner(num_components=D, center=True)
             cleaner.fit(emb[train_mask])
@@ -197,7 +199,7 @@ def main():
         if not emb_path.exists():
             emb_path = find_embedding_file(runs_root, slug, "hidden", "mean", mid_layer)
         if emb_path:
-            emb = np.load(emb_path)
+            emb = aligner.load(emb_path)
             D = get_abtt_D(mid_layer)
             cleaner = EmbeddingCleaner(num_components=D, center=True)
             cleaner.fit(emb[train_mask])

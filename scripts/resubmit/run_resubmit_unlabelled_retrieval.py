@@ -117,6 +117,7 @@ from canon_retrieval import (
     upper_triangle_labels,
     zero_norm_mask,
 )
+from embedding_alignment import AlignmentResolver
 from sif_abtt import EmbeddingCleaner
 
 STATUS_OK = "ok"
@@ -346,6 +347,7 @@ def main():
 
     # Load metadata
     split_meta = pd.read_csv(args.split_csv)
+    lab_aligner = AlignmentResolver(split_meta)
     unlabelled_meta = pd.read_csv(args.unlabelled_meta)
 
     # --- Source-level degenerate-file guard (issue #66) ---------------------
@@ -425,7 +427,7 @@ def main():
             print(f"  Unlabelled embeddings not found: {unlab_path}, skipping.")
             continue
 
-        lab_emb = np.load(lab_path)
+        lab_emb = lab_aligner.load(lab_path)
         unlab_emb = np.load(unlab_path)
         print(f"  Labelled: {lab_emb.shape}, Unlabelled: {unlab_emb.shape}")
 

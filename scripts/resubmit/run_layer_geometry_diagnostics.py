@@ -21,6 +21,7 @@ sys.path.append(str(Path(__file__).resolve().parents[2] / "src"))
 from cli_utils import parse_layers
 from canon_retrieval import l2_normalize
 from sif_abtt import EmbeddingCleaner
+from embedding_alignment import AlignmentResolver
 
 
 MODEL_DISPLAY = {
@@ -288,6 +289,7 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     split_meta = pd.read_csv(split_csv)
+    aligner = AlignmentResolver(split_meta)
     train_mask = split_meta["split"].to_numpy() == "train"
     test_mask = split_meta["split"].to_numpy() == "test"
     if not train_mask.any() or not test_mask.any():
@@ -326,6 +328,8 @@ def main() -> None:
 
                 print(f"[{model_name} {pooling} L{layer}] computing geometry", flush=True)
                 emb_all = np.load(emb_path)
+                if emb_all.ndim == 2 and emb_all.shape[0] == len(split_meta):
+                    emb_all = aligner.aligner_for(emb_path).apply(emb_all)
                 if emb_all.ndim != 2 or emb_all.shape[0] != len(split_meta):
                     skipped.append(
                         {

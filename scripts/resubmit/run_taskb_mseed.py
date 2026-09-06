@@ -27,6 +27,7 @@ from canon_split_v2 import (
     taskb_split_summary,
 )
 from sif_abtt import EmbeddingCleaner
+from embedding_alignment import AlignmentResolver
 
 
 def parse_args() -> argparse.Namespace:
@@ -351,6 +352,10 @@ def main() -> None:
         print("Building base train/test split (seed=42, fixed)...")
         base_meta = build_meta_with_split_v2(args.canon_root, random_seed=42)
 
+    # The per-seed Task B role assignment only adds a column, so every `meta`
+    # below keeps this row order and one resolver covers all seeds.
+    aligner = AlignmentResolver(base_meta)
+
     # Collect all model configs
     seq2seq_models = [m.strip() for m in args.models.split(",") if m.strip()]
     encoder_models = [m.strip() for m in args.encoder_models.split(",") if m.strip()]
@@ -414,6 +419,7 @@ def main() -> None:
                         if emb_all.shape[0] != len(meta):
                             print(f"    Layer {layer}: shape mismatch, skipping.")
                             continue
+                        emb_all = aligner.aligner_for(emb_path).apply(emb_all)
 
                         for method in methods:
                             row = evaluate_model_for_seed(

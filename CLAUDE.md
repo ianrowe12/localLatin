@@ -74,6 +74,14 @@ data/canon_labelled/ (1,705 .txt files, 840 dirs)
 
 **Embedding file naming**: `{repr}_layer{N}_embeddings{suffix}.npy` where suffix is empty (mean), `_sif`, or `_lasttok`. Normalized files end `_norm.npy`.
 
+**Embedding row alignment**: a cached `.npy` holds one row per corpus file in the order the
+extractor walked the corpus, recorded in the `meta.csv` the extractor writes beside it (a
+`row_order.csv` at a bases root is the fallback for older caches). Split-CSV rows are sorted by
+`(folder_id, filename)`, so a label correction permutes them without touching the cache. Never pair
+the two by row position: build an `AlignmentResolver` (`src/embedding_alignment.py`) from the split
+and load through it. `python scripts/resubmit/verify_embedding_alignment.py` proves a cache still
+lines up and that named files keep byte-identical vectors across a relabelling.
+
 **Layer indexing**: Hidden states 0 = embedding output, 1..N = transformer blocks. FF1 is 1-indexed (1..N). `--layers` accepts ranges like `0-12`.
 
 **Encoder bases path**: `runs/active/encoder_bases/<model_slug>/<repr>_<pooling>/` where `model_slug = model_name.replace("/", "_")`. This is the canonical 6-model embedding cache.

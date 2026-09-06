@@ -170,6 +170,80 @@ def plot_metric(
     save(fig, out_dir, stem)
 
 
+def plot_metric_grid_6model(
+    results: pd.DataFrame,
+    metric: str,
+    ylabel: str,
+    out_dir: Path,
+    stem: str,
+    models: list[str],
+    methods: list[str],
+) -> None:
+    """Two rows of three models, one panel per model, shared axes.
+
+    This is the shape the paper's two headline figures use, and it differs from
+    ``plot_metric`` in ways that matter and must not be merged into it: the y
+    axis autoscales instead of being pinned to a hardcoded range, the axis
+    labels are sentence case, and only the outer panels carry labels. The
+    single-row figures were built against the other conventions, so changing
+    them there would silently move six other figures.
+    """
+    n_rows, n_cols = 2, 3
+    fig, axes = plt.subplots(
+        n_rows,
+        n_cols,
+        figsize=(12.6, 5.3),
+        sharex=True,
+        sharey=True,
+        squeeze=False,
+    )
+    flat = axes.ravel()
+
+    handles: list = []
+    labels: list[str] = []
+    for idx, (ax, model_name) in enumerate(zip(flat, models)):
+        model_rows = results[results["model"] == model_name].copy()
+        for method in methods:
+            method_rows = model_rows[model_rows["method"] == method].sort_values("layer")
+            if method_rows.empty:
+                continue
+            x = normalize_layer_depth(model_name, method_rows["layer"])
+            line = ax.plot(
+                x,
+                method_rows[metric],
+                color=METHOD_COLORS[method],
+                marker="o",
+                markersize=4.5,
+                linewidth=2.3,
+                label=METHOD_LABELS[method],
+            )[0]
+            if METHOD_LABELS[method] not in labels:
+                handles.append(line)
+                labels.append(METHOD_LABELS[method])
+
+        ax.set_title(SHORT.get(model_name, model_name), fontsize=15, fontweight="bold")
+        if idx % n_cols == 0:
+            ax.set_ylabel(ylabel, fontsize=13)
+        if idx >= n_cols * (n_rows - 1):
+            ax.set_xlabel("Layer depth (%)", fontsize=13)
+        ax.set_xlim(0, 100)
+        ax.set_xticks([0, 25, 50, 75, 100])
+        ax.tick_params(axis="both", labelsize=11)
+        ax.grid(alpha=0.25, linewidth=0.8)
+
+    fig.legend(
+        handles,
+        labels,
+        loc="lower center",
+        ncol=max(1, len(labels)),
+        frameon=False,
+        fontsize=12,
+        bbox_to_anchor=(0.5, -0.02),
+    )
+    fig.tight_layout(rect=(0, 0.1, 1, 1))
+    save(fig, out_dir, stem)
+
+
 def compute_dip_layer(
     results: pd.DataFrame, model: str, max_layer: int
 ) -> tuple[int, int]:
@@ -404,6 +478,21 @@ def main() -> None:
         "Qwen/Qwen3-Embedding-0.6B",
         "KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5",
     ]
+
+    # The paper's two headline figures: all six models on one grid.
+    for metric, ylabel, stem in (
+        ("aucroc", "AUROC", "fig_release_aucroc_6model"),
+        ("gap", "Cosine gap", "fig_release_gap_6model"),
+    ):
+        plot_metric_grid_6model(
+            release_rows,
+            metric=metric,
+            ylabel=ylabel,
+            out_dir=out_dir,
+            stem=stem,
+            models=main_models + appendix_models,
+            methods=["baseline", "sif_only", "abtt_optimal"],
+        )
 
     plot_metric(
         release_rows,

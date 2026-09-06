@@ -29,6 +29,7 @@ from canon_retrieval import (
     upper_triangle_labels,
 )
 from pair_evaluation import safe_auc_roc, safe_spearman
+from embedding_alignment import AlignmentResolver
 from sif_abtt import EmbeddingCleaner
 
 
@@ -430,6 +431,7 @@ def main() -> None:
     args = parse_args()
     runs_root = Path(args.runs_root)
     split_meta = pd.read_csv(args.split_csv)
+    aligner = AlignmentResolver(split_meta)
 
     seq2seq_models = [m.strip() for m in args.models.split(",") if m.strip()]
     encoder_models = [m.strip() for m in args.encoder_models.split(",") if m.strip()]
@@ -469,6 +471,8 @@ def main() -> None:
                         continue
 
                     emb_all = np.load(emb_path)
+                    if emb_all.shape[0] == len(split_meta):
+                        emb_all = aligner.aligner_for(emb_path).apply(emb_all)
                     if emb_all.shape[0] != len(split_meta):
                         print(
                             f"    Layer {layer}: shape mismatch "

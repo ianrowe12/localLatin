@@ -78,6 +78,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.append(str(REPO_ROOT / "src"))
 
 from canon_retrieval import l2_normalize, zero_norm_mask  # noqa: E402
+from embedding_alignment import AlignmentResolver  # noqa: E402
 from sif_abtt import EmbeddingCleaner  # noqa: E402
 
 
@@ -276,6 +277,7 @@ def main() -> None:
     print(f"Variant: {variant} (pooling={pooling}, abtt={apply_abtt})")
 
     split_meta = pd.read_csv(args.split_csv)
+    lab_aligner = AlignmentResolver(split_meta)
     unlabelled_meta = pd.read_csv(args.unlabelled_meta)
     file_ids = unlabelled_meta["file_id"].to_numpy(dtype=np.int32)
 
@@ -316,7 +318,7 @@ def main() -> None:
             print(f"  Embeddings missing ({lab_path} / {unlab_path}); skipping.")
             continue
 
-        lab_emb = np.load(lab_path)
+        lab_emb = lab_aligner.load(lab_path)
         unlab_emb = np.load(unlab_path)
         print(f"  Labelled: {lab_emb.shape}, Unlabelled: {unlab_emb.shape}")
         if lab_emb.shape[0] != len(split_meta) or unlab_emb.shape[0] != len(unlabelled_meta):

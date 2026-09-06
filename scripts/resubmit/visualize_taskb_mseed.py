@@ -36,6 +36,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--out_dir", required=True, help="Output directory for figures.")
     parser.add_argument("--repr_name", default="hidden", help="Representation to select.")
     parser.add_argument("--top_k", type=int, default=5, help="Max K for top-K reporting.")
+    parser.add_argument(
+        "--paper_table_tex",
+        default="overleaf_drafts/tables/taskB_topk.tex",
+        help="Where the cumulative top-K table printed in the paper body is written.",
+    )
     return parser.parse_args()
 
 
@@ -91,6 +96,72 @@ def write_latex_table(best_df: pd.DataFrame, out_dir: Path, ks: list[int]) -> No
     lines.append("\\bottomrule")
     lines.append("\\end{tabular}")
     (out_dir / "taskb_mseed_table.tex").write_text("\n".join(lines) + "\n")
+
+
+# The paper prints the models in this order, which is not the dict order above.
+PAPER_MODEL_ORDER = [
+    "bowphs/LaTa",
+    "bowphs/PhilTa",
+    "google/mt5-base",
+    "sentence-transformers/LaBSE",
+    "Qwen/Qwen3-Embedding-0.6B",
+    "KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5",
+]
+
+TASKB_TOPK_CAPTION = (
+    "Cumulative top-$K$ accuracy for Task B, as mean $\\pm$ standard deviation "
+    "over five query/reference reseedings at a fixed v2 split, using the best "
+    "per-model SIF+ABTT configuration. Each cell is the percentage of test "
+    "queries whose labelled directory appears within the top $K$ options. "
+    "Per-layer top-$k$ rankings: Appendix "
+    "Tables~\\ref{tab:taskB_ranking_main}, \\ref{tab:taskB_ranking_appendix}, "
+    "and~\\ref{tab:taskB_ranking_appendix_mseed}."
+)
+
+
+def write_paper_topk_table(best_df: pd.DataFrame, out_path: Path) -> None:
+    """Write the cumulative top-K table the paper body prints.
+
+    Separate from ``write_latex_table`` on purpose: the paper wants all five K
+    values, the paper's model order, no bolding, and the surrounding float, while
+    the figures directory keeps the four-column bolded variant used elsewhere.
+    """
+    ks = [1, 2, 3, 4, 5]
+    lines = [
+        "% Generated file. Edit the generator, not this file.",
+        r"\begin{table*}[t]",
+        r"\centering",
+        r"\small",
+        r"\setlength{\tabcolsep}{6pt}",
+        r"\begin{tabular}{l" + "r" * len(ks) + "}",
+        r"\toprule",
+        r"\textbf{Model} & "
+        + " & ".join(f"\\textbf{{Top-{k}}}" for k in ks)
+        + r" \\",
+        r"\midrule",
+    ]
+    by_model = {row["model"]: row for _, row in best_df.iterrows()}
+    width = max(len(SHORT[m]) for m in PAPER_MODEL_ORDER if m in by_model)
+    for model in PAPER_MODEL_ORDER:
+        if model not in by_model:
+            continue
+        row = by_model[model]
+        cells = [
+            f"{row[f'dir_acc_at_{k}_mean'] * 100:.1f} $\\pm$ "
+            f"{row[f'dir_acc_at_{k}_std'] * 100:.1f}"
+            for k in ks
+        ]
+        lines.append(f"{SHORT[model]:<{width}} & " + " & ".join(cells) + r" \\")
+
+    lines += [
+        r"\bottomrule",
+        r"\end{tabular}",
+        f"\\caption{{{TASKB_TOPK_CAPTION}}}",
+        r"\label{tab:taskb}",
+        r"\end{table*}",
+    ]
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text("\n".join(lines) + "\n")
 
 
 def render_table_figure(best_df: pd.DataFrame, out_dir: Path, ks: list[int]) -> None:
@@ -224,11 +295,13 @@ def main() -> None:
     ks = [k for k in [1, 2, 3, 5] if k in available_ks]
 
     write_latex_table(best_df, out_dir, ks)
+    write_paper_topk_table(best_df, Path(args.paper_table_tex))
     render_table_figure(best_df, out_dir, ks)
     plot_grouped_bar_topk(best_df, out_dir, ks)
     plot_breakdown(best_df, out_dir)
 
     print(f"Saved LaTeX table to {out_dir / 'taskb_mseed_table.tex'}")
+    print(f"Saved paper top-K table to {args.paper_table_tex}")
     print(f"Saved table figure to {out_dir / 'taskb_mseed_table.png'}")
     print(f"Saved bar chart to {out_dir / 'taskb_mseed_topk_bar.png'}")
     print(f"Saved breakdown to {out_dir / 'taskb_mseed_breakdown.png'}")
