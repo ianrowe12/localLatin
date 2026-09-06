@@ -68,7 +68,7 @@ Medieval canon law before the twelfth century survives in many compilations, who
 \label{fig:density}
 \end{figure}
 
-Medieval canon law preserves early records of legislation and judicial opinions in Western Europe. Before the twelfth century it survives not as one stable text but in many compilations, whose manuscripts differ in spelling, wording, fragment boundaries, and transmission history. Scholars often need to decide whether two passages express the same legal content despite those surface changes. That decision drives editorial work: identifying duplicates, analysing witnesses, and tracing how a text was transmitted.
+Medieval canon law preserves early records of legislation and judicial opinions in Western Europe. Before the twelfth century it survives not as one stable text but in many compilations, whose manuscripts differ in spelling, wording, fragment boundaries, and transmission history. Scholars often need to decide whether two passages express the same legal content despite those surface changes. That decision drives editorial work: identifying duplicates, analyzing witnesses, and tracing how a text was transmitted.
 
 We study this problem as semantic matching. The benchmark contains 840 labelled fragments of Medieval Latin canon law, each a canon or excerpt with one or more manuscript witnesses, 1,705 in all. We evaluate two tasks. Task A asks whether two passages express the same meaning. Task B turns the same embeddings into an open-set workflow: a system either routes a new passage to an existing directory or marks it as new.
 
@@ -83,7 +83,7 @@ Geometry diagnoses collapse and recovery, but it does not select the best retrie
 Finally, we compare local explanations of the score before and after the repair. Integrated gradients \citep{sundararajan2017axiomatic} gives a gradient view of token importance, and retrieval-adapted MaRC \citep{brinnerzarriess2023marc} gives a learned-mask view after replacing MaRC's classification target with pairwise retrieval cosine. Both explain a fixed query-candidate score, and both stay local diagnostics rather than global accounts of model behavior.
 
 This paper makes four contributions:
-(1) we release a benchmark for semantic matching in Medieval Latin canon law, together with a routing task that states the scholar's decision directly: file an unidentified witness under a known fragment, or flag it as new;
+(1) we introduce a benchmark for semantic matching in Medieval Latin canon law, together with a routing task that states the scholar's decision directly: file an unidentified witness under a known fragment, or flag it as new;
 (2) we separate universal anisotropy from the T5-specific mid-depth retrieval collapse across six models, measuring both with top-PC dominance, effective rank, and cosine concentration;
 (3) we show that ABTT repairs the anisotropy on this corpus without updating parameters, compressing a 36.6-point spread in five-seed top-1 routing accuracy to 1.0 point, with the largest gains on the T5 encoders; and
 % FINAL WORDING GATED ON #124
