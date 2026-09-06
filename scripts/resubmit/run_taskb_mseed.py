@@ -163,16 +163,24 @@ def find_optimal_D(
 
 
 def evaluate_query_vs_directory(
-    query_emb_norm: np.ndarray,
-    ref_emb_norm: np.ndarray,
+    query_emb_norm: Optional[np.ndarray],
+    ref_emb_norm: Optional[np.ndarray],
     query_folder_ids: np.ndarray,
     ref_folder_ids: np.ndarray,
     query_has_reference: np.ndarray,
     tau: float,
     top_k: int = 5,
+    rect_sim: Optional[np.ndarray] = None,
 ) -> Dict:
-    """Evaluate queries against reference directories using max-sim aggregation."""
-    rect_sim = query_emb_norm @ ref_emb_norm.T
+    """Evaluate queries against reference directories using max-sim aggregation.
+
+    Scorers that do not produce embeddings (the lexical baselines in
+    ``scripts/resubmit/lexical_baselines.py``) pass their (n_query, n_ref) score
+    block as ``rect_sim`` and leave the two embedding arguments as ``None``, so
+    the M-seed protocol is shared rather than duplicated.
+    """
+    if rect_sim is None:
+        rect_sim = query_emb_norm @ ref_emb_norm.T
 
     ref_dir_members: Dict[str, List[int]] = {}
     for j, fid in enumerate(ref_folder_ids):

@@ -153,6 +153,25 @@ def discover_layers(
     return sorted(layers)
 
 
+def learn_tau_from_similarity(
+    sim: np.ndarray,
+    folder_ids: np.ndarray,
+) -> float:
+    """Sweep thresholds on an already-built similarity matrix, return best-F1 tau.
+
+    Split out of :func:`learn_threshold_on_train` so that scorers which produce a
+    similarity matrix directly (the lexical baselines in
+    ``scripts/resubmit/lexical_baselines.py``) learn tau through exactly the same
+    code path as the embedding methods.
+    """
+    sims = upper_triangle(sim)
+    labels = upper_triangle_labels(folder_ids)
+    thresholds = np.linspace(0, 1, 200)
+    df = sweep_thresholds(sims, labels, thresholds)
+    best_idx = df["f1"].idxmax()
+    return float(df.loc[best_idx, "threshold"])
+
+
 def learn_threshold_on_train(
     emb: np.ndarray,
     folder_ids: np.ndarray,
@@ -160,12 +179,7 @@ def learn_threshold_on_train(
     """Build train similarity matrix, sweep thresholds, return best F1 threshold."""
     emb_norm = l2_normalize(emb)
     sim = similarity_matrix(emb_norm)
-    sims = upper_triangle(sim)
-    labels = upper_triangle_labels(folder_ids)
-    thresholds = np.linspace(0, 1, 200)
-    df = sweep_thresholds(sims, labels, thresholds)
-    best_idx = df["f1"].idxmax()
-    return float(df.loc[best_idx, "threshold"])
+    return learn_tau_from_similarity(sim, folder_ids)
 
 
 def has_partner_flags(folder_ids: np.ndarray) -> np.ndarray:
@@ -301,6 +315,86 @@ def find_optimal_D_phase11(
     return best_D, best_score
 
 
+def evaluate_from_similarity(
+    train_sim: np.ndarray,
+    test_sim: np.ndarray,
+    train_folder_ids: np.ndarray,
+    test_folder_ids: np.ndarray,
+    test_has_partner: np.ndarray,
+) -> Dict:
+    """Task A + Task B metric block for a pair of (train, test) similarity matrices.
+
+    This is the single definition of the reported metrics. :func:`evaluate_single`
+    feeds it cosine matrices built from post-processed embeddings;
+    ``scripts/resubmit/lexical_baselines.py`` feeds it BM25 / TF-IDF / Levenshtein
+    score matrices, so both go through identical metric code.
+
+    tau is learned on ``train_sim`` only (best-F1 cut over same-directory vs.
+    different-directory train pairs) and then applied to the test matrix.
+    """
+    # ── Train metrics ──────────────────────────────────────────────
+    train_sims = upper_triangle(train_sim)
+    train_labels = upper_triangle_labels(train_folder_ids)
+    tau = learn_tau_from_similarity(train_sim, train_folder_ids)
+
+    train_aucroc = safe_auc_roc(train_sims, train_labels)
+
+    train_has_partner = has_partner_flags(train_folder_ids)
+    train_dir_acc_at_1 = directory_assignment_accuracy_at_k(
+        train_sim, train_folder_ids, train_has_partner, tau, k=1
+    )
+
+    # ── Test metrics ───────────────────────────────────────────────
+    test_sims = upper_triangle(test_sim)
+    test_labels = upper_triangle_labels(test_folder_ids)
+    test_has_partner = np.asarray(test_has_partner, dtype=bool)
+
+    aucroc = safe_auc_roc(test_sims, test_labels)
+    spearman = safe_spearman(test_sims, test_labels.astype(float))
+
+    # Cosine stats
+    pos_mask = test_labels.astype(bool)
+    same_avg = float(np.mean(test_sims[pos_mask])) if pos_mask.any() else float("nan")
+    diff_avg = float(np.mean(test_sims[~pos_mask])) if (~pos_mask).any() else float("nan")
+    gap = same_avg - diff_avg
+
+    # Directory assignment acc@k (new Task B)
+    dir_acc_1 = directory_assignment_accuracy_at_k(
+        test_sim, test_folder_ids, test_has_partner, tau, k=1
+    )
+    dir_acc_3 = directory_assignment_accuracy_at_k(
+        test_sim, test_folder_ids, test_has_partner, tau, k=3
+    )
+
+    # Assignment accuracy (diagnostic, carried over from Phase 10)
+    existing_acc, new_acc, overall_acc = compute_assignment_acc(
+        test_sim, test_has_partner, tau
+    )
+
+    n_existing = int(test_has_partner.sum())
+    n_new = int(len(test_folder_ids)) - n_existing
+
+    return {
+        "tau": tau,
+        "aucroc": aucroc,
+        "spearman": spearman,
+        "same_avg": same_avg,
+        "diff_avg": diff_avg,
+        "gap": gap,
+        "dir_acc_at_1": dir_acc_1,
+        "dir_acc_at_3": dir_acc_3,
+        "existing_acc": existing_acc,
+        "new_acc": new_acc,
+        "overall_assignment_acc": overall_acc,
+        "train_aucroc": train_aucroc,
+        "train_dir_acc_at_1": train_dir_acc_at_1,
+        "n_train": int(len(train_folder_ids)),
+        "n_test": int(len(test_folder_ids)),
+        "n_existing": n_existing,
+        "n_new": n_new,
+    }
+
+
 def evaluate_single(
     emb_all: np.ndarray,
     split_meta: pd.DataFrame,
@@ -367,53 +461,15 @@ def evaluate_single(
     train_emb_norm = l2_normalize(train_emb)
     test_emb_norm = l2_normalize(test_emb)
 
-    # ── Train metrics ──────────────────────────────────────────────
-    train_sim = similarity_matrix(train_emb_norm)
-    train_sims = upper_triangle(train_sim)
-    train_labels = upper_triangle_labels(train_folder_ids)
-    thresh_df = sweep_thresholds(train_sims, train_labels, np.linspace(0, 1, 200))
-    best_f1_idx = thresh_df["f1"].idxmax()
-    tau = float(thresh_df.loc[best_f1_idx, "threshold"])
-
-    train_aucroc = safe_auc_roc(train_sims, train_labels)
-
-    # Train directory acc
-    train_has_partner = has_partner_flags(train_folder_ids)
-    train_dir_acc_at_1 = directory_assignment_accuracy_at_k(
-        train_sim, train_folder_ids, train_has_partner, tau, k=1
+    metrics = evaluate_from_similarity(
+        train_sim=similarity_matrix(train_emb_norm),
+        test_sim=similarity_matrix(test_emb_norm),
+        train_folder_ids=train_folder_ids,
+        test_folder_ids=test_folder_ids,
+        test_has_partner=test_has_partner,
     )
 
-    # ── Test metrics ───────────────────────────────────────────────
-    test_sim = similarity_matrix(test_emb_norm)
-    test_sims = upper_triangle(test_sim)
-    test_labels = upper_triangle_labels(test_folder_ids)
-
-    aucroc = safe_auc_roc(test_sims, test_labels)
-    spearman = safe_spearman(test_sims, test_labels.astype(float))
-
-    # Cosine stats
-    pos_mask = test_labels.astype(bool)
-    same_avg = float(np.mean(test_sims[pos_mask])) if pos_mask.any() else float("nan")
-    diff_avg = float(np.mean(test_sims[~pos_mask])) if (~pos_mask).any() else float("nan")
-    gap = same_avg - diff_avg
-
-    # Directory assignment acc@k (new Task B)
-    dir_acc_1 = directory_assignment_accuracy_at_k(
-        test_sim, test_folder_ids, test_has_partner, tau, k=1
-    )
-    dir_acc_3 = directory_assignment_accuracy_at_k(
-        test_sim, test_folder_ids, test_has_partner, tau, k=3
-    )
-
-    # Assignment accuracy (diagnostic, carried over from Phase 10)
-    existing_acc, new_acc, overall_acc = compute_assignment_acc(
-        test_sim, test_has_partner, tau
-    )
-
-    n_existing = int(test_has_partner.sum())
-    n_new = int(test_mask.sum()) - n_existing
-
-    return {
+    row = {
         "model": model_name,
         "repr": repr_name,
         "pooling": actual_pooling,
@@ -421,24 +477,9 @@ def evaluate_single(
         "method": method,
         "D": actual_D,
         "sif_a": sif_a,
-        "tau": tau,
-        "aucroc": aucroc,
-        "spearman": spearman,
-        "same_avg": same_avg,
-        "diff_avg": diff_avg,
-        "gap": gap,
-        "dir_acc_at_1": dir_acc_1,
-        "dir_acc_at_3": dir_acc_3,
-        "existing_acc": existing_acc,
-        "new_acc": new_acc,
-        "overall_assignment_acc": overall_acc,
-        "train_aucroc": train_aucroc,
-        "train_dir_acc_at_1": train_dir_acc_at_1,
-        "n_train": int(train_mask.sum()),
-        "n_test": int(test_mask.sum()),
-        "n_existing": n_existing,
-        "n_new": n_new,
     }
+    row.update(metrics)
+    return row
 
 
 def save_distributions(
