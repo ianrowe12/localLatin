@@ -67,6 +67,7 @@ from attribution_metrics import (  # noqa: E402
     LOO_NOISE_FLOOR,
     METHOD_SCORE_REDUCER,
     METRIC_REGISTRY,
+    RANDOMIZATION_CHECK_KEYS,
     REDUCER_FALLBACK,
     PairContext,
     scores_from_pair_matrix,
@@ -146,6 +147,30 @@ def forward_pooled(model, input_ids: "torch.Tensor", attention_mask: "torch.Tens
         mask = attention_mask.float()              # (1, seq)
         pooled = (hidden * mask.unsqueeze(-1)).sum(dim=1) / mask.sum(dim=1, keepdim=True).clamp(min=1.0)
         return pooled.squeeze(0)
+
+
+def forward_pooled_batch(model, input_ids: "torch.Tensor", attention_mask: "torch.Tensor",
+                         layer: int) -> "torch.Tensor":
+    """Batched twin of :func:`forward_pooled`. Returns shape (batch, hidden).
+
+    Rows of a batch do not interact inside the encoder, so stacking B masks of
+    the same query is numerically the same computation as B separate forwards,
+    up to the reduction order inside the matmuls. It is what makes the whole
+    k=1..n masking curve affordable under ``--backend model``: one forward per
+    ``MODEL_MASK_BATCH`` masks instead of one per mask.
+    """
+    with torch.no_grad():
+        out = model(input_ids=input_ids, attention_mask=attention_mask,
+                    output_hidden_states=True, return_dict=True)
+        hidden = out.hidden_states[layer].float()      # (batch, seq, hidden)
+        mask = attention_mask.float()                  # (batch, seq)
+        return (hidden * mask.unsqueeze(-1)).sum(dim=1) / mask.sum(dim=1, keepdim=True).clamp(min=1.0)
+
+
+# Masks evaluated per encoder forward under ``--backend model``. Bounded so a
+# long query does not blow the activation buffer (output_hidden_states keeps
+# every layer).
+MODEL_MASK_BATCH: int = 16
 
 
 def abtt_clean(vec: torch.Tensor, pcs: torch.Tensor, mean_vec: torch.Tensor) -> torch.Tensor:
@@ -316,6 +341,12 @@ class MetricOptions:
     random_order_draws: int = DEFAULT_RANDOM_ORDER_DRAWS
     shuffle_draws: int = DEFAULT_SHUFFLE_DRAWS
     random_seeds: int = 5
+    # The ``random`` and ``inverse`` diagnostic rows cost six extra scored
+    # methods per (pair, variant). Under ``--backend model`` that is the
+    # difference between a bounded operator spot check and an unaffordable one,
+    # so it can be turned off. Off is never the default: the full tables need
+    # those controls.
+    skip_pseudo_baselines: bool = False
 
     def selected(self) -> Tuple[str, ...]:
         if self.metric_names is None:
@@ -327,6 +358,8 @@ def _pseudo_baseline_rows(data, ctx: PairContext, variant: str, n_q: int,
                           opts: MetricOptions) -> List[dict]:
     """The ``random`` and ``inverse`` diagnostic rows for one (pair, variant)."""
     rows: List[dict] = []
+    if opts.skip_pseudo_baselines:
+        return rows
     # Random scores. Emit one row per seed so seed variance propagates into the
     # across-pair std (per statistician audit).
     rng = np.random.default_rng(0)
@@ -463,9 +496,59 @@ def process_pair(npz_path: Path, model, tokenizer, device: str,
             return eval_masked_cos
         eval_masked_cos = make_eval()
 
+        def make_batch_eval():
+            cap = c_pooled
+            cap_norm = cap.norm().clamp(min=1e-12)
+
+            def eval_masked_cos_many(masks: np.ndarray) -> np.ndarray:
+                """Cosines for a stack of length-n_q masks, batched over forwards."""
+                masks = np.asarray(masks, dtype=bool)
+                out = np.zeros(masks.shape[0], dtype=np.float64)
+                live = np.where(masks.any(axis=1))[0]  # all-masked rows stay 0.0
+                for start in range(0, len(live), MODEL_MASK_BATCH):
+                    idx = live[start:start + MODEL_MASK_BATCH]
+                    keep = torch.from_numpy(masks[idx].astype(np.int64)).to(device)
+                    ids = q_ids_full.repeat(len(idx), 1)
+                    ids = torch.where(keep.bool(), ids, torch.full_like(ids, pad_id))
+                    attn = q_mask_full.repeat(len(idx), 1) * keep
+                    pooled = forward_pooled_batch(model, ids, attn, layer)
+                    if variant == "abtt":
+                        pooled = abtt_clean(pooled, pcs, mean_vec)
+                    num = pooled @ cap
+                    den = pooled.norm(dim=1).clamp(min=1e-12) * cap_norm
+                    out[idx] = (num / den).double().cpu().numpy()
+                return out
+            return eval_masked_cos_many
+        eval_masked_cos_many = make_batch_eval()
+
+        def make_prefix_curves():
+            def prefix_curves(order: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+                """Input-level twin of ``HiddenPairEvaluator.prefix_curves``.
+
+                Builds the 2(n-1) interior masks of the k-sweep and evaluates
+                them in batches. Endpoints are pinned by ``PairContext.curves``.
+                """
+                order = np.asarray(order, dtype=np.int64)
+                keep_masks = np.zeros((n_q + 1, n_q), dtype=bool)
+                for k in range(1, n_q + 1):
+                    keep_masks[k, order[:k]] = True
+                stacked = np.concatenate([keep_masks[1:n_q], ~keep_masks[1:n_q]], axis=0)
+                vals = eval_masked_cos_many(stacked)
+                keep = np.zeros(n_q + 1, dtype=np.float64)
+                drop = np.zeros(n_q + 1, dtype=np.float64)
+                keep[1:n_q] = vals[: n_q - 1]
+                drop[1:n_q] = vals[n_q - 1:]
+                return keep, drop
+            return prefix_curves
+        prefix_curves = make_prefix_curves()
+
         full_cos = eval_masked_cos(np.ones(n_q, dtype=np.int64))
 
-        # Single-token leave-one-out cache: shared across all methods for this variant.
+        # Single-token leave-one-out cache: shared across all methods for this
+        # variant. Deliberately still one forward per mask: the published
+        # summary.csv was produced this way, and batching would change the
+        # matmul reduction order and so the last bits of every legacy number.
+        # It is n forwards against the curves' 2n(n-1), so nothing is gained.
         single_ablation_cos = np.empty(n_q, dtype=np.float64)
         for i in range(n_q):
             mask = np.ones(n_q, dtype=np.int64)
@@ -477,6 +560,7 @@ def process_pair(npz_path: Path, model, tokenizer, device: str,
             single_ablation_cos=single_ablation_cos,
             eval_masked_cos=eval_masked_cos,
             metadata={"layer": layer, "n_c": n_c},
+            prefix_curves=prefix_curves,
         )
 
         rows.extend(_method_rows(data, ctx, variant, n_q, n_c, methods_present, opts))
@@ -502,7 +586,8 @@ def _eval_one(ctx: PairContext, method: str, scores: np.ndarray,
         elif name in ("deletion_auc", "insertion_auc"):
             row.update(fn(ctx, scores, random_draws=opts.random_order_draws))
         elif name == "randomization_check":
-            row.update(fn(ctx, scores, shuffle_draws=opts.shuffle_draws))
+            row.update(fn(ctx, scores, shuffle_draws=opts.shuffle_draws,
+                          random_draws=opts.random_order_draws))
         else:
             row.update(fn(ctx, scores))
     return row
@@ -603,7 +688,7 @@ def required_result_keys(fractions: Sequence[float],
     if "insertion_auc" in selected:
         keys.update({"ins_auc", "ins_auc_random", "ins_auc_gap"})
     if "randomization_check" in selected:
-        for base in ("loo_rho", "loo_tau", "aopc_suff_ratio", "aopc_comp_ratio"):
+        for base in RANDOMIZATION_CHECK_KEYS:
             keys.update({f"rand_{base}", f"rand_{base}_gap"})
     return keys
 MODEL_SHORT = {
@@ -692,6 +777,8 @@ def aggregate_sweep_long(summary: pd.DataFrame,
         ("randomization_tau_gap", "rand_loo_tau_gap", None),
         ("randomization_aopc_suff_gap", "rand_aopc_suff_ratio_gap", None),
         ("randomization_aopc_comp_gap", "rand_aopc_comp_ratio_gap", None),
+        ("randomization_ins_auc_gap_gap", "rand_ins_auc_gap_gap", None),
+        ("randomization_del_auc_gap_gap", "rand_del_auc_gap_gap", None),
     ])
 
     for _, src in summary.iterrows():
@@ -1056,6 +1143,12 @@ def parse_args() -> argparse.Namespace:
                    help="Explicit path for the long sweep summary; see --summary_out.")
     p.add_argument("--random_order_draws", type=int, default=DEFAULT_RANDOM_ORDER_DRAWS,
                    help="Random orderings averaged for the deletion/insertion AUC reference.")
+    p.add_argument("--skip_pseudo_baselines", action="store_true",
+                   help="Skip the synthetic 'random' and 'inverse' rows. They "
+                        "cost six extra scored methods per (pair, variant), "
+                        "which the model backend cannot afford for a curve "
+                        "metric. Never use this for a table the memo quotes: "
+                        "criterion 4 is read off the 'random' rows.")
     p.add_argument("--shuffle_draws", type=int, default=DEFAULT_SHUFFLE_DRAWS,
                    help="Attribution shuffles averaged for the randomization check.")
     return p.parse_args()
@@ -1081,9 +1174,12 @@ def resolve_metric_names(raw: Optional[str], backend: str) -> Tuple[str, ...]:
         pricey = [n for n in names if n in CURVE_METRICS]
         if pricey:
             print(
-                f"WARNING: {pricey} sweep the whole k=1..n curve and cost O(n) model "
-                "forward passes each under --backend model. --backend hidden is the "
-                "intended path for them.",
+                f"WARNING: {pricey} sweep the whole k=1..n curve, which costs O(n) "
+                f"masked encoder evaluations per ordering ({MODEL_MASK_BATCH} masks "
+                "per forward) under --backend model. --backend hidden is the intended "
+                "path for a full table; the model backend is for bounded "
+                "erasure-operator spot checks, and its numbers must not be mixed with "
+                "hidden-backend numbers in one table.",
                 flush=True,
             )
     return names
@@ -1111,6 +1207,7 @@ def main() -> None:
         metric_names=metric_names,
         random_order_draws=args.random_order_draws,
         shuffle_draws=args.shuffle_draws,
+        skip_pseudo_baselines=args.skip_pseudo_baselines,
     )
     required_keys = required_result_keys(
         fractions, compactness_thresholds, metric_names, args.compute_aopc,

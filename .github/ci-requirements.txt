@@ -8,6 +8,11 @@ ruff==0.16.4
 # scikit-learn the character n-gram TF-IDF vectoriser, rapidfuzz the Levenshtein
 # matrix. All three are pure-wheel installs, unlike the torch/transformers stack
 # in the root requirements.txt that this file deliberately avoids.
+#
+# scipy is also a hard requirement of src/attribution_metrics.py
+# (scipy.stats.spearmanr / kendalltau), so tests/test_attribution_metrics.py
+# imports it unguarded: without the pin below CI would silently skip the 36
+# cases that pin the attribution numbers the paper reports.
 rapidfuzz==3.14.5
 scikit-learn==1.7.2
 scipy==1.15.3

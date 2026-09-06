@@ -21,3 +21,5 @@ Rand gap (rho),rand_loo_rho_gap,new,higher,A,A,A,A,A,A,6,6
 Rand gap (tau),rand_loo_tau_gap,new,higher,A,A,A,A,A,A,6,6
 Rand gap (AOPC-S),rand_aopc_suff_ratio_gap,new,higher,b,A,A,A,A,A,5,6
 Rand gap (AOPC-C),rand_aopc_comp_ratio_gap,new,higher,b,A,b,b,A,A,3,6
+Rand gap (InsAUC gap),rand_ins_auc_gap_gap,new,higher,b,A,A,A,A,A,5,6
+Rand gap (DelAUC gap),rand_del_auc_gap_gap,new,higher,b,A,b,b,A,A,3,6

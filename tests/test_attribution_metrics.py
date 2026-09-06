@@ -30,8 +30,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 sys.path.insert(0, str(REPO_ROOT / "scripts" / "ig"))
 
-pytest.importorskip("scipy", reason="attribution_metrics uses scipy.stats")
-
+# scipy is imported unguarded on purpose. It is pinned in
+# .github/ci-requirements.txt, so a missing scipy is a CI failure rather than a
+# silent skip of this whole file: these cases are the only automated check on
+# the metric definitions the paper's attribution table is built from.
 from attribution_metrics import (  # noqa: E402
     FULL_COS_FLOOR,
     METRIC_REGISTRY,
@@ -334,6 +336,8 @@ GAP_KEYS = (
     "rand_loo_tau_gap",
     "rand_aopc_suff_ratio_gap",
     "rand_aopc_comp_ratio_gap",
+    "rand_ins_auc_gap_gap",
+    "rand_del_auc_gap_gap",
 )
 
 
@@ -364,8 +368,62 @@ def test_randomization_gap_is_exactly_zero_for_a_constant_attribution(
     out = randomization_check(ctx, flat)
     assert out["rand_aopc_suff_ratio_gap"] == pytest.approx(0.0)
     assert out["rand_aopc_comp_ratio_gap"] == pytest.approx(0.0)
+    assert out["rand_ins_auc_gap_gap"] == pytest.approx(0.0)
+    assert out["rand_del_auc_gap_gap"] == pytest.approx(0.0)
     # rho/tau are NaN on a constant vector, so their gaps are NaN, not 0.
     assert np.isnan(out["rand_loo_rho_gap"])
+
+
+def test_randomization_covers_the_chance_corrected_aucs(
+    ctx: PairContext, aligned: np.ndarray
+) -> None:
+    """The shuffled control must have a number for every main-table candidate.
+
+    Issue #135 review: criterion 5 of the selection memo was applied to
+    AOPC-Suff but waived for InsAUC gap, which has no shuffled-attribution
+    number unless the control computes one. This pins that it does.
+    """
+    out = randomization_check(ctx, aligned)
+    for key in ("rand_ins_auc_gap", "rand_ins_auc_gap_gap",
+                "rand_del_auc_gap", "rand_del_auc_gap_gap"):
+        assert key in out
+        assert np.isfinite(out[key]), (key, out[key])
+
+
+def test_randomization_auc_gap_level_matches_the_metric_itself(
+    ctx: PairContext, aligned: np.ndarray
+) -> None:
+    """``rand_<k>`` is the shuffled level, so real minus it must be ``rand_<k>_gap``.
+
+    Pins that the control's real-side AUC gap is the same quantity
+    ``insertion_auc`` / ``deletion_auc`` report, i.e. that the shared
+    random-order reference is drawn identically in both places.
+    """
+    out = randomization_check(ctx, aligned)
+    real_ins = insertion_auc(ctx, aligned)["ins_auc_gap"]
+    real_del = deletion_auc(ctx, aligned)["del_auc_gap"]
+    assert real_ins - out["rand_ins_auc_gap"] == pytest.approx(out["rand_ins_auc_gap_gap"])
+    assert real_del - out["rand_del_auc_gap"] == pytest.approx(out["rand_del_auc_gap_gap"])
+
+
+def test_auc_gap_shuffle_equals_its_aopc_twin(
+    ctx: PairContext, aligned: np.ndarray, reversed_scores: np.ndarray
+) -> None:
+    """AOPC-Suff and InsAUC are the same statistic, so they share one verdict.
+
+    The random-order reference is a property of the pair, identical for the real
+    and every shuffled attribution, and the mean-over-k versus trapezoid offset
+    is a constant; both cancel in the gap. So the shuffled-attribution gap of
+    ``ins_auc_gap`` must equal that of ``aopc_suff_ratio`` exactly, and likewise
+    for deletion and AOPC-Comp. This is why the selection memo cannot pass one
+    and fail the other.
+    """
+    for scores in (aligned, reversed_scores):
+        out = randomization_check(ctx, scores)
+        assert out["rand_ins_auc_gap_gap"] == pytest.approx(
+            out["rand_aopc_suff_ratio_gap"], abs=1e-12)
+        assert out["rand_del_auc_gap_gap"] == pytest.approx(
+            out["rand_aopc_comp_ratio_gap"], abs=1e-12)
 
 
 def test_randomization_reports_the_shuffled_level_too(

@@ -79,6 +79,22 @@ METRIC_SPECS: Tuple[MetricSpec, ...] = (
     MetricSpec("Rand gap (tau)", "rand_loo_tau_gap", True, "new"),
     MetricSpec("Rand gap (AOPC-S)", "rand_aopc_suff_ratio_gap", True, "new"),
     MetricSpec("Rand gap (AOPC-C)", "rand_aopc_comp_ratio_gap", True, "new"),
+    MetricSpec("Rand gap (InsAUC gap)", "rand_ins_auc_gap_gap", True, "new"),
+    MetricSpec("Rand gap (DelAUC gap)", "rand_del_auc_gap_gap", True, "new"),
+)
+
+# Selection criterion 5 of docs/research/attribution_metrics_decision.md is a
+# per-cell rule over all 12 cells (3 models x 2 views x 2 variants), so it needs
+# its own table rather than the 6-cell baseline-vs-ABTT view. Every metric that
+# is a candidate for a main-table column must appear here; a candidate with no
+# row is a candidate the criterion was never applied to.
+SHUFFLE_CONTROL_SPECS: Tuple[Tuple[str, str], ...] = (
+    ("rho_LOO", "rand_loo_rho_gap"),
+    ("tau_LOO", "rand_loo_tau_gap"),
+    ("AOPC-Comp", "rand_aopc_comp_ratio_gap"),
+    ("AOPC-Suff", "rand_aopc_suff_ratio_gap"),
+    ("DelAUC gap", "rand_del_auc_gap_gap"),
+    ("InsAUC gap", "rand_ins_auc_gap_gap"),
 )
 
 
@@ -188,6 +204,55 @@ def render_controls_table(df: pd.DataFrame, keys: Sequence[str]) -> List[str]:
     return lines
 
 
+def render_shuffle_control_table(df: pd.DataFrame) -> List[str]:
+    """Criterion 5 applied identically to every candidate, over all 12 cells.
+
+    One row per metric: how many of the 3 models x 2 views x 2 variants cells
+    have a positive shuffled-attribution gap, the range, and the cells that
+    fail. The failing cells are named because a negative gap is a statement
+    about that cell's attribution, not only about the metric.
+    """
+    lines = [
+        "| Metric | Cells with a positive gap | Range | Failing cells |",
+        "|---|---|---|---|",
+    ]
+    for label, key in SHUFFLE_CONTROL_SPECS:
+        vals: List[Tuple[str, float]] = []
+        for model, model_label in MODELS:
+            for method, view_label in VIEWS:
+                for variant in ("baseline", "abtt"):
+                    v = _mean(df, model, method, variant, key)
+                    if pd.isna(v):
+                        continue
+                    vals.append((f"{model_label}/{view_label} {variant}", float(v)))
+        if not vals:
+            lines.append(f"| {label} | -- | -- | (key {key} absent) |")
+            continue
+        numbers = [v for _, v in vals]
+        failing = [f"{name} ({v:+.3f})" for name, v in vals if v <= 0]
+        lines.append(
+            f"| {label} | {len(numbers) - len(failing)}/{len(numbers)} | "
+            f"{min(numbers):+.3f} to {max(numbers):+.3f} | "
+            f"{', '.join(failing) if failing else 'none'} |"
+        )
+    return lines
+
+
+def render_twin_check(df: pd.DataFrame) -> List[str]:
+    """Pin the algebraic identity that forces AOPC-Suff and InsAUC to share a verdict."""
+    pairs = (
+        ("rand_ins_auc_gap_gap", "rand_aopc_suff_ratio_gap"),
+        ("rand_del_auc_gap_gap", "rand_aopc_comp_ratio_gap"),
+    )
+    lines = [""]
+    for a, b in pairs:
+        if f"{a}_mean" not in df.columns or f"{b}_mean" not in df.columns:
+            continue
+        diff = (df[f"{a}_mean"] - df[f"{b}_mean"]).abs().max()
+        lines.append(f"Max |`{a}` - `{b}`| over all summary rows: {diff:.3e}.")
+    return lines
+
+
 def render_drift_note(df: pd.DataFrame) -> List[str]:
     if "full_cos_drift_mean" not in df.columns:
         return []
@@ -223,6 +288,10 @@ def main() -> None:
         keys=("loo_rho", "loo_tau", "aopc_suff_ratio", "aopc_comp_ratio",
               "del_auc_gap", "ins_auc_gap"),
     )))
+    print("\n## Shuffled-attribution control (criterion 5), all 12 cells\n")
+    print("\n".join(render_shuffle_control_table(df)))
+    print("\n".join(render_twin_check(df)))
+
     print("\n".join(render_drift_note(df)))
 
     if args.wins_csv:

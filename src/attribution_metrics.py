@@ -108,6 +108,16 @@ class PairContext:
     eval_masked_cos: MaskedCosFn
     metadata: Dict[str, object] = field(default_factory=dict)
     prefix_curves: Optional[PrefixCurveFn] = None
+    # Memo keyed by token ordering. ``curves`` is a pure function of ``order``
+    # for a fixed context, and the metrics ask for the same orderings more than
+    # once: insertion_auc and deletion_auc both request the attribution order
+    # and the same seeded random orders, and the randomization check requests
+    # them again. On the ``model`` backend one curve costs 2(n-1) encoder
+    # forwards, so the memo is the difference between a spot check that runs in
+    # minutes and one that does not run at all. Mutating the dict is allowed on
+    # a frozen dataclass; it is excluded from equality and repr.
+    _curve_cache: Dict[bytes, Tuple[np.ndarray, np.ndarray]] = field(
+        default_factory=dict, compare=False, repr=False)
 
     @property
     def loo_deltas(self) -> np.ndarray:
@@ -132,10 +142,17 @@ class PairContext:
         n = self.n_q
         if order.shape != (n,):
             raise ValueError(f"order must have shape ({n},), got {order.shape}")
+        cache_key = order.tobytes()
+        cached = self._curve_cache.get(cache_key)
+        if cached is not None:
+            return cached
         if self.prefix_curves is not None:
             keep, drop = self.prefix_curves(order)
-            keep = np.asarray(keep, dtype=np.float64)
-            drop = np.asarray(drop, dtype=np.float64)
+            # Copy rather than view: the endpoints are pinned below, and the
+            # result is cached, so we must own the buffer instead of writing
+            # into whatever the driver handed back.
+            keep = np.array(keep, dtype=np.float64, copy=True)
+            drop = np.array(drop, dtype=np.float64, copy=True)
             if keep.shape != (n + 1,) or drop.shape != (n + 1,):
                 raise ValueError("prefix_curves must return two length-(n+1) arrays")
         else:
@@ -150,6 +167,9 @@ class PairContext:
         keep[n] = float(self.full_cos)
         drop[0] = float(self.full_cos)
         drop[n] = 0.0
+        keep.setflags(write=False)
+        drop.setflags(write=False)
+        self._curve_cache[cache_key] = (keep, drop)
         return keep, drop
 
 
@@ -609,6 +629,44 @@ def insertion_auc(
     }
 
 
+# Keys the shuffled-attribution control evaluates. Every curve metric that can
+# enter the main table has to appear here, otherwise criterion 5 of the
+# selection memo is applied to some candidates and waived for others. In
+# particular ``ins_auc_gap`` and ``del_auc_gap`` are listed explicitly rather
+# than left to be inferred from their AOPC twins.
+RANDOMIZATION_CHECK_KEYS: Tuple[str, ...] = (
+    "loo_rho",
+    "loo_tau",
+    "aopc_suff_ratio",
+    "aopc_comp_ratio",
+    "ins_auc_gap",
+    "del_auc_gap",
+)
+
+
+def _curve_stats(ctx: "PairContext", scores: np.ndarray,
+                 full: float, ratio_safe: bool) -> Tuple[float, float, float, float]:
+    """One pass over the curves for ``scores``: both AOPC ratios and both AUCs.
+
+    Returns ``(aopc_suff_ratio, aopc_comp_ratio, ins_auc, del_auc)``, each NaN
+    when the full cosine is below ``FULL_COS_FLOOR``. Identical by construction
+    to what :func:`aopc`, :func:`insertion_auc` and :func:`deletion_auc` return
+    for the same ``scores``; sharing one ``ctx.curves`` call is what keeps the
+    shuffled-attribution control affordable over six keys instead of four.
+    """
+    if not ratio_safe:
+        nan = float("nan")
+        return nan, nan, nan, nan
+    keep_curve, drop_curve = ctx.curves(rank_order(scores))
+    suff_raw, comp_raw = _aopc_from_curves(keep_curve, drop_curve, full)
+    return (
+        suff_raw / full,
+        comp_raw / full,
+        _curve_auc(keep_curve / full),
+        _curve_auc(drop_curve / full),
+    )
+
+
 @register("randomization_check")
 def randomization_check(
     ctx: PairContext,
@@ -616,6 +674,8 @@ def randomization_check(
     *,
     shuffle_draws: int = DEFAULT_SHUFFLE_DRAWS,
     seed: int = SHUFFLE_SEED,
+    random_draws: int = DEFAULT_RANDOM_ORDER_DRAWS,
+    random_seed: int = RANDOM_ORDER_SEED,
 ) -> Dict[str, float]:
     """Adebayo-style sanity check: permute ``a``, recompute, report the gap.
 
@@ -626,36 +686,65 @@ def randomization_check(
     anything. A metric on which real and shuffled attributions score the same is
     not measuring attribution quality on this data.
 
-    Reports, for each of ``loo_rho``, ``loo_tau``, ``aopc_suff_ratio`` and
-    ``aopc_comp_ratio``, the mean over ``shuffle_draws`` permutations
-    (``rand_<key>``) and the signed gap ``rand_<key>_gap = real - shuffled``.
-    All four underlying metrics are higher-is-better, so a positive gap is the
-    passing direction.
+    Reports, for each key in :data:`RANDOMIZATION_CHECK_KEYS`, the mean over
+    ``shuffle_draws`` permutations (``rand_<key>``) and the signed gap
+    ``rand_<key>_gap = real - shuffled``. Every underlying key is
+    higher-is-better, so a positive gap is the passing direction.
+
+    The two chance-corrected AUC keys are included so the control covers the
+    metrics that are actually candidates for the paper's main table. Their
+    random-*order* reference (``ins_auc_random`` / ``del_auc_random``) is a
+    property of the pair, not of the attribution, so it is identical for the
+    real and every shuffled attribution and is computed once here; it therefore
+    cancels in the gap, which makes ``rand_ins_auc_gap_gap`` algebraically equal
+    to ``rand_aopc_suff_ratio_gap`` and ``rand_del_auc_gap_gap`` equal to
+    ``rand_aopc_comp_ratio_gap`` (the mean-over-k versus trapezoid offset
+    ``1/(2n)`` is a constant that also cancels). Reporting them explicitly
+    rather than leaving them to be derived is the point: the selection memo
+    applies its shuffled-attribution criterion to a column only if that column
+    has a number behind it.
     """
-    real_rho = loo_correlation(ctx, scores)["loo_rho"]
-    real_tau = kendall_tau_loo(ctx, scores)["loo_tau"]
-    real_aopc = aopc(ctx, scores)
-    real = {
-        "loo_rho": real_rho,
-        "loo_tau": real_tau,
-        "aopc_suff_ratio": real_aopc["aopc_suff_ratio"],
-        "aopc_comp_ratio": real_aopc["aopc_comp_ratio"],
-    }
+    full = ctx.full_cos
+    ratio_safe = abs(full) >= FULL_COS_FLOOR
+    scores = np.asarray(scores, dtype=np.float64)
+
+    # Random-order reference, shared by the real and every shuffled attribution.
+    if ratio_safe and random_draws > 0:
+        ins_refs: List[float] = []
+        del_refs: List[float] = []
+        for order in _random_orders(ctx.n_q, random_draws, random_seed):
+            keep_curve, drop_curve = ctx.curves(order)
+            ins_refs.append(_curve_auc(keep_curve / full))
+            del_refs.append(_curve_auc(drop_curve / full))
+        ins_ref = float(np.mean(ins_refs))
+        del_ref = float(np.mean(del_refs))
+    else:
+        ins_ref = float("nan")
+        del_ref = float("nan")
+
+    def _all_keys(vec: np.ndarray) -> Dict[str, float]:
+        suff, comp, ins_auc_v, del_auc_v = _curve_stats(ctx, vec, full, ratio_safe)
+        return {
+            "loo_rho": loo_correlation(ctx, vec)["loo_rho"],
+            "loo_tau": kendall_tau_loo(ctx, vec)["loo_tau"],
+            "aopc_suff_ratio": suff,
+            "aopc_comp_ratio": comp,
+            "ins_auc_gap": ins_auc_v - ins_ref,
+            "del_auc_gap": del_ref - del_auc_v,
+        }
+
+    real = _all_keys(scores)
 
     rng = np.random.default_rng(seed)
-    collected: Dict[str, List[float]] = {k: [] for k in real}
-    scores = np.asarray(scores, dtype=np.float64)
+    collected: Dict[str, List[float]] = {k: [] for k in RANDOMIZATION_CHECK_KEYS}
     for _ in range(shuffle_draws):
-        shuffled = rng.permutation(scores)
-        collected["loo_rho"].append(loo_correlation(ctx, shuffled)["loo_rho"])
-        collected["loo_tau"].append(kendall_tau_loo(ctx, shuffled)["loo_tau"])
-        sh_aopc = aopc(ctx, shuffled)
-        collected["aopc_suff_ratio"].append(sh_aopc["aopc_suff_ratio"])
-        collected["aopc_comp_ratio"].append(sh_aopc["aopc_comp_ratio"])
+        shuffled_vals = _all_keys(rng.permutation(scores))
+        for key in RANDOMIZATION_CHECK_KEYS:
+            collected[key].append(shuffled_vals[key])
 
     out: Dict[str, float] = {}
-    for key, vals in collected.items():
-        arr = np.asarray(vals, dtype=np.float64)
+    for key in RANDOMIZATION_CHECK_KEYS:
+        arr = np.asarray(collected[key], dtype=np.float64)
         finite = arr[np.isfinite(arr)]
         shuffled_mean = float(finite.mean()) if finite.size else float("nan")
         out[f"rand_{key}"] = shuffled_mean
