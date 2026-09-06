@@ -324,11 +324,15 @@ Task B simulates a human-in-the-loop workflow by counting a query as successful 
 %       release the benchmark or write the ARR responsible-research checklist
 %       and Ethics/data-statement language. She offered to meet in person;
 %       settle licence, attribution wording and release scope there.
-%   (c) DATA DERIVATION. We hold the fragments as plain-text files; no script
-%       in this repo produces data/canon_labelled, and the published CCL form
-%       is TEI. Confirm with the project how the plain text and the directory
-%       labels were extracted from the TEI, so the paper can state the step
-%       instead of implying we redistribute the TEI verbatim.
+%   (c) DATA DERIVATION. ANSWERED (issue #111). The rule is known and scripted:
+%       scripts/data/tei_to_canon.py turns a CCL TEI-P5 export into our layout
+%       (one file per unit div with an xml:id, text = manuscript rubric plus
+%       canon text with inline apparatus flattened, directory = the scholSource
+%       key, which is stripped from the text). It reproduces all 279 existing
+%       BN2123 files after whitespace normalisation. See
+%       docs/research/data_derivation.md. Section 2 can now state the step.
+%       Still to write: one sentence in the data description saying we derive
+%       plain text from the TEI rather than redistributing the TEI itself.
 % ---------------------------------------------------------------------------
 
 \bibliography{custom}
