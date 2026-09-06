@@ -269,6 +269,102 @@ def build_meta_with_split_v2(
     return df
 
 
+def recompute_derived_columns(meta: pd.DataFrame) -> pd.DataFrame:
+    """Recompute every column that is a function of (folder_id, split, taskb_role).
+
+    Used after a label correction moves files between directories: the assignments
+    themselves are kept, only the directory-derived bookkeeping is refreshed.
+    """
+    meta = meta.copy()
+
+    test_mask = meta["split"] == "test"
+    folder_test_counts = meta[test_mask].groupby("folder_id").size()
+    meta["has_test_partner"] = meta["folder_id"].map(
+        lambda fid: folder_test_counts.get(fid, 0) >= 2
+    )
+    meta["is_test_query"] = test_mask & meta["has_test_partner"]
+
+    ref_folders = set(
+        meta.loc[meta["taskb_role"] == "reference", "folder_id"].unique()
+    )
+    meta["has_reference_dir"] = (meta["taskb_role"] == "query") & meta[
+        "folder_id"
+    ].isin(ref_folders)
+    return meta
+
+
+def build_meta_with_carried_over_split(
+    canon_root: str,
+    prior_split_csv: str,
+) -> pd.DataFrame:
+    """Rebuild meta over `canon_root` while keeping a previous split assignment.
+
+    Every file keeps the `split` and `taskb_role` it had in `prior_split_csv`
+    (matched on filename, which is unique across the corpus). Directory-derived
+    columns (`folder_id`, `folder_size`, `is_singleton`, `is_winnable`, `file_id`,
+    `has_test_partner`, `is_test_query`, `has_reference_dir`) are recomputed from
+    the corpus as it stands on disk.
+
+    Motivation: re-running `build_meta_with_split_v2` after a directory-level label
+    correction changes folder-size classes, which changes how the shared RNG stream
+    is consumed and reshuffles unrelated files. Carrying the assignment over keeps
+    the diff confined to the corrected directories, so results computed on the
+    previous split stay comparable.
+    """
+    entries = list_txt_files(canon_root)
+    df = pd.DataFrame(entries, columns=["folder_id", "filename", "path"])
+    folder_sizes = df.groupby("folder_id")["filename"].transform("count")
+    df["folder_size"] = folder_sizes
+    df["is_singleton"] = df["folder_size"] == 1
+    df["is_winnable"] = df["folder_size"] >= 2
+    df = df.reset_index(drop=True)
+    df["file_id"] = np.arange(len(df), dtype=np.int32)
+
+    prior = pd.read_csv(prior_split_csv)
+    for col in ("filename", "split", "taskb_role"):
+        if col not in prior.columns:
+            raise ValueError(f"{prior_split_csv} has no '{col}' column")
+    if prior["filename"].duplicated().any():
+        raise ValueError(f"{prior_split_csv} has duplicate filenames")
+
+    missing = set(df["filename"]) - set(prior["filename"])
+    if missing:
+        raise ValueError(
+            f"{len(missing)} file(s) absent from {prior_split_csv}, e.g. "
+            f"{sorted(missing)[:5]}. Carry-over only handles files that moved "
+            "between directories, not added or removed files."
+        )
+    dropped = set(prior["filename"]) - set(df["filename"])
+    if dropped:
+        raise ValueError(
+            f"{len(dropped)} file(s) in {prior_split_csv} are no longer on disk, "
+            f"e.g. {sorted(dropped)[:5]}."
+        )
+
+    prior_idx = prior.set_index("filename")
+    df["split"] = df["filename"].map(prior_idx["split"])
+    df["taskb_role"] = df["filename"].map(prior_idx["taskb_role"])
+    df = recompute_derived_columns(df)
+
+    # Keep the column order of build_meta_with_split_v2 output.
+    return df[
+        [
+            "folder_id",
+            "filename",
+            "path",
+            "folder_size",
+            "is_singleton",
+            "is_winnable",
+            "file_id",
+            "split",
+            "is_test_query",
+            "has_test_partner",
+            "taskb_role",
+            "has_reference_dir",
+        ]
+    ]
+
+
 def generate_pairs_tsv(
     meta: pd.DataFrame,
     split_name: str,
