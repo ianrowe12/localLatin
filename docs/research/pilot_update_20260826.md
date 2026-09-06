@@ -93,7 +93,7 @@ The SIF coefficient is frozen at 1e-3, as agreed.
 ## Full attribution coverage
 
 The token-highlight view, which shades the words driving a similarity score,
-previously existed for four hand-picked demo pairs. It now covers **39,519
+previously existed for four hand-picked demo pairs. It now covers **39,647
 query-candidate-model pairs**, which is every pair the interface can actually
 show you across all six models. You can open the attribution panel on any
 fragment and any of its ranked candidates and get a real answer instead of an
