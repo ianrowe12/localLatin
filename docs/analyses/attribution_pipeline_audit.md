@@ -32,7 +32,7 @@ Run 2 should incorporate the fixes; this audit applies no patches.
 Agent 1.1's *new* cosine investigation report is **not present** at
 `docs/analyses/`, the repo root, or any worktree path as of audit time
 (2026-04-26 15:30 UTC). The older 80-pair findings doc at
-`overleaf_drafts/tables/FINDINGS_attribution.md` (dated 2026-04-20) is the
+`docs/analyses/FINDINGS_attribution.md` (dated 2026-04-20) is the
 prior attribution-metrics analysis but does not address cosine geometry; it
 should not be confused with Agent 1.1's pending work. Cosine concerns
 (specifically `FULL_COS_FLOOR=0.05` firing rate) are covered in §D below;

@@ -211,6 +211,7 @@ Committed generators now cover everything the paper shows. New in this pass:
 | `figures/fig_release_aucroc_6model.pdf` | `plot_metric_grid_6model` in `scripts/resubmit/visualize_resubmit.py` |
 | `figures/fig_release_gap_6model.pdf` | same |
 | `tables/taskB_topk.tex` (was inline) | `scripts/resubmit/visualize_taskb_mseed.py` |
+| `tables/finetune_ceiling.tex` | `slurm/resubmit/benchmark_v1_finetune_eval.sbatch` (rescore only) |
 | `figures/fig_{tsne,umap}_{main,appendix}.pdf` | `slurm/resubmit/benchmark_v1_cluster_viz.sbatch` |
 
 The two headline table generators were validated by regenerating them from the
@@ -223,6 +224,19 @@ one.
 Still hand-maintained in `acl_latex.tex`, and unchanged by this correction: the
 split statistics table (`tab:split`) and the layer diagnostics table
 (`tab:layer_diagnostics_main`).
+
+### The fine-tuning ceiling
+
+`tables/finetune_ceiling.tex` (#123) landed on main while this re-run was in
+flight, and it is split-dependent. Its scoring half is CPU only and the
+fine-tuned checkpoint and embeddings are unchanged, so it is rescored here on the
+corrected split rather than left stale;
+`slurm/resubmit/benchmark_v1_finetune_eval.sbatch` does that in about four
+minutes. Its embedding cache had no per-run manifest, so this pass wrote a
+`row_order.csv` at `runs/active/resubmit_finetune_bases/phase9_bases/` from the
+frozen extraction-time order and wired the resolver into
+`scripts/resubmit/finetune_lata_ceiling.py`. Without that, a re-run there would
+have hit exactly the misalignment this issue exists to prevent.
 
 ## 5. Deliberately not re-run
 
@@ -279,8 +293,12 @@ python scripts/paper/numeric_token_diff.py overleaf_drafts/tables/*.tex
 
 ## 7. Compile
 
-Fresh-aux `latexmk -pdf` on a clean tree: 0 undefined references, 0 overfull
-boxes, 0 LaTeX warnings. Five underfull hboxes remain, all justification badness
-in paragraphs, unchanged in count and location from before the re-run. The
-bibliography begins on page 9, so the body still runs one page past the ACL
-eight-page limit; this pass does not worsen it.
+Fresh-aux `latexmk -pdf` on a clean tree: **0 undefined references, 0 overfull
+boxes, 0 LaTeX warnings**. Thirteen underfull hboxes remain, all justification
+badness in paragraphs.
+
+Every one of those figures is identical to what `origin/main` compiles to on its
+own, checked by compiling the `origin/main` tree side by side: 36 pages, the same
+13 underfull hboxes, the last body page before the bibliography is page 8, and
+`tab:taskb` sits on page 9 in both. The body still runs past the ACL eight-page
+limit; this pass does not worsen it by a single line.

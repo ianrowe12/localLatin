@@ -113,7 +113,7 @@ def _get(summary: pd.DataFrame, model: str, method: str, variant: str, col: str)
 
 def render_table(summary: pd.DataFrame, out_path: Path) -> None:
     lines: list[str] = [
-        "% Generated file. Edit the generator, not this file.",
+        "% generated table",
         r"\begin{table*}[t]",
         r"\centering",
         r"\footnotesize",
@@ -290,7 +290,7 @@ def render_rho_figure(summary: pd.DataFrame, out_base: Path) -> None:
 
     tex = "\n".join(
         [
-            "% Generated file. Edit the generator, not this file.",
+            "% generated figure",
             r"\begin{figure}[t]",
             r"\centering",
             rf"\includegraphics[width=\linewidth]{{figures/{out_base.name}.pdf}}",

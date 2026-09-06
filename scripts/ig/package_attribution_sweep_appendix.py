@@ -143,7 +143,7 @@ def render_table(
     colspec = "ll" + "rr" * len(keys)
 
     lines: list[str] = [
-        "% Generated file. Edit the generator, not this file.",
+        "% generated table",
         r"\begin{table*}[t]",
         r"\centering",
         r"\scriptsize",

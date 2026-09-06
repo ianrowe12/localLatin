@@ -41,7 +41,7 @@ METHODS: List[Tuple[str, str]] = [
 ]
 
 # Overleaf receives these files, so the header says nothing about the repo.
-HEADER = "% Generated file. Edit the generator, not this file.\n"
+HEADER = "% generated table\n"
 
 
 def parse_args() -> argparse.Namespace:

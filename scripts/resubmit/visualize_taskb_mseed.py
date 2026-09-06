@@ -128,7 +128,7 @@ def write_paper_topk_table(best_df: pd.DataFrame, out_path: Path) -> None:
     """
     ks = [1, 2, 3, 4, 5]
     lines = [
-        "% Generated file. Edit the generator, not this file.",
+        "% generated table",
         r"\begin{table*}[t]",
         r"\centering",
         r"\small",

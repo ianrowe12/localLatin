@@ -455,7 +455,7 @@ def render_sweep_latex(summary: pd.DataFrame, out_path: Path,
         return f"{v:.3f}"
 
     lines: List[str] = []
-    lines.append("% Generated file. Edit the generator, not this file.")
+    lines.append("% generated table")
     lines.append(r"\begin{table*}[t]")
     lines.append(r"\centering")
     lines.append(r"\scriptsize")
@@ -542,7 +542,7 @@ def render_latex(summary: pd.DataFrame, out_path: Path,
         return f"{v:.3f}"
 
     lines: List[str] = []
-    lines.append("% Generated file. Edit the generator, not this file.")
+    lines.append("% generated table")
     lines.append(r"\begin{table*}[t]")
     lines.append(r"\centering")
     lines.append(r"\footnotesize")
