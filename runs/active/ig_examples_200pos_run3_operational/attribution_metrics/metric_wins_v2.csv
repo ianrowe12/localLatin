@@ -1,0 +1,23 @@
+metric,key,family,direction,LaTa/IG,LaTa/MaRC,PhilTa/IG,PhilTa/MaRC,mT5-base/IG,mT5-base/MaRC,abtt_wins,cells
+rho_LOO,loo_rho,existing,higher,A,A,A,A,A,A,6,6
+Suff@10%,suff@0.10_ratio,existing,higher,b,A,b,b,A,b,2,6
+Suff@25%,suff@0.25_ratio,existing,higher,b,A,b,b,A,b,2,6
+Suff@50%,suff@0.50_ratio,existing,higher,b,A,A,A,A,A,5,6
+Comp@10%,comp@0.10_ratio,existing,higher,b,b,b,b,A,A,2,6
+Comp@25%,comp@0.25_ratio,existing,higher,b,b,b,b,A,A,2,6
+Comp@50%,comp@0.50_ratio,existing,higher,b,A,b,b,A,A,3,6
+MinFrac@0.70,compactness@0.70,existing,lower,b,A,b,b,b,b,1,6
+MinFrac@0.80,compactness@0.80,existing,lower,b,A,b,b,b,b,1,6
+MinFrac@0.90,compactness@0.90,existing,lower,b,b,b,b,A,b,1,6
+MinFrac@0.95,compactness@0.95,existing,lower,b,b,b,b,A,b,1,6
+tau_LOO,loo_tau,new,higher,A,A,A,A,A,A,6,6
+AOPC-Suff,aopc_suff_ratio,new,higher,b,A,b,b,A,b,2,6
+AOPC-Comp,aopc_comp_ratio,new,higher,b,A,b,b,A,A,3,6
+DelAUC,del_auc,new,lower,b,A,b,b,A,A,3,6
+DelAUC gap,del_auc_gap,new,higher,b,A,b,b,A,A,3,6
+InsAUC,ins_auc,new,higher,b,A,b,b,A,b,2,6
+InsAUC gap,ins_auc_gap,new,higher,b,A,A,A,A,A,5,6
+Rand gap (rho),rand_loo_rho_gap,new,higher,A,A,A,A,A,A,6,6
+Rand gap (tau),rand_loo_tau_gap,new,higher,A,A,A,A,A,A,6,6
+Rand gap (AOPC-S),rand_aopc_suff_ratio_gap,new,higher,b,A,A,A,A,A,5,6
+Rand gap (AOPC-C),rand_aopc_comp_ratio_gap,new,higher,b,A,b,b,A,A,3,6

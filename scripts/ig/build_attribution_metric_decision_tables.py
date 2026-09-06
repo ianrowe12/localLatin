@@ -106,21 +106,28 @@ def _winner(base: float, abtt: float, higher_is_better: bool) -> Optional[str]:
 
 
 def render_full_table(df: pd.DataFrame) -> List[str]:
+    """Every metric x every cell, as ``baseline -> ABTT`` with the winner marked.
+
+    Wide rather than long: 22 metric rows against the 6 model/view cells fits on
+    one screen, which is what makes the honesty rule ("nothing is deleted")
+    actually readable.
+    """
+    cell_cols = [f"{m}/{v}" for _, m in MODELS for _, v in VIEWS]
     lines = [
-        "| Metric | Dir | Model | View | baseline | ABTT | Winner |",
-        "|---|---|---|---|---:|---:|---|",
+        "| Metric | Dir | " + " | ".join(cell_cols) + " |",
+        "|---|---|" + "|".join(["---"] * len(cell_cols)) + "|",
     ]
     for spec in METRIC_SPECS:
         arrow = "up" if spec.higher_is_better else "down"
-        for model, model_label in MODELS:
-            for method, view_label in VIEWS:
+        cells = []
+        for model, _ in MODELS:
+            for method, _ in VIEWS:
                 base = _mean(df, model, method, "baseline", spec.key)
                 abtt = _mean(df, model, method, "abtt", spec.key)
-                win = _winner(base, abtt, spec.higher_is_better) or "--"
-                lines.append(
-                    f"| {spec.label} | {arrow} | {model_label} | {view_label} | "
-                    f"{_fmt(base)} | {_fmt(abtt)} | {win} |"
-                )
+                win = _winner(base, abtt, spec.higher_is_better)
+                tag = "" if win is None else (" **A**" if win == "ABTT" else " b")
+                cells.append(f"{_fmt(base)} -> {_fmt(abtt)}{tag}")
+        lines.append(f"| {spec.label} | {arrow} | " + " | ".join(cells) + " |")
     return lines
 
 
