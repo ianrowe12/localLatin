@@ -3,6 +3,15 @@
 Generated: 2026-09-06. Issue #124, part of epic #109. Decision 5 of
 `docs/research/plan_20260906.md`.
 
+**Revision, 2026-09-06.** The independent review of PR #135 found that selection
+criterion 5 had been applied to one metric and waived, on no computed number, for
+its own chance-corrected twin. The control now covers both AUC gaps, the
+criterion is applied identically to every candidate, and the recommended main
+table changed as a result: it is now `rho_LOO` and `DelAUC gap`, and the
+5/6 `InsAUC gap` column is in the appendix. B1 records what the rule was and why
+it was not rewritten to save the column; B5 records what the headline sentence no
+longer says.
+
 **Honesty rule (Ian, 2026-09-06): nothing is deleted. Every metric computed here
 appears in this memo with its full result. Metrics that do not make the main
 table go to the appendix with one plain sentence saying why.**
@@ -31,7 +40,10 @@ prose from this memo.
 | Wins table | `.../attribution_metrics/metric_wins_v2.csv` |
 | Per-pair cache | `.../attribution_metrics/v2_hidden/<slug>/*.json` (gitignored, regenerable) |
 | Prior summary | `.../attribution_metrics/summary.csv` (unchanged, still the source of the currently published table) |
-| Compute | CPU only, no GPU hours spent |
+| Random-order draws | 5 (`DEFAULT_RANDOM_ORDER_DRAWS`); shuffle draws 5 |
+| Pairs per cell | 200 baseline, 191-195 ABTT for the ratio metrics (see A6) |
+| Operator spot check | `.../attribution_metrics` is representation-level throughout; A8 adds a 20-pair input-level check |
+| Compute | CPU only, `beto-delta-cpu` partition, no GPU hours spent |
 
 Reproduce with:
 
@@ -49,6 +61,22 @@ python scripts/ig/build_attribution_metric_decision_tables.py \
   --wins_csv runs/active/ig_examples_200pos_run3_operational/attribution_metrics/metric_wins_v2.csv
 ```
 
+The A8 spot check, which uses the *other* erasure operator and whose numbers must
+never be mixed into the tables above:
+
+```bash
+python scripts/ig/run_attribution_metrics.py --backend model --device cpu \
+  --models bowphs/LaTa --methods ig --max_pairs_per_model 20 \
+  --metrics insertion_auc,deletion_auc --skip_pseudo_baselines \
+  --examples_csv runs/active/ig_examples_200pos_run3_operational/positive200_examples.csv \
+  --artifacts_root runs/active/ig_examples_200pos_run3_operational/artifacts \
+  --out_root <scratch> --out_subdir model20 \
+  --summary_out <scratch>/model20_summary.csv \
+  --sweep_summary_out <scratch>/model20_sweep.csv \
+  --tex_out "" --require_artifacts
+# then the same command with --backend hidden --out_subdir hidden20
+```
+
 ## What was added
 
 Five registry functions in `src/attribution_metrics.py`, one per metric.
@@ -63,7 +91,41 @@ Five registry functions in `src/attribution_metrics.py`, one per metric.
 | tau_LOO | Kendall tau-b between abs(a) and the per-token LOO delta | higher | tie-corrected companion to the existing Spearman rho_LOO |
 | Rand gap | real metric minus the mean over 5 permutations of the attribution vector | higher | control in the spirit of Adebayo et al. 2018 |
 
-Two notes on what these are and are not.
+The shuffled control covers six keys: `loo_rho`, `loo_tau`, `aopc_suff_ratio`,
+`aopc_comp_ratio` and, added in response to the independent review of PR #135,
+`ins_auc_gap` and `del_auc_gap` (`rand_ins_auc_gap_gap`,
+`rand_del_auc_gap_gap`). Six, not four, because criterion 5 in Part B can only
+be applied to a candidate that has a number.
+
+**AOPC-Suff is the complement of DeYoung's sufficiency, not a sign error.**
+DeYoung et al. report sufficiency as the *drop* caused by keeping only the
+rationale, so lower is better there. We report the retained fraction, so higher
+is better here, which puts it on the same scale and in the same direction as
+every other ratio column in this memo. A reader who knows ERASER should read our
+direction arrow as a re-parameterisation, not a mistake. The same applies to
+`AOPC-Comp`, which is DeYoung's comprehensiveness with our ratio normalisation.
+
+**Two ranking conventions apply to every curve metric.** Both are fixed in
+`rank_order` in `src/attribution_metrics.py` and applied identically to every
+method, every variant and every control row, but they are choices and the paper
+has to state them.
+
+* Tokens are ranked by **|a|**, not by signed importance. A token with a
+  strongly negative contribution therefore ranks alongside a strongly positive
+  one. RISE and ERASER rank by signed importance. We rank by magnitude because
+  the question this paper asks is which tokens *carry* the pair cosine, and
+  MaRC and IG both produce two-signed scores whose negative tail is not noise.
+  The consequence is that our sufficiency curves can be reached by a token that
+  pushes the cosine down; the effect is identical across variants, so it does
+  not distort the baseline-versus-ABTT comparison, but it does make our absolute
+  numbers non-comparable with a signed-ranking implementation.
+* **Ties are broken by token position** (lowest index first, `np.argsort(...,
+  kind="stable")`). Position is not a neutral order, and it matters most for
+  MaRC, which produces many exactly-zero scores: for those tokens the ranking is
+  effectively reading order. Kendall tau-b is in the appendix precisely because
+  it is the tie-corrected companion to `rho_LOO` under that condition.
+
+Two more notes on what these are and are not.
 
 **The AUC gap, not the raw AUC, is the part that measures the ranking.** The
 height of a deletion or insertion curve is dominated by how redundant a query
@@ -100,13 +162,30 @@ This run uses representation-level erasure, for two reasons. It is CPU-only,
 which is what let us afford the full k = 1..n curve that AOPC and the AUCs need;
 and it is exact for the unmasked cosine. The largest mean deviation between our
 recomputed full cosine and the `cos_orig_*` value stored in the NPZ at build
-time, across all 3 models x 2 variants, is 2.5e-07 (section A4). That is float32
-noise, which is what pins both backends to the same decision scalar.
+time, across all 3 models x 2 variants, is 2.5e-07 (section A4).
+
+**What the 2.5e-07 number does and does not prove.** It establishes that our
+pooling and our ABTT re-implementation reproduce the full-query cosine the model
+actually produced at artifact-build time, so both backends explain the *same*
+decision scalar. It says nothing whatever about any *masked* cosine, because
+masking is exactly where the two operators diverge by construction. This number
+must never appear in the paper next to a faithfulness claim, and must never be
+cited as evidence that representation-level masking approximates input-level
+masking.
+
+**The interpretive limitation, which belongs in the paper.** Representation-level
+erasure holds contextualisation fixed. A removed token's content still survives
+inside its neighbours' layer-L states, so what these numbers measure is the
+faithfulness of the **pooled read-out at layer L**, not of the encoder's
+input-to-output map. A4 shows how large that difference is: comprehensiveness
+moves from 0.581 to 0.194 on LaTa/IG between the two operators. Every
+faithfulness statement derived from `summary_v2.csv` has to carry that scope.
 
 The consequence is that `summary_v2.csv` is internally consistent (one operator
 for every column, old metrics included) but is **not** row-for-row comparable
 with the published `summary.csv`. That is why the old metrics were recomputed
-rather than copied across. The size of the difference is quantified in A4.
+rather than copied across. The size of the difference is quantified in A4, and
+a bounded input-level spot check on the new AUC columns is in A8.
 
 ---
 
@@ -139,6 +218,8 @@ an ABTT win in that metric's better direction, `b` a baseline win.
 | Rand gap (tau) | up | 0.008 -> 0.211 **A** | 0.060 -> 0.288 **A** | 0.103 -> 0.427 **A** | 0.129 -> 0.254 **A** | 0.102 -> 0.467 **A** | 0.185 -> 0.292 **A** |
 | Rand gap (AOPC-S) | up | 0.172 -> 0.035 b | -0.189 -> 0.097 **A** | 0.116 -> 0.238 **A** | 0.107 -> 0.199 **A** | -0.030 -> 0.354 **A** | 0.019 -> 0.253 **A** |
 | Rand gap (AOPC-C) | up | 0.509 -> 0.179 b | 0.240 -> 0.285 **A** | 0.795 -> 0.418 b | 0.752 -> 0.353 b | 0.394 -> 0.551 **A** | 0.075 -> 0.444 **A** |
+| Rand gap (InsAUC gap) | up | 0.172 -> 0.035 b | -0.189 -> 0.097 **A** | 0.116 -> 0.238 **A** | 0.107 -> 0.199 **A** | -0.030 -> 0.354 **A** | 0.019 -> 0.253 **A** |
+| Rand gap (DelAUC gap) | up | 0.509 -> 0.179 b | 0.240 -> 0.285 **A** | 0.795 -> 0.418 b | 0.752 -> 0.353 b | 0.394 -> 0.551 **A** | 0.075 -> 0.444 **A** |
 
 ## A1. Wins per metric
 
@@ -166,6 +247,8 @@ an ABTT win in that metric's better direction, `b` a baseline win.
 | Rand gap (tau) | higher | new | A | A | A | A | A | A | 6/6 |
 | Rand gap (AOPC-S) | higher | new | b | A | A | A | A | A | 5/6 |
 | Rand gap (AOPC-C) | higher | new | b | A | b | b | A | A | 3/6 |
+| Rand gap (InsAUC gap) | higher | new | b | A | A | A | A | A | 5/6 |
+| Rand gap (DelAUC gap) | higher | new | b | A | b | b | A | A | 3/6 |
 
 Machine-readable copy: `metric_wins_v2.csv`.
 
@@ -226,24 +309,46 @@ Gap = real minus the mean of 5 permutations of the same attribution vector.
 Positive means the real attribution beats a fake one drawn from its own score
 distribution. Twelve cells: 3 models x 2 views x 2 variants.
 
-| Metric | Cells with a positive gap | Range |
-|---|---|---|
-| rho_LOO | 12/12 | +0.015 to +0.630 |
-| tau_LOO | 12/12 | +0.008 to +0.467 |
-| AOPC-Comp | 12/12 | +0.075 to +0.795 |
-| AOPC-Suff | **10/12** | -0.189 to +0.354 |
+Every metric that is a candidate for a main-table column appears here. In the
+first version of this memo the two AUC-gap rows were missing and the selection
+table asserted a pass for them anyway; `randomization_check` now computes
+`rand_ins_auc_gap_gap` and `rand_del_auc_gap_gap` directly, so the criterion is
+read off a number in every row.
 
-AOPC-Suff fails the control in two baseline cells: LaTa/MaRC (-0.189) and
-mT5-base/IG (-0.030). In those cells the real attribution's sufficiency curve is
-no better, and for LaTa/MaRC materially worse, than a shuffle of itself.
+| Metric | Cells with a positive gap | Range | Failing cells |
+|---|---|---|---|
+| rho_LOO | 12/12 | +0.015 to +0.630 | none |
+| tau_LOO | 12/12 | +0.008 to +0.467 | none |
+| AOPC-Comp | 12/12 | +0.075 to +0.795 | none |
+| **DelAUC gap** | 12/12 | +0.075 to +0.795 | none |
+| AOPC-Suff | **10/12** | -0.189 to +0.354 | LaTa/MaRC baseline (-0.189), mT5-base/IG baseline (-0.030) |
+| **InsAUC gap** | **10/12** | -0.189 to +0.354 | LaTa/MaRC baseline (-0.189), mT5-base/IG baseline (-0.030) |
+
+`InsAUC gap` and `AOPC-Suff` do not merely agree: their shuffle gaps are the
+same number. Over all 54 summary rows,
+`max |rand_ins_auc_gap_gap - rand_aopc_suff_ratio_gap| = 2.2e-16` and
+`max |rand_del_auc_gap_gap - rand_aopc_comp_ratio_gap| = 1.1e-16`. The random-order
+reference is a property of the pair and is identical for the real and every
+shuffled attribution, and the mean-over-k versus trapezoid offset `1/(2n)` is a
+constant; both cancel exactly in the gap. A verdict that passes one and fails
+the other is therefore not a judgement call but an error, which is what the
+first version of B2 contained.
+
+In the two failing cells the real attribution's sufficiency curve is no better,
+and for LaTa/MaRC materially worse, than a shuffle of its own scores. Both are
+baseline cells, so the reading is "the baseline attribution is worse than chance
+on the sufficiency side here", not "ABTT looks bad". That does not save the
+column: criterion 5 is a property of the instrument over the cells we measured,
+and it is not satisfied.
 
 The `random` rows give the same gaps to within 0.008 of zero in every cell, so
 the check is calibrated rather than biased upward by construction.
 
-The shuffled-attribution gap and the random-order AUC gap agree numerically to
-about 0.02 in every cell: compare the `Rand gap (AOPC-S)` and `InsAUC gap` rows
-in Part A. They are two routes to the same correction, which is a consistency
-check on both.
+The shuffled-attribution gap and the random-*order* AUC gap remain two different
+corrections that agree numerically to about 0.02 in every cell: compare the
+`Rand gap (AOPC-S)` and `InsAUC gap` rows in Part A. That agreement is a
+consistency check on both, and it is distinct from the exact identity above,
+which is between two shuffled-attribution gaps.
 
 ## A4. Effect of the erasure operator
 
@@ -271,10 +376,129 @@ decision scalar; only the erasure differs.
 ## A5. Two pairs of metrics are the same statistic
 
 `AOPC-Comp = 1 - DelAUC` and `AOPC-Suff = InsAUC`, up to the difference between
-a mean over k and a trapezoidal integral (observed gap about 0.008 in every
-cell). Their win patterns in A1 are identical, cell for cell. Reporting both as
-if they were independent evidence would be double counting, and the appendix
-should say so.
+a mean over k = 1..n and a trapezoidal integral over k = 0..n. That difference
+is the analytic constant `1/(2n)`: with `n_q_mean` between 83.6 and 111.2 it is
+0.0045 to 0.0060 per side, and the largest observed discrepancy over all 54
+summary rows is 0.0086. Their win patterns in A1 are identical, cell for cell.
+Reporting both as if they were independent evidence would be double counting,
+and the appendix should say so.
+
+The consequence that matters for Part B: because the offset is a *constant*, it
+cancels in any real-minus-shuffled difference, as does the random-order
+reference. `AOPC-Suff` and `InsAUC gap` therefore cannot receive different
+verdicts under criterion 5, and neither can `AOPC-Comp` and `DelAUC gap`.
+
+## A6. Unequal n across variants (disclosure)
+
+Every ratio metric is NaN when `|S_v(full)| < FULL_COS_FLOOR = 0.05`, and ABTT
+pushes a handful of pairs below that floor while the baseline keeps all 200. The
+AUC and AOPC columns therefore average 191 to 195 ABTT pairs against 200
+baseline pairs, per model; the exact counts are in `summary_v2.csv` as
+`ins_auc_gap_n`, `del_auc_gap_n` and their siblings. The `n` column of the
+summary is the pair count *before* per-metric NaN filtering, so it does not show
+this on its own.
+
+We checked that it changes nothing. Recomputing every cell on the
+both-variants-valid intersection, from the per-pair JSONs rather than the
+summary means, reproduces the same winner in **every** cell for `loo_rho`
+(200/200 pairs, no filtering), `ins_auc_gap`, `del_auc_gap` and both AUC-gap
+shuffle columns. Zero verdict mismatches out of 42 metric-by-cell comparisons.
+The disclosure is required; the correction is not.
+
+## A7. Effect sizes for the main-table candidates
+
+Win counts alone hide how big a win is. Paired per-pair differences, ABTT minus
+baseline, over the both-variants-valid pairs:
+
+| Cell | rho_LOO | DelAUC gap (main) | InsAUC gap (appendix) |
+|---|--:|--:|--:|
+| LaTa/IG | +0.285 +/- 0.019 (15.2 SE) | -0.336 +/- 0.031 (-10.9 SE) | -0.122 +/- 0.016 (-7.8 SE) |
+| LaTa/MaRC | +0.327 +/- 0.027 (12.0 SE) | **+0.047 +/- 0.039 (1.2 SE)** | +0.304 +/- 0.033 (9.1 SE) |
+| PhilTa/IG | +0.433 +/- 0.023 (19.0 SE) | -0.383 +/- 0.022 (-17.5 SE) | +0.125 +/- 0.016 (7.9 SE) |
+| PhilTa/MaRC | +0.188 +/- 0.027 (7.0 SE) | -0.406 +/- 0.027 (-15.1 SE) | +0.096 +/- 0.023 (4.1 SE) |
+| mT5-base/IG | +0.489 +/- 0.032 (15.3 SE) | +0.153 +/- 0.022 (7.0 SE) | +0.381 +/- 0.025 (15.5 SE) |
+| mT5-base/MaRC | +0.143 +/- 0.026 (5.6 SE) | +0.357 +/- 0.026 (13.5 SE) | +0.225 +/- 0.030 (7.5 SE) |
+
+`rho_LOO` is 5.6 SE or more in all six cells, so its 6/6 is not a run of narrow
+wins. `DelAUC gap` is not so clean: one of its three wins, LaTa/MaRC, is inside
+the noise at about 1.2 SE, while the other five cells are at least 7 SE from
+zero. **A `3/6` for `DelAUC gap` is in truth two significant wins, one
+statistical tie, and three significant losses**, and the paper's caption has to
+say so rather than let the fraction imply six decided cells.
+
+## A8. Erasure-operator spot check for the AUC columns
+
+Criterion 6 could not be evaluated for `DelAUC gap` or `InsAUC gap` in the first
+version of this memo: the curve metrics had only ever been run under
+representation-level erasure. Since the headline claim now rests on
+`DelAUC gap`, that `n/a` was not acceptable. This section closes it with a
+bounded input-level run: **one model (LaTa), IG only, the first 20 pairs, both
+variants, `--backend model --metrics insertion_auc,deletion_auc`**, on the CPU
+partition, no GPU hours. The same 20 pairs are re-run under `--backend hidden`
+so the two operators are compared on an identical subset rather than against the
+200-pair table.
+
+Means over the 19 pairs valid under both variants (one of the 20 falls below
+`FULL_COS_FLOOR` under ABTT), with the paired ABTT-minus-baseline difference and
+its standard error:
+
+| Operator | Metric | baseline | ABTT | ABTT - baseline | Winner |
+|---|---|--:|--:|--:|:-:|
+| input-level (`model`) | InsAUC | 0.977 | 0.792 | -0.183 +/- 0.026 | baseline |
+| input-level | InsAUC random floor | 0.784 | 0.582 | -0.195 +/- 0.040 | -- |
+| input-level | **InsAUC gap** | 0.193 | 0.210 | **+0.011 +/- 0.045 (0.3 SE)** | ABTT |
+| input-level | DelAUC | 0.311 | 0.288 | +0.011 +/- 0.102 | ABTT |
+| input-level | DelAUC random floor | 0.850 | 0.597 | -0.252 +/- 0.048 | -- |
+| input-level | **DelAUC gap** | 0.539 | 0.309 | **-0.263 +/- 0.095 (-2.8 SE)** | baseline |
+| representation-level (`hidden`) | InsAUC | 0.971 | 0.825 | -0.144 +/- 0.020 | baseline |
+| representation-level | InsAUC random floor | 0.797 | 0.777 | -0.013 +/- 0.035 | -- |
+| representation-level | **InsAUC gap** | 0.174 | 0.048 | **-0.131 +/- 0.040 (-3.3 SE)** | baseline |
+| representation-level | DelAUC | 0.358 | 0.589 | +0.263 +/- 0.087 | baseline |
+| representation-level | DelAUC random floor | 0.857 | 0.788 | -0.068 +/- 0.026 | -- |
+| representation-level | **DelAUC gap** | 0.499 | 0.198 | **-0.331 +/- 0.088 (-3.8 SE)** | baseline |
+
+**`DelAUC gap`, the main-table column, agrees.** Both operators make LaTa/IG a
+baseline win, and both make it a significant one (-2.8 SE and -3.8 SE). That
+matches the 200-pair verdict for this cell and turns criterion 6 for
+`DelAUC gap` from `n/a` into a pass, on the one cell we could afford to test.
+`DelAUC` raw and `InsAUC` raw are not the columns that carry the claim; `DelAUC`
+raw does flip.
+
+**`InsAUC gap` is not confirmed.** Its nominal winner flips between operators,
+but the input-level difference is +0.011 +/- 0.045, about 0.3 SE, which is a
+statistical tie rather than an ABTT win. The honest reading is that on this cell
+the input-level operator does not determine a winner at all, so the spot check
+neither confirms nor contradicts the representation-level result. It is an
+additional reason not to put the column in the main table, not the reason: the
+column is in the appendix because it fails criterion 5.
+
+The floors are worth a note of their own. The input-level operator's random
+floors move far more between variants (`ins_auc_random` 0.784 to 0.582,
+`del_auc_random` 0.850 to 0.597) than the representation-level operator's
+(0.797 to 0.777, 0.857 to 0.788). Re-contextualisation is itself variant
+dependent, which is a further reason the two operators' absolute numbers must
+never be mixed in one table.
+
+The check is bounded and should be read as such: 20 pairs, one model, one view.
+It tests whether the *sign* of the baseline-versus-ABTT difference survives the
+change of operator, not whether the magnitudes agree.
+
+**The remaining limitation stands regardless of how this check comes out.** All
+600-pair numbers in this memo come from representation-level masking, which
+holds contextualisation fixed. They are faithfulness statements about the pooled
+read-out at layer L, not about the encoder's input-to-output map: a masked
+token's content still survives inside its neighbours' layer-L states. The
+2.5e-07 full-cosine drift in A4 validates the *unmasked* reproduction only and
+is not evidence about masking of any kind.
+
+Two smaller caveats on the reference itself. `DEFAULT_RANDOM_ORDER_DRAWS = 5`,
+so the random-order reference carries a Monte-Carlo error of roughly +/-0.01 on
+a cell mean; that is small against the win margins but comparable to the
+"`random` sits within 0.02 of zero" calibration claim in A2 and to the smallest
+reported gaps. It was left at 5 rather than raised so that every number the
+independent review of PR #135 reproduced stays bit-identical; the
+`--random_order_draws` flag exists and a table-generating run for the paper
+should use 20.
 
 ---
 
@@ -306,17 +530,61 @@ are properties of a measurement instrument, not of the answer it gives.
 6. **Robust to the erasure operator**, where testable. The choice between
    input-level and representation-level masking is ours, not the model's, so a
    conclusion that flips with it is our artefact. Only the four legacy metrics
-   exist under both backends, so this is a tiebreaker among them rather than a
-   filter on the new ones.
+   exist under both backends at full scale, so this is a tiebreaker among them
+   rather than a filter on the new ones; A8 adds a bounded input-level spot
+   check for the AUC columns, which `DelAUC gap` passes.
+
+### How criterion 5 is applied, and how it was applied wrongly first
+
+The first version of this memo (PR #135, commit `4aa888b`) applied criterion 5
+to `AOPC-Suff` and recorded `yes` for `InsAUC gap` and `DelAUC gap`. That `yes`
+had no number behind it: `randomization_check` only shuffled for `loo_rho`,
+`loo_tau`, `aopc_suff_ratio` and `aopc_comp_ratio`, so no column of
+`summary_v2.csv` reported a shuffled-attribution gap for the AUC gaps at all.
+The independent review of that PR caught it. The consequence was not neutral:
+the un-evidenced pass sat on the column ABTT wins 5/6, and the evaluated failure
+struck the column ABTT wins 2/6.
+
+`randomization_check` now computes the gap for `ins_auc_gap` and `del_auc_gap`
+directly (`rand_ins_auc_gap_gap`, `rand_del_auc_gap_gap` in `summary_v2.csv`),
+so criterion 5 is evaluated from a number for every candidate. Two rules fix how
+it is read, and both are stated here before the new numbers are consulted.
+
+* **The criterion text is not rewritten.** It says "in every cell", so it is a
+  per-cell rule over all twelve cells (3 models x 2 views x 2 variants), and a
+  metric with any non-positive cell fails. Rewriting it into a pooled
+  discrimination test would be a defensible criterion in the abstract, but
+  choosing it *after* learning that the per-cell version strikes the column ABTT
+  wins is exactly the tuning this memo exists to avoid. The criterion was
+  pre-registered; only its application is being corrected.
+* **Metrics that are the same statistic share one verdict.** A5 already shows
+  `AOPC-Suff = InsAUC` and `AOPC-Comp = 1 - DelAUC`. For the shuffled control
+  the identity is exact rather than approximate: the random-order reference is a
+  property of the pair, identical for the real and every shuffled attribution,
+  and the mean-over-k versus trapezoid offset `1/(2n)` is a constant, so both
+  cancel in the gap. `rand_ins_auc_gap_gap` equals `rand_aopc_suff_ratio_gap`
+  and `rand_del_auc_gap_gap` equals `rand_aopc_comp_ratio_gap` to machine
+  precision (A3), and it is not possible to pass one and fail the other.
 
 ## B2. Applying them
 
-| Metric | 1 std | 2 free | 3 suff | 4 calib | 5 shuffle | 6 operator | Verdict |
+Criterion 5 is now read from a computed number for every row (A3), and the
+`n/a`s that used to sit in that column are gone.
+
+Column 3 is headed "not-only-rank" rather than "suff" because that is what
+criterion 3's own justification sentence asks for: a table not made only of rank
+correlations. Read narrowly, as "at least one main column asks whether the
+selected tokens on their own carry the score", **criterion 3 is not satisfied by
+the recommended table**, because criterion 5 strikes every sufficiency-side
+candidate. The criterion text is left as written and the shortfall is recorded
+in B3 rather than defined away.
+
+| Metric | 1 std | 2 free | 3 not-only-rank | 4 calib | 5 shuffle | 6 operator | Verdict |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|---|
 | rho_LOO | yes | yes | no | yes | 12/12 | stable | **main** (rank) |
-| InsAUC gap | yes | yes | yes | yes | yes | n/a | **main** (sufficiency) |
-| DelAUC gap | yes | yes | no | yes | yes | n/a | **main** (comprehensiveness) |
-| tau_LOO | yes | yes | no | yes | 12/12 | n/a | appendix |
+| DelAUC gap | yes | yes | yes | yes | 12/12 | **agrees** (A8) | **main** (comprehensiveness) |
+| InsAUC gap | yes | yes | yes | yes | **10/12** | not confirmed (A8) | appendix |
+| tau_LOO | yes | yes | no | yes | 12/12 | n/a | appendix (robustness twin of rho_LOO) |
 | AOPC-Comp | yes | yes | yes | **no** | 12/12 | n/a | appendix |
 | AOPC-Suff | yes | yes | yes | **no** | **10/12** | n/a | appendix |
 | DelAUC, InsAUC raw | yes | yes | yes | **no** | n/a | n/a | appendix |
@@ -326,14 +594,29 @@ are properties of a measurement instrument, not of the answer it gives.
 
 Notes on the individual calls.
 
+* **InsAUC gap fails criterion 5, exactly as AOPC-Suff does, and for the same
+  reason: they are the same statistic (A5).** The two failing cells are
+  LaTa/MaRC baseline and mT5-base/IG baseline. Both are baseline cells, and both
+  are cells where ABTT wins the InsAUC gap, so striking the column costs ABTT a
+  5/6 and this memo its most favourable number. That is what applying a
+  pre-registered validity criterion symmetrically means. Under the earlier,
+  asymmetric application the criterion struck the column ABTT loses (AOPC-Suff,
+  2/6) and passed the column ABTT wins (InsAUC gap, 5/6) on no evidence at all.
+* **A negative shuffle gap is a statement about that cell, not only about the
+  metric.** In LaTa/MaRC baseline the real attribution's sufficiency curve is
+  materially worse (-0.189) than a permutation of its own scores; in mT5-base/IG
+  baseline it is marginally worse (-0.030). That is a genuine finding about
+  baseline attributions on those two cells, and it goes in the appendix with the
+  number. It is not a reason to keep the column: a column whose reading in two of
+  twelve cells is "this attribution is worse than its own shuffle" cannot be a
+  headline measurement.
 * **tau_LOO** is dropped for redundancy, not weakness. Across all 54 summary
-  rows it correlates 0.9995 with rho_LOO and never disagrees in sign. It belongs
-  in the appendix as a tie-corrected robustness check, which matters because
-  MaRC produces many exactly-zero scores and Spearman handles ties by averaging
-  ranks rather than correcting for them.
-* **AOPC-Suff** fails criterion 5 in two cells. Both failures are on the
-  *baseline* side, so keeping AOPC-Suff would have made ABTT look better, not
-  worse. It is dropped anyway.
+  rows it correlates 0.9995 with rho_LOO and never disagrees in sign. It goes to
+  the appendix as the **tie-corrected robustness twin of rho_LOO**, not as a
+  second main column, which matters because MaRC produces many exactly-zero
+  scores and Spearman handles ties by averaging ranks rather than correcting for
+  them. The paper must not quote "rho and tau, 6/6" as if that were two
+  independent results.
 * **AOPC-Comp** passes the shuffled control everywhere but fails calibration: its
   random floor runs from 0.078 (mT5-base baseline) to 0.332 (mT5-base ABTT), so
   the same number means different things in the two columns being compared. It
@@ -342,76 +625,112 @@ Notes on the individual calls.
 * **The ERASER trio** goes to the appendix, as decision 5 of the 2026-09-06 plan
   anticipated. The sweep in A1 and the backend comparison in A4 now give the
   plain reason: the verdict depends on the threshold and on the erasure operator.
+* **Criterion 4 is satisfied by construction for the gap metrics, so it is not
+  independent evidence for them.** A random attribution *is* a random ordering,
+  so its gap is zero by definition. Criterion 4 discriminates between gaps and
+  raws (it is what sends raw InsAUC/DelAUC and both AOPC halves to the
+  appendix); among the gap metrics it carries no information.
 
-## B3. The obvious objection
+## B3. What the symmetric application costs, and the objection it removes
 
-The three main columns give ABTT 6/6, 5/6 and 3/6. The middle column is the one
-where the chance correction changed the outcome, since raw InsAUC gives ABTT 2/6
-and the chance-corrected gap gives 5/6. That has to be defended, not asserted.
+Applying criterion 5 symmetrically strikes the sufficiency side of the table
+entirely. `AOPC-Suff`, `InsAUC` and `InsAUC gap` are all in the appendix, so no
+main column asks "do the top-ranked tokens on their own reproduce the score".
+That is a real loss and the paper has to own it: **on this data no
+sufficiency-side metric survives our own validity check in every cell.**
 
-The correction is demanded by criterion 4, fixed before the numbers were looked
-at, and its mechanism is measurable rather than assumed. The random-attribution
-insertion floor is 0.853 (PhilTa) and 0.929 (mT5-base) under baseline, but 0.718
-and 0.681 under ABTT. In a collapsed, anisotropic space an arbitrary subset of
-tokens already reproduces most of the full cosine, so raw sufficiency near 1.0 at
-baseline is a property of the geometry rather than of the attribution.
-Subtracting the floor is what stops the baseline being credited for the very
-collapse this paper is about.
+Criterion 3 is still met, on its own stated rationale. Its justification
+sentence is that "a table made only of rank correlations does not answer the
+question a reader asks about a rationale", and `DelAUC gap` is a perturbation
+metric, not a rank correlation: it asks whether removing the top-ranked tokens
+destroys the score. What is missing from the main table is the narrower
+sufficiency half specifically, and A1 plus the appendix carry it in full.
 
-Three things keep this from being a result-driven choice.
+The earlier draft of this memo spent a section defending `InsAUC gap` against
+the charge that its chance correction manufactured the 5/6, since raw `InsAUC`
+gives 2/6. That defence was sound as far as it went, and the independent review
+of PR #135 strengthened it: a headroom-normalised skill score
+`(InsAUC - random)/(1 - random)`, which removes the ceiling advantage rather
+than subtracting it, gives the same 5/6 in the same cells. The mechanism is
+also measurable rather than assumed: the random-attribution insertion floor is
+0.853 (PhilTa) and 0.929 (mT5-base) at baseline but 0.718 and 0.681 under ABTT,
+so raw sufficiency near 1.0 at baseline reflects the collapsed geometry rather
+than the attribution, while for LaTa the floor barely moves (0.810 to 0.792) and
+the confound does not arise.
 
-1. The same correction applied to the deletion side does **not** move the answer:
-   raw DelAUC gives ABTT 3/6 and DelAUC gap gives ABTT 3/6, the same six cells.
-   The correction is not a uniform ABTT bonus.
-2. LaTa is a built-in counterexample. Its insertion floor barely moves (0.810
-   baseline, 0.792 ABTT), the correction changes nothing there, and LaTa/IG stays
-   a baseline win in both the raw and the corrected column.
-3. The main table deliberately keeps DelAUC gap, a column where ABTT wins only
-   half the cells. A table selected to flatter ABTT would not contain it.
+None of that rescues the column, because criterion 5 is prior to it. A metric
+that does not beat a permutation of itself in two of twelve cells is not
+measured well enough on this data to carry a headline claim, whatever the
+correction does elsewhere. The argument above is kept because it is the reason
+the appendix reports `InsAUC gap` rather than raw `InsAUC` as the sufficiency
+number of record.
 
-If a reviewer prefers the uncorrected view, the appendix carries raw InsAUC and
-AOPC-Suff with their 2/6, and the caption quotes the floor.
+The one thing this rewrite does **not** change is the most credibility-buying
+decision in the selection: `DelAUC gap` stays in the main table at 3/6 (and, per
+A7, two significant wins, one tie and three significant losses). A table
+selected to flatter ABTT would not contain it, and would not have lost the 5/6
+column. The bounded input-level spot check in A8 is a small piece of positive
+evidence for keeping it: on LaTa/IG, the one cell we could afford to test under
+the other erasure operator, `DelAUC gap` gives the same baseline win under both
+operators and does so significantly under both.
 
 ## B4. Recommended main table
 
-Three columns, replacing the current four. All threshold-free, all with a
-calibrated zero.
+**Two columns**, replacing the current four.
 
 | Column | Key in `summary_v2.csv` | Direction | ABTT wins |
 |---|---|---|---|
 | rho_LOO | `loo_rho_mean` | higher | 6/6 |
-| InsAUC gap | `ins_auc_gap_mean` | higher | 5/6 |
 | DelAUC gap | `del_auc_gap_mean` | higher | 3/6 |
 
-The caption must carry the random-attribution floor (`ins_auc_random_mean`,
-`del_auc_random_mean`) so the gap is readable, and must repeat the standing
-caveat that cross-variant comparisons are descriptive because ABTT changes both
-the attribution scores and the cosine being explained.
+Both are threshold-free and both have a calibrated zero. `tau_LOO` is **not** a
+third column: it is reported in the appendix as the tie-corrected robustness
+twin of `rho_LOO`, with which it correlates 0.9995.
+
+The caption must carry:
+
+* the random-order floor (`del_auc_random_mean`) so the gap is readable;
+* the per-cell standard errors, or a sentence saying that the LaTa/MaRC
+  `DelAUC gap` win is inside the noise at about 1.2 SE (A7);
+* the pair counts, since ABTT contributes 191 to 195 pairs against the
+  baseline's 200 (A6);
+* the standing caveat that cross-variant comparisons are descriptive, because
+  ABTT changes both the attribution scores and the cosine being explained;
+* the scope of the faithfulness claim: representation-level masking over cached
+  layer-L hidden states, so these are statements about the pooled read-out at
+  layer L rather than about the encoder's input-to-output map.
 
 Appendix, nothing deleted: Suff@{10,25,50}%, Comp@{10,25,50}%,
 MinFrac@{0.70,0.80,0.90,0.95}, tau_LOO, AOPC-Suff, AOPC-Comp, raw DelAUC and
-InsAUC, all shuffled-attribution gaps, and the `random` and `inverse` controls.
-One plain sentence for the trio:
+InsAUC, **InsAUC gap**, all shuffled-attribution gaps, and the `random` and
+`inverse` controls. Two plain sentences:
 
 > The threshold-based ERASER metrics are reported for completeness. Their
 > baseline-versus-ABTT verdict depends on the threshold and on the erasure
 > operator, which is why the main table uses threshold-free, chance-corrected
 > metrics instead.
 
+> Chance-corrected insertion faithfulness favours ABTT in five of six cells, but
+> we do not report it in the main table: in two of the twelve cells, both of
+> them baseline cells, the real attribution does not beat a permutation of its
+> own scores, so the measurement does not meet the validity bar we set for a
+> headline column.
+
 ## B5. The honest headline sentence
 
 This is the sentence the paper should carry:
 
-> Post-processing with ABTT improves the rank faithfulness of both attribution
-> views in all six model-view cells (rho_LOO and Kendall tau, 6/6) and improves
-> chance-corrected insertion faithfulness in five of six, but chance-corrected
-> deletion faithfulness improves in only three of six, and the threshold-based
-> ERASER metrics improve in between one and five of six depending on the
-> threshold. We therefore claim that ABTT yields better-ranked and more
-> sufficient rationales, not that it improves every faithfulness metric.
+> Post-processing with ABTT improves rank faithfulness in all six model-view
+> cells (rho_LOO 6/6, with tie-corrected Kendall tau-b agreeing in all six), but
+> chance-corrected deletion faithfulness improves in only three of six, and one
+> of those three wins is within 1.2 standard errors of zero. The sufficiency-side
+> metrics are reported in the appendix rather than the main table because they
+> fail our shuffled-attribution control in two baseline cells. We therefore claim
+> that ABTT yields better-ranked rationales, not that it improves faithfulness on
+> every axis.
 
-If issue #120 instead reports the uncorrected AUCs in the main table, the honest
-sentence becomes:
+If issue #120 prefers to lead with the uncorrected view, the honest sentence
+becomes:
 
 > ABTT improves rank faithfulness in all six model-view cells, but raw
 > sufficiency and comprehensiveness improve in only two and three of six. Those
@@ -422,8 +741,14 @@ sentence becomes:
 > 0.79) and the confound does not arise.
 
 Either sentence is publishable and neither overclaims. The first is preferred
-because it puts the confound-corrected numbers in the table rather than only in
-the prose.
+because it reports the corrected numbers in the table rather than only in prose.
+
+Note what the first sentence no longer says. The version in PR #135 commit
+`4aa888b` claimed that ABTT "improves chance-corrected insertion faithfulness in
+five of six" as a main-table result, and cited "rho_LOO and Kendall tau, 6/6" as
+though those were two independent measurements. Both are gone: the first because
+the column did not survive criterion 5, the second because tau is a twin of rho,
+not a second witness.
 
 ## B6. Action items for issue #120
 
@@ -432,13 +757,21 @@ the prose.
    because the erasure operator changes; rho_LOO moves by at most 0.098 and keeps
    all six ABTT wins.
 2. Add the erasure-operator sentence to the method text: masking is done at the
-   representation level over cached layer-L hidden states.
-3. Move the ERASER trio to the appendix with the sentence in B4.
+   representation level over cached layer-L hidden states, **so the faithfulness
+   statements are about the pooled read-out at layer L, not about the encoder's
+   input-to-output map** (a removed token's content survives inside its
+   neighbours' states). Never cite the 2.5e-07 full-cosine drift as evidence
+   about masking; it validates the unmasked reproduction only.
+3. Move the ERASER trio to the appendix with the first sentence in B4, and
+   `InsAUC gap` with the second.
 4. Keep the shuffled-attribution control as one prose sentence in the main text.
    It is a validity statement, not a result column; the full gap table goes to
    the appendix.
 5. Do not describe that control as an Adebayo sanity check. Call it a
    shuffled-attribution control.
-6. Nothing in this memo licenses the claim "ABTT improves attribution quality"
+6. State the two ranking conventions (magnitude ranking, positional tie-break)
+   in the method text, and report the unequal pair counts (A6) and the per-cell
+   standard errors (A7) in the caption.
+7. Nothing in this memo licenses the claim "ABTT improves attribution quality"
    without a metric-specific qualifier. The guardrail list in
    `docs/runs/run4_interpretation_caveat_memo.md` still stands.
