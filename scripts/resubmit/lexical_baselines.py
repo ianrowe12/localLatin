@@ -21,8 +21,11 @@ say how much of the retrieval signal is plain word or character overlap:
 Every scorer produces a full ``n x n`` score matrix over the 1,705 labelled
 files, which is then min-max rescaled with the *train* upper triangle's min and
 max so the learned threshold sweep over ``[0, 1]`` is well posed. The rescaling
-is a monotone affine map, so it changes only ``tau``, ``same_avg``, ``diff_avg``
-and ``gap``; AUROC and every accuracy are invariant to it. Test scores are not
+is a monotone affine map, so AUROC is invariant to it; ``tau`` is then chosen on a
+fixed [0, 1] grid, so threshold-dependent accuracies CAN change (BM25 dir@1 moves
+from 49.1 to 56.3 with the rescale, because unrescaled BM25 pins tau at the grid
+ceiling). For char TF-IDF the train block already spans [0, 1], so the rescale is
+exactly the identity and the headline numbers do not depend on it. Test scores are not
 clipped, so a test pair may land slightly outside ``[0, 1]``.
 
 Metrics are not reimplemented here. Task A (AUROC, score gap) and single-split
@@ -486,8 +489,11 @@ def render_latex_table(results: pd.DataFrame, mseed: Optional[pd.DataFrame]) -> 
         "$b=0.75$ with document frequencies, vocabulary and average document length "
         "taken from train files only; the character TF-IDF vectoriser is likewise "
         "fitted on train only, and normalised Levenshtein has nothing to fit. Every "
-        "score matrix is min-max rescaled using the train block, a monotone map "
-        "that leaves AUROC and every accuracy unchanged."
+        "score matrix is min-max rescaled using the train block; the map is monotone, so "
+        "AUROC is unchanged, while the threshold $\\tau$ is fitted on a fixed grid "
+        "afterwards, which matters for BM25 (unrescaled, $\\tau$ pins at the grid "
+        "ceiling) and is the identity for char TF-IDF, whose train scores already span "
+        "[0, 1]."
     )
     if mseed is not None and len(mseed):
         by_model = mseed.set_index("model")

@@ -20,6 +20,7 @@ sys.path.append(str(Path(__file__).resolve().parents[2] / "src"))
 
 from canon_retrieval import load_text
 from canon_split_v2 import (
+    build_meta_with_carried_over_split,
     build_meta_with_split_v2,
     generate_pairs_tsv,
     log_pair_distribution,
@@ -64,14 +65,28 @@ def main():
         help="Output directory for split files.",
     )
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--carry_over_from", default=None,
+        help=(
+            "Path to a previous phase_resubmit_split.csv. When given, every file "
+            "keeps the split and Task B role it had there (matched on filename) "
+            "and only directory-derived columns are recomputed. Use this after a "
+            "label correction so the split diff stays confined to the corrected "
+            "directories instead of being reshuffled by the RNG."
+        ),
+    )
     args = parser.parse_args()
 
     out = Path(args.out_dir)
     out.mkdir(parents=True, exist_ok=True)
 
     # --- Step 1: Build metadata + apply v2 split ---
-    print("Building metadata with v2 split...")
-    meta = build_meta_with_split_v2(args.canon_root, random_seed=args.seed)
+    if args.carry_over_from:
+        print(f"Building metadata, carrying the split over from {args.carry_over_from}...")
+        meta = build_meta_with_carried_over_split(args.canon_root, args.carry_over_from)
+    else:
+        print("Building metadata with v2 split...")
+        meta = build_meta_with_split_v2(args.canon_root, random_seed=args.seed)
     print(f"  {len(meta)} files in {meta['folder_id'].nunique()} folders")
 
     # --- Step 2: Save split CSV ---
@@ -134,6 +149,7 @@ def main():
         "dataset": {
             "canon_root": args.canon_root,
             "seed": args.seed,
+            "carry_over_from": args.carry_over_from,
         },
         "split": summary,
         "task_a_pairs": {
