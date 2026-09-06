@@ -16,7 +16,8 @@
 # Budget: SLURM charges the reserved wall time, not the elapsed time, so
 # --time is kept close to the measured runtime. On one A100 the parity pass,
 # 7 training epochs and extraction of all 12 layers took 1m24s end to end;
-# the 45-minute reservation is margin for a slower node or more epochs.
+# 15 minutes is a 10x margin for a slower node or a few more epochs, and still
+# an order of magnitude less than the 45 minutes originally reserved.
 #
 #SBATCH --job-name=ft_lata_ceiling
 #SBATCH --partition=gpuA100x4
@@ -26,7 +27,7 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64g
 #SBATCH --gpus-per-node=1
-#SBATCH --time=00:45:00
+#SBATCH --time=00:15:00
 #SBATCH --output=slurm/logs/finetune_lata_ceiling_%j.out
 #SBATCH --error=slurm/logs/finetune_lata_ceiling_%j.err
 

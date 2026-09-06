@@ -10,6 +10,10 @@ number is wrong in the direction that flatters the ceiling.
   batch a negative. Two pairs from the same directory in one batch make the
   objective push apart texts that belong together, which shows up as a worse
   ceiling rather than as an error.
+
+Both functions live in ``src/finetune_pairs.py``, which imports nothing heavier
+than pandas, so every test here runs in CI rather than being skipped for want of
+torch.
 """
 
 from __future__ import annotations
@@ -19,15 +23,15 @@ import sys
 from pathlib import Path
 
 import pandas as pd
-import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO_ROOT / "scripts" / "resubmit"))
+sys.path.insert(0, str(REPO_ROOT / "src"))
 
-pytest.importorskip("torch", reason="finetune_lata_ceiling imports torch")
-pytest.importorskip("transformers", reason="finetune_lata_ceiling imports transformers")
-
-from finetune_lata_ceiling import build_pairs, batch_pairs_by_round  # noqa: E402
+# `src/finetune_pairs` is deliberately torch-free so these guards execute on a
+# clean CI checkout. Importing them from the training CLI would drag in torch
+# and transformers, and the whole module would be skipped -- which is exactly
+# the failure these tests exist to prevent going unnoticed.
+from finetune_pairs import build_pairs, batch_pairs_by_round  # noqa: E402
 
 
 def make_split(sizes: dict[str, int], test_dirs: int = 2) -> pd.DataFrame:

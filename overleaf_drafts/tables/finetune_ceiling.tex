@@ -14,9 +14,22 @@ LaTa (fine-tuned) & 0.984\,\textsubscript{12} & 0.385\,\textsubscript{12} & 83.6
 LaTa (fine-tuned) + ABTT & 0.970\,\textsubscript{12} & 0.548\,\textsubscript{12} & 88.3\,\textsubscript{12} & 85.9\,\textsubscript{12} \\
 \bottomrule
 \end{tabular}
-\caption{Supervised fine-tuning reference ceiling on LaTa. The fine-tuned encoder is trained contrastively on the 565 positive pairs available in the train split (in-batch negatives, symmetric InfoNCE), with a dev slice carved out of train by directory for model selection; the test split is untouched until this evaluation. Task A columns are test AUROC and cosine gap at the layer chosen by train AUROC; Task B columns are test assignment accuracy and directory accuracy at rank 1, in percent, at the layer chosen by train directory accuracy, with $\tau$ learned on train. Layer indices are subscripts. ABTT rows tune $D$ per layer on train. This is a reference ceiling, not a proposed method: it consumes supervision the zero-shot pipeline never sees.}
+\caption{Supervised fine-tuning reference ceiling on LaTa. The fine-tuned encoder is trained contrastively on the 565 positive pairs available in the train split (in-batch negatives, symmetric InfoNCE), with a dev slice carved out of train by directory for model selection; the test split is untouched until this evaluation. Task A columns are test AUROC and cosine gap at the layer chosen by train AUROC; Task B columns are test assignment accuracy and directory accuracy at rank 1, in percent, at the layer chosen by train directory accuracy, with $\tau$ learned on train. Layer indices are subscripts. ABTT rows sweep $D$ per layer on train and select $D=10$ everywhere, which is the top of the grid $\{1,2,3,5,7,10\}$, so the tuned and fixed variants coincide. The selected checkpoint is epoch 7, the terminal epoch of the 8-epoch budget, so this is a ceiling at this training budget rather than an asymptote. This is a reference ceiling, not a proposed method: it consumes supervision the zero-shot pipeline never sees.}
 \label{tab:finetune_ceiling}
 \end{table}
+
+% Notes for whoever moves these rows into the paper:
+%   - Epoch 7 is the LAST epoch of the 8-epoch budget (patience fired after it),
+%     so the ceiling is 'at this training budget', not an asymptote.
+%   - abtt_optimal selects D=10 at every layer, the maximum of the D grid
+%     {1,2,3,5,7,10}, so abtt_optimal == abtt_fixed in every row. Boundary hit,
+%     not a tuned optimum.
+%   - The pre-trained rows are COPIED from the paper's results CSV, not rescored
+%     here; only the fine-tuned bases pass through evaluate_layers.
+%   - Witnesses in one directory are near-duplicates, and 206 of the 535 test
+%     query files (38.5%) sit in a directory that supplied training pairs. No
+%     test file was trained on, but the ceiling is if anything overstated,
+%     which makes the 'ABTT already reaches it' reading conservative.
 
 % 5-seed Task B (mean +/- std over seeds 42-46), same protocol as the
 % multi-seed appendix table:

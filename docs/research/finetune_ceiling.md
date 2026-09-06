@@ -60,6 +60,14 @@ AUROC over the 2,556 dev pairs is what separates the last four epochs.
 
 **Selected checkpoint: epoch 7, dev directory accuracy@1 0.972, dev AUROC 0.967.**
 
+**Epoch 7 is the terminal epoch of the sweep.** The budget was 8 epochs with
+patience 3, and patience fired after epoch 7, so the selected checkpoint is also
+the last one trained. Dev accuracy@1 had been flat at 0.972 since epoch 4 and the
+AUROC tiebreak was still creeping up by +0.0002 per epoch, which reads as
+saturation rather than truncation. Still, nothing here rules out that a longer or
+larger training run would go further, so every number below is a ceiling **at
+this training budget**, not an asymptote.
+
 ## Evaluation
 
 Fine-tuned mean-pooled embeddings are extracted for all 1,705 labelled files at
@@ -81,10 +89,13 @@ directory accuracy@1. No test metric is ever used to pick a layer.
 
 **Extraction parity.** The same script re-extracts with the *pre-trained*
 weights and diffs against the paper's cached LaTa embeddings. Agreement is at
-float32 rounding noise (max abs difference ~1e-5 at layer 1, ~1e-7 at layer 12;
-mean cosine 1.000000), which confirms that row order, text loading, pooling and
-token filtering are identical to the paper's pipeline. Any difference in the
-numbers below is therefore caused by the fine-tuning, not by the harness.
+float32 rounding noise: max absolute difference 5.7e-05 at layer 1 and 1.4e-06 at
+layer 12, mean cosine 1.000000. The two absolute numbers are not comparable as
+they stand, because layer-1 activations peak near |x| = 89 and layer-12 near
+|x| = 0.30; in relative terms both are about 1e-06. This confirms that row order,
+text loading, pooling and token filtering are identical to the paper's pipeline,
+so any difference in the numbers below is caused by the fine-tuning, not by the
+harness.
 
 ## Results
 
@@ -98,9 +109,15 @@ independently, both on train metrics. Task B figures are percentages.
 | LaTa (fine-tuned) | **0.984₁₂** | 0.385₁₂ | 83.6₁₂ | 81.7₁₂ |
 | LaTa (fine-tuned) + ABTT | 0.970₁₂ | **0.548₁₂** | 88.3₁₂ | 85.9₁₂ |
 
-The pre-trained rows reproduce the paper's published headline table exactly,
-which is the point of running them through the same code path rather than
-copying numbers across.
+**Where the pre-trained rows come from.** They are *copied* out of the paper's
+`phase_resubmit_results.csv` by `build_comparison`, not recomputed: only the
+fine-tuned bases are passed through `evaluate_layers`. They therefore match the
+published headline tables by construction. Separately, and as a check on the
+harness rather than on the table, cached pre-trained embeddings were re-scored
+through the same evaluator (`run_resubmit_evaluate.evaluate_single`) and
+reproduced those CSV values, agreeing to 1e-08 on AUROC and exactly elsewhere.
+So the comparison is like for like, but the agreement is a verified property of
+the code path, not something the comparison table itself demonstrates.
 
 **The ceiling is where the zero-shot pipeline already is.** On directory routing,
 ABTT on the frozen encoder scores 86.1 and the fine-tuned encoder with ABTT
@@ -121,10 +138,12 @@ costs a little ranking signal while still helping the thresholded decision,
 which is what the larger cosine gap (0.385 to 0.548) reflects.
 
 **Fine-tuning does not repair the mid-depth collapse.** In the fine-tuned model,
-layers 2 through 11 still sit at 0.50 to 0.57 AUROC with a *negative* cosine
-gap, essentially unchanged from the pre-trained model. Contrastive training
-fixes the layer its loss is attached to and leaves the anisotropy of the middle
-layers intact; ABTT lifts every layer into the 0.96 to 0.98 band both before and
+layers 2 through 11 still sit at 0.50 to 0.57 AUROC, essentially unchanged from
+the pre-trained model, and the cosine gap over that range is near zero or
+negative: +0.024 at layer 2, then -0.049 to -0.064 at layers 3 through 11. The
+pre-trained model is +0.021 at layer 2, so layer 2 barely moves either.
+Contrastive training fixes the layer its loss is attached to and leaves the
+anisotropy of the middle layers intact; ABTT lifts every layer into the 0.96 to 0.98 band both before and
 after fine-tuning. This is direct evidence that the collapse the paper documents
 is a property of the representation geometry, not a deficiency that end-task
 supervision happens to fix.
@@ -150,16 +169,36 @@ after fine-tuning is a real effect on routing rather than seed noise.
 
 ### Does ABTT still add anything after fine-tuning?
 
-Yes on Task B, no on Task A, and the two answers are consistent. ABTT with $D$
-swept on train picks $D=10$ at every fine-tuned layer, the same value it picks
-before fine-tuning. On the fine-tuned last layer it lifts routing by 4.2 points
-single-seed and 4.3 points over five seeds, and it widens the cosine gap from
-0.385 to 0.548, which is what makes a single global threshold $\tau$ work.
-It costs 1.5 points of Task A AUROC, because ranking does not need a threshold
-and the removed components still carried some ordering signal.
+Yes on Task B, no on Task A, and the two answers are consistent. On the
+fine-tuned last layer ABTT lifts routing by 4.2 points single-seed and 4.3 points
+over five seeds, and it widens the cosine gap from 0.385 to 0.548, which is what
+makes a single global threshold $\tau$ work. It costs 1.5 points of Task A AUROC,
+because ranking does not need a threshold and the removed components still
+carried some ordering signal.
+
+**Read $D=10$ as a boundary hit, not a finding.** The sweep picks $D=10$ at every
+fine-tuned layer, the same value it picks before fine-tuning, but 10 is the top of
+the paper's grid ($D \in \{1,2,3,5,7,10\}$). The sweep never had the option of
+going higher, and `abtt_optimal` is therefore numerically identical to
+`abtt_fixed` in all 24 layer x method rows.
 
 The practical consequence for the paper: fine-tuning and ABTT are not additive.
 They arrive at the same place, and the correction gets there without labels.
+
+### Why the ceiling is, if anything, overstated
+
+No test file was trained on, and no dev file contributed a training pair; the
+carve is directory-disjoint and was verified as such. But witnesses inside one
+directory are near-duplicate hand copies of the same source text, and 206 of the
+535 test query files (38.5%) sit in a directory that supplied training pairs. The
+fine-tuned encoder has therefore seen near-copies of about two fifths of the
+routable test items. That is not leakage under the split's own definition, but it
+does flatter the fine-tuned rows.
+
+This cuts in favour of the conclusion. The finding is that the ceiling is where
+the zero-shot pipeline already is; an overstated ceiling makes that reading
+conservative, because the honest ceiling would sit at or below the number
+reported here.
 
 ## Reproducing
 
@@ -178,6 +217,12 @@ sbatch slurm/resubmit/finetune_lata_ceiling_eval.sbatch
 Both accept `CODE_ROOT` (scripts, `src/`, `data/`) and `REPO_ROOT` (the `runs/`
 tree) as environment overrides; they are the same path in a normal checkout and
 differ only when submitting from a git worktree.
+
+The two functions that decide whether the ceiling is honest, the directory-level
+dev carve and the directory-disjoint batching, live in `src/finetune_pairs.py`
+rather than in the CLI. That module imports nothing heavier than pandas, so
+`tests/test_finetune_ceiling_pairs.py` runs on a clean CI checkout instead of
+being skipped for want of torch.
 
 Outputs:
 
@@ -210,7 +255,8 @@ of up to 512 tokens; extraction is two passes over 1,705 files (one for the
 parity check, one for the fine-tuned embeddings).
 
 The `--time` values in both sbatch files have since been trimmed to match
-(45 minutes and 30 minutes), because SLURM charges the reserved wall time. The
+(15 minutes for the GPU job, 30 for the CPU one), because SLURM charges the
+reserved wall time rather than the elapsed time. The
 four-hour CPU reservation was sized from a run on a saturated login node, where
 the same scoring took 22 minutes; a dedicated node did it in 3.
 

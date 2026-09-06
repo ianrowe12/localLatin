@@ -39,7 +39,6 @@ import math
 import random
 import sys
 import time
-from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -59,6 +58,11 @@ from canon_retrieval import (  # noqa: E402
     similarity_matrix,
     upper_triangle,
     upper_triangle_labels,
+)
+from finetune_pairs import (  # noqa: E402
+    PairData,
+    batch_pairs_by_round,
+    build_pairs,
 )
 from pair_evaluation import safe_auc_roc  # noqa: E402
 from token_filtering import build_token_keep_lookup, torch_token_keep_mask  # noqa: E402
@@ -141,107 +145,6 @@ def parse_layer_spec(spec: str, n_blocks: int) -> List[int]:
 
 def model_slug(name: str) -> str:
     return name.replace("/", "_")
-
-
-# --------------------------------------------------------------------------- #
-# Pair construction and the DEV carve
-# --------------------------------------------------------------------------- #
-
-@dataclass
-class PairData:
-    train_pairs: List[Tuple[int, int]]          # row indices into the split CSV
-    train_pair_dirs: List[str]
-    dev_dirs: List[str]
-    fit_dirs: List[str]
-    dev_rows: List[int]
-    n_train_multi_dirs: int
-    n_all_train_pairs: int
-
-
-def build_pairs(split_meta: pd.DataFrame, dev_dir_frac: float, seed: int) -> PairData:
-    """Split train directories into fit/dev by DIRECTORY, then enumerate pairs.
-
-    Held-out dev directories contribute no training pair, so the dev retrieval
-    metric is measured on text the contrastive objective has never seen.
-    """
-    train_rows = np.flatnonzero(split_meta["split"].values == "train")
-    folder_ids = split_meta["folder_id"].values
-
-    by_dir: Dict[str, List[int]] = {}
-    for row in train_rows:
-        by_dir.setdefault(str(folder_ids[row]), []).append(int(row))
-
-    multi_dirs = sorted(d for d, rows in by_dir.items() if len(rows) >= 2)
-    n_all_pairs = sum(len(by_dir[d]) * (len(by_dir[d]) - 1) // 2 for d in multi_dirs)
-
-    rng = np.random.default_rng(seed)
-    # A positive fraction always carves at least one directory, so a small
-    # corpus still gets a dev slice; an explicit 0.0 means "no dev carve".
-    n_dev = int(round(dev_dir_frac * len(multi_dirs)))
-    if dev_dir_frac > 0:
-        n_dev = max(1, n_dev)
-    dev_idx = rng.choice(len(multi_dirs), size=n_dev, replace=False)
-    dev_dirs = sorted(multi_dirs[i] for i in dev_idx)
-    dev_set = set(dev_dirs)
-    fit_dirs = [d for d in multi_dirs if d not in dev_set]
-
-    train_pairs: List[Tuple[int, int]] = []
-    train_pair_dirs: List[str] = []
-    for d in fit_dirs:
-        rows = sorted(by_dir[d])
-        for i in range(len(rows)):
-            for j in range(i + 1, len(rows)):
-                train_pairs.append((rows[i], rows[j]))
-                train_pair_dirs.append(d)
-
-    dev_rows = sorted(r for d in dev_dirs for r in by_dir[d])
-
-    return PairData(
-        train_pairs=train_pairs,
-        train_pair_dirs=train_pair_dirs,
-        dev_dirs=dev_dirs,
-        fit_dirs=fit_dirs,
-        dev_rows=dev_rows,
-        n_train_multi_dirs=len(multi_dirs),
-        n_all_train_pairs=n_all_pairs,
-    )
-
-
-def batch_pairs_by_round(
-    pairs: Sequence[Tuple[int, int]],
-    pair_dirs: Sequence[str],
-    batch_pairs: int,
-    rng: random.Random,
-) -> List[List[int]]:
-    """Group pair indices into batches that never repeat a directory.
-
-    In-batch negatives assume every other pair in the batch is a true negative.
-    Two pairs from the same directory would be labelled negative for each other,
-    so pairs are dealt out in rounds (at most one pair per directory per round)
-    and each round is chunked separately.
-    """
-    remaining: Dict[str, List[int]] = {}
-    for idx, d in enumerate(pair_dirs):
-        remaining.setdefault(d, []).append(idx)
-    for d in remaining:
-        rng.shuffle(remaining[d])
-
-    batches: List[List[int]] = []
-    while remaining:
-        # Draw from the directories with the most pairs left, so that the last
-        # batches are not all monopolised by one prolific directory.
-        chosen = sorted(remaining, key=lambda d: (-len(remaining[d]), d))[:batch_pairs]
-        if len(chosen) < 2:  # a batch of one has no negatives
-            break
-        batch = []
-        for d in chosen:
-            batch.append(remaining[d].pop())
-            if not remaining[d]:
-                del remaining[d]
-        rng.shuffle(batch)
-        batches.append(batch)
-    rng.shuffle(batches)
-    return batches
 
 
 # --------------------------------------------------------------------------- #
@@ -707,11 +610,29 @@ def write_tex(comparison: pd.DataFrame, mseed_agg: Optional[pd.DataFrame], path:
         r"layer chosen by train AUROC; Task B columns are test assignment accuracy and "
         r"directory accuracy at rank 1, in percent, at the layer chosen by train "
         r"directory accuracy, with $\tau$ learned on train. Layer indices are "
-        r"subscripts. ABTT rows tune $D$ per layer on train. This is a reference "
-        r"ceiling, not a proposed method: it consumes supervision the zero-shot "
-        r"pipeline never sees.}",
+        r"subscripts. ABTT rows sweep $D$ per layer on train and select $D=10$ "
+        r"everywhere, which is the top of the grid $\{1,2,3,5,7,10\}$, so the tuned "
+        r"and fixed variants coincide. The selected checkpoint is epoch 7, the "
+        r"terminal epoch of the 8-epoch budget, so this is a ceiling at this training "
+        r"budget rather than an asymptote. This is a reference ceiling, not a proposed "
+        r"method: it consumes supervision the zero-shot pipeline never sees.}",
         r"\label{tab:finetune_ceiling}",
         r"\end{table}",
+    ]
+    lines += [
+        "",
+        r"% Notes for whoever moves these rows into the paper:",
+        r"%   - Epoch 7 is the LAST epoch of the 8-epoch budget (patience fired after it),",
+        r"%     so the ceiling is 'at this training budget', not an asymptote.",
+        r"%   - abtt_optimal selects D=10 at every layer, the maximum of the D grid",
+        r"%     {1,2,3,5,7,10}, so abtt_optimal == abtt_fixed in every row. Boundary hit,",
+        r"%     not a tuned optimum.",
+        r"%   - The pre-trained rows are COPIED from the paper's results CSV, not rescored",
+        r"%     here; only the fine-tuned bases pass through evaluate_layers.",
+        r"%   - Witnesses in one directory are near-duplicates, and 206 of the 535 test",
+        r"%     query files (38.5%) sit in a directory that supplied training pairs. No",
+        r"%     test file was trained on, but the ceiling is if anything overstated,",
+        r"%     which makes the 'ABTT already reaches it' reading conservative.",
     ]
     if mseed_agg is not None and not mseed_agg.empty:
         lines.append("")
