@@ -5,16 +5,43 @@ import argparse
 import json
 import sys
 import time
-from http.cookiejar import CookieJar
+from http.cookiejar import CookieJar, DefaultCookiePolicy
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 from urllib.request import HTTPCookieProcessor, Request, build_opener
+
+# The production config sets auth.secure_cookies: true, so the session cookie
+# carries the Secure attribute. deploy/deploy.sh runs this script against
+# LOCAL_BASE_URL (http://127.0.0.1:8080 by default), because the whole point of
+# the post-restart checks is to test the service itself rather than nginx and
+# DNS in front of it. http.cookiejar stores a Secure cookie received that way
+# but refuses to send it back over plain http, so every request after signin
+# went out anonymous and the first PI/admin call failed with 401 -- the exact
+# failure the first authenticated deploy run hit (issue #126).
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
+
+
+class LoopbackSecureCookiePolicy(DefaultCookiePolicy):
+    """Return Secure cookies to a loopback origin even over plain http.
+
+    Relaxed only for 127.0.0.1/::1/localhost: anything that can observe traffic
+    on the host's own loopback interface is already running on the deploy host,
+    so the Secure attribute is buying nothing there. Every non-loopback origin
+    keeps the standard rule, so pointing --base-url at the public site still
+    refuses to leak a session cookie over http.
+    """
+
+    def return_ok_secure(self, cookie, request) -> bool:  # noqa: ANN001 (stdlib signature)
+        if super().return_ok_secure(cookie, request):
+            return True
+        return urlsplit(request.full_url).hostname in LOOPBACK_HOSTS
 
 
 class SmokeClient:
     def __init__(self, base_url: str) -> None:
         self.base_url = base_url.rstrip("/")
-        self.opener = build_opener(HTTPCookieProcessor(CookieJar()))
+        jar = CookieJar(policy=LoopbackSecureCookiePolicy())
+        self.opener = build_opener(HTTPCookieProcessor(jar))
 
     def send(
         self,
