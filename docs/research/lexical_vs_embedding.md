@@ -207,9 +207,9 @@ metric that moved most under #131's two-file relabelling, so treat it as fragile
 **Redundant, not complementary.** On this corpus a character 3-5-gram TF-IDF cosine ranks
 the true partner at least as well as every embedding configuration in every overlap stratum,
 and the corpus-wide lead over the best embedding, LaBSE+ABTT, is solid on a paired test
-(0.878 against 0.854, McNemar p = 0.0011).
-On the two slices where the hoped-for division of labour would have to appear, the lead is
-smaller and the evidence is weaker but still points the same way: 0.646 against 0.598 in the
+(0.878 against 0.854, McNemar p = 0.0011). On the two slices where the hoped-for division of
+labour would have to appear, the lead is smaller and the evidence is weaker but still points
+the same way: 0.646 against 0.598 in the
 low-overlap tercile (p = 0.023) and 0.443 against 0.377 on the hard slice of positives TF-IDF
 itself would reject (p = 0.033). Those two p-values are uncorrected and would not survive
 correction for the twelve methods compared in each stratum, so the honest reading is that
