@@ -17,18 +17,31 @@ metric by writing one decorated function):
   - ``comprehensiveness``   (comp_alpha = 1 - S_v(complement mask) / S_v(full); plus AOPC)
   - ``compactness``         (smallest fraction k/n s.t. sufficiency >= tau)
   - ``loo_correlation``     (Spearman rho between |a| and per-token Δcos under LOO ablation)
+  - ``aopc``                (area under the k=1..n sufficiency and comprehensiveness curves)
+  - ``deletion_auc``        (AUC of S_v as tokens are deleted most-important-first, vs random)
+  - ``insertion_auc``       (AUC of S_v as tokens are inserted most-important-first, vs random)
+  - ``kendall_tau_loo``     (Kendall tau-b between |a| and the same LOO deltas rho_LOO uses)
+  - ``randomization_check`` (Adebayo-style: shuffle ``a``, recompute, report real - shuffled)
 
 The "loo_correlation" metric is what some papers call "faithfulness" (Atanasova et al.
 2020); we keep the more specific name here to avoid conflating it with MarK's AOPC-style
 faithfulness, which is captured by AOPC over sufficiency/comprehensiveness.
+
+Cost model. ``aopc``, ``deletion_auc``, ``insertion_auc`` and ``randomization_check``
+all need the full k=1..n masking curve rather than a handful of thresholds. A driver
+that recomputes S_v with a model forward pass per mask pays O(n) forwards per curve; a
+driver that masks a *frozen* pooled representation can hand ``PairContext`` a
+``prefix_curves`` closure that returns both curves for a given token ordering in one
+vectorised pass. Every curve-based metric here goes through ``PairContext.curves`` and
+therefore gets the cheap path automatically when the driver supplies one.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable, Dict, Iterable, Optional, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
 import numpy as np
-from scipy.stats import spearmanr
+from scipy.stats import kendalltau, spearmanr
 
 # Numerical constants. Pairs with full_cos below FULL_COS_FLOOR yield NaN metrics
 # (the sufficiency ratio is unstable for small denominators). LOO correlation
@@ -41,11 +54,29 @@ FULL_COS_FLOOR: float = 0.05
 LOO_NOISE_FLOOR: float = 1e-6
 DEFAULT_COMPACTNESS_THRESHOLDS: Tuple[float, ...] = (0.70, 0.80, 0.90, 0.95)
 
+# Number of reference orderings averaged over. The random-order reference for
+# deletion/insertion AUC and the shuffled-attribution reference for the
+# randomization check are both Monte-Carlo estimates; 5 draws keeps the driver
+# cheap while making the reference far less noisy than a single draw.
+DEFAULT_RANDOM_ORDER_DRAWS: int = 5
+DEFAULT_SHUFFLE_DRAWS: int = 5
+# Fixed seeds so that every method within one (pair, variant) is scored against
+# the *same* random orderings. That makes the method-to-method comparison paired
+# and lets a driver cache the reference curves.
+RANDOM_ORDER_SEED: int = 20260906
+SHUFFLE_SEED: int = 20260907
+
 
 # ----------------------------------------------------------------------------
 # Public types
 # ----------------------------------------------------------------------------
 MaskedCosFn = Callable[[np.ndarray], float]
+# Given a token ordering (most-important-first), return (keep_curve, drop_curve),
+# each of length n+1 and indexed by k: keep_curve[k] = S_v(only order[:k] kept),
+# drop_curve[k] = S_v(everything except order[:k] kept). By convention
+# keep_curve[0] = drop_curve[n] = 0.0 (the empty query) and
+# keep_curve[n] = drop_curve[0] = full_cos.
+PrefixCurveFn = Callable[[np.ndarray], Tuple[np.ndarray, np.ndarray]]
 MetricFn = Callable[..., Dict[str, float]]
 
 
@@ -61,6 +92,13 @@ class PairContext:
     obtained by leaving each query token out one at a time. Computing it once
     per (pair, variant) and reusing across methods cuts forward-pass count by
     a factor of ``n_methods``.
+
+    ``prefix_curves`` is the optional fast path for curve-based metrics (AOPC,
+    deletion/insertion AUC, the randomization check). A driver that masks a frozen
+    pooled representation can compute both prefix curves for an ordering in one
+    vectorised pass; when it is None the curves are assembled by calling
+    ``eval_masked_cos`` n times per curve, which is correct but O(n) model
+    forwards.
     """
 
     n_q: int
@@ -69,11 +107,50 @@ class PairContext:
     single_ablation_cos: np.ndarray  # shape (n_q,)
     eval_masked_cos: MaskedCosFn
     metadata: Dict[str, object] = field(default_factory=dict)
+    prefix_curves: Optional[PrefixCurveFn] = None
 
     @property
     def loo_deltas(self) -> np.ndarray:
         """Per-token leave-one-out drop in cosine: full_cos - cos(q\\{i}, c)."""
         return self.full_cos - self.single_ablation_cos
+
+    @property
+    def has_fast_curves(self) -> bool:
+        """True when the driver supplied a vectorised prefix-curve closure."""
+        return self.prefix_curves is not None
+
+    def curves(self, order: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """Return ``(keep_curve, drop_curve)`` for ``order``, both length n_q + 1.
+
+        ``order`` is a permutation of ``range(n_q)``, most important first.
+        ``keep_curve[k]`` is S_v with only ``order[:k]`` kept, ``drop_curve[k]``
+        is S_v with ``order[:k]`` removed. Index 0 and index n are pinned to the
+        analytic endpoints so the empty-query convention is identical on both
+        the fast and the fallback path.
+        """
+        order = np.asarray(order, dtype=np.int64)
+        n = self.n_q
+        if order.shape != (n,):
+            raise ValueError(f"order must have shape ({n},), got {order.shape}")
+        if self.prefix_curves is not None:
+            keep, drop = self.prefix_curves(order)
+            keep = np.asarray(keep, dtype=np.float64)
+            drop = np.asarray(drop, dtype=np.float64)
+            if keep.shape != (n + 1,) or drop.shape != (n + 1,):
+                raise ValueError("prefix_curves must return two length-(n+1) arrays")
+        else:
+            keep = np.empty(n + 1, dtype=np.float64)
+            drop = np.empty(n + 1, dtype=np.float64)
+            for k in range(1, n):
+                mask = np.zeros(n, dtype=np.int64)
+                mask[order[:k]] = 1
+                keep[k] = float(self.eval_masked_cos(mask))
+                drop[k] = float(self.eval_masked_cos(1 - mask))
+        keep[0] = 0.0
+        keep[n] = float(self.full_cos)
+        drop[0] = float(self.full_cos)
+        drop[n] = 0.0
+        return keep, drop
 
 
 # ----------------------------------------------------------------------------
@@ -131,6 +208,17 @@ def scores_from_pair_matrix(
 # ----------------------------------------------------------------------------
 # Top-k helpers
 # ----------------------------------------------------------------------------
+def rank_order(scores: np.ndarray) -> np.ndarray:
+    """Token indices sorted by descending ``|score|``, ties broken by position.
+
+    This is the single definition of "attribution order" used by every
+    curve-based metric, and it agrees with :func:`top_k_mask` by construction:
+    ``top_k_mask(scores, k)`` is exactly the mask of ``rank_order(scores)[:k]``.
+    """
+    abs_scores = np.abs(np.asarray(scores, dtype=np.float64))
+    return np.argsort(-abs_scores, kind="stable")
+
+
 def top_k_mask(scores: np.ndarray, k: int) -> np.ndarray:
     """Boolean mask of length len(scores) with True at the indices of the
     top-``k`` |score| values.
@@ -210,11 +298,8 @@ def sufficiency(
         out[f"suff@{alpha:.2f}_ratio"] = (s / full) if ratio_safe else float("nan")
 
     if compute_aopc:
-        raws = np.empty(n, dtype=np.float64)
-        for k in range(1, n + 1):
-            mask = top_k_mask(scores, k)
-            raws[k - 1] = float(ctx.eval_masked_cos(mask.astype(np.int64)))
-        out["suff_aopc_raw"] = float(raws.mean())
+        keep_curve, _ = ctx.curves(rank_order(scores))
+        out["suff_aopc_raw"] = float(keep_curve[1:].mean())
         out["suff_aopc_ratio"] = (out["suff_aopc_raw"] / full) if ratio_safe else float("nan")
     return out
 
@@ -248,12 +333,8 @@ def comprehensiveness(
         out[f"comp@{alpha:.2f}_ratio"] = (drop / full) if ratio_safe else float("nan")
 
     if compute_aopc:
-        drops = np.empty(n, dtype=np.float64)
-        for k in range(1, n + 1):
-            keep = ~top_k_mask(scores, k)
-            s = float(ctx.eval_masked_cos(keep.astype(np.int64)))
-            drops[k - 1] = full - s
-        out["comp_aopc_drop"] = float(drops.mean())
+        _, drop_curve = ctx.curves(rank_order(scores))
+        out["comp_aopc_drop"] = float((full - drop_curve[1:]).mean())
         out["comp_aopc_ratio"] = (out["comp_aopc_drop"] / full) if ratio_safe else float("nan")
     return out
 
@@ -291,9 +372,17 @@ def compactness(
 
     remaining = set(thresholds)
 
+    # With a vectorised prefix-curve closure the whole k=1..n curve costs the
+    # same as one point, so take it in one shot; otherwise keep the incremental
+    # loop, which can stop early and save model forward passes.
+    keep_curve = ctx.curves(rank_order(scores))[0] if ctx.has_fast_curves else None
+
     for k in range(1, n + 1):
-        mask = top_k_mask(scores, k)
-        s = float(ctx.eval_masked_cos(mask.astype(np.int64)))
+        if keep_curve is not None:
+            s = float(keep_curve[k])
+        else:
+            mask = top_k_mask(scores, k)
+            s = float(ctx.eval_masked_cos(mask.astype(np.int64)))
         ratio = s / full
         for t in tuple(remaining):
             if ratio >= t:
@@ -343,6 +432,234 @@ def loo_correlation(
     rho, p = float(res.statistic), float(res.pvalue)
     out["loo_rho"] = rho
     out["loo_p"] = p
+    return out
+
+
+@register("kendall_tau_loo")
+def kendall_tau_loo(
+    ctx: PairContext,
+    scores: np.ndarray,
+) -> Dict[str, float]:
+    """Kendall tau-b between ``|a|`` and the per-token leave-one-out drop.
+
+    This is pure post-processing of the same ``ctx.loo_deltas`` vector that
+    ``loo_correlation`` consumes, under the same LOO_NOISE_FLOOR filter, so it
+    costs nothing extra and is directly comparable to ``loo_rho``. Tau-b is the
+    tie-corrected variant, which matters because attribution methods with
+    built-in sparsity produce many exactly-zero scores. Reports ``loo_tau``,
+    ``loo_tau_p`` and ``loo_tau_n_used``; NaN under the same degenerate
+    conditions as ``loo_rho``.
+    """
+    deltas = ctx.loo_deltas
+    abs_scores = np.abs(np.asarray(scores, dtype=np.float64))
+    keep = np.abs(deltas) >= LOO_NOISE_FLOOR
+    n_used = int(keep.sum())
+    out: Dict[str, float] = {"loo_tau_n_used": float(n_used)}
+    if n_used < 3:
+        out["loo_tau"] = float("nan")
+        out["loo_tau_p"] = float("nan")
+        return out
+    a = abs_scores[keep]
+    d = deltas[keep]
+    if np.allclose(a, a[0]) or np.allclose(d, d[0]):
+        out["loo_tau"] = float("nan")
+        out["loo_tau_p"] = float("nan")
+        return out
+    res = kendalltau(a, d, variant="b")
+    out["loo_tau"] = float(res.statistic)
+    out["loo_tau_p"] = float(res.pvalue)
+    return out
+
+
+def _aopc_from_curves(keep_curve: np.ndarray, drop_curve: np.ndarray,
+                      full: float) -> Tuple[float, float]:
+    """Raw sufficiency and comprehensiveness AOPC from one pair of curves.
+
+    Both are means over k = 1..n, matching DeYoung et al. 2020's "average over
+    bins" formulation with every k its own bin.
+    """
+    suff_raw = float(keep_curve[1:].mean())
+    comp_raw = float((full - drop_curve[1:]).mean())
+    return suff_raw, comp_raw
+
+
+@register("aopc")
+def aopc(
+    ctx: PairContext,
+    scores: np.ndarray,
+) -> Dict[str, float]:
+    """Area over the perturbation curve for sufficiency and comprehensiveness.
+
+    Sweeps the whole k = 1..n grid instead of the three fixed fractions that
+    ``sufficiency`` and ``comprehensiveness`` report, so the number no longer
+    depends on a threshold choice. Both are reported higher-is-better, matching
+    the ratio convention used elsewhere in this module:
+
+      ``aopc_suff_ratio`` = mean_k S_v(top-k kept) / S_v(full)
+      ``aopc_comp_ratio`` = mean_k [S_v(full) - S_v(top-k removed)] / S_v(full)
+
+    ``aopc_suff_ratio`` is therefore the complement of DeYoung's sufficiency
+    (they report the drop, where lower is better); the raw columns
+    ``aopc_suff_raw`` / ``aopc_comp_raw`` carry the un-normalised cosines.
+    These are numerically identical to the ``suff_aopc_*`` / ``comp_aopc_*``
+    keys emitted by ``sufficiency(..., compute_aopc=True)`` and
+    ``comprehensiveness(..., compute_aopc=True)``; the duplication is deliberate
+    so the flag stays backward compatible while AOPC also exists as a
+    first-class registry entry.
+    """
+    full = ctx.full_cos
+    ratio_safe = abs(full) >= FULL_COS_FLOOR
+    keep_curve, drop_curve = ctx.curves(rank_order(scores))
+    suff_raw, comp_raw = _aopc_from_curves(keep_curve, drop_curve, full)
+    return {
+        "aopc_suff_raw": suff_raw,
+        "aopc_suff_ratio": (suff_raw / full) if ratio_safe else float("nan"),
+        "aopc_comp_raw": comp_raw,
+        "aopc_comp_ratio": (comp_raw / full) if ratio_safe else float("nan"),
+    }
+
+
+def _curve_auc(values: np.ndarray) -> float:
+    """Trapezoidal AUC of ``values`` (length n+1) over x = k/n in [0, 1]."""
+    n = len(values) - 1
+    if n < 1:
+        return float("nan")
+    x = np.arange(n + 1, dtype=np.float64) / n
+    return float(np.trapezoid(values, x)) if hasattr(np, "trapezoid") else float(np.trapz(values, x))
+
+
+def _random_orders(n: int, draws: int, seed: int) -> Iterable[np.ndarray]:
+    rng = np.random.default_rng(seed)
+    for _ in range(draws):
+        yield rng.permutation(n)
+
+
+@register("deletion_auc")
+def deletion_auc(
+    ctx: PairContext,
+    scores: np.ndarray,
+    *,
+    random_draws: int = DEFAULT_RANDOM_ORDER_DRAWS,
+    seed: int = RANDOM_ORDER_SEED,
+) -> Dict[str, float]:
+    """Petsiuk-style deletion AUC: remove tokens most-important-first.
+
+    The curve is ``S_v(remaining) / S_v(full)`` against the fraction of tokens
+    already removed, from 1.0 at k=0 down to 0.0 at k=n. A faithful attribution
+    destroys the score early, so **lower is better**.
+
+    The number is only interpretable against a reference, because the curve's
+    height is dominated by how redundant the query is rather than by the
+    attribution: we therefore also score ``random_draws`` uniformly random
+    deletion orders and report the gap. ``del_auc_gap = random - attribution``
+    is higher-is-better and is the part of the metric that actually measures the
+    ranking. The random orders are drawn from a fixed seed, so every method
+    scored on the same pair is compared against the same reference.
+    """
+    full = ctx.full_cos
+    if abs(full) < FULL_COS_FLOOR:
+        return {"del_auc": float("nan"), "del_auc_random": float("nan"),
+                "del_auc_gap": float("nan")}
+    _, drop_curve = ctx.curves(rank_order(scores))
+    attr = _curve_auc(drop_curve / full)
+    rand = [
+        _curve_auc(ctx.curves(order)[1] / full)
+        for order in _random_orders(ctx.n_q, random_draws, seed)
+    ]
+    rand_mean = float(np.mean(rand)) if rand else float("nan")
+    return {
+        "del_auc": attr,
+        "del_auc_random": rand_mean,
+        "del_auc_gap": rand_mean - attr,
+    }
+
+
+@register("insertion_auc")
+def insertion_auc(
+    ctx: PairContext,
+    scores: np.ndarray,
+    *,
+    random_draws: int = DEFAULT_RANDOM_ORDER_DRAWS,
+    seed: int = RANDOM_ORDER_SEED,
+) -> Dict[str, float]:
+    """Petsiuk-style insertion AUC: build the query up most-important-first.
+
+    The curve is ``S_v(kept) / S_v(full)`` against the fraction of tokens
+    inserted, from 0.0 at k=0 up to 1.0 at k=n. A faithful attribution recovers
+    the score early, so **higher is better**. As with ``deletion_auc`` the
+    random-order reference and the gap ``ins_auc_gap = attribution - random``
+    are what isolate the ranking from the query's intrinsic redundancy. The same
+    seed is used as for deletion, so the two share their reference orderings.
+    """
+    full = ctx.full_cos
+    if abs(full) < FULL_COS_FLOOR:
+        return {"ins_auc": float("nan"), "ins_auc_random": float("nan"),
+                "ins_auc_gap": float("nan")}
+    keep_curve, _ = ctx.curves(rank_order(scores))
+    attr = _curve_auc(keep_curve / full)
+    rand = [
+        _curve_auc(ctx.curves(order)[0] / full)
+        for order in _random_orders(ctx.n_q, random_draws, seed)
+    ]
+    rand_mean = float(np.mean(rand)) if rand else float("nan")
+    return {
+        "ins_auc": attr,
+        "ins_auc_random": rand_mean,
+        "ins_auc_gap": attr - rand_mean,
+    }
+
+
+@register("randomization_check")
+def randomization_check(
+    ctx: PairContext,
+    scores: np.ndarray,
+    *,
+    shuffle_draws: int = DEFAULT_SHUFFLE_DRAWS,
+    seed: int = SHUFFLE_SEED,
+) -> Dict[str, float]:
+    """Adebayo-style sanity check: permute ``a``, recompute, report the gap.
+
+    Randomly permuting the attribution vector destroys the token-to-score
+    assignment while preserving the score distribution exactly, so anything the
+    shuffled version still scores is an artefact of the metric, the query, or
+    the score distribution rather than evidence that the attribution located
+    anything. A metric on which real and shuffled attributions score the same is
+    not measuring attribution quality on this data.
+
+    Reports, for each of ``loo_rho``, ``loo_tau``, ``aopc_suff_ratio`` and
+    ``aopc_comp_ratio``, the mean over ``shuffle_draws`` permutations
+    (``rand_<key>``) and the signed gap ``rand_<key>_gap = real - shuffled``.
+    All four underlying metrics are higher-is-better, so a positive gap is the
+    passing direction.
+    """
+    real_rho = loo_correlation(ctx, scores)["loo_rho"]
+    real_tau = kendall_tau_loo(ctx, scores)["loo_tau"]
+    real_aopc = aopc(ctx, scores)
+    real = {
+        "loo_rho": real_rho,
+        "loo_tau": real_tau,
+        "aopc_suff_ratio": real_aopc["aopc_suff_ratio"],
+        "aopc_comp_ratio": real_aopc["aopc_comp_ratio"],
+    }
+
+    rng = np.random.default_rng(seed)
+    collected: Dict[str, List[float]] = {k: [] for k in real}
+    scores = np.asarray(scores, dtype=np.float64)
+    for _ in range(shuffle_draws):
+        shuffled = rng.permutation(scores)
+        collected["loo_rho"].append(loo_correlation(ctx, shuffled)["loo_rho"])
+        collected["loo_tau"].append(kendall_tau_loo(ctx, shuffled)["loo_tau"])
+        sh_aopc = aopc(ctx, shuffled)
+        collected["aopc_suff_ratio"].append(sh_aopc["aopc_suff_ratio"])
+        collected["aopc_comp_ratio"].append(sh_aopc["aopc_comp_ratio"])
+
+    out: Dict[str, float] = {}
+    for key, vals in collected.items():
+        arr = np.asarray(vals, dtype=np.float64)
+        finite = arr[np.isfinite(arr)]
+        shuffled_mean = float(finite.mean()) if finite.size else float("nan")
+        out[f"rand_{key}"] = shuffled_mean
+        out[f"rand_{key}_gap"] = float(real[key]) - shuffled_mean
     return out
 
 
@@ -428,6 +745,26 @@ def _self_test() -> None:
     )
     s2 = sufficiency(ctx_zero, aligned, fractions=(0.25,))
     assert np.isnan(s2["suff@0.25_ratio"]), s2
+
+    # 9. The --aopc flag and the registered `aopc` metric must agree exactly.
+    a_metric = aopc(ctx, aligned)
+    assert np.isclose(a_metric["aopc_suff_raw"], suff["suff_aopc_raw"]), (a_metric, suff)
+    assert np.isclose(a_metric["aopc_comp_raw"], comp["comp_aopc_drop"]), (a_metric, comp)
+
+    # 10. Insertion beats random, deletion undercuts random, for aligned scores.
+    ins = insertion_auc(ctx, aligned)
+    dele = deletion_auc(ctx, aligned)
+    assert ins["ins_auc_gap"] > 0, ins
+    assert dele["del_auc_gap"] > 0, dele
+
+    # 11. Kendall tau agrees in sign with Spearman on the aligned attribution.
+    tau = kendall_tau_loo(ctx, aligned)
+    assert tau["loo_tau"] > 0.99, tau
+
+    # 12. Randomization: the aligned attribution must beat its own shuffles.
+    rand = randomization_check(ctx, aligned, shuffle_draws=5)
+    assert rand["rand_loo_rho_gap"] > 0, rand
+    assert rand["rand_aopc_suff_ratio_gap"] > 0, rand
 
     print("attribution_metrics self-test: OK")
 
