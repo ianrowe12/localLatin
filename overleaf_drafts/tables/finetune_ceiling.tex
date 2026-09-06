@@ -1,0 +1,26 @@
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lcccc}
+\toprule
+& \multicolumn{2}{c}{\textbf{Task A}} & \multicolumn{2}{c}{\textbf{Task B}} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}
+\textbf{System} & AUROC & \makecell{Cosine\\gap} & \makecell{Assign.\\acc.} & \makecell{Dir.\\acc.@1} \\
+\midrule
+LaTa (pre-trained) & 0.938\,\textsubscript{12} & 0.238\,\textsubscript{12} & 73.8\,\textsubscript{1} & 72.1\,\textsubscript{1} \\
+LaTa (pre-trained) + ABTT & 0.971\,\textsubscript{12} & 0.525\,\textsubscript{12} & 88.5\,\textsubscript{8} & 86.1\,\textsubscript{8} \\
+LaTa (fine-tuned) & 0.984\,\textsubscript{12} & 0.385\,\textsubscript{12} & 83.6\,\textsubscript{12} & 81.7\,\textsubscript{12} \\
+LaTa (fine-tuned) + ABTT & 0.970\,\textsubscript{12} & 0.548\,\textsubscript{12} & 88.3\,\textsubscript{12} & 85.9\,\textsubscript{12} \\
+\bottomrule
+\end{tabular}
+\caption{Supervised fine-tuning reference ceiling on LaTa. The fine-tuned encoder is trained contrastively on the 565 positive pairs available in the train split (in-batch negatives, symmetric InfoNCE), with a dev slice carved out of train by directory for model selection; the test split is untouched until this evaluation. Task A columns are test AUROC and cosine gap at the layer chosen by train AUROC; Task B columns are test assignment accuracy and directory accuracy at rank 1, in percent, at the layer chosen by train directory accuracy, with $\tau$ learned on train. Layer indices are subscripts. ABTT rows tune $D$ per layer on train. This is a reference ceiling, not a proposed method: it consumes supervision the zero-shot pipeline never sees.}
+\label{tab:finetune_ceiling}
+\end{table}
+
+% 5-seed Task B (mean +/- std over seeds 42-46), same protocol as the
+% multi-seed appendix table:
+%   bowphs/LaTa L8 abtt_optimal: dir_acc@1 = 0.876 +/- 0.004
+%   bowphs/LaTa L1 baseline: dir_acc@1 = 0.731 +/- 0.009
+%   bowphs/LaTa-ft L12 abtt_optimal: dir_acc@1 = 0.879 +/- 0.007
+%   bowphs/LaTa-ft L12 baseline: dir_acc@1 = 0.836 +/- 0.012

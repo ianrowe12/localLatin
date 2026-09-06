@@ -10,7 +10,7 @@
 # No GPU: this only reads cached embeddings, which the repo's budget rule sends
 # to the CPU partition. The runtime is dominated by the per-layer ABTT D sweep,
 # whose directory-assignment scoring is a Python loop over 847 train files x 513
-# directories, repeated for six D values.
+# directories, repeated for six D values. Measured at 3m18s on a cpu node.
 #
 #SBATCH --job-name=ft_lata_eval
 #SBATCH --partition=cpu
@@ -19,7 +19,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32g
-#SBATCH --time=04:00:00
+#SBATCH --time=00:30:00
 #SBATCH --output=slurm/logs/finetune_lata_ceiling_eval_%j.out
 #SBATCH --error=slurm/logs/finetune_lata_ceiling_eval_%j.err
 

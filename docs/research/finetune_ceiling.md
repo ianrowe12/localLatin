@@ -43,7 +43,22 @@ train and dev would leak the exact supervision being measured.
   extracted from; epoch 0 in the dev curve is the pre-trained encoder, so the
   curve shows what training actually bought.
 
-<!-- RESULTS:DEV -->
+The run early-stopped after epoch 7 and selected epoch 7. Directory accuracy@1
+saturated at epoch 4 on a 72-file pool, where one file is worth 1.4 points, so
+AUROC over the 2,556 dev pairs is what separates the last four epochs.
+
+| Epoch | Train loss | Dev dir. acc.@1 | Dev AUROC |
+|---|---|---|---|
+| 0 (pre-trained) | | 0.917 | 0.931 |
+| 1 | 0.816 | 0.917 | 0.947 |
+| 2 | 0.595 | 0.931 | 0.958 |
+| 3 | 0.414 | 0.958 | 0.963 |
+| 4 | 0.353 | 0.972 | 0.965 |
+| 5 | 0.297 | 0.972 | 0.966 |
+| 6 | 0.299 | 0.972 | 0.967 |
+| **7 (selected)** | **0.259** | **0.972** | **0.967** |
+
+**Selected checkpoint: epoch 7, dev directory accuracy@1 0.972, dev AUROC 0.967.**
 
 ## Evaluation
 
@@ -71,11 +86,80 @@ mean cosine 1.000000), which confirms that row order, text loading, pooling and
 token filtering are identical to the paper's pipeline. Any difference in the
 numbers below is therefore caused by the fine-tuning, not by the harness.
 
-<!-- RESULTS:MAIN -->
+## Results
 
-<!-- RESULTS:MSEED -->
+Test-set scores. Layer index is the subscript; Task A and Task B select layers
+independently, both on train metrics. Task B figures are percentages.
 
-<!-- RESULTS:ABTT -->
+| System | Task A AUROC | Cosine gap | Assignment acc. | Dir. acc.@1 |
+|---|---|---|---|---|
+| LaTa (pre-trained) | 0.938₁₂ | 0.238₁₂ | 73.8₁ | 72.1₁ |
+| LaTa (pre-trained) + ABTT | 0.971₁₂ | 0.525₁₂ | 88.5₈ | **86.1₈** |
+| LaTa (fine-tuned) | **0.984₁₂** | 0.385₁₂ | 83.6₁₂ | 81.7₁₂ |
+| LaTa (fine-tuned) + ABTT | 0.970₁₂ | **0.548₁₂** | 88.3₁₂ | 85.9₁₂ |
+
+The pre-trained rows reproduce the paper's published headline table exactly,
+which is the point of running them through the same code path rather than
+copying numbers across.
+
+**The ceiling is where the zero-shot pipeline already is.** On directory routing,
+ABTT on the frozen encoder scores 86.1 and the fine-tuned encoder with ABTT
+scores 85.9. Supervision does not buy a better routing system here; it buys a
+better *raw* representation, and post-processing had already recovered that
+gain without any labels.
+
+**Fine-tuning without ABTT does not reach ABTT without fine-tuning.** Contrastive
+training lifts the uncorrected last layer a long way (72.1 to 81.7 dir. acc.@1,
+0.938 to 0.984 AUROC), but ABTT on the frozen model still routes better (86.1).
+The 565 available pairs are simply not much supervision.
+
+**ABTT still adds after fine-tuning, on Task B only.** Routing improves 81.7 to
+85.9 (+4.2 points), so the whitening-style correction is doing something the
+contrastive objective did not. Task A moves the other way: AUROC drops 0.984 to
+0.970. Once supervision has separated the pairs, removing dominant components
+costs a little ranking signal while still helping the thresholded decision,
+which is what the larger cosine gap (0.385 to 0.548) reflects.
+
+**Fine-tuning does not repair the mid-depth collapse.** In the fine-tuned model,
+layers 2 through 11 still sit at 0.50 to 0.57 AUROC with a *negative* cosine
+gap, essentially unchanged from the pre-trained model. Contrastive training
+fixes the layer its loss is attached to and leaves the anisotropy of the middle
+layers intact; ABTT lifts every layer into the 0.96 to 0.98 band both before and
+after fine-tuning. This is direct evidence that the collapse the paper documents
+is a property of the representation geometry, not a deficiency that end-task
+supervision happens to fix.
+
+### Task B under the 5-seed protocol
+
+The single-seed Task B split is one draw of the query/reference assignment, so
+the same four systems were re-scored with the paper's multi-seed protocol,
+seeds 42 to 46, at each system's selected layer.
+
+| System | Layer | Dir. acc.@1 | Existing | New |
+|---|---|---|---|---|
+| LaTa (pre-trained) | 1 | 0.731 ± 0.009 | 0.562 | 0.949 |
+| LaTa (pre-trained) + ABTT | 8 | 0.876 ± 0.004 | 0.839 | 0.923 |
+| LaTa (fine-tuned) | 12 | 0.836 ± 0.012 | 0.777 | 0.912 |
+| LaTa (fine-tuned) + ABTT | 12 | **0.879 ± 0.007** | 0.850 | 0.917 |
+
+Averaging over seeds does not change the reading. The gap between ABTT on the
+frozen encoder (0.876) and the full supervised ceiling (0.879) is 0.4 points,
+inside one standard deviation of either. The gap ABTT closes on the fine-tuned
+model (0.836 to 0.879, +4.3 points) is several standard deviations, so ABTT
+after fine-tuning is a real effect on routing rather than seed noise.
+
+### Does ABTT still add anything after fine-tuning?
+
+Yes on Task B, no on Task A, and the two answers are consistent. ABTT with $D$
+swept on train picks $D=10$ at every fine-tuned layer, the same value it picks
+before fine-tuning. On the fine-tuned last layer it lifts routing by 4.2 points
+single-seed and 4.3 points over five seeds, and it widens the cosine gap from
+0.385 to 0.548, which is what makes a single global threshold $\tau$ work.
+It costs 1.5 points of Task A AUROC, because ranking does not need a threshold
+and the removed components still carried some ordering signal.
+
+The practical consequence for the paper: fine-tuning and ABTT are not additive.
+They arrive at the same place, and the correction gets there without labels.
 
 ## Reproducing
 
@@ -113,4 +197,22 @@ Nothing under `runs/` is committed.
 
 ## Compute
 
-<!-- RESULTS:COMPUTE -->
+Run of 2026-09-06, from `sacct`:
+
+| Job | Partition | Elapsed | Reserved | State |
+|---|---|---|---|---|
+| 21845735 `ft_lata_ceiling` | `gpuA100x4`, 1x A100-40GB | **00:01:24** | 00:45:00 | COMPLETED |
+| 21845746 `ft_lata_eval` | `cpu`, 8 cores | 00:03:18 | 04:00:00 | COMPLETED |
+
+**GPU cost: 1 minute 24 seconds of A100 wall time**, against the roughly two
+hours approved for this issue. Training is 7 epochs of 31 steps at 32 sequences
+of up to 512 tokens; extraction is two passes over 1,705 files (one for the
+parity check, one for the fine-tuned embeddings).
+
+The `--time` values in both sbatch files have since been trimmed to match
+(45 minutes and 30 minutes), because SLURM charges the reserved wall time. The
+four-hour CPU reservation was sized from a run on a saturated login node, where
+the same scoring took 22 minutes; a dedicated node did it in 3.
+
+Seeds: 42 throughout (dev carve, batch order, Torch/NumPy/Python RNGs), and
+42 to 46 for the multi-seed Task B protocol.
