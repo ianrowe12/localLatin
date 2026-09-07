@@ -93,9 +93,13 @@ jobs:
           # locally modified file keeps its release or build bytes (restoring
           # all of runs/active would downgrade the 80 attribution NPZs to their
           # older committed arrays whenever the release cache is already
-          # current). Untracked files, including the release payload and the
+          # current). Paths the incoming commits ADD are excluded (--diff-filter=a,
+          # no rename detection): they are not in the index yet, so git checkout
+          # would fail on them, and the pull needs no restore for them. The
+          # if-guard matters: xargs -r does not protect against an empty string
+          # argument. Untracked files, including the release payload and the
           # reviewer feedback DB, are never touched by git checkout.
-          changed="$(git diff --name-only HEAD FETCH_HEAD -- runs/active web/static)"
+          changed="$(git diff --no-renames --diff-filter=a --name-only HEAD FETCH_HEAD -- runs/active web/static)"
           if [ -n "${changed}" ]; then
             printf '%s\n' "${changed}" | xargs -r -d '\n' git checkout --
           fi
