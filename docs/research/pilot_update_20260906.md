@@ -61,5 +61,10 @@ time, so that the pilot and the paper keep describing the same corpus.
   `runs/active/`.
 - Predictions and query-query matrices rebuilt on the corrected split under the
   sticky-layer rule (issue #113, epic #107).
-- Deployed by the controlled path in issue #127: deploy flag enabled for the
-  single dispatch, authenticated smoke run, flag disabled again.
+- Installed by the controlled path in issue #127: deploy flag enabled for a
+  single dispatch, 39,660/39,660 files installed and the data contract
+  verified, service restarted healthy, flag disabled again. The post-restart
+  smoke run reached a PI-only export check and failed there on a bug in the
+  smoke client itself, not in the service; the reviewer-facing checks it runs
+  first all passed, and the live instance serves the refreshed data at the
+  expected layers.
