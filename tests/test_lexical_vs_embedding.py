@@ -526,80 +526,151 @@ def test_embedding_path_rejects_an_unknown_pooling():
         embedding_path(Path("/bases"), "org/Model", "hidden", "weighted", 4)
 
 
-def _write_row_order(tmp_path: Path, names) -> Path:
-    path = tmp_path / "row_order.csv"
-    pd.DataFrame(
-        {"file_id": range(len(names)), "path": [f"canon_labelled/d/{n}" for n in names]}
-    ).to_csv(path, index=False)
+# --------------------------------------------------------------------------
+# Row alignment.
+#
+# The script used to carry its own filename-alignment helper. It now calls
+# src/embedding_alignment.AlignmentResolver, the one implementation every other
+# consumer of these caches uses, so the tests below pin two things: that the
+# shared resolver resolves exactly the rows the retired helper did, and that
+# this script keeps its own stricter contract on top of it, namely that a cache
+# the resolver cannot verify is fatal rather than read positionally.
+# --------------------------------------------------------------------------
+
+
+def _retired_row_index(cached_names, split_filenames) -> np.ndarray:
+    """The helper this script used to own, kept as the reference to match.
+
+    Verbatim in behaviour: look up each split filename's position in the cached
+    row order and return those positions, so ``cache[index]`` sits in split
+    order. Deleted from the script in #140; retained here only so the shared
+    resolver has something to be proved identical to.
+    """
+    position = {name: k for k, name in enumerate(cached_names)}
+    return np.array([position[f] for f in split_filenames], dtype=int)
+
+
+def _write_cache(tmp_path: Path, cached_names, matrix, manifest=True) -> Path:
+    """Build a bases root: row_order.csv beside phase9_bases, one cached layer.
+
+    Mirrors the production layout, where the manifest sits at the
+    ``phase9_bases`` root rather than inside each run directory, so the
+    resolver has to find it by walking the cache's ancestors.
+    """
+    from lexical_vs_embedding import embedding_path
+
+    path = embedding_path(tmp_path, "org/Model", "hidden", "mean", 2)
+    path.parent.mkdir(parents=True)
+    np.save(path, np.asarray(matrix, dtype=float))
+    if manifest:
+        pd.DataFrame(
+            {
+                "file_id": range(len(cached_names)),
+                "path": [f"canon_labelled/d/{n}" for n in cached_names],
+            }
+        ).to_csv(tmp_path / "phase9_bases" / "row_order.csv", index=False)
     return path
 
 
-def test_embedding_row_index_permutes_the_cache_into_split_order(tmp_path):
-    from lexical_vs_embedding import embedding_row_index
-
-    order = _write_row_order(tmp_path, ["a.txt", "b.txt", "c.txt"])
-    index = embedding_row_index(order, ["c.txt", "a.txt", "b.txt"])
-    assert index.tolist() == [2, 0, 1]
-
-    cache = np.array([[10.0], [20.0], [30.0]])
-    assert cache[index].ravel().tolist() == [30.0, 10.0, 20.0]
+def _split_meta(filenames) -> pd.DataFrame:
+    return pd.DataFrame({"filename": list(filenames)})
 
 
-def test_embedding_row_index_is_the_identity_when_nothing_moved(tmp_path):
-    from lexical_vs_embedding import embedding_row_index
+def _load(tmp_path, split_filenames):
+    from embedding_alignment import AlignmentResolver
+    from lexical_vs_embedding import load_layer_embeddings
 
-    order = _write_row_order(tmp_path, ["a.txt", "b.txt", "c.txt"])
-    index = embedding_row_index(order, ["a.txt", "b.txt", "c.txt"])
-    assert index.tolist() == [0, 1, 2]
-
-
-def test_embedding_row_index_rejects_a_split_file_the_cache_never_saw(tmp_path):
-    from lexical_vs_embedding import embedding_row_index
-
-    order = _write_row_order(tmp_path, ["a.txt", "b.txt"])
-    with pytest.raises(SystemExit):
-        embedding_row_index(order, ["a.txt", "z.txt"])
+    resolver = AlignmentResolver(_split_meta(split_filenames))
+    return load_layer_embeddings(tmp_path, "org/Model", 2, "hidden", "mean", resolver)
 
 
-def test_embedding_row_index_rejects_a_row_order_with_repeated_filenames(tmp_path):
-    from lexical_vs_embedding import embedding_row_index
+@pytest.mark.parametrize(
+    "cached, split",
+    [
+        # identity
+        (["a.txt", "b.txt", "c.txt"], ["a.txt", "b.txt", "c.txt"]),
+        # full reversal
+        (["a.txt", "b.txt", "c.txt"], ["c.txt", "b.txt", "a.txt"]),
+        # a rotation, which is the shape of a directory relabelling
+        (["a.txt", "b.txt", "c.txt"], ["c.txt", "a.txt", "b.txt"]),
+        # a contiguous block moving inside a longer run, as #131's did
+        (
+            [f"f{k:02d}.txt" for k in range(12)],
+            [f"f{k:02d}.txt" for k in range(6)]
+            + ["f09.txt", "f10.txt", "f11.txt", "f06.txt", "f07.txt", "f08.txt"],
+        ),
+    ],
+)
+def test_shared_resolver_resolves_the_same_rows_as_the_retired_helper(
+    tmp_path, cached, split
+):
+    """One implementation repo-wide, and it moves the rows the old one moved."""
+    cache = np.arange(len(cached), dtype=float).reshape(-1, 1) * 10.0
+    _write_cache(tmp_path, cached, cache)
 
-    order = _write_row_order(tmp_path, ["a.txt", "a.txt"])
-    with pytest.raises(SystemExit):
-        embedding_row_index(order, ["a.txt"])
-
-
-def test_embedding_row_index_refuses_to_run_without_a_row_order(tmp_path):
-    from lexical_vs_embedding import embedding_row_index
-
-    with pytest.raises(SystemExit):
-        embedding_row_index(tmp_path / "absent.csv", ["a.txt"])
+    expected = cache[_retired_row_index(cached, split)]
+    assert _load(tmp_path, split).tolist() == expected.tolist()
 
 
 def test_load_layer_embeddings_reorders_the_cached_rows(tmp_path):
-    from lexical_vs_embedding import embedding_path, load_layer_embeddings
+    _write_cache(tmp_path, ["a.txt", "b.txt", "c.txt"],
+                 [[1.0, 1.0], [2.0, 2.0], [3.0, 3.0]])
 
-    path = embedding_path(tmp_path, "org/Model", "hidden", "mean", 2)
-    path.parent.mkdir(parents=True)
-    np.save(path, np.array([[1.0, 1.0], [2.0, 2.0], [3.0, 3.0]]))
-
-    loaded = load_layer_embeddings(
-        tmp_path, "org/Model", 2, "hidden", "mean", np.array([2, 0, 1])
-    )
+    loaded = _load(tmp_path, ["c.txt", "a.txt", "b.txt"])
     assert loaded[:, 0].tolist() == [3.0, 1.0, 2.0]
 
 
-def test_load_layer_embeddings_rejects_a_cache_that_is_too_short(tmp_path):
-    from lexical_vs_embedding import embedding_path, load_layer_embeddings
+def test_load_layer_embeddings_is_the_identity_when_nothing_moved(tmp_path):
+    _write_cache(tmp_path, ["a.txt", "b.txt", "c.txt"],
+                 [[1.0], [2.0], [3.0]])
 
-    path = embedding_path(tmp_path, "org/Model", "hidden", "mean", 2)
-    path.parent.mkdir(parents=True)
-    np.save(path, np.array([[1.0], [2.0]]))
+    assert _load(tmp_path, ["a.txt", "b.txt", "c.txt"]).ravel().tolist() == [
+        1.0, 2.0, 3.0
+    ]
+
+
+def test_load_layer_embeddings_rejects_a_split_file_the_cache_never_saw(tmp_path):
+    _write_cache(tmp_path, ["a.txt", "b.txt"], [[1.0], [2.0]])
 
     with pytest.raises(SystemExit):
-        load_layer_embeddings(
-            tmp_path, "org/Model", 2, "hidden", "mean", np.array([0, 1, 2])
-        )
+        _load(tmp_path, ["a.txt", "z.txt"])
+
+
+def test_load_layer_embeddings_rejects_a_row_order_with_repeated_filenames(tmp_path):
+    _write_cache(tmp_path, ["a.txt", "a.txt"], [[1.0], [2.0]])
+
+    with pytest.raises(SystemExit):
+        _load(tmp_path, ["a.txt", "b.txt"])
+
+
+def test_load_layer_embeddings_rejects_a_cache_that_is_the_wrong_length(tmp_path):
+    _write_cache(tmp_path, ["a.txt", "b.txt", "c.txt"], [[1.0], [2.0], [3.0]])
+
+    with pytest.raises(SystemExit):
+        _load(tmp_path, ["a.txt", "b.txt"])
+
+
+def test_load_layer_embeddings_refuses_a_cache_with_no_manifest(tmp_path):
+    """This script is stricter than the shared resolver, on purpose.
+
+    ``AlignmentResolver`` falls back to a positional read with a warning when it
+    finds no manifest, so caches predating the manifest still run. A silent
+    positional read is the exact bug that made #140's re-run necessary, so here
+    it has to stop the run instead.
+    """
+    _write_cache(tmp_path, ["a.txt"], [[1.0], [2.0], [3.0]], manifest=False)
+
+    with pytest.raises(SystemExit):
+        _load(tmp_path, ["a.txt", "b.txt", "c.txt"])
+
+
+def test_load_layer_embeddings_reports_a_missing_cache_file(tmp_path):
+    from embedding_alignment import AlignmentResolver
+    from lexical_vs_embedding import load_layer_embeddings
+
+    resolver = AlignmentResolver(_split_meta(["a.txt"]))
+    with pytest.raises(SystemExit):
+        load_layer_embeddings(tmp_path, "org/Model", 2, "hidden", "mean", resolver)
 
 
 def test_build_embedding_method_fits_the_cleaner_on_train_rows_only():

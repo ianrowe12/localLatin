@@ -40,9 +40,14 @@ come apart and nothing computed afterwards would be the paper's configuration.
 
 Cached embedding matrices are keyed by row index, and issue #131's key
 corrections renumbered 17 ``file_id``s without touching a byte of text, so the
-caches are re-ordered here by **filename** (``phase9_bases/row_order.csv``)
-rather than read positionally. That makes the run immune to that permutation and
-to any future one.
+caches are re-ordered here by **filename** rather than read positionally. That
+makes the run immune to that permutation and to any future one. The reordering
+is :class:`embedding_alignment.AlignmentResolver`, the same implementation every
+other consumer of these caches uses; it finds the row-order manifest itself (the
+extractor's ``meta.csv`` beside a cache, else a ``row_order.csv`` at a bases
+root, which is what ``phase9_bases`` carries). Unlike the shared resolver's
+default, an unverifiable cache is fatal here: this script's numbers are the
+paper's configurations or they are nothing.
 
 Metrics, per method and per stratum
 -----------------------------------
@@ -136,6 +141,18 @@ def _ensure_import_paths() -> None:
     for path in (REPO_ROOT / "src", Path(__file__).resolve().parent):
         if str(path) not in sys.path:
             sys.path.insert(0, str(path))
+
+
+# Everything else this script borrows lives under scripts/resubmit/ and pulls in
+# sklearn or the evaluator, so it stays behind a lazy import; the row aligner is
+# needed by module-level type hints and is cheap, so it comes in here.
+_ensure_import_paths()
+
+from embedding_alignment import (  # noqa: E402
+    STATUS_UNVERIFIED,
+    AlignmentError,
+    AlignmentResolver,
+)
 
 
 # --------------------------------------------------------------------------
@@ -472,58 +489,42 @@ def embedding_path(bases_root: Path, model: str, repr_name: str, pooling: str, l
     return bases_root / "phase9_bases" / slug / subdir / fname
 
 
-def embedding_row_index(row_order_csv: Path, filenames: Sequence[str]) -> np.ndarray:
-    """Positions in the cached matrices that line up with the split CSV's rows.
-
-    The caches are keyed by row index, and issue #131's key corrections
-    renumbered 17 ``file_id``s without changing a single byte of text, so a
-    positional read would hand seventeen files each other's vectors. Filenames
-    are unique across the corpus (that is what the corrected split's
-    carry-over is matched on), so aligning on them is immune to any future
-    renumbering as well.
-    """
-    if not row_order_csv.exists():
-        raise SystemExit(
-            f"Missing embedding row order: {row_order_csv}. It records which file "
-            "each cached row belongs to and is what keeps the vectors aligned "
-            "with the split CSV; pass --row_order_csv if it lives elsewhere."
-        )
-    order = pd.read_csv(row_order_csv)
-    if "path" not in order.columns:
-        raise SystemExit(f"{row_order_csv} has no 'path' column.")
-    cached = [Path(str(rel)).name for rel in order["path"].values]
-    if len(set(cached)) != len(cached):
-        raise SystemExit(f"{row_order_csv} repeats a filename; cannot align by name.")
-    position = {name: k for k, name in enumerate(cached)}
-    missing = [f for f in filenames if f not in position]
-    if missing:
-        raise SystemExit(
-            f"{len(missing)} split files are absent from {row_order_csv} "
-            f"(first: {missing[0]}). The caches predate the current corpus; "
-            "re-extract before re-running."
-        )
-    return np.array([position[f] for f in filenames], dtype=int)
-
-
 def load_layer_embeddings(
     bases_root: Path,
     model: str,
     layer: int,
     repr_name: str,
     pooling: str,
-    row_index: np.ndarray,
+    resolver: AlignmentResolver,
 ) -> np.ndarray:
-    """Load one cached layer and reorder its rows into split-CSV order."""
+    """Load one cached layer and reorder its rows into split-CSV order.
+
+    The reordering is the shared :mod:`embedding_alignment` resolver, which
+    matches cached rows to split rows on filename via the cache's row-order
+    manifest. Two of its outcomes are demoted to ``SystemExit`` here. A cache
+    with no manifest, which the resolver would read positionally after a
+    warning, is refused outright: a silent positional read is exactly the bug
+    that made this re-run necessary, and it would produce numbers that look like
+    the paper's without being them. An :class:`AlignmentError` becomes a
+    ``SystemExit`` too, so the whole script fails the same way for every kind of
+    stale input.
+    """
     path = embedding_path(bases_root, model, repr_name, pooling, layer)
     if not path.exists():
         raise SystemExit(f"Missing embeddings: {path}")
-    emb = np.load(path)
-    if emb.shape[0] <= int(row_index.max()):
-        raise SystemExit(
-            f"{path} has {emb.shape[0]} rows; the row order needs at least "
-            f"{int(row_index.max()) + 1}."
-        )
-    return emb[row_index].astype(np.float64)
+    try:
+        aligner = resolver.aligner_for(path)
+        if aligner.status == STATUS_UNVERIFIED:
+            raise SystemExit(
+                f"No row-order manifest for {path.parent}. It records which file "
+                "each cached row belongs to and is what keeps the vectors aligned "
+                "with the split CSV; without it the rows can only be paired by "
+                "position, which a relabelling silently breaks. Re-extract, or "
+                "point --manifest_root at a directory holding a row_order.csv."
+            )
+        return aligner.apply(np.load(path)).astype(np.float64)
+    except AlignmentError as exc:
+        raise SystemExit(f"{path}: {exc}") from exc
 
 
 def build_embedding_method(
@@ -810,12 +811,10 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     p.add_argument("--bases_root", default=str(REPO_ROOT / "runs/active/resubmit_bases"),
                    help="Root holding phase9_bases/<slug>/<subdir>/.")
     p.add_argument(
-        "--row_order_csv",
-        default=str(
-            REPO_ROOT / "runs/active/resubmit_bases/phase9_bases/row_order.csv"
-        ),
-        help="file_id -> path listing of the cached embedding rows, used to "
-             "align the caches to the split CSV by filename.",
+        "--manifest_root", action="append", default=[],
+        help="Extra directory to search for a row_order.csv when a cache has no "
+             "meta.csv of its own. Repeatable. The ancestors of each cache are "
+             "searched first, which already covers phase9_bases/row_order.csv.",
     )
     p.add_argument(
         "--allow-tau-drift", "--allow_tau_drift", dest="allow_tau_drift",
@@ -842,7 +841,6 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 
 def main(argv: Optional[Sequence[str]] = None) -> None:
     args = parse_args(argv)
-    _ensure_import_paths()
     from lexical_baselines import apply_minmax, char_tfidf_score_matrix, fit_minmax
     from run_resubmit_evaluate import learn_tau_from_similarity
 
@@ -890,13 +888,8 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     # ── the paper's embedding configurations ──────────────────────────────
     results = pd.read_csv(args.results_csv)
     bases_root = Path(args.bases_root)
-    row_index = embedding_row_index(
-        Path(args.row_order_csv), list(split_meta["filename"].astype(str))
-    )
-    n_moved = int((row_index != np.arange(row_index.size)).sum())
-    print(
-        f"Embedding rows aligned to the split by filename via {args.row_order_csv} "
-        f"({n_moved} of {row_index.size} rows sit at a different cached index)"
+    resolver = AlignmentResolver(
+        split_meta, search_roots=[Path(r) for r in args.manifest_root]
     )
 
     drifted: List[str] = []
@@ -909,7 +902,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         ):
             layer = int(cfg["layer"])
             emb = load_layer_embeddings(
-                bases_root, model, layer, str(cfg["repr"]), str(cfg["pooling"]), row_index
+                bases_root, model, layer, str(cfg["repr"]), str(cfg["pooling"]), resolver
             )
             if emb.shape[0] != len(split_meta):
                 raise SystemExit(
@@ -933,6 +926,8 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
                 f"tau={method.tau:.4f} (csv {float(cfg['tau']):.4f}){flag}"
             )
             methods.append(method)
+
+    print(f"\n{resolver.summary()}")
 
     if drifted and not args.allow_tau_drift:
         raise SystemExit(
