@@ -201,7 +201,10 @@ def plot_metric_grid_6model(
     fig, axes = plt.subplots(
         n_rows,
         n_cols,
-        figsize=(12.6, 5.3),
+        # 4.6 rather than 5.3 inches tall: these are line plots with five x ticks
+        # and four y ticks, so the shorter panels stay legible at column width
+        # and give the main text back about a third of a column.
+        figsize=(12.6, 4.6),
         sharex=True,
         sharey=True,
         squeeze=False,
@@ -253,12 +256,17 @@ def plot_metric_grid_6model(
     save(fig, out_dir, stem)
 
 
-def compute_dip_layer(
+def compute_collapsed_layer(
     results: pd.DataFrame, model: str, max_layer: int
 ) -> tuple[int, int]:
-    """Return (last_layer, dip_layer) using the same rule as run_resubmit_distributions.py:
-    last = max layer with a baseline row; dip = baseline layer with the highest AUROC
-    in the 30-70% depth band. Falls back to (max_layer, max_layer // 2) if no rows match.
+    """Return (last_layer, collapsed_layer), the rule run_resubmit_distributions.py uses.
+
+    ``last`` is the deepest layer with a baseline row. The collapsed layer is the
+    baseline layer with the *highest* AUROC in the 30-70% depth band, which reads
+    backwards until you see the profile: on the T5 encoders every layer in that
+    band sits near chance, so taking the strongest of them makes the
+    before-and-after panels a conservative illustration rather than a
+    best-case one. Falls back to (max_layer, max_layer // 2) if no rows match.
     """
     base = results[
         (results["model"] == model)
@@ -273,8 +281,8 @@ def compute_dip_layer(
     middle = base[(base["pct"] >= 30) & (base["pct"] <= 70)]
     if middle.empty:
         return last_layer, max_layer // 2
-    dip_layer = int(middle.loc[middle["aucroc"].idxmax(), "layer"])
-    return last_layer, dip_layer
+    collapsed_layer = int(middle.loc[middle["aucroc"].idxmax(), "layer"])
+    return last_layer, collapsed_layer
 
 
 def _draw_density_panel(
@@ -339,21 +347,21 @@ def plot_density_2x2(
     out_dir: Path,
     results: pd.DataFrame | None = None,
 ) -> None:
-    """PhilTa-style 2x2: rows = {Last layer, Dip layer}, cols = {Baseline, ABTT}.
+    """PhilTa-style 2x2: rows = {Last layer, Collapsed layer}, cols = {Baseline, ABTT}.
     Uses pure `abtt_optimal` distributions (mean-pooled + ABTT), not SIF+ABTT.
     """
     slug = feature_model.replace("/", "_")
     max_layer = MAX_LAYERS.get(feature_model, 12)
     if results is not None:
-        last_layer, dip_layer = compute_dip_layer(results, feature_model, max_layer)
+        last_layer, collapsed_layer = compute_collapsed_layer(results, feature_model, max_layer)
     else:
-        last_layer, dip_layer = max_layer, max_layer // 2
+        last_layer, collapsed_layer = max_layer, max_layer // 2
 
     conds = [
         ("baseline_last", f"Baseline · Last layer (L{last_layer})"),
-        ("baseline_middle", f"Baseline · Dip layer (L{dip_layer})"),
+        ("baseline_middle", f"Baseline · Collapsed layer (L{collapsed_layer})"),
         ("abtt_last", f"ABTT · Last layer (L{last_layer})"),
-        ("abtt_middle", f"ABTT · Dip layer (L{dip_layer})"),
+        ("abtt_middle", f"ABTT · Collapsed layer (L{collapsed_layer})"),
     ]
     fig, axes = plt.subplots(2, 2, figsize=(10.5, 7.2), sharex=True)
     axes = axes.ravel()
@@ -387,8 +395,8 @@ def plot_density_2x2_models(
     out_dir: Path,
     results: pd.DataFrame,
 ) -> None:
-    """2x2 variant focused on the dip-layer repair: rows = models, cols = {Baseline, ABTT}
-    at each model's dip layer. Sharpens the "ABTT rescues the anisotropy dip" story across
+    """2x2 variant focused on the collapsed-layer repair: rows = models, cols = {Baseline, ABTT}
+    at each model's collapsed layer. Sharpens the "ABTT repairs the collapsed layer" story across
     two models instead of four panels of one model. Uses pure `abtt_optimal` distributions.
     """
     fig, axes = plt.subplots(2, 2, figsize=(10.5, 7.2), sharex=True)
@@ -397,11 +405,11 @@ def plot_density_2x2_models(
     for row_idx, model in enumerate(feature_models[:2]):
         slug = model.replace("/", "_")
         max_layer = MAX_LAYERS.get(model, 12)
-        _, dip_layer = compute_dip_layer(results, model, max_layer)
+        _, collapsed_layer = compute_collapsed_layer(results, model, max_layer)
         short = SHORT.get(model, model)
         panels = [
-            ("baseline_middle", f"{short} · Baseline (L{dip_layer})"),
-            ("abtt_middle", f"{short} · ABTT (L{dip_layer})"),
+            ("baseline_middle", f"{short} · Baseline (L{collapsed_layer})"),
+            ("abtt_middle", f"{short} · ABTT (L{collapsed_layer})"),
         ]
         row_ymax = 0.0
         for col_idx, (suffix, title) in enumerate(panels):

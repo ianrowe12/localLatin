@@ -1,36 +1,54 @@
 """Build main-text attribution reporting artifacts for the three paper models.
 
-The input is the Run 3 operational attribution summary:
+The input is the expanded Run 3 operational attribution summary:
 
-    runs/active/ig_examples_200pos_run3_operational/attribution_metrics/summary.csv
+    runs/active/ig_examples_200pos_run3_operational/attribution_metrics/summary_v2.csv
 
 Outputs:
 
     overleaf_drafts/tables/attribution_metrics_main.tex
+    overleaf_drafts/tables/attribution_metrics_secondary.tex
     overleaf_drafts/figures/fig_attribution_rho_loo_main.{pdf,png,tex}
 
-The main table intentionally reports only IG and retrieval-adapted MaRC for the
-three headline models. It foregrounds rho_LOO and keeps the ERASER-style
-metrics as compact baseline-to-ABTT comparisons so metric disagreements remain
-visible in the main text.
+Selection (issue #120, from ``docs/research/attribution_metrics_decision.md``
+part B). The main table carries two columns and nothing else: ``rho_LOO``,
+which ABTT wins 6/6, and ``DelAUC gap``, which it wins 3/6. Both are
+threshold-free and both have a calibrated zero. They are printed as paired
+base/ABTT columns rather than ``base -> ABTT`` arrow cells, which are not a
+table convention readers expect.
+
+Everything the old four-metric table used to carry in the main text moves to
+the secondary appendix table: ``tau_LOO`` (the tie-corrected twin of
+``rho_LOO``, with which it correlates 0.9995, so it is not a second witness),
+``InsAUC gap`` (which fails the shuffled-attribution control in two baseline
+cells) and the three ERASER-style headline cells.
+
+Both tables read one summary, so both describe the same erasure operator.
 """
 from __future__ import annotations
 
 import argparse
 from pathlib import Path
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+
+# matplotlib is imported inside render_rho_figure, not here. Building the two
+# tables needs pandas and nothing else, and the table path is what the tests and
+# a table-only re-run exercise; a module-level plotting import would make both
+# depend on a backend they never use.
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 DEFAULT_SUMMARY = (
     REPO_ROOT
-    / "runs/active/ig_examples_200pos_run3_operational/attribution_metrics/summary.csv"
+    / "runs/active/ig_examples_200pos_run3_operational/attribution_metrics/summary_v2.csv"
 )
 DEFAULT_TABLE_OUT = REPO_ROOT / "overleaf_drafts/tables/attribution_metrics_main.tex"
+DEFAULT_SECONDARY_OUT = (
+    REPO_ROOT / "overleaf_drafts/tables/attribution_metrics_secondary.tex"
+)
 DEFAULT_FIG_OUT = REPO_ROOT / "overleaf_drafts/figures/fig_attribution_rho_loo_main"
 
 MODELS = (
@@ -44,45 +62,63 @@ METHODS = (
 )
 
 RHO_KEY = "loo_rho"
+DEL_GAP_KEY = "del_auc_gap"
+DEL_RANDOM_KEY = "del_auc_random"
+TAU_KEY = "loo_tau"
+INS_GAP_KEY = "ins_auc_gap"
 SUFF_KEY = "suff@0.25_ratio"
 COMP_KEY = "comp@0.25_ratio"
 MINFRAC_KEY = "compactness@0.80"
-METRIC_KEYS = (RHO_KEY, SUFF_KEY, COMP_KEY, MINFRAC_KEY)
+
+MAIN_METRIC_KEYS = (RHO_KEY, DEL_GAP_KEY, DEL_RANDOM_KEY)
+SECONDARY_METRIC_KEYS = (TAU_KEY, INS_GAP_KEY, SUFF_KEY, COMP_KEY, MINFRAC_KEY)
+METRIC_KEYS = MAIN_METRIC_KEYS + SECONDARY_METRIC_KEYS
+
+# Overleaf receives these files, so the header says nothing about the repo.
+HEADER = "% generated table"
+REGEN_NOTE = (
+    "% Selection and wording follow the part B memo behind issue #120. If the "
+    "attribution\n% re-sample of issue #141 lands, regenerate this file from "
+    "the new summary rather than\n% editing the numbers here."
+)
 
 
 def _mean_col(metric_key: str) -> str:
     return f"{metric_key}_mean"
 
 
-def _fmt(value: float, *, signed: bool = False) -> str:
+def _fmt(value: float) -> str:
     if pd.isna(value):
         return "--"
-    if signed:
-        return f"{value:+.3f}"
     return f"{value:.3f}"
 
 
-def _bold_if(value: float, bold: bool) -> str:
-    rendered = _fmt(value)
-    return rf"\textbf{{{rendered}}}" if bold else rendered
-
-
-def _paired_cell(base: float, abtt: float, *, lower_is_better: bool = False) -> str:
+def _pair_cells(base: float, abtt: float, *, lower_is_better: bool = False) -> list[str]:
+    """Two independent cells, the better one bolded. No arrow between them."""
     if pd.isna(base) or pd.isna(abtt):
-        return "--"
+        return [_fmt(base), _fmt(abtt)]
     abtt_wins = abtt < base if lower_is_better else abtt > base
-    base_text = _bold_if(base, not abtt_wins)
-    abtt_text = _bold_if(abtt, abtt_wins)
-    return rf"{base_text}$\rightarrow${abtt_text}"
+    base_text = _fmt(base)
+    abtt_text = _fmt(abtt)
+    if abtt_wins:
+        abtt_text = rf"\textbf{{{abtt_text}}}"
+    else:
+        base_text = rf"\textbf{{{base_text}}}"
+    return [base_text, abtt_text]
 
 
 def _load_main_rows(summary_csv: Path) -> pd.DataFrame:
-    df = pd.read_csv(summary_csv)
+    return select_main_rows(pd.read_csv(summary_csv), source=str(summary_csv))
+
+
+def select_main_rows(df: pd.DataFrame, *, source: str = "summary") -> pd.DataFrame:
+    """Keep the three models and two views the paper reports, and check the columns."""
     required_cols = {"model", "method", "variant", "n", "full_cos_mean"}
     required_cols.update(_mean_col(k) for k in METRIC_KEYS)
+    required_cols.update(f"{k}_n" for k in (DEL_GAP_KEY, INS_GAP_KEY))
     missing = sorted(required_cols - set(df.columns))
     if missing:
-        raise ValueError(f"{summary_csv} is missing required columns: {missing}")
+        raise ValueError(f"{source} is missing required columns: {missing}")
 
     wanted_models = {m for m, _ in MODELS}
     wanted_methods = {m for m, _ in METHODS}
@@ -111,107 +147,229 @@ def _get(summary: pd.DataFrame, model: str, method: str, variant: str, col: str)
     return float(row.iloc[0][col])
 
 
+def _wins(summary: pd.DataFrame, metric_key: str, *, lower_is_better: bool = False) -> int:
+    won = 0
+    for model, _ in MODELS:
+        for method, _ in METHODS:
+            base = _get(summary, model, method, "baseline", _mean_col(metric_key))
+            abtt = _get(summary, model, method, "abtt", _mean_col(metric_key))
+            won += int(abtt < base if lower_is_better else abtt > base)
+    return won
+
+
+def _abtt_pair_count_range(summary: pd.DataFrame, metric_key: str) -> tuple[int, int]:
+    counts = [
+        int(_get(summary, model, method, "abtt", f"{metric_key}_n"))
+        for model, _ in MODELS
+        for method, _ in METHODS
+    ]
+    return min(counts), max(counts)
+
+
+def _baseline_pair_count(summary: pd.DataFrame, metric_key: str) -> int:
+    counts = {
+        int(_get(summary, model, method, "baseline", f"{metric_key}_n"))
+        for model, _ in MODELS
+        for method, _ in METHODS
+    }
+    if len(counts) != 1:
+        raise ValueError(f"baseline pair counts for {metric_key} disagree: {sorted(counts)}")
+    return counts.pop()
+
+
+def _random_floor_range(summary: pd.DataFrame) -> tuple[float, float]:
+    floors = [
+        _get(summary, model, method, variant, _mean_col(DEL_RANDOM_KEY))
+        for model, _ in MODELS
+        for method, _ in METHODS
+        for variant in ("baseline", "abtt")
+    ]
+    return min(floors), max(floors)
+
+
+def main_caption(summary: pd.DataFrame) -> str:
+    rho_wins = _wins(summary, RHO_KEY)
+    del_wins = _wins(summary, DEL_GAP_KEY)
+    lo_n, hi_n = _abtt_pair_count_range(summary, DEL_GAP_KEY)
+    base_n = _baseline_pair_count(summary, DEL_GAP_KEY)
+    lo_floor, hi_floor = _random_floor_range(summary)
+
+    # The "about 1.2 standard errors" figure is the paired ABTT-minus-baseline
+    # difference for LaTa/MaRC from part A7 of the selection memo, which needs
+    # per-pair values the summary does not carry. It is only true while that
+    # cell is the narrow DelAUC win, so refuse to print it otherwise: on a new
+    # summary, recompute the paired standard errors before restoring the claim.
+    lata_marc_base = _get(
+        summary, "bowphs/LaTa", "retrieval_mark", "baseline", _mean_col(DEL_GAP_KEY)
+    )
+    lata_marc_abtt = _get(
+        summary, "bowphs/LaTa", "retrieval_mark", "abtt", _mean_col(DEL_GAP_KEY)
+    )
+    margin = lata_marc_abtt - lata_marc_base
+    if not 0.0 < margin < 0.10:
+        raise ValueError(
+            "the caption's 1.2 standard error claim is about the LaTa/MaRC "
+            f"DelAUC gap being a narrow ABTT win; this summary gives {margin:+.3f}. "
+            "Recompute the paired standard errors before regenerating."
+        )
+
+    return (
+        r"\caption{Attribution faithfulness at the predeclared operational "
+        r"layers, 200 positive pairs per model, for integrated gradients (IG) "
+        r"and retrieval-adapted MaRC. $\rho_{\text{LOO}}$ correlates "
+        r"attribution magnitude with the leave-one-out change in the cosine. "
+        r"DelAUC gap is the deletion-curve area in attribution order minus the "
+        rf"area under a random order, whose reference runs from {lo_floor:.3f} "
+        rf"to {hi_floor:.3f} here, so zero is chance. Higher is better in both; "
+        rf"boldface marks the better variant. ABTT wins {rho_wins}/6 and "
+        rf"{del_wins}/6, and the LaTa MaRC DelAUC win is a tie at about 1.2 "
+        r"standard errors. Ratio metrics are undefined below a full-query "
+        rf"cosine of 0.05, so the DelAUC columns average {lo_n} to {hi_n} ABTT "
+        rf"pairs against {base_n} baseline pairs. Cross-variant comparisons are "
+        r"descriptive. Secondary metrics: "
+        r"Table~\ref{tab:attribution_metrics_secondary}.}"
+    )
+
+
 def render_table(summary: pd.DataFrame, out_path: Path) -> None:
     lines: list[str] = [
-        "% generated table",
-        r"\begin{table*}[t]",
+        HEADER,
+        REGEN_NOTE,
+        r"\begin{table}[t]",
         r"\centering",
-        r"\footnotesize",
+        r"\small",
         r"\setlength{\tabcolsep}{4pt}",
-        r"\begin{tabular}{llrrrcccc}",
+        r"\begin{tabular}{llrrrr}",
         r"\toprule",
-        (
-            r"Model & Method & \makecell{$\rho_{\text{LOO}}$\\base} "
-            r"& \makecell{$\rho_{\text{LOO}}$\\ABTT} "
-            r"& \makecell{$\Delta\rho_{\text{LOO}}$} "
-            r"& \makecell{Suff@25\%\\base$\rightarrow$ABTT} "
-            r"& \makecell{Comp@25\%\\base$\rightarrow$ABTT} "
-            r"& \makecell{MinFrac@0.80\\base$\rightarrow$ABTT} "
-            r"& \makecell{ERASER\\wins} \\"
-        ),
+        r"& & \multicolumn{2}{c}{$\rho_{\text{LOO}}$} "
+        r"& \multicolumn{2}{c}{DelAUC gap} \\",
+        r"\cmidrule(lr){3-4}\cmidrule(lr){5-6}",
+        r"Model & Method & base & ABTT & base & ABTT \\",
         r"\midrule",
     ]
-
-    total_eraser_wins = 0
-    total_cells = 0
-    rho_wins = 0
 
     for model, model_label in MODELS:
         first_model_row = True
         for method, method_label in METHODS:
-            base_rho = _get(summary, model, method, "baseline", _mean_col(RHO_KEY))
-            abtt_rho = _get(summary, model, method, "abtt", _mean_col(RHO_KEY))
-            rho_delta = abtt_rho - base_rho
-            if rho_delta > 0:
-                rho_wins += 1
-
-            base_suff = _get(summary, model, method, "baseline", _mean_col(SUFF_KEY))
-            abtt_suff = _get(summary, model, method, "abtt", _mean_col(SUFF_KEY))
-            base_comp = _get(summary, model, method, "baseline", _mean_col(COMP_KEY))
-            abtt_comp = _get(summary, model, method, "abtt", _mean_col(COMP_KEY))
-            base_minfrac = _get(summary, model, method, "baseline", _mean_col(MINFRAC_KEY))
-            abtt_minfrac = _get(summary, model, method, "abtt", _mean_col(MINFRAC_KEY))
-
-            eraser_wins = int(abtt_suff > base_suff) + int(abtt_comp > base_comp) + int(
-                abtt_minfrac < base_minfrac
+            cells = [model_label if first_model_row else "", method_label]
+            cells += _pair_cells(
+                _get(summary, model, method, "baseline", _mean_col(RHO_KEY)),
+                _get(summary, model, method, "abtt", _mean_col(RHO_KEY)),
             )
-            total_eraser_wins += eraser_wins
-            total_cells += 3
-
-            model_cell = model_label if first_model_row else ""
-            lines.append(
-                " & ".join(
-                    [
-                        model_cell,
-                        method_label,
-                        _fmt(base_rho),
-                        _bold_if(abtt_rho, abtt_rho > base_rho),
-                        _fmt(rho_delta, signed=True),
-                        _paired_cell(base_suff, abtt_suff),
-                        _paired_cell(base_comp, abtt_comp),
-                        _paired_cell(base_minfrac, abtt_minfrac, lower_is_better=True),
-                        f"{eraser_wins}/3",
-                    ]
-                )
-                + r" \\"
+            cells += _pair_cells(
+                _get(summary, model, method, "baseline", _mean_col(DEL_GAP_KEY)),
+                _get(summary, model, method, "abtt", _mean_col(DEL_GAP_KEY)),
             )
+            lines.append(" & ".join(cells) + r" \\")
             first_model_row = False
         if model != MODELS[-1][0]:
             lines.append(r"\addlinespace[2pt]")
 
-    lines.extend(
-        [
-            r"\bottomrule",
-            r"\end{tabular}",
-            (
-                r"\caption{\textbf{Attribution metrics at the "
-                r"predeclared operational layers for LaTa, PhilTa, and mT5-base.} "
-                r"200 positive query-candidate pairs per model, for integrated "
-                r"gradients (IG) and retrieval-adapted MaRC. "
-                r"The primary faithfulness signal is "
-                rf"$\rho_{{\text{{LOO}}}}$, which improves under ABTT in "
-                rf"{rho_wins}/6 model--method cells. ERASER-style cells give "
-                r"baseline$\rightarrow$ABTT at one global threshold "
-                r"choice: Sufficiency and Comprehensiveness at "
-                r"25\% of query tokens, MinFrac at recovery threshold 0.80 "
-                r"(lower is better for MinFrac, higher otherwise). "
-                r"Boldface marks the better variant, so disagreements stay visible: "
-                rf"ABTT wins {total_eraser_wins}/{total_cells} ERASER-style "
-                r"comparisons even though $\rho_{\text{LOO}}$ improves consistently. "
-                r"Cross-variant comparisons are descriptive because ABTT changes both "
-                r"the attribution scores and the cosine function being explained. "
-                r"Full sweeps are in Appendix~\ref{app:attribution_sweeps}.}"
-            ),
-            r"\label{tab:attribution_metrics_main}",
-            r"\end{table*}",
-            "",
-        ]
+    lines += [
+        r"\bottomrule",
+        r"\end{tabular}",
+        main_caption(summary),
+        r"\label{tab:attribution_metrics_main}",
+        r"\end{table}",
+        "",
+    ]
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text("\n".join(lines), encoding="utf-8")
+
+
+SECONDARY_COLUMNS = (
+    (TAU_KEY, r"$\tau_{\text{LOO}}$", False),
+    (INS_GAP_KEY, r"InsAUC gap", False),
+    (SUFF_KEY, r"Suff@25\%", False),
+    (COMP_KEY, r"Comp@25\%", False),
+    (MINFRAC_KEY, r"MinFrac@0.80", True),
+)
+
+
+def secondary_caption(summary: pd.DataFrame) -> str:
+    tau_wins = _wins(summary, TAU_KEY)
+    ins_wins = _wins(summary, INS_GAP_KEY)
+    lo_n, hi_n = _abtt_pair_count_range(summary, INS_GAP_KEY)
+    base_n = _baseline_pair_count(summary, INS_GAP_KEY)
+    return (
+        r"\caption{Secondary attribution metrics, on the same pairs, the same "
+        r"layers and the same erasure operator as "
+        r"Table~\ref{tab:attribution_metrics_main}. Boldface marks the better "
+        r"variant within a pair; higher is better everywhere except MinFrac. "
+        r"None of these columns is in the main table, and each is out for its "
+        r"own reason. Kendall $\tau_b$ agrees with $\rho_{\text{LOO}}$ in "
+        rf"{tau_wins}/6 cells, but it is the tie-corrected twin of the same "
+        r"statistic rather than a second witness. Chance-corrected insertion "
+        rf"faithfulness favours ABTT in {ins_wins}/6 cells, and we do not "
+        r"report it in the main table because in two of the twelve cells, both "
+        r"of them baseline cells, the real attribution does not beat a "
+        r"permutation of its own scores, so the measurement does not meet the "
+        r"validity bar we set for a headline column. The threshold-based "
+        r"ERASER metrics are reported for completeness: their "
+        r"baseline-versus-ABTT verdict depends on the threshold and on the "
+        r"erasure operator, which is why the main table uses threshold-free, "
+        r"chance-corrected metrics instead. The InsAUC columns average "
+        rf"{lo_n} to {hi_n} ABTT pairs against the baseline's {base_n}, for the "
+        r"same small-denominator reason. Full threshold sweeps are in "
+        r"Tables~\ref{tab:attribution_sweep_main_methods} "
+        r"and~\ref{tab:attribution_sweep_supplemental_methods}.}"
     )
+
+
+def render_secondary_table(summary: pd.DataFrame, out_path: Path) -> None:
+    n_metrics = len(SECONDARY_COLUMNS)
+    banner = " & ".join(
+        rf"\multicolumn{{2}}{{c}}{{{label}}}" for _, label, _ in SECONDARY_COLUMNS
+    )
+    rules = "".join(
+        rf"\cmidrule(lr){{{3 + 2 * i}-{4 + 2 * i}}}" for i in range(n_metrics)
+    )
+    lines: list[str] = [
+        HEADER,
+        REGEN_NOTE,
+        r"\begin{table*}[t]",
+        r"\centering",
+        r"\small",
+        r"\setlength{\tabcolsep}{5pt}",
+        r"\begin{tabular}{ll" + "rr" * n_metrics + "}",
+        r"\toprule",
+        r"& & " + banner + r" \\",
+        rules,
+        r"Model & Method & " + " & ".join(["base", "ABTT"] * n_metrics) + r" \\",
+        r"\midrule",
+    ]
+
+    for model, model_label in MODELS:
+        first_model_row = True
+        for method, method_label in METHODS:
+            cells = [model_label if first_model_row else "", method_label]
+            for key, _, lower_is_better in SECONDARY_COLUMNS:
+                cells += _pair_cells(
+                    _get(summary, model, method, "baseline", _mean_col(key)),
+                    _get(summary, model, method, "abtt", _mean_col(key)),
+                    lower_is_better=lower_is_better,
+                )
+            lines.append(" & ".join(cells) + r" \\")
+            first_model_row = False
+        if model != MODELS[-1][0]:
+            lines.append(r"\addlinespace[2pt]")
+
+    lines += [
+        r"\bottomrule",
+        r"\end{tabular}",
+        secondary_caption(summary),
+        r"\label{tab:attribution_metrics_secondary}",
+        r"\end{table*}",
+        "",
+    ]
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text("\n".join(lines), encoding="utf-8")
 
 
 def render_rho_figure(summary: pd.DataFrame, out_base: Path) -> None:
+    import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
+
     rows: list[dict[str, object]] = []
     for model, model_label in MODELS:
         for method, method_label in METHODS:
@@ -246,8 +404,6 @@ def render_rho_figure(summary: pd.DataFrame, out_base: Path) -> None:
     ax.grid(axis="y", visible=False)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
-
-    from matplotlib.lines import Line2D
 
     legend_items = [
         Line2D(
@@ -284,7 +440,12 @@ def render_rho_figure(summary: pd.DataFrame, out_base: Path) -> None:
     fig.tight_layout(pad=0.4)
 
     out_base.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_base.with_suffix(".pdf"), bbox_inches="tight", dpi=300)
+    fig.savefig(
+        out_base.with_suffix(".pdf"),
+        bbox_inches="tight",
+        dpi=300,
+        metadata={"CreationDate": None},
+    )
     fig.savefig(out_base.with_suffix(".png"), bbox_inches="tight", dpi=300)
     plt.close(fig)
 
@@ -299,9 +460,10 @@ def render_rho_figure(summary: pd.DataFrame, out_base: Path) -> None:
                 r"candidate-attribution result.} Each line connects the baseline "
                 r"and ABTT variants for one model-method cell at the predeclared "
                 r"operational attribution layer. ABTT improves the leave-one-out "
-                r"rank-correlation signal in all six cells; Table~\ref{tab:attribution_metrics_main} "
-                r"shows the ERASER-style disagreements which qualify this narrower "
-                r"faithfulness claim.}"
+                r"rank-correlation signal in all six cells; "
+                r"Table~\ref{tab:attribution_metrics_secondary} shows the "
+                r"secondary metrics which qualify this narrower faithfulness "
+                r"claim.}"
             ),
             r"\label{fig:attribution_rho_loo_main}",
             r"\end{figure}",
@@ -315,6 +477,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--summary_csv", type=Path, default=DEFAULT_SUMMARY)
     parser.add_argument("--table_out", type=Path, default=DEFAULT_TABLE_OUT)
+    parser.add_argument("--secondary_table_out", type=Path, default=DEFAULT_SECONDARY_OUT)
     parser.add_argument("--fig_out_base", type=Path, default=DEFAULT_FIG_OUT)
     return parser.parse_args()
 
@@ -323,8 +486,10 @@ def main() -> None:
     args = parse_args()
     summary = _load_main_rows(args.summary_csv)
     render_table(summary, args.table_out)
+    render_secondary_table(summary, args.secondary_table_out)
     render_rho_figure(summary, args.fig_out_base)
     print(f"Wrote {args.table_out}")
+    print(f"Wrote {args.secondary_table_out}")
     print(f"Wrote {args.fig_out_base.with_suffix('.pdf')}")
     print(f"Wrote {args.fig_out_base.with_suffix('.png')}")
     print(f"Wrote {args.fig_out_base.with_suffix('.tex')}")

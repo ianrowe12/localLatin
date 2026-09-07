@@ -1,0 +1,27 @@
+% generated table
+% Selection and wording follow the part B memo behind issue #120. If the attribution
+% re-sample of issue #141 lands, regenerate this file from the new summary rather than
+% editing the numbers here.
+\begin{table*}[t]
+\centering
+\small
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{llrrrrrrrrrr}
+\toprule
+& & \multicolumn{2}{c}{$\tau_{\text{LOO}}$} & \multicolumn{2}{c}{InsAUC gap} & \multicolumn{2}{c}{Suff@25\%} & \multicolumn{2}{c}{Comp@25\%} & \multicolumn{2}{c}{MinFrac@0.80} \\
+\cmidrule(lr){3-4}\cmidrule(lr){5-6}\cmidrule(lr){7-8}\cmidrule(lr){9-10}\cmidrule(lr){11-12}
+Model & Method & base & ABTT & base & ABTT & base & ABTT & base & ABTT & base & ABTT \\
+\midrule
+LaTa & IG & 0.007 & \textbf{0.212} & \textbf{0.153} & 0.032 & \textbf{0.965} & 0.729 & \textbf{0.658} & 0.194 & \textbf{0.042} & 0.330 \\
+ & MaRC & 0.059 & \textbf{0.292} & -0.201 & \textbf{0.098} & 0.556 & \textbf{0.847} & \textbf{0.329} & 0.272 & 0.398 & \textbf{0.291} \\
+\addlinespace[2pt]
+PhilTa & IG & 0.106 & \textbf{0.432} & 0.118 & \textbf{0.244} & \textbf{0.965} & 0.941 & \textbf{0.988} & 0.546 & \textbf{0.031} & 0.144 \\
+ & MaRC & 0.133 & \textbf{0.258} & 0.104 & \textbf{0.200} & \textbf{0.952} & 0.883 & \textbf{0.951} & 0.443 & \textbf{0.058} & 0.296 \\
+\addlinespace[2pt]
+mT5-base & IG & 0.102 & \textbf{0.465} & -0.028 & \textbf{0.353} & 0.885 & \textbf{1.007} & 0.055 & \textbf{0.653} & \textbf{0.134} & 0.232 \\
+ & MaRC & 0.186 & \textbf{0.291} & 0.017 & \textbf{0.243} & \textbf{0.936} & 0.840 & 0.047 & \textbf{0.591} & \textbf{0.032} & 0.340 \\
+\bottomrule
+\end{tabular}
+\caption{Secondary attribution metrics, on the same pairs, the same layers and the same erasure operator as Table~\ref{tab:attribution_metrics_main}. Boldface marks the better variant within a pair; higher is better everywhere except MinFrac. None of these columns is in the main table, and each is out for its own reason. Kendall $\tau_b$ agrees with $\rho_{\text{LOO}}$ in 6/6 cells, but it is the tie-corrected twin of the same statistic rather than a second witness. Chance-corrected insertion faithfulness favours ABTT in 5/6 cells, and we do not report it in the main table because in two of the twelve cells, both of them baseline cells, the real attribution does not beat a permutation of its own scores, so the measurement does not meet the validity bar we set for a headline column. The threshold-based ERASER metrics are reported for completeness: their baseline-versus-ABTT verdict depends on the threshold and on the erasure operator, which is why the main table uses threshold-free, chance-corrected metrics instead. The InsAUC columns average 191 to 195 ABTT pairs against the baseline's 200, for the same small-denominator reason. Full threshold sweeps are in Tables~\ref{tab:attribution_sweep_main_methods} and~\ref{tab:attribution_sweep_supplemental_methods}.}
+\label{tab:attribution_metrics_secondary}
+\end{table*}

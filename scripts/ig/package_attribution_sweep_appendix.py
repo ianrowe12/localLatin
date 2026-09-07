@@ -261,14 +261,18 @@ def write_missing_report(
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
+    # summary_v2 is the operator of record for every attribution number the paper
+    # prints (issue #120). Reading summary.csv here instead would put the appendix
+    # sweeps on a different erasure operator than the main table, which produces
+    # two different values for the same cell in the same paper.
     p.add_argument("--summary_csv", default=str(
-        REPO_ROOT / "runs/active/ig_examples_200pos_run3_operational/attribution_metrics/summary.csv"
+        REPO_ROOT / "runs/active/ig_examples_200pos_run3_operational/attribution_metrics/summary_v2.csv"
     ))
     p.add_argument("--long_out", default=str(
-        REPO_ROOT / "runs/active/ig_examples_200pos_run3_operational/attribution_metrics/summary_sweep_long.csv"
+        REPO_ROOT / "runs/active/ig_examples_200pos_run3_operational/attribution_metrics/summary_v2_sweep_long_appendix.csv"
     ))
     p.add_argument("--missing_report_out", default=str(
-        REPO_ROOT / "runs/active/ig_examples_200pos_run3_operational/attribution_metrics/appendix_sweep_completeness.json"
+        REPO_ROOT / "runs/active/ig_examples_200pos_run3_operational/attribution_metrics/appendix_sweep_v2_completeness.json"
     ))
     p.add_argument("--main_tex_out", default=str(
         REPO_ROOT / "overleaf_drafts/tables/attribution_metrics_sweep_main_methods.tex"
