@@ -61,6 +61,7 @@ if str(REPO_ROOT / "src") not in sys.path:
 if str(REPO_ROOT / "scripts" / "resubmit") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "scripts" / "resubmit"))
 
+from embedding_alignment import AlignmentResolver  # noqa: E402
 from sif_abtt import EmbeddingCleaner  # noqa: E402
 
 from run_resubmit_unlabelled_retrieval import D_VALUES, find_optimal_D  # noqa: E402
@@ -213,7 +214,22 @@ def load_pooled_embeddings(
     layer: int,
     n_expected: int | None = None,
     repr_name: str = DEFAULT_REPR,
+    split: pd.DataFrame | None = None,
+    resolver: AlignmentResolver | None = None,
 ) -> np.ndarray:
+    """Load one pooled cache, in split row order when a split is given.
+
+    The cached rows sit in corpus-walk order and the split CSV is sorted by
+    ``(folder_id, filename)``, so a label correction permutes the split while
+    leaving the matrix untouched. ``n_expected`` only compares row *counts*,
+    which is exactly the check that cannot see a permutation (issue #113), so
+    any caller that indexes the result by split row must pass ``split`` (or a
+    prebuilt ``resolver``, to avoid re-reading the manifest per call) and get
+    the rows re-ordered by filename.
+
+    Callers that pass neither -- the unlabelled cache, which the split does not
+    describe -- keep the old positional behaviour and the old row-count error.
+    """
     path = embeddings_path(bases_root, slug, pooling, layer, repr_name)
     if not path.exists():
         raise SystemExit(f"Embedding cache missing: {path}")
@@ -223,6 +239,10 @@ def load_pooled_embeddings(
             f"[{slug}] {pooling}-pooled cache at layer {layer} has {emb.shape[0]} rows "
             f"but the split has {n_expected}. Wrong --labelled_bases / --split_csv pair."
         )
+    if resolver is None and split is not None:
+        resolver = AlignmentResolver(split)
+    if resolver is not None:
+        emb = resolver.aligner_for(path).apply(emb)
     return emb
 
 
@@ -236,6 +256,7 @@ def fit_cleaner(
     d_values: Sequence[int] = D_VALUES,
     verbose: bool = True,
     repr_name: str = DEFAULT_REPR,
+    resolver: AlignmentResolver | None = None,
 ) -> Cleaner:
     """Fit the deployed cleaner for one (model, layer, pooling).
 
@@ -248,10 +269,14 @@ def fit_cleaner(
     time, and dropping them here would perturb every direction.
 
     Passing ``fixed_d`` skips the sweep, for callers that already know D.
+    ``resolver`` is optional: one is built from ``split`` when it is omitted.
     """
     validate_pooling(pooling)
+    # Through the resolver: ``train_mask`` indexes split rows, so a cache in a
+    # stale extraction order would put test documents into the ABTT fit.
     emb = load_pooled_embeddings(
-        bases_root, slug, pooling, layer, n_expected=len(split), repr_name=repr_name
+        bases_root, slug, pooling, layer, n_expected=len(split), repr_name=repr_name,
+        split=split, resolver=resolver,
     )
     train_mask = split["split"].to_numpy() == "train"
     train_emb = emb[train_mask]

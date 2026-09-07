@@ -42,6 +42,7 @@ sys.path.append(str(REPO_ROOT / "src"))
 sys.path.append(str(REPO_ROOT / "scripts" / "resubmit"))
 
 from canon_retrieval import l2_normalize  # noqa: E402
+from embedding_alignment import AlignmentResolver  # noqa: E402
 from sif_abtt import EmbeddingCleaner  # noqa: E402
 from evaluate_vectors import find_optimal_D  # noqa: E402
 
@@ -519,6 +520,7 @@ def main() -> None:
     intermediate_dir.mkdir(parents=True, exist_ok=True)
 
     split_df = pd.read_csv(split_csv)
+    aligner = AlignmentResolver(split_df)
     train_mask = (split_df["split"].values == "train")
     folder_ids = split_df["folder_id"].values
     is_winnable = split_df["is_winnable"].values.astype(bool)
@@ -578,7 +580,7 @@ def main() -> None:
                     continue
 
                 # (Re)compute: load raw, apply method, normalize, project.
-                emb = np.load(emb_path)
+                emb = aligner.load(emb_path)
                 if emb.shape[0] != len(folder_ids):
                     print(
                         f"[skip] row mismatch at {emb_path}: "

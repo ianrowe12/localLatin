@@ -78,6 +78,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.append(str(REPO_ROOT / "src"))
 
 from canon_retrieval import l2_normalize, zero_norm_mask  # noqa: E402
+from embedding_alignment import AlignmentResolver  # noqa: E402
 from sif_abtt import EmbeddingCleaner  # noqa: E402
 
 
@@ -130,6 +131,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--models", default="all", help="Comma-separated model names or 'all'.")
     parser.add_argument("--variant", default="sif_abtt", choices=sorted(VARIANTS))
     parser.add_argument("--layer_overrides", default="")
+    parser.add_argument(
+        "--deployed_layers_json", default=str(RETRIEVAL.DEFAULT_DEPLOYED_LAYERS_JSON)
+    )
+    parser.add_argument(
+        "--sticky_tolerance", type=float, default=RETRIEVAL.STICKY_TOLERANCE
+    )
+    parser.add_argument("--no_sticky_layers", action="store_true")
     parser.add_argument("--data_root", default="data")
     parser.add_argument(
         "--verify_n",
@@ -142,35 +150,30 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def run_relative(path) -> str:
+    """The part of a cache path that identifies it, without the checkout it sat in.
+
+    These matrices ship in the data release, so an absolute path recorded here is
+    provenance that stops being true the moment the checkout moves: one build ran
+    from a temporary worktree and left the index pointing into a directory that no
+    longer exists. Everything from ``runs/`` onwards is the stable part.
+    """
+    parts = Path(path).parts
+    if "runs" in parts:
+        return str(Path(*parts[parts.index("runs"):]))
+    return str(path)
+
+
 def resolve_model_configs(args: argparse.Namespace, sel_methods) -> list[tuple[str, int, str]]:
-    """(model, layer, repr) per model, exactly as the retrieval script picks it."""
-    results_path = Path(args.results_csv)
-    if results_path.exists():
-        print(f"Reading best layers from {results_path}")
-        best_configs = RETRIEVAL.find_best_config_from_results(args.results_csv, sel_methods)
-    else:
-        print("Results CSV not found, using fallback configs.")
-        best_configs = {}
+    """(model, layer, repr) per model, exactly as the retrieval script picks it.
 
-    layer_overrides = RETRIEVAL.parse_layer_overrides(args.layer_overrides)
-
-    configs: list[tuple[str, int, str]] = []
-    for model_name, fallback_layer, fallback_repr in FALLBACK_CONFIGS:
-        if model_name in best_configs:
-            layer, repr_name = best_configs[model_name]
-            source = "from results"
-        else:
-            layer, repr_name = fallback_layer, fallback_repr
-            source = "fallback"
-        if model_name in layer_overrides:
-            layer = layer_overrides[model_name]
-            source = "override"
-        print(f"  {model_name}: layer={layer}, repr={repr_name} ({source})")
-        configs.append((model_name, layer, repr_name))
-
-    if args.models != "all":
-        selected = {m.strip() for m in args.models.split(",")}
-        configs = [c for c in configs if c[0] in selected]
+    Delegated rather than reimplemented. These matrices score reviewer-created
+    directories, and if they were built at a different layer from the prediction
+    CSVs the webapp would be mixing two embedding spaces in one shortlist. The
+    sticky-layer rule makes that easy to get wrong in a new way, so the two
+    scripts share one selector instead of two that happen to agree.
+    """
+    configs, _ = RETRIEVAL.resolve_model_configs(args, sel_methods, args.variant)
     return configs
 
 
@@ -276,6 +279,7 @@ def main() -> None:
     print(f"Variant: {variant} (pooling={pooling}, abtt={apply_abtt})")
 
     split_meta = pd.read_csv(args.split_csv)
+    lab_aligner = AlignmentResolver(split_meta)
     unlabelled_meta = pd.read_csv(args.unlabelled_meta)
     file_ids = unlabelled_meta["file_id"].to_numpy(dtype=np.int32)
 
@@ -316,7 +320,7 @@ def main() -> None:
             print(f"  Embeddings missing ({lab_path} / {unlab_path}); skipping.")
             continue
 
-        lab_emb = np.load(lab_path)
+        lab_emb = lab_aligner.load(lab_path)
         unlab_emb = np.load(unlab_path)
         print(f"  Labelled: {lab_emb.shape}, Unlabelled: {unlab_emb.shape}")
         if lab_emb.shape[0] != len(split_meta) or unlab_emb.shape[0] != len(unlabelled_meta):
@@ -395,8 +399,8 @@ def main() -> None:
             "n_excluded": int(unlab_exclude.sum()),
             "dtype": "float16",
             "built_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "labelled_bases": str(lab_path),
-            "unlabelled_bases": str(unlab_path),
+            "labelled_bases": run_relative(lab_path),
+            "unlabelled_bases": run_relative(unlab_path),
         }
 
         out_path = out_dir / f"qq_sim_{slug}.npz"
@@ -409,7 +413,9 @@ def main() -> None:
         )
         size_mb = out_path.stat().st_size / 1e6
         print(f"  Saved {qq16.shape} float16 -> {out_path} ({size_mb:.1f} MB)")
-        summary.append({**meta, "path": str(out_path), "size_mb": round(size_mb, 2)})
+        summary.append(
+            {**meta, "path": run_relative(out_path), "size_mb": round(size_mb, 2)}
+        )
 
     if all_verifications:
         report = out_dir / f"qq_sim_verification_{variant}.csv"

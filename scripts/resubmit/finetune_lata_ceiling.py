@@ -64,6 +64,7 @@ from finetune_pairs import (  # noqa: E402
     batch_pairs_by_round,
     build_pairs,
 )
+from embedding_alignment import AlignmentResolver  # noqa: E402
 from pair_evaluation import safe_auc_roc  # noqa: E402
 from token_filtering import build_token_keep_lookup, torch_token_keep_mask  # noqa: E402
 
@@ -385,24 +386,60 @@ def bases_dir(bases_root: Path, label: str) -> Path:
     return bases_root / "phase9_bases" / model_slug(label) / "hidden_mean_tokempty"
 
 
+MANIFEST_COLUMNS = ("file_id", "folder_id", "filename", "path")
+
+
+def write_row_manifest(out_dir: Path, split_meta: pd.DataFrame) -> Path:
+    """Record, beside the matrices, the row order they were written in.
+
+    Extraction here follows the split CSV, so the split's own order *is* the
+    cache order. Saying so on disk is what keeps the cache self-describing:
+    without a ``meta.csv`` an ``AlignmentResolver`` falls back to a
+    ``row_order.csv`` at an ancestor bases root, which records the *paper's*
+    extraction order and would permute these rows into the wrong labels.
+    """
+    cols = [c for c in MANIFEST_COLUMNS if c in split_meta.columns]
+    if not ({"path", "filename"} & set(cols)):
+        raise ValueError(
+            "split_meta needs a 'path' or 'filename' column to write a row manifest"
+        )
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / "meta.csv"
+    split_meta[cols].to_csv(path, index=False)
+    return path
+
+
 def extract_and_save(
     enc: Encoder, texts: Sequence[str], layers: Sequence[int],
-    out_dir: Path, batch_size: int,
+    out_dir: Path, batch_size: int, split_meta: pd.DataFrame,
 ) -> Dict[int, np.ndarray]:
+    if len(split_meta) != len(texts):
+        raise ValueError(
+            f"{len(texts)} texts but {len(split_meta)} split rows; the manifest "
+            "would not describe the matrices."
+        )
     out_dir.mkdir(parents=True, exist_ok=True)
     embs = enc.encode_layers(texts, layers, batch_size, log_every=20)
     for layer, emb in embs.items():
         np.save(out_dir / f"hidden_layer{layer}_embeddings.npy", emb)
         np.save(out_dir / f"hidden_layer{layer}_embeddings_norm.npy", l2_normalize(emb))
-    print(f"  wrote {len(embs)} layers to {out_dir}", flush=True)
+    manifest = write_row_manifest(out_dir, split_meta)
+    print(f"  wrote {len(embs)} layers to {out_dir} (row order in {manifest.name})", flush=True)
     return embs
 
 
 def parity_check(
     enc_pre: Encoder, texts: Sequence[str], layers: Sequence[int],
-    baseline_bases_root: Path, batch_size: int,
+    baseline_bases_root: Path, batch_size: int, aligner: AlignmentResolver,
 ) -> Dict[str, float]:
-    """Confirm this script's extraction reproduces the paper's cached embeddings."""
+    """Confirm this script's extraction reproduces the paper's cached embeddings.
+
+    ``texts`` are read in split-CSV order, while the cached matrix is frozen in
+    the order the paper's extractor walked the corpus. A relabelling permutes
+    one and not the other, so the reference is loaded through ``aligner``
+    (built on the same split as ``texts``) rather than with ``np.load``:
+    otherwise a pure re-ordering would show up as a parity failure.
+    """
     ref_dir = bases_dir(baseline_bases_root, "bowphs/LaTa")
     probe = [l for l in layers if (ref_dir / f"hidden_layer{l}_embeddings.npy").exists()]
     probe = probe[-1:] + probe[:1]  # last and first available layer
@@ -411,7 +448,7 @@ def parity_check(
     embs = enc_pre.encode_layers(texts, sorted(set(probe)), batch_size)
     report: Dict[str, float] = {"parity_layers": len(embs)}
     for layer, emb in embs.items():
-        ref = np.load(ref_dir / f"hidden_layer{layer}_embeddings.npy")
+        ref = aligner.load(ref_dir / f"hidden_layer{layer}_embeddings.npy")
         diff = float(np.max(np.abs(emb - ref)))
         cos = float(np.mean(np.sum(l2_normalize(emb) * l2_normalize(ref), axis=1)))
         report[f"parity_layer{layer}_max_abs_diff"] = diff
@@ -433,6 +470,7 @@ def evaluate_layers(
     layers: Sequence[int],
     model_label: str,
     D_values: List[int],
+    aligner: AlignmentResolver,
 ) -> pd.DataFrame:
     rows = []
     for layer in layers:
@@ -440,7 +478,7 @@ def evaluate_layers(
         if not path.exists():
             print(f"    layer {layer}: missing {path}, skipping", flush=True)
             continue
-        emb_all = np.load(path)
+        emb_all = aligner.load(path)
         if emb_all.shape[0] != len(split_meta):
             raise ValueError(f"{path}: {emb_all.shape[0]} rows vs {len(split_meta)} split rows")
         for method in EVAL_METHODS:
@@ -482,6 +520,7 @@ def run_mseed(
     M: int,
     base_seed: int,
     D_values: List[int],
+    aligner: AlignmentResolver,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """Paper's 5-seed Task B protocol, restricted to the selected configurations.
 
@@ -494,7 +533,9 @@ def run_mseed(
         for label, emb_dir, layer, method in configs:
             key = (str(emb_dir), layer)
             if key not in cache:
-                cache[key] = np.load(emb_dir / f"hidden_layer{layer}_embeddings.npy")
+                cache[key] = aligner.load(
+                    emb_dir / f"hidden_layer{layer}_embeddings.npy"
+                )
             row = paper_mseed.evaluate_model_for_seed(
                 emb_all=cache[key],
                 meta=meta,
@@ -668,6 +709,9 @@ def main() -> None:
     results_dir.mkdir(parents=True, exist_ok=True)
 
     split_meta = pd.read_csv(args.split_csv)
+    # Cached rows sit in extraction order; the split is sorted by directory, so a
+    # label correction permutes one and not the other. Align on filename.
+    aligner = AlignmentResolver(split_meta)
     data_root = Path(args.data_root)
     paths = [str(data_root / p) for p in split_meta["path"].tolist()]
     folder_ids = split_meta["folder_id"].values
@@ -706,7 +750,8 @@ def main() -> None:
         if args.parity_check:
             print("Parity check against the paper's cached LaTa embeddings...")
             run_info["parity"] = parity_check(
-                enc, texts, layers, Path(args.baseline_bases_root), args.eval_batch_size
+                enc, texts, layers, Path(args.baseline_bases_root),
+                args.eval_batch_size, aligner,
             )
 
     # ---- train ------------------------------------------------------------ #
@@ -732,7 +777,7 @@ def main() -> None:
         enc.encoder.load_state_dict(state)
         enc.encoder.to(device)
         print("Extracting fine-tuned embeddings for all labelled files...")
-        extract_and_save(enc, texts, layers, ft_dir, args.eval_batch_size)
+        extract_and_save(enc, texts, layers, ft_dir, args.eval_batch_size, split_meta)
 
     if enc is not None:
         del enc
@@ -749,7 +794,7 @@ def main() -> None:
         )
         print("Evaluating fine-tuned embeddings with the paper's evaluator...")
         ft_results = evaluate_layers(
-            split_meta, ft_dir, eval_layers, args.ft_model_label, D_values
+            split_meta, ft_dir, eval_layers, args.ft_model_label, D_values, aligner
         )
         ft_results.to_csv(ft_results_path, index=False)
         print(f"  wrote {ft_results_path}")
@@ -786,7 +831,7 @@ def main() -> None:
                 configs.append(cfg)
         print(f"Task B multi-seed ({args.mseed_M} seeds from {args.mseed_base_seed})...")
         mseed_all, mseed_agg = run_mseed(
-            split_meta, configs, args.mseed_M, args.mseed_base_seed, D_values
+            split_meta, configs, args.mseed_M, args.mseed_base_seed, D_values, aligner
         )
         if not mseed_all.empty:
             mseed_all.to_csv(results_dir / "finetune_lata_mseed_all_seeds.csv", index=False)

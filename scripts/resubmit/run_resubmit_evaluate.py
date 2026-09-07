@@ -31,6 +31,7 @@ from canon_retrieval import (
 )
 from pair_evaluation import safe_auc_roc, safe_spearman
 from sif_abtt import EmbeddingCleaner
+from embedding_alignment import AlignmentResolver
 
 
 def parse_args() -> argparse.Namespace:
@@ -516,6 +517,7 @@ def main() -> None:
     args = parse_args()
     runs_root = Path(args.runs_root)
     split_meta = pd.read_csv(args.split_csv)
+    aligner = AlignmentResolver(split_meta)
     dist_dir = Path(args.dist_dir) if args.dist_dir else None
 
     seq2seq_models = [m.strip() for m in args.models.split(",") if m.strip()]
@@ -589,6 +591,7 @@ def main() -> None:
                             f"({emb_all.shape[0]} vs {len(split_meta)}), skipping."
                         )
                         continue
+                    emb_all = aligner.aligner_for(emb_path).apply(emb_all)
 
                     # Save distributions for baseline (hidden, mean, last layer)
                     if (
