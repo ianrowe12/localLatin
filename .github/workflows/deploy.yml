@@ -86,15 +86,20 @@ jobs:
           git fetch origin main
           git checkout main
           # The deploy itself modifies tracked files on the host: npm rebuilds
-          # web/static, and the data release re-installs the tracked members of
-          # runs/active. Restore them so a commit touching those paths does not
-          # abort the fast-forward (#150). Untracked release files and the
-          # reviewer feedback DB are not tracked and are never touched here.
-          git checkout -- web/static
-          if [ -n "${DATA_RELEASE_TAG:-}" ]; then
-            git checkout -- runs/active
+          # web/static, and the data release installs newer bytes over the
+          # tracked members of runs/active. A commit that touches one of those
+          # files makes the fast-forward abort (#150). Restore ONLY the files
+          # the incoming commits change, so the pull can land them; every other
+          # locally modified file keeps its release or build bytes (restoring
+          # all of runs/active would downgrade the 80 attribution NPZs to their
+          # older committed arrays whenever the release cache is already
+          # current). Untracked files, including the release payload and the
+          # reviewer feedback DB, are never touched by git checkout.
+          changed="$(git diff --name-only HEAD FETCH_HEAD -- runs/active web/static)"
+          if [ -n "${changed}" ]; then
+            printf '%s\n' "${changed}" | xargs -r -d '\n' git checkout --
           fi
-          git status --short | head -20
+          git status --short | head -20 || true
           git pull --ff-only origin main
           PUBLIC_BASE_PATH="${PUBLIC_BASE_PATH}" \
           DATA_RELEASE_TAG="${DATA_RELEASE_TAG:-}" \
