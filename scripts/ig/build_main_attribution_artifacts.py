@@ -30,9 +30,13 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+
+# matplotlib is imported inside render_rho_figure, not here. Building the two
+# tables needs pandas and nothing else, and the table path is what the tests and
+# a table-only re-run exercise; a module-level plotting import would make both
+# depend on a backend they never use.
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -363,6 +367,9 @@ def render_secondary_table(summary: pd.DataFrame, out_path: Path) -> None:
 
 
 def render_rho_figure(summary: pd.DataFrame, out_base: Path) -> None:
+    import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
+
     rows: list[dict[str, object]] = []
     for model, model_label in MODELS:
         for method, method_label in METHODS:
@@ -397,8 +404,6 @@ def render_rho_figure(summary: pd.DataFrame, out_base: Path) -> None:
     ax.grid(axis="y", visible=False)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
-
-    from matplotlib.lines import Line2D
 
     legend_items = [
         Line2D(
