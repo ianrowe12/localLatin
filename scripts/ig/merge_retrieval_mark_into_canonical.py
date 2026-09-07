@@ -1,9 +1,9 @@
-"""Merge Retrieval MarK sidecar NPZs into canonical per-pair artifacts.
+"""Merge retrieval-adapted MaRC sidecar NPZs into canonical per-pair artifacts.
 
 For every row in the phase12f examples CSV, load the canonical NPZ at
 ``<canonical_dir>/<slug>/example<id>_pair_example.npz`` and the sidecar
 at ``<sidecar_dir>/<slug>/example<id>_pair_example.npz``, then rewrite the
-canonical file with the Retrieval MarK keys overlaid on top. ``hyperparams``
+canonical file with the retrieval-adapted MaRC keys overlaid on top. ``hyperparams``
 from the sidecar is renamed to ``hyperparams_retrieval_mark`` to avoid
 clobbering any existing canonical key.
 

@@ -1,4 +1,4 @@
-"""Compute MarK-adapted attribution-quality metrics on existing IG pair NPZs.
+"""Compute MaRC-adapted attribution-quality metrics on existing IG pair NPZs.
 
 Reads every per-pair NPZ under
 ``runs/active/ig_examples/artifacts/<model_slug>/`` and computes the registered

@@ -48,6 +48,6 @@ mT5-base & 1 & 0.822 & 0.979 & 0.027 & 0.550 \\
  & 12 & 0.838 & 0.972 & 0.081 & 0.442 \\
 \bottomrule
 \end{tabular}
-\caption{Per-layer Task~A pairwise duplicate-detection metrics for the three headline models (LaTa, PhilTa, mT5-base). \texttt{baseline} is mean pooling without correction; \texttt{abtt\_optimal} applies ABTT (no SIF weighting) with $D$ tuned per layer on the train split. Both AUROC and cosine gap are computed over the test n$\times$n cosine matrix with no threshold and no directory routing: AUROC treats same-directory test pairs as positives, and cosine gap is the difference between mean same-directory and mean different-directory cosine. Rows in bold mark the best layer per model, selected by ABTT AUROC.}
+\caption{Per-layer Task~A pairwise duplicate-detection metrics for the three T5 encoders (LaTa, PhilTa, mT5-base). \texttt{baseline} is mean pooling without correction; \texttt{abtt\_optimal} applies ABTT (no SIF weighting) with $D$ tuned per layer on the train split. Both AUROC and cosine gap are computed over the test n$\times$n cosine matrix with no threshold and no directory routing: AUROC treats same-directory test pairs as positives, and cosine gap is the difference between mean same-directory and mean different-directory cosine. Rows in bold mark the best layer per model, selected by ABTT AUROC.}
 \label{tab:taskA_main}
 \end{table*}

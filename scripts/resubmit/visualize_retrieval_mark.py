@@ -1,5 +1,5 @@
 """Render the paper figure ``fig_retrieval_mark_pair_philta`` showing the
-Retrieval-MarK learned token masks for one query-candidate pair.
+retrieval-adapted MaRC learned token masks for one query-candidate pair.
 
 Produces a 2x2 (or 4x1 stacked) panel of horizontal heatmap-bars:
 
@@ -31,7 +31,7 @@ The script supports two fallback paths for finding the NPZ:
        (written by the IG artifact merger for a given example/model).
 
     2. Sidecar NPZ under --sidecar_dir/<slug>/exampleNNN_pair_example.npz
-       (written by the retrieval-MarK SLURM job before merging into the
+       (written by the retrieval-adapted MaRC SLURM job before merging into the
        canonical artifacts). When --sidecar_only is passed, the script reads
        the sidecar NPZ *and* the canonical NPZ (for input_ids / cos_orig)
        and merges them in memory for rendering.
@@ -44,7 +44,7 @@ LaTeX inclusion:
     \\begin{figure*}[t]
       \\centering
       \\includegraphics[width=\\textwidth]{figures/fig_retrieval_mark_pair_philta.pdf}
-      \\caption{Learned Retrieval-MarK masks for a PhilTa query-candidate pair.
+      \\caption{Learned retrieval-adapted MaRC masks for a PhilTa query-candidate pair.
                Each row shows the mask optimized on one side of the pair while
                the partner embedding is held fixed; columns compare the raw
                cosine target (left) with the ABTT-cleaned target (right).
@@ -107,7 +107,7 @@ SUPTITLE_FONTSIZE = 13
 # ---------------------------------------------------------------------------
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Render the Retrieval-MarK pair figure for the paper."
+        description="Render the retrieval-adapted MaRC pair figure for the paper."
     )
     parser.add_argument(
         "--example_id",
@@ -416,7 +416,7 @@ def render_figure(
 
     model_short = MODEL_SHORT.get(model_name, _slug(model_name).split("_")[-1])
     fig.suptitle(
-        f"Retrieval-MarK Attribution: {model_short}, Example {example_id}",
+        f"Retrieval-adapted MaRC attribution: {model_short}, example {example_id}",
         fontsize=SUPTITLE_FONTSIZE,
         fontweight="bold",
     )

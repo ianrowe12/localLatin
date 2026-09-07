@@ -1,7 +1,7 @@
 % generated table
 \begin{table*}[t]
 \centering
-\small
+\footnotesize
 \setlength{\tabcolsep}{4.5pt}
 \begin{tabular}{lrrrrrrrr}
 \toprule
@@ -15,8 +15,13 @@ mT5-base & 0.838\,\textsubscript{12} & 0.845\,\textsubscript{1} & \textbf{0.975}
 LaBSE & 0.956\,\textsubscript{12} & 0.956\,\textsubscript{12} & \textbf{0.987}\,\textsubscript{11} & 0.976\,\textsubscript{10} & 0.183\,\textsubscript{12} & 0.184\,\textsubscript{12} & \textbf{0.611}\,\textsubscript{11} & 0.580\,\textsubscript{10} \\
 Qwen3-0.6B & 0.966\,\textsubscript{26} & 0.942\,\textsubscript{22} & \textbf{0.973}\,\textsubscript{2} & 0.972\,\textsubscript{2} & 0.024\,\textsubscript{26} & 0.053\,\textsubscript{22} & \textbf{0.553}\,\textsubscript{2} & 0.540\,\textsubscript{2} \\
 KaLM-mini & 0.972\,\textsubscript{23} & 0.964\,\textsubscript{23} & 0.981\,\textsubscript{1} & \textbf{0.981}\,\textsubscript{2} & 0.056\,\textsubscript{23} & 0.056\,\textsubscript{23} & \textbf{0.568}\,\textsubscript{1} & 0.535\,\textsubscript{2} \\
+\midrule
+LaTa (fine-tuned) & \textbf{0.984}\,\textsubscript{12} & -- & 0.970\,\textsubscript{12} & -- & 0.387\,\textsubscript{12} & -- & \textbf{0.548}\,\textsubscript{12} & -- \\
+BM25 (word) & \multicolumn{4}{c}{0.974} & \multicolumn{4}{c}{0.243} \\
+TF-IDF char 3--5 & \multicolumn{4}{c}{0.987} & \multicolumn{4}{c}{0.555} \\
+Levenshtein & \multicolumn{4}{c}{0.952} & \multicolumn{4}{c}{0.362} \\
 \bottomrule
 \end{tabular}
-\caption{Task A pairwise duplicate detection for all six models under four post-processing settings. Each cell is a test-set score at the layer chosen by training-set AUROC, given as the subscript; ABTT uses $D$ tuned on train. Baseline AUROC spans 0.838 to 0.972, and ABTT lifts every model into a 0.971 to 0.987 band. Cosine gap is the mean same-directory minus the mean different-directory cosine. Per-layer grids: Appendix Tables~\ref{tab:taskA_main}, \ref{tab:taskA_appendix}, and~\ref{tab:taskA_appendix_sif}.}
+\caption{Task A pairwise duplicate detection for all six models under four post-processing settings. Each cell is a test-set score at the layer chosen by training-set AUROC, given as the subscript; ABTT uses $D$ tuned on train. Baseline AUROC spans 0.838 to 0.972, and ABTT lifts every model into a 0.971 to 0.987 band. Cosine gap is defined in Figure~\ref{fig:gap}. Per-layer grids: Appendix Tables~\ref{tab:taskA_main}, \ref{tab:taskA_appendix}, and~\ref{tab:taskA_appendix_sif}. Below the rule, reference systems on the same split with the same evaluation code: LaTa fine-tuned contrastively on the 565 positive train pairs, and three lexical baselines fitted on train files. Surface overlap is the practitioner's operating point on this corpus, and the embedding rows diagnose representation geometry rather than beat it.}
 \label{tab:taskA_headline}
 \end{table*}

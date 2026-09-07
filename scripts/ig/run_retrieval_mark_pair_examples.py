@@ -1,4 +1,4 @@
-"""Run Retrieval MarK mask optimization for selected Phase 12f pair examples.
+"""Run retrieval-adapted MaRC mask optimization for selected Phase 12f pair examples.
 
 For each row in the phase12f examples CSV, this script:
   1. Reads the canonical IG artifact NPZ for the pair (tokenization, hidden

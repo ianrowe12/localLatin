@@ -2,7 +2,7 @@
 \small
 \setlength{\tabcolsep}{4pt}
 \begin{longtable}{llcccc}
-\caption{Per-layer Task~A pairwise metrics for the remaining three models (LaBSE, Qwen3-0.6B, KaLM-mini), under the same two-method comparison as the main paper. \texttt{baseline} is mean pooling without correction; \texttt{abtt\_optimal} applies ABTT (no SIF weighting) with $D$ tuned per layer on the train split. Both AUROC and cosine gap are computed over the test n$\times$n cosine matrix with no threshold and no directory routing: AUROC treats same-directory test pairs as positives, and cosine gap is the difference between mean same-directory and mean different-directory cosine. Rows in bold mark the best layer per model, selected by ABTT AUROC.}
+\caption{Per-layer Task~A pairwise metrics for the non-T5 models (LaBSE, Qwen3-0.6B, KaLM-mini), under the same two-method comparison as the main paper. \texttt{baseline} is mean pooling without correction; \texttt{abtt\_optimal} applies ABTT (no SIF weighting) with $D$ tuned per layer on the train split. Both AUROC and cosine gap are computed over the test n$\times$n cosine matrix with no threshold and no directory routing: AUROC treats same-directory test pairs as positives, and cosine gap is the difference between mean same-directory and mean different-directory cosine. Rows in bold mark the best layer per model, selected by ABTT AUROC.}
 \label{tab:taskA_appendix} \\
 \toprule
 \multicolumn{2}{c}{} & \multicolumn{4}{c}{\textbf{Task A: Pairwise Duplicate Detection (appendix models)}} \\

@@ -4,7 +4,7 @@
 
 Saves distributions for 6 conditions per model:
   1. Baseline (hidden, mean), last layer
-  2. Baseline (hidden, mean), best middle layer (30-70% depth, by AUCROC)
+  2. Baseline (hidden, mean), best middle layer (30-70% depth, by train AUROC)
   3. SIF+ABTT optimal (hidden, sif), last layer
   4. SIF+ABTT optimal (hidden, sif), best middle layer
   5. ABTT optimal (hidden, mean), last layer
@@ -95,7 +95,10 @@ def main():
         short = model.split("/")[-1]
         print(f"\n=== {short} ===")
 
-        # Determine last layer and best middle layer
+        # Determine last layer and best middle layer. The middle layer is the
+        # strongest of the 30-70% depth band on the *training* AUROC column, so
+        # the figure this feeds is selected the same train-only way as every
+        # other choice in the paper.
         base = results[
             (results["model"] == model)
             & (results["method"] == "baseline")
@@ -112,7 +115,7 @@ def main():
         if middle.empty:
             mid_layer = max_l // 2
         else:
-            mid_layer = int(middle.loc[middle["aucroc"].idxmax(), "layer"])
+            mid_layer = int(middle.loc[middle["train_aucroc"].idxmax(), "layer"])
 
         # Get optimal D at those layers
         opt = results[
