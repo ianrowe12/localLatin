@@ -38,6 +38,7 @@ import json
 import math
 import random
 import sys
+import textwrap
 import time
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
@@ -614,12 +615,193 @@ def build_comparison(ft_df: pd.DataFrame, base_df: pd.DataFrame) -> pd.DataFrame
     return pd.DataFrame(rows)
 
 
-def write_tex(comparison: pd.DataFrame, mseed_agg: Optional[pd.DataFrame], path: Path) -> None:
-    """Emit the table body. Generated file: edit the generator, not this."""
+class CeilingFacts:
+    """The run-specific numbers the generated caption and notes quote.
+
+    They were literals in the caption until benchmark v1 changed the dev carve
+    and the pair count under them: a re-run then silently shipped a table whose
+    prose described the previous run. Every one of them is now read off the run
+    that produced the rows above it.
+    """
+
+    def __init__(
+        self,
+        pair_data: "PairData",
+        split_meta: pd.DataFrame,
+        D_values: Sequence[int],
+        selection: Optional[Dict[str, object]],
+        epoch_budget: Optional[int],
+        ft_results: pd.DataFrame,
+    ):
+        self.n_all_train_pairs = pair_data.n_all_train_pairs
+        self.n_fit_pairs = len(pair_data.train_pairs)
+        self.n_fit_dirs = len(pair_data.fit_dirs)
+        self.n_dev_dirs = len(pair_data.dev_dirs)
+        self.n_dev_files = len(pair_data.dev_rows)
+        self.D_values = sorted(int(d) for d in D_values)
+
+        self.selected_epoch = None if selection is None else int(selection["selected_epoch"])
+        self.epochs_run = None if selection is None else int(selection["epochs_run"])
+        self.epoch_budget = epoch_budget
+
+        # How much of the test query pool sits in a directory that supplied a
+        # training pair. Witnesses inside a directory are near-duplicates, so
+        # this is the number that says how far the ceiling is flattered.
+        fit = set(pair_data.fit_dirs)
+        queries = split_meta[split_meta["is_test_query"].astype(bool)]
+        self.n_test_queries = int(len(queries))
+        self.n_test_queries_touched = int(queries["folder_id"].isin(fit).sum())
+        self.pct_test_queries_touched = (
+            100.0 * self.n_test_queries_touched / self.n_test_queries
+            if self.n_test_queries else 0.0
+        )
+
+        # Is abtt_optimal a tuned optimum or a boundary hit? Answered from the
+        # rows rather than asserted.
+        self.n_optimal_rows = 0
+        self.n_optimal_at_max_D = 0
+        self.optimal_matches_fixed = None
+        if not ft_results.empty and "D" in ft_results.columns:
+            opt = ft_results[ft_results["method"] == "abtt_optimal"]
+            fixed = ft_results[ft_results["method"] == "abtt_fixed"]
+            self.n_optimal_rows = int(len(opt))
+            self.n_optimal_at_max_D = int((opt["D"] == max(self.D_values)).sum())
+            if len(opt) and len(opt) == len(fixed):
+                merged = opt.merge(fixed, on="layer", suffixes=("_o", "_f"))
+                self.optimal_matches_fixed = bool(
+                    len(merged) == len(opt)
+                    and np.allclose(merged["aucroc_o"], merged["aucroc_f"])
+                    and np.allclose(merged["dir_acc_at_1_o"], merged["dir_acc_at_1_f"])
+                )
+
+    def d_grid_tex(self) -> str:
+        return r"\{" + ",".join(str(d) for d in self.D_values) + r"\}"
+
+    def abtt_caption_sentence(self) -> str:
+        if not self.n_optimal_rows:
+            return ""
+        if self.n_optimal_at_max_D == self.n_optimal_rows:
+            tail = (
+                " so the tuned and fixed variants coincide."
+                if self.optimal_matches_fixed
+                else " so $D$ was never free to go higher."
+            )
+            return (
+                f" ABTT rows sweep $D$ per layer on train and select $D={max(self.D_values)}$ "
+                f"everywhere, which is the top of the grid ${self.d_grid_tex()}$,"
+                + tail
+            )
+        return (
+            f" ABTT rows sweep $D$ per layer on train over the grid ${self.d_grid_tex()}$; "
+            f"{self.n_optimal_at_max_D} of {self.n_optimal_rows} layer rows select the top "
+            f"of the grid."
+        )
+
+    def epoch_caption_sentence(self) -> str:
+        if self.selected_epoch is None:
+            return ""
+        if self.selected_epoch == 0:
+            return (
+                " Model selection kept the pre-trained encoder (epoch 0): no training "
+                "epoch improved dev directory accuracy."
+            )
+        budget = f"{self.epoch_budget}-epoch budget" if self.epoch_budget else "epoch budget"
+        if self.epochs_run is not None and self.selected_epoch == self.epochs_run:
+            return (
+                f" The selected checkpoint is epoch {self.selected_epoch}, the terminal "
+                f"epoch of the {budget}, so this is a ceiling at this training budget "
+                f"rather than an asymptote."
+            )
+        return (
+            f" The selected checkpoint is epoch {self.selected_epoch} of "
+            f"{self.epochs_run} run under the {budget}, so this is a ceiling at this "
+            f"training budget rather than an asymptote."
+        )
+
+    def notes(self) -> List[str]:
+        """Bullet notes, one paragraph each, wrapped into LaTeX comment lines."""
+        bullets: List[str] = []
+        if self.selected_epoch == 0:
+            bullets.append(
+                "Model selection kept epoch 0, the PRE-TRAINED encoder: no training epoch "
+                "beat it on dev directory accuracy."
+            )
+        elif self.selected_epoch is not None:
+            if self.epochs_run is not None and self.selected_epoch == self.epochs_run:
+                bullets.append(
+                    f"Epoch {self.selected_epoch} is the LAST epoch run under the "
+                    f"{self.epoch_budget}-epoch budget, so the ceiling is 'at this training "
+                    f"budget', not an asymptote."
+                )
+            else:
+                bullets.append(
+                    f"Epoch {self.selected_epoch} of {self.epochs_run} run was selected on "
+                    f"dev directory accuracy."
+                )
+        if self.n_optimal_rows:
+            grid = ",".join(str(d) for d in self.D_values)
+            if self.n_optimal_at_max_D == self.n_optimal_rows:
+                same = (
+                    ", and equals abtt_fixed in every row"
+                    if self.optimal_matches_fixed else ""
+                )
+                bullets.append(
+                    f"abtt_optimal selects D={max(self.D_values)} at every layer, the maximum "
+                    f"of the D grid {{{grid}}}{same}. Boundary hit, not a tuned optimum."
+                )
+            else:
+                bullets.append(
+                    f"abtt_optimal sweeps the D grid {{{grid}}} and selects its top value in "
+                    f"{self.n_optimal_at_max_D} of {self.n_optimal_rows} layer rows."
+                )
+        bullets.append(
+            "The pre-trained rows are COPIED from the paper's results CSV, not rescored "
+            "here; only the fine-tuned bases pass through evaluate_layers."
+        )
+        bullets.append(
+            f"Witnesses in one directory are near-duplicates, and "
+            f"{self.n_test_queries_touched} of the {self.n_test_queries} test query files "
+            f"({self.pct_test_queries_touched:.1f}%) sit in a directory that supplied "
+            f"training pairs. No test file was trained on, but the ceiling is if anything "
+            f"overstated, which makes the 'ABTT already reaches it' reading conservative."
+        )
+
+        out = ["% Notes for whoever moves these rows into the paper:"]
+        for bullet in bullets:
+            out += textwrap.wrap(
+                bullet, width=79, initial_indent="%   - ", subsequent_indent="%     "
+            )
+        return out
+
+
+TEX_HEADER = "% generated table"
+
+
+def load_selection(out_dir: Path) -> Optional[Dict[str, object]]:
+    """Read the training stage's selection.json, or None if it has not run."""
+    path = Path(out_dir) / "selection.json"
+    if not path.exists():
+        return None
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def write_tex(
+    comparison: pd.DataFrame,
+    mseed_agg: Optional[pd.DataFrame],
+    path: Path,
+    facts: Optional[CeilingFacts] = None,
+) -> None:
+    """Emit the table body. Generated file: edit the generator, not this.
+
+    The header names no repository path: this directory ships to Overleaf
+    (issue #117).
+    """
     def fmt(x: float, nd: int = 3) -> str:
         return f"{x:.{nd}f}"
 
     lines = [
+        TEX_HEADER,
         r"\begin{table}[t]",
         r"\centering",
         r"\small",
@@ -640,41 +822,36 @@ def write_tex(comparison: pd.DataFrame, mseed_agg: Optional[pd.DataFrame], path:
             f"& {fmt(100 * r['taskB_assignment_acc'], 1)}\\,\\textsubscript{{{r['taskB_layer']}}} "
             f"& {fmt(100 * r['taskB_dir_acc_at_1'], 1)}\\,\\textsubscript{{{r['taskB_layer']}}} \\\\"
         )
-    lines += [
-        r"\bottomrule",
-        r"\end{tabular}",
+
+    n_pairs = "" if facts is None else f"the {facts.n_all_train_pairs} "
+    caption = (
         r"\caption{Supervised fine-tuning reference ceiling on LaTa. The fine-tuned "
-        r"encoder is trained contrastively on the 565 positive pairs available in the "
-        r"train split (in-batch negatives, symmetric InfoNCE), with a dev slice carved "
+        r"encoder is trained contrastively on " + n_pairs + r"positive pairs available in "
+        r"the train split (in-batch negatives, symmetric InfoNCE), with a dev slice carved "
         r"out of train by directory for model selection; the test split is untouched "
         r"until this evaluation. Task A columns are test AUROC and cosine gap at the "
         r"layer chosen by train AUROC; Task B columns are test assignment accuracy and "
         r"directory accuracy at rank 1, in percent, at the layer chosen by train "
         r"directory accuracy, with $\tau$ learned on train. Layer indices are "
-        r"subscripts. ABTT rows sweep $D$ per layer on train and select $D=10$ "
-        r"everywhere, which is the top of the grid $\{1,2,3,5,7,10\}$, so the tuned "
-        r"and fixed variants coincide. The selected checkpoint is epoch 7, the "
-        r"terminal epoch of the 8-epoch budget, so this is a ceiling at this training "
-        r"budget rather than an asymptote. This is a reference ceiling, not a proposed "
-        r"method: it consumes supervision the zero-shot pipeline never sees.}",
+        r"subscripts."
+    )
+    if facts is not None:
+        caption += facts.abtt_caption_sentence()
+        caption += facts.epoch_caption_sentence()
+    caption += (
+        r" This is a reference ceiling, not a proposed method: it consumes supervision "
+        r"the zero-shot pipeline never sees.}"
+    )
+
+    lines += [
+        r"\bottomrule",
+        r"\end{tabular}",
+        caption,
         r"\label{tab:finetune_ceiling}",
         r"\end{table}",
     ]
-    lines += [
-        "",
-        r"% Notes for whoever moves these rows into the paper:",
-        r"%   - Epoch 7 is the LAST epoch of the 8-epoch budget (patience fired after it),",
-        r"%     so the ceiling is 'at this training budget', not an asymptote.",
-        r"%   - abtt_optimal selects D=10 at every layer, the maximum of the D grid",
-        r"%     {1,2,3,5,7,10}, so abtt_optimal == abtt_fixed in every row. Boundary hit,",
-        r"%     not a tuned optimum.",
-        r"%   - The pre-trained rows are COPIED from the paper's results CSV, not rescored",
-        r"%     here; only the fine-tuned bases pass through evaluate_layers.",
-        r"%   - Witnesses in one directory are near-duplicates, and 206 of the 535 test",
-        r"%     query files (38.5%) sit in a directory that supplied training pairs. No",
-        r"%     test file was trained on, but the ceiling is if anything overstated,",
-        r"%     which makes the 'ABTT already reaches it' reading conservative.",
-    ]
+    if facts is not None:
+        lines += [""] + facts.notes()
     if mseed_agg is not None and not mseed_agg.empty:
         lines.append("")
         lines.append(r"% 5-seed Task B (mean +/- std over seeds 42-46), same protocol as the")
@@ -818,6 +995,7 @@ def main() -> None:
 
     # ---- mseed ------------------------------------------------------------ #
     mseed_agg = pd.DataFrame()
+    mseed_agg_path = results_dir / "finetune_lata_mseed_aggregated.csv"
     if "mseed" in stages and not comparison.empty:
         configs = []
         for _, r in comparison.iterrows():
@@ -835,12 +1013,40 @@ def main() -> None:
         )
         if not mseed_all.empty:
             mseed_all.to_csv(results_dir / "finetune_lata_mseed_all_seeds.csv", index=False)
-            mseed_agg.to_csv(results_dir / "finetune_lata_mseed_aggregated.csv", index=False)
+            mseed_agg.to_csv(mseed_agg_path, index=False)
             print(mseed_agg.to_string(index=False))
+    elif mseed_agg_path.exists():
+        # Same fallback the layer results get: regenerating the table alone must
+        # not silently drop the 5-seed block, and must not re-run five seeds to
+        # keep it either.
+        mseed_agg = pd.read_csv(mseed_agg_path)
+        print(f"  reusing {mseed_agg_path}")
 
     # ---- LaTeX ------------------------------------------------------------ #
     if args.tex_out and not comparison.empty:
-        write_tex(comparison, mseed_agg if not mseed_agg.empty else None, Path(args.tex_out))
+        # The caption quotes the run's own pair count, dev carve, selected epoch
+        # and D sweep, so a re-run on a changed split cannot ship prose that
+        # describes the previous one. The scoring stages run in a separate job
+        # from training, so the selection comes off disk when it is not in hand.
+        selection = load_selection(out_dir)
+        if selection is None:
+            print("  no selection.json; caption will omit the checkpoint sentence",
+                  file=sys.stderr)
+        facts = CeilingFacts(
+            pair_data=pair_data,
+            split_meta=split_meta,
+            D_values=D_values,
+            selection=selection,
+            epoch_budget=args.epochs,
+            ft_results=ft_results,
+        )
+        run_info["caption_facts"] = vars(facts)
+        write_tex(
+            comparison,
+            mseed_agg if not mseed_agg.empty else None,
+            Path(args.tex_out),
+            facts,
+        )
 
     run_info["total_seconds"] = time.time() - t0
     with open(out_dir / "run_info.json", "w", encoding="utf-8") as f:
