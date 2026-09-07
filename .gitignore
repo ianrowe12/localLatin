@@ -3,6 +3,11 @@ runs/*
 runs/active/*
 !runs/active/ig_examples_200pos_run3_operational/
 !runs/active/ig_examples_200pos_run3_operational/**
+# ...except the v2 (hidden-backend) per-pair JSON cache: ~20 MB of intermediate
+# results that `scripts/ig/run_attribution_metrics.py --backend hidden` rebuilds
+# from the tracked NPZs in about ten CPU-minutes. Its aggregates
+# (summary_v2*.csv, metric_wins_v2.csv) are tracked and are what the memo cites.
+runs/active/ig_examples_200pos_run3_operational/attribution_metrics/v2_hidden/*/
 canon/
 data/canon/
 data/canon_labelled/
