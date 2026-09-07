@@ -71,9 +71,18 @@ def _round_trip(jar, origin: str) -> str | None:
     return follow_up.get_header("Cookie")
 
 
+# Every member of LOOPBACK_HOSTS, in the spellings a base URL can carry. `::1`
+# is here because it is the one member the original suite never exercised, and
+# because it is the case a naive host parse gets wrong: http.cookiejar's own
+# request_host() strips the port with a `:\d+$` regex and keeps the brackets,
+# yielding "[::1]", which would never match the frozenset.
 @pytest.mark.parametrize(
     "origin",
-    ["http://127.0.0.1:8080", "http://localhost:8080"],
+    [
+        "http://127.0.0.1:8080",
+        "http://localhost:8080",
+        "http://[::1]:8080",
+    ],
 )
 def test_secure_cookie_is_returned_to_a_loopback_origin(smoke_module, origin):
     from http.cookiejar import CookieJar
@@ -82,14 +91,28 @@ def test_secure_cookie_is_returned_to_a_loopback_origin(smoke_module, origin):
     assert _round_trip(jar, origin) == "ll_session=abc123"
 
 
-def test_secure_cookie_is_withheld_from_a_non_loopback_http_origin(smoke_module):
+# The security argument for this policy is that the host test is exact match on
+# a frozenset, not a substring or suffix test. These are the near-miss hostnames
+# a widening refactor -- `hostname.endswith("localhost")`, `"127.0.0.1" in
+# hostname` -- would start accepting, so they are what pins the semantics.
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "http://ai.csr.uky.edu",
+        "http://localhost.evil.com",
+        "http://127.0.0.1.nip.io",
+    ],
+)
+def test_secure_cookie_is_withheld_from_a_non_loopback_http_origin(
+    smoke_module, origin
+):
     from http.cookiejar import CookieJar
 
     jar = CookieJar(policy=smoke_module.LoopbackSecureCookiePolicy())
-    assert _round_trip(jar, "http://ai.csr.uky.edu") is None
+    assert _round_trip(jar, origin) is None
 
 
-def test_stock_policy_reproduces_the_401(smoke_module):
+def test_stock_policy_reproduces_the_401():
     """The bug itself, so the regression cannot come back unnoticed."""
     from http.cookiejar import CookieJar
 
@@ -97,7 +120,13 @@ def test_stock_policy_reproduces_the_401(smoke_module):
 
 
 def test_client_uses_the_relaxed_policy(smoke_module):
-    """The policy must actually be wired into the client the smoke run builds."""
+    """The policy must actually be wired into the client the smoke run builds.
+
+    Asserted behaviourally, by round-tripping a Secure cookie through the jar
+    the client's own opener carries: that survives a stdlib rename of the
+    private policy attribute, and it tests the property the deploy depends on
+    rather than the type that implements it.
+    """
     client = smoke_module.SmokeClient("http://127.0.0.1:8080")
     jars = [
         handler.cookiejar
@@ -105,6 +134,6 @@ def test_client_uses_the_relaxed_policy(smoke_module):
         if hasattr(handler, "cookiejar")
     ]
     assert jars, "SmokeClient built no cookie-processing handler"
-    assert all(
-        isinstance(jar._policy, smoke_module.LoopbackSecureCookiePolicy) for jar in jars
-    )
+    for jar in jars:
+        assert _round_trip(jar, "http://127.0.0.1:8080") == "ll_session=abc123"
+        assert _round_trip(jar, "http://localhost.evil.com") is None
