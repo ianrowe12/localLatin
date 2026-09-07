@@ -11,8 +11,11 @@ and `BN2123.89r.6` under `Can.apost.50`, so the shortlists you see are scored
 against the corrected labels.
 
 Fourteen of the 13,428 top-1 answers the pilot serves changed under the
-deployed SIF+ABTT pipeline, and all fourteen fall inside the two corrected
-directories, so nothing you have already reviewed elsewhere has moved.
+deployed SIF+ABTT pipeline. All fourteen involve only the three directories the
+corrections touch, `Can.apost.48`, `Can.apost.49` and `Can.apost.50` (five of
+them are answers that used to point at `Can.apost.48` and now follow
+`BN2123.89r.5` to `Can.apost.49`), so nothing you have already reviewed
+elsewhere has moved.
 
 ## What that means in practice
 

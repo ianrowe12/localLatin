@@ -93,14 +93,19 @@ def test_secure_cookie_is_returned_to_a_loopback_origin(smoke_module, origin):
 
 # The security argument for this policy is that the host test is exact match on
 # a frozenset, not a substring or suffix test. These are the near-miss hostnames
-# a widening refactor -- `hostname.endswith("localhost")`, `"127.0.0.1" in
-# hostname` -- would start accepting, so they are what pins the semantics.
+# a widening refactor would start accepting, so together they pin the semantics:
+# `localhost.evil.com` / `127.0.0.1.nip.io` catch a substring test (`"127.0.0.1"
+# in hostname`), and `evil.localhost` / `attacker-127.0.0.1` catch a suffix test
+# (`hostname.endswith("localhost")`). A prefix-shaped case alone passes the
+# suffix widening, which is why both shapes are here.
 @pytest.mark.parametrize(
     "origin",
     [
         "http://ai.csr.uky.edu",
         "http://localhost.evil.com",
         "http://127.0.0.1.nip.io",
+        "http://evil.localhost",
+        "http://attacker-127.0.0.1",
     ],
 )
 def test_secure_cookie_is_withheld_from_a_non_loopback_http_origin(
