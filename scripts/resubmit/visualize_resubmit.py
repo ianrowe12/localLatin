@@ -35,10 +35,12 @@ MAX_LAYERS = {
 }
 
 METHOD_ORDER = ["baseline", "abtt_optimal", "sif_only", "whitening"]
+# Legend text matches the paper's method names, so a figure legend and the
+# caption beside it never use two different words for the same series.
 METHOD_LABELS = {
     "baseline": "Baseline",
-    "abtt_optimal": "ABTT",
-    "sif_only": "SIF",
+    "abtt_optimal": "ABTT-only",
+    "sif_only": "SIF-only",
     "whitening": "Whitening",
 }
 METHOD_COLORS = {
@@ -262,11 +264,14 @@ def compute_collapsed_layer(
     """Return (last_layer, collapsed_layer), the rule run_resubmit_distributions.py uses.
 
     ``last`` is the deepest layer with a baseline row. The collapsed layer is the
-    baseline layer with the *highest* AUROC in the 30-70% depth band, which reads
-    backwards until you see the profile: on the T5 encoders every layer in that
-    band sits near chance, so taking the strongest of them makes the
-    before-and-after panels a conservative illustration rather than a
-    best-case one. Falls back to (max_layer, max_layer // 2) if no rows match.
+    baseline layer with the *highest training-set* AUROC in the 30-70% depth
+    band, which reads backwards until you see the profile: on the T5 encoders
+    every layer in that band sits near chance, so taking the strongest of them
+    makes the before-and-after panels a conservative illustration rather than a
+    best-case one. Selection is on ``train_aucroc`` rather than the test column
+    because the paper's protocol fits and selects on train only, and this figure
+    must not be the one exception. Falls back to (max_layer, max_layer // 2) if
+    no rows match.
     """
     base = results[
         (results["model"] == model)
@@ -281,7 +286,7 @@ def compute_collapsed_layer(
     middle = base[(base["pct"] >= 30) & (base["pct"] <= 70)]
     if middle.empty:
         return last_layer, max_layer // 2
-    collapsed_layer = int(middle.loc[middle["aucroc"].idxmax(), "layer"])
+    collapsed_layer = int(middle.loc[middle["train_aucroc"].idxmax(), "layer"])
     return last_layer, collapsed_layer
 
 
