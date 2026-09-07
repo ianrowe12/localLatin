@@ -143,9 +143,10 @@ def _ensure_import_paths() -> None:
             sys.path.insert(0, str(path))
 
 
-# Everything else this script borrows lives under scripts/resubmit/ and pulls in
-# sklearn or the evaluator, so it stays behind a lazy import; the row aligner is
-# needed by module-level type hints and is cheap, so it comes in here.
+# Everything else this script borrows lives under scripts/resubmit/ and drags in
+# sklearn or the evaluator, so it stays behind a lazy import inside the function
+# that needs it. The row aligner costs nothing beyond numpy and pandas, which are
+# already here, so it is imported at the top like every other consumer of it.
 _ensure_import_paths()
 
 from embedding_alignment import (  # noqa: E402
