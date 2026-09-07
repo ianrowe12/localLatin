@@ -85,6 +85,25 @@ jobs:
           cd "${DEPLOY_PATH}"
           git fetch origin main
           git checkout main
+          # The deploy itself modifies tracked files on the host: npm rebuilds
+          # web/static, and the data release installs newer bytes over the
+          # tracked members of runs/active. A commit that touches one of those
+          # files makes the fast-forward abort (#150). Restore ONLY the files
+          # the incoming commits change, so the pull can land them; every other
+          # locally modified file keeps its release or build bytes (restoring
+          # all of runs/active would downgrade the 80 attribution NPZs to their
+          # older committed arrays whenever the release cache is already
+          # current). Paths the incoming commits ADD are excluded (--diff-filter=a,
+          # no rename detection): they are not in the index yet, so git checkout
+          # would fail on them, and the pull needs no restore for them. The
+          # if-guard matters: xargs -r does not protect against an empty string
+          # argument. Untracked files, including the release payload and the
+          # reviewer feedback DB, are never touched by git checkout.
+          changed="$(git diff --no-renames --diff-filter=a --name-only HEAD FETCH_HEAD -- runs/active web/static)"
+          if [ -n "${changed}" ]; then
+            printf '%s\n' "${changed}" | xargs -r -d '\n' git checkout --
+          fi
+          git status --short | head -20 || true
           git pull --ff-only origin main
           PUBLIC_BASE_PATH="${PUBLIC_BASE_PATH}" \
           DATA_RELEASE_TAG="${DATA_RELEASE_TAG:-}" \
