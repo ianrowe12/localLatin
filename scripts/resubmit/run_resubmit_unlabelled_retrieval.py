@@ -40,6 +40,50 @@ implied by the variant, and trusting it used to mis-pair the two (the previous
 version forced SIF files whenever the winning method was ``abtt_*``, which are
 mean-pooled rows).
 
+Sticky layers for the deployed CSVs
+-----------------------------------
+These CSVs are not a paper artifact. They are what the reviewer pilot serves: a
+scholar opens a query and sees the top-1 directory this file predicted. So the
+argmax above has a property the paper's tables do not have to care about, which
+is that it is a *hard* argmax over near-tied layers, and a hundredth of a point
+of movement in the selection metric can swing it. Issue #113's label correction
+did exactly that: ``Qwen3-0.6B`` under ``sif_abtt`` moved from
+``overall_assignment_acc`` 0.911422 at layer 7 to 0.913753 at layer 1, a 0.23
+point rise, and the deployed layer flipped 7 to 1. Different layer, different
+embedding space, and 1,276 of that model's 2,238 reviewer-facing top-1 answers
+change: 57 percent of the shortlists a scholar may already have looked at, for a
+correction that touches two files.
+
+So the deployed layer is sticky. ``--deployed_layers_json`` names a committed
+record of the layer each (variant, model) is currently serving, read off the
+live prediction CSVs. A newly computed best layer replaces it only when it beats
+the deployed layer on the same selection metric by more than
+``--sticky_tolerance`` (default 0.005, i.e. half a point of assignment accuracy).
+Below that the movement is not distinguishable from the noise a two-file
+relabelling introduces, and continuity for the reviewer is worth more than the
+last hundredth. Every decision is printed and written to
+``sticky_layer_decisions_{variant}.json``.
+
+Two things this rule is deliberately not:
+
+* It is not a claim that the old layer is better. It is a claim that the new one
+  is not better *enough* to be worth invalidating a live shortlist over.
+* It is not used for the paper. The tables in ``overleaf_drafts/`` come from
+  ``build_headline_tables.py`` and friends, which take the pure argmax with no
+  stickiness at all. Pass ``--no_sticky_layers`` here to reproduce that.
+
+``--layer_overrides`` still wins over both: an explicit pin is an explicit pin.
+
+Recording the deployed layers
+-----------------------------
+``--record_deployed_layers`` reads the ``layer`` column of the prediction CSVs in
+a directory and writes the JSON, then exits without scoring anything. Point it at
+the CSVs that are actually live::
+
+    python scripts/resubmit/run_resubmit_unlabelled_retrieval.py \\
+        --record_deployed_layers runs/active/resubmit/unlabelled \\
+        --deployed_layers_json scripts/resubmit/deployed_unlabelled_layers.json
+
 Leak-free protocol
 ------------------
 ``EmbeddingCleaner`` is fitted on the *train* split only (per ``--split_csv``)
@@ -97,9 +141,12 @@ the webapp input, copy ``unlabelled_predictions_sif_abtt.csv`` over it.
 from __future__ import annotations
 
 import argparse
+import json
+import math
 import sys
+from datetime import date
 from pathlib import Path
-from typing import Dict, List, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
@@ -138,6 +185,22 @@ ALL_MODELS = [c[0] for c in FALLBACK_CONFIGS]
 D_VALUES = [1, 2, 3, 5, 7, 10]
 TOP_K = 10
 
+# The column the layer is chosen on. Sticky comparisons use the same column, so
+# the rule can only ever keep a layer the unmodified selector had already been
+# willing to pick.
+SELECTION_METRIC = "overall_assignment_acc"
+
+# How much better the new layer has to be before a live shortlist is invalidated.
+# 0.005 is half a point of assignment accuracy, comfortably above the 0.0023 that
+# the two-file label correction moved Qwen3-0.6B's sif_abtt layer by, and well
+# below the 0.02-0.09 spread between a model's good and bad layers. See the
+# "Sticky layers" section of the module docstring.
+STICKY_TOLERANCE = 0.005
+
+DEFAULT_DEPLOYED_LAYERS_JSON = (
+    Path(__file__).resolve().parent / "deployed_unlabelled_layers.json"
+)
+
 # variant -> (pooling, apply_abtt, results-CSV methods used for layer selection)
 VARIANTS: Dict[str, Tuple[str, bool, Tuple[str, ...]]] = {
     "raw": ("mean", False, ("baseline",)),
@@ -164,10 +227,188 @@ def find_best_config_from_results(results_csv: str, methods: Tuple[str, ...]) ->
         mdf = df[df["model"] == model_name]
         if len(mdf) == 0:
             continue
-        idx = mdf["overall_assignment_acc"].idxmax()
+        idx = mdf[SELECTION_METRIC].idxmax()
         row = mdf.loc[idx]
         best[model_name] = (int(row["layer"]), row["repr"])
     return best
+
+
+def layer_scores_from_results(
+    results_csv: str, methods: Tuple[str, ...]
+) -> Dict[str, Dict[int, float]]:
+    """{model: {layer: best selection-metric value at that layer}}.
+
+    The sticky rule needs the metric at the *deployed* layer, which is not
+    generally the argmax row, so it needs the whole per-layer curve rather than
+    the single winner :func:`find_best_config_from_results` returns.
+    """
+    df = pd.read_csv(results_csv)
+    df = df[df["method"].isin(methods)]
+    scores: Dict[str, Dict[int, float]] = {}
+    for model_name in ALL_MODELS:
+        mdf = df[df["model"] == model_name]
+        if len(mdf) == 0:
+            continue
+        by_layer = mdf.groupby("layer")[SELECTION_METRIC].max()
+        scores[model_name] = {int(k): float(v) for k, v in by_layer.items()}
+    return scores
+
+
+def load_deployed_layers(path) -> Dict[str, Dict[str, int]]:
+    """Read the committed record of what each (variant, model) is serving.
+
+    Returns ``{variant: {model: layer}}``, empty when the file is absent. A
+    missing file is not an error: it just means nothing is deployed yet and the
+    plain argmax stands.
+    """
+    path = Path(path)
+    if not path.exists():
+        return {}
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    layers = payload.get("layers", {})
+    return {
+        variant: {model: int(layer) for model, layer in per_model.items()}
+        for variant, per_model in layers.items()
+    }
+
+
+def _clears(gain: float, tolerance: float) -> bool:
+    """Is `gain` more than `tolerance`, ignoring floating-point representation?
+
+    ``0.905 - 0.900`` is ``0.005000000000000004`` in binary floating point, which
+    would flip a deployment decision on a rounding artefact. The metric here is a
+    ratio over a few hundred test files, so its real granularity is around
+    ``1e-3``; ``1e-9`` is far below anything meaningful and absorbs only noise.
+    A gain exactly at the tolerance does not clear it.
+    """
+    return gain > tolerance and not math.isclose(gain, tolerance, abs_tol=1e-9)
+
+
+def apply_sticky_layers(
+    best_configs: Dict[str, Tuple[int, str]],
+    deployed: Dict[str, int],
+    scores: Dict[str, Dict[int, float]],
+    tolerance: float,
+) -> Tuple[Dict[str, Tuple[int, str]], List[Dict[str, object]]]:
+    """Keep the deployed layer unless the new best layer clears `tolerance`.
+
+    Returns the (possibly adjusted) configs and one decision record per model, so
+    the caller can print them and write them next to the predictions. Models with
+    no deployed layer recorded are passed through untouched.
+    """
+    out: Dict[str, Tuple[int, str]] = {}
+    decisions: List[Dict[str, object]] = []
+
+    for model_name, (new_layer, repr_name) in best_configs.items():
+        deployed_layer = deployed.get(model_name)
+        model_scores = scores.get(model_name, {})
+        new_score = model_scores.get(new_layer)
+        deployed_score = (
+            None if deployed_layer is None else model_scores.get(deployed_layer)
+        )
+
+        if deployed_layer is None:
+            chosen, action, why = new_layer, "new", "no deployed layer recorded"
+        elif deployed_layer == new_layer:
+            chosen, action, why = new_layer, "unchanged", "argmax equals deployed layer"
+        elif deployed_score is None:
+            chosen, action, why = (
+                new_layer,
+                "new",
+                f"deployed layer {deployed_layer} has no row in the results CSV",
+            )
+        elif new_score is not None and _clears(new_score - deployed_score, tolerance):
+            chosen, action, why = (
+                new_layer,
+                "switched",
+                f"beats deployed layer by {new_score - deployed_score:.6f} "
+                f"> tolerance {tolerance}",
+            )
+        else:
+            margin = "unknown" if new_score is None else f"{new_score - deployed_score:.6f}"
+            chosen, action, why = (
+                deployed_layer,
+                "kept",
+                f"argmax layer {new_layer} beats deployed layer by {margin}, "
+                f"not more than tolerance {tolerance}",
+            )
+
+        out[model_name] = (chosen, repr_name)
+        decisions.append(
+            {
+                "model": model_name,
+                "deployed_layer": deployed_layer,
+                "argmax_layer": new_layer,
+                "chosen_layer": chosen,
+                "action": action,
+                "reason": why,
+                f"deployed_{SELECTION_METRIC}": deployed_score,
+                f"argmax_{SELECTION_METRIC}": new_score,
+            }
+        )
+
+    return out, decisions
+
+
+def _repo_relative(path) -> str:
+    """Path relative to the repo root, or the path unchanged if it is outside."""
+    repo_root = Path(__file__).resolve().parents[2]
+    try:
+        return str(Path(path).resolve().relative_to(repo_root))
+    except ValueError:
+        return str(path)
+
+
+def record_deployed_layers(
+    predictions_dir, out_json, variants: Sequence[str] = tuple(sorted(VARIANTS))
+) -> Dict[str, Dict[str, int]]:
+    """Read the live prediction CSVs' `layer` column and write the sticky record.
+
+    This is how the JSON is produced in the first place, and how it is refreshed
+    after a deliberate layer change ships: the source of truth is what the CSVs
+    on disk are actually serving, not what anyone remembers deciding.
+    """
+    predictions_dir = Path(predictions_dir)
+    layers: Dict[str, Dict[str, int]] = {}
+    for variant in variants:
+        csv_path = predictions_dir / f"unlabelled_predictions_{variant}.csv"
+        if not csv_path.exists():
+            print(f"  {variant}: no {csv_path.name}, skipping.")
+            continue
+        df = pd.read_csv(csv_path, usecols=["model", "layer"])
+        per_model: Dict[str, int] = {}
+        for model_name, group in df.groupby("model"):
+            seen = sorted(set(int(x) for x in group["layer"]))
+            if len(seen) != 1:
+                raise SystemExit(
+                    f"{csv_path} has {len(seen)} distinct layers for {model_name}: "
+                    f"{seen}. A deployed CSV must serve one layer per model."
+                )
+            per_model[str(model_name)] = seen[0]
+        layers[variant] = per_model
+        print(f"  {variant}: {per_model}")
+
+    payload = {
+        "description": (
+            "Layer each (variant, model) is currently serving in the reviewer "
+            "pilot. run_resubmit_unlabelled_retrieval.py keeps these layers "
+            "unless a re-run's best layer beats them on "
+            f"{SELECTION_METRIC} by more than the sticky tolerance. Paper "
+            "tables do not use this file; they take the pure argmax."
+        ),
+        "selection_metric": SELECTION_METRIC,
+        "sticky_tolerance": STICKY_TOLERANCE,
+        # Repo-relative when possible: an absolute path here is provenance that
+        # stops being true the moment the checkout moves.
+        "recorded_from": _repo_relative(predictions_dir),
+        "recorded_on": date.today().isoformat(),
+        "layers": layers,
+    }
+    out_json = Path(out_json)
+    out_json.parent.mkdir(parents=True, exist_ok=True)
+    out_json.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    print(f"Wrote {out_json}")
+    return layers
 
 
 def parse_layer_overrides(spec: str) -> Dict[str, int]:
@@ -314,6 +555,78 @@ def predict_directories(
     return predictions
 
 
+def resolve_model_configs(
+    args: argparse.Namespace, sel_methods: Tuple[str, ...], variant: str
+) -> Tuple[List[Tuple[str, int, str]], List[Dict[str, object]]]:
+    """(model, layer, repr) per model, plus the sticky-layer decision records.
+
+    Precedence, weakest first: the hardcoded fallback, the results-CSV argmax,
+    the sticky rule, and finally ``--layer_overrides``, which is an explicit pin
+    and wins over everything.
+
+    ``build_qq_matrices.py`` calls this too. The query-query matrices have to be
+    built at exactly the layer the predictions were built at or the webapp scores
+    reviewer-created directories in a different space from everything else, so
+    the two scripts share one implementation rather than two that agree today.
+    """
+    results_path = Path(args.results_csv)
+    if results_path.exists():
+        print(f"Reading best layers from {results_path}")
+        best_configs = find_best_config_from_results(args.results_csv, sel_methods)
+        scores = layer_scores_from_results(args.results_csv, sel_methods)
+    else:
+        print("Results CSV not found, using fallback configs.")
+        best_configs, scores = {}, {}
+
+    decisions: List[Dict[str, object]] = []
+    sticky = not getattr(args, "no_sticky_layers", False)
+    if sticky and best_configs:
+        deployed_all = load_deployed_layers(args.deployed_layers_json)
+        deployed = deployed_all.get(variant, {})
+        if not deployed:
+            print(
+                f"Sticky layers: nothing recorded for variant {variant!r} in "
+                f"{args.deployed_layers_json}; taking the plain argmax."
+            )
+        else:
+            print(
+                f"Sticky layers: comparing against {args.deployed_layers_json} "
+                f"on {SELECTION_METRIC}, tolerance {args.sticky_tolerance}"
+            )
+            best_configs, decisions = apply_sticky_layers(
+                best_configs, deployed, scores, args.sticky_tolerance
+            )
+            for d in decisions:
+                print(
+                    f"  [sticky] {d['model']}: {d['action']} -> layer "
+                    f"{d['chosen_layer']} ({d['reason']})"
+                )
+    elif not sticky:
+        print("Sticky layers DISABLED (--no_sticky_layers): pure argmax, as the paper uses.")
+
+    layer_overrides = parse_layer_overrides(args.layer_overrides)
+
+    configs: List[Tuple[str, int, str]] = []
+    for model_name, fallback_layer, fallback_repr in FALLBACK_CONFIGS:
+        if model_name in best_configs:
+            layer, repr_name = best_configs[model_name]
+            source = "from results"
+        else:
+            layer, repr_name = fallback_layer, fallback_repr
+            source = "fallback"
+        if model_name in layer_overrides:
+            layer = layer_overrides[model_name]
+            source = "override"
+        print(f"  {model_name}: layer={layer}, repr={repr_name} ({source})")
+        configs.append((model_name, layer, repr_name))
+
+    if args.models != "all":
+        selected = [m.strip() for m in args.models.split(",")]
+        configs = [c for c in configs if c[0] in selected]
+
+    return configs, decisions
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Unlabelled -> labelled cross-dataset retrieval.")
     parser.add_argument("--labelled_bases", default="runs/active/resubmit_bases/phase9_bases",
@@ -331,6 +644,18 @@ def parse_args():
                         help="Embedding pipeline: raw | abtt | sif | sif_abtt (see module docstring).")
     parser.add_argument("--layer_overrides", default="",
                         help="Pin layers, e.g. 'Qwen/Qwen3-Embedding-0.6B=5,google/mt5-base=1'.")
+    parser.add_argument("--deployed_layers_json", default=str(DEFAULT_DEPLOYED_LAYERS_JSON),
+                        help="Committed record of the layer each (variant, model) currently "
+                             "serves. Drives the sticky-layer rule; see the module docstring.")
+    parser.add_argument("--sticky_tolerance", type=float, default=STICKY_TOLERANCE,
+                        help=f"How much better ({SELECTION_METRIC}) a new layer must be before "
+                             "it replaces the deployed one.")
+    parser.add_argument("--no_sticky_layers", action="store_true",
+                        help="Take the pure argmax, ignoring the deployed record. This is what "
+                             "the paper tables use.")
+    parser.add_argument("--record_deployed_layers", default="",
+                        help="Read the layer column of the prediction CSVs in this directory, "
+                             "write --deployed_layers_json, and exit without scoring.")
     parser.add_argument("--data_root", default="data",
                         help="Root the `path` columns of the meta CSVs are relative to.")
     parser.add_argument("--no_degenerate_guard", action="store_true",
@@ -340,6 +665,12 @@ def parse_args():
 
 def main():
     args = parse_args()
+
+    if args.record_deployed_layers:
+        print(f"Recording deployed layers from {args.record_deployed_layers}")
+        record_deployed_layers(args.record_deployed_layers, args.deployed_layers_json)
+        return
+
     variant = args.variant
     pooling, apply_abtt, sel_methods = VARIANTS[variant]
     print(f"Variant: {variant} (pooling={pooling}, abtt={apply_abtt}, "
@@ -374,36 +705,24 @@ def main():
         if not lab_blank.any() and not unlab_blank.any():
             print("  No empty/whitespace-only source files found.")
 
-    # Find best layer per model from results CSV, restricted to this variant's methods
-    results_path = Path(args.results_csv)
-    if results_path.exists():
-        print(f"Reading best layers from {results_path}")
-        best_configs = find_best_config_from_results(args.results_csv, sel_methods)
-    else:
-        print("Results CSV not found, using fallback configs.")
-        best_configs = {}
-
-    layer_overrides = parse_layer_overrides(args.layer_overrides)
-
-    # Build model configs list
-    model_configs = []
-    for model_name, fallback_layer, fallback_repr in FALLBACK_CONFIGS:
-        if model_name in best_configs:
-            layer, repr_name = best_configs[model_name]
-            source = "from results"
-        else:
-            layer, repr_name = fallback_layer, fallback_repr
-            source = "fallback"
-        if model_name in layer_overrides:
-            layer = layer_overrides[model_name]
-            source = "override"
-        print(f"  {model_name}: layer={layer}, repr={repr_name}, pooling={pooling} ({source})")
-        model_configs.append((model_name, layer, repr_name))
-
-    # Filter to selected models
-    if args.models != "all":
-        selected = [m.strip() for m in args.models.split(",")]
-        model_configs = [c for c in model_configs if c[0] in selected]
+    model_configs, decisions = resolve_model_configs(args, sel_methods, variant)
+    if decisions:
+        out_path = Path(args.out_dir) / f"sticky_layer_decisions_{variant}.json"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(
+            json.dumps(
+                {
+                    "variant": variant,
+                    "selection_metric": SELECTION_METRIC,
+                    "tolerance": args.sticky_tolerance,
+                    "decisions": decisions,
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        print(f"  Sticky-layer decisions -> {out_path}")
 
     all_predictions_dfs = []
 

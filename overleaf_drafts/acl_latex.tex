@@ -259,7 +259,7 @@ Task B connects the layerwise analysis to the retrieval workflow through the two
 
 Table~\ref{tab:taskB_headline} reports best-layer autonomous routing. Directory accuracy at rank 1, the column that requires the correct directory, spans 39.3 points under the baseline, from 46.6 for mT5-base to 85.9 for KaLM-mini, so the model choice dominates. ABTT compresses that to 3.3 points, from 86.1 to 89.4. Assignment accuracy tracks it, moving from a 40.3-point spread to the range 88.5 to 91.7, with every ABTT cell above every baseline cell.
 
-Table~\ref{tab:taskb} repeats the top-1 comparison under five query and reference reseedings, so the compression is not an artifact of one draw. The baseline spread of 36.6 points, from 50.7 for mT5-base to 87.3 for KaLM-mini, falls to 1.0 point under the best per-model SIF plus ABTT configuration, from 89.5 to 90.6, with standard deviations of at most 1.1 points.
+Table~\ref{tab:taskb} repeats the top-1 comparison under five query and reference reseedings, so the compression is not an artifact of one draw. The baseline spread of 36.6 points, from 50.7 for mT5-base to 87.3 for KaLM-mini, falls to 1.0 point under the best per-model SIF plus ABTT configuration, from 89.53 for KaLM-mini to 90.55 for LaBSE, with standard deviations of at most 1.1 points.
 
 The same training signal also picks the attribution layers. We take the earliest layer within 0.5 percentage points of the best training-set directory accuracy at rank 1 under ABTT. The rule lands on LaTa layer 7, PhilTa layer 1, and mT5-base layer 1. We lock those choices before computing any attribution metric, so the attribution results cannot pick their own layer.
 

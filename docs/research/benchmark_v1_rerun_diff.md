@@ -108,7 +108,7 @@ file before and after and reports only the ones whose value moved.
 
 | Table | numeric cells | changed | max abs delta |
 |---|---|---|---|
-| `taskA_headline.tex` | 100 | 39 | 0.033 (plus four layer subscripts) |
+| `taskA_headline.tex` | 100 | 39 | 0.074 (plus four layer subscripts) |
 | `taskB_headline.tex` | 100 | **0** | - |
 | `attribution_metrics_main.tex` | 71 | **0** | - |
 | `taskA_main.tex` | 180 | 82 | 0.005 |
@@ -122,8 +122,9 @@ file before and after and reports only the ones whose value moved.
 | `taskB_routing_appendix_sif.tex` | 502 | 6 | 0.019 |
 | `taskB_ranking_appendix_mseed.tex` | 1308 | 811 | 0.061 |
 | `attribution_metrics_sweep_*.tex` | 598 | **0** | - |
-| `taskB_topk.tex` | 30 | new file, same numbers as the inline table it replaces | - |
+| `taskB_topk.tex` (was inline) | 65 | 47 | 0.6 |
 | `lexical_baselines.tex` | 35 | 8 | 0.003 |
+| `finetune_ceiling.tex` | 44 | 4 | 1.0 (a Top-1 percentage, 83.6 to 82.6) |
 
 Reading the table:
 
@@ -139,6 +140,18 @@ Reading the table:
   near-tied layers: PhilTa ABTT 1 to 9, mT5-base ABTT 1 to 2, Qwen3-0.6B baseline
   28 to 26, KaLM-mini SIF+ABTT 4 to 2. Those flips, not the label change itself,
   are what move the headline band from 0.971-0.984 to 0.971-0.987.
+
+  They are also the whole of the 0.074 max delta in that table, which is not a
+  number moving but a different cell being shown. Qwen3-0.6B's baseline cosine
+  gap reads 0.024 at layer 26 where it read 0.098 at layer 28, and the layer
+  behind it is a coin toss: train AUROC is 0.957202 at L26 against 0.956524 at
+  L28, a margin of 0.0007, and before the correction it ran the other way by
+  0.0002. The largest delta from a cell that kept its layer is 0.006. The
+  paper's new sentence "Qwen3-0.6B ranks nearly as well at 0.966 with the
+  smallest gap of all, 0.024" and the lower end of the reported baseline gap
+  range both rest on that tie-break. The selection rule is train-only and was
+  not changed, so this is protocol-consistent, but it is a tie and is worth
+  knowing about: on the pre-correction split the same rule reported 0.098.
 * **The five-seed appendix moves most.** `run_taskb_mseed.py` redraws the
   query/reference partition per seed by walking directories in `folder_id` order
   and drawing from one RNG stream. `Can.apost.49` loses a test file and
@@ -148,7 +161,19 @@ Reading the table:
   while the headline single-split table does not move at all. The five-seed
   summary numbers still round the same: baseline spread 36.6 points, SIF+ABTT
   spread 1.0 point, standard deviations at most 1.1.
-* **Attribution is untouched**, deliberately. See section 5.
+
+  `taskB_topk.tex` is the five-seed table in the paper, so it moves with them:
+  47 of its 65 numeric tokens change, by up to 0.6 points (KaLM-mini Top-3, 96.4
+  to 97.0). It is a new file in this pass because the table moved out of
+  `acl_latex.tex` into a generator, but the numbers are *not* the ones the
+  inline table carried, and the section 4.3 prose was edited to match: LaTa
+  Top-1 90.1 to 90.0, LaBSE 90.4 to 90.6, KaLM-mini 89.4 to 89.5, so the printed
+  SIF+ABTT band goes 89.4-90.4 to 89.5-90.6. The prose reports the spread from
+  the unrounded values, 90.5503 minus 89.5250, which is 1.0253 and rounds to
+  1.0; subtracting the rounded endpoints instead gives 1.1. The endpoints in the
+  prose are therefore printed to two decimals so the arithmetic a reader does in
+  their head agrees with the number next to it.
+* **Attribution is untouched**, deliberately. See section 6.
 * **Whitening is the noisiest row set** and is excluded from the main tables
   anyway. Its PCA is fit on the train block, whose membership is unchanged, but
   sklearn's randomized SVD solver depends on row order, and whitening amplifies
@@ -187,7 +212,7 @@ python scripts/paper/numeric_token_diff.py overleaf_drafts/acl_latex.tex
 | Results 4.2 | layer minima 0.807, 0.859, 0.862 | 0.806, 0.858, 0.861 |
 | Results 4.2 | silhouette rise 0.09 to 0.75 | 0.07 to 0.72 |
 | Results 4.3 | five-seed baseline low 50.6 | 50.7 |
-| Results 4.3 | SIF+ABTT band 89.4 to 90.4 | 89.5 to 90.6 |
+| Results 4.3 | SIF+ABTT band 89.4 to 90.4 | 89.53 to 90.55 (2 dp, so the stated 1.0-point spread and the printed endpoints agree) |
 | Discussion | 0.971 to 0.984 AUROC band | 0.971 to 0.987 |
 
 Claims that were checked and did **not** need changing: the 0.23 to 0.95 mean
@@ -216,10 +241,15 @@ Committed generators now cover everything the paper shows. New in this pass:
 
 The two headline table generators were validated by regenerating them from the
 pre-correction results CSV and diffing against the committed files: both
-reproduce byte for byte apart from the added header comment. The six-model
-figures reproduce to within 5 pixels at 180 dpi, the residual being a matplotlib
-version difference between the environment that made the committed PDFs and this
-one.
+reproduce byte for byte. All three generated tables are committed exactly as the
+generators emit them, header line included, so re-running
+`slurm/resubmit/benchmark_v1_taska.sbatch` leaves the tree clean rather than
+dirtying line 1 of three files. The figure `save` helper now passes
+`CreationDate: None` to the PDF writer for the same reason: matplotlib otherwise
+stamps the wall clock into every PDF, so a re-run rewrote five bytes in each and
+made a real figure change indistinguishable from a re-run. PNGs carried no such
+stamp and were already byte-reproducible; the one-time PDF diff in this pass is
+that stamp being dropped.
 
 Still hand-maintained in `acl_latex.tex`, and unchanged by this correction: the
 split statistics table (`tab:split`) and the layer diagnostics table
@@ -238,7 +268,123 @@ frozen extraction-time order and wired the resolver into
 `scripts/resubmit/finetune_lata_ceiling.py`. Without that, a re-run there would
 have hit exactly the misalignment this issue exists to prevent.
 
-## 5. Deliberately not re-run
+The rescore is an interim, not a promotion. The checkpoint itself was trained on
+the pre-correction labels, and the correction changes the pair set it learned
+from: the train positive pairs stay at 565, but two it trained on as positives
+are now wrong (`BN2123.89r.5` with `KoeD213.10r.1` and with `Vat5845.10r.7`) and
+two it never saw are now positives (`BN2123.89r.5` with `C1525.7v.6` and with
+`Hat42.149r.3`). Four pairs in 565, about 0.35 percent, so rescoring the frozen
+checkpoint is a reasonable stand-in for the table, but the checkpoint is not a
+benchmark v1 artifact and #138 stays open until it is retrained on v1 labels.
+
+## 5. The reviewer pilot's predictions, and why their layer is now sticky
+
+The four `unlabelled_predictions_{variant}.csv` files and the six `qq_sim_*.npz`
+matrices under `runs/active/resubmit/unlabelled/` are not a paper artifact. They
+are what the reviewer pilot serves: a scholar opens a query and sees the top-1
+directory one of these files predicted. Re-running them on the corrected split is
+not the neutral act it is for a table.
+
+### What the plain re-run did
+
+Regenerating all four variants with the unmodified selector and diffing
+`rank1_dir` against the currently deployed CSVs:
+
+| variant | rank1_dir changed | layer flips |
+|---|---|---|
+| `raw` | 8 / 13,428 | none |
+| `sif` | 6 / 13,428 | none |
+| `abtt` | 11 / 13,428 | none |
+| `sif_abtt` | **1,286 / 13,428** | **Qwen3-0.6B 7 to 1** |
+
+Three variants move by the handful of queries the two relabelled files actually
+touch. `sif_abtt`, which is the webapp default, moves 1,286, and 1,276 of those
+are Qwen3-0.6B alone: 57 percent of that model's 2,238 reviewer-facing answers.
+
+The cause is not the label change. `select_best` picks the layer by
+`overall_assignment_acc`, layer 1 rose from below 0.911422 to 0.913753 while
+layers 7 and 8 stayed at 0.911422, and a 0.23 point move flipped the deployed
+layer from 7 to 1. Different layer, different embedding space, different
+shortlist for more than half the corpus, from a correction that touches two
+files. `qq_sim_Qwen_Qwen3-Embedding-0.6B.npz` had been rebuilt at layer 1 to
+match, so the whole Qwen pipeline had moved together and silently.
+
+### The rule
+
+`run_resubmit_unlabelled_retrieval.py` now keeps the deployed layer unless a new
+best layer beats it, on the same selection metric, by more than a tolerance:
+
+* `scripts/resubmit/deployed_unlabelled_layers.json` records the layer each
+  (variant, model) currently serves. It was written by
+  `--record_deployed_layers`, which reads the `layer` column of the live CSVs, so
+  the record is what is deployed rather than what anyone remembers deciding.
+* The tolerance is **0.005**, half a point of assignment accuracy. It sits an
+  order of magnitude above the 0.0023 that this correction moved Qwen3-0.6B by,
+  and an order of magnitude below the 0.02 to 0.09 that separates a model's good
+  layers from its bad ones. So it absorbs relabelling noise and does not defend a
+  layer that is genuinely worse.
+* Every decision is printed and written to
+  `sticky_layer_decisions_{variant}.json` next to the predictions.
+* `build_qq_matrices.py` calls the same selector rather than its own copy. The
+  query-query matrices score reviewer-created directories, so building them at a
+  different layer from the predictions would mix two embedding spaces in one
+  shortlist.
+* `--layer_overrides` still wins over the rule; an explicit pin is an explicit
+  pin.
+
+The rule is not a claim that layer 7 is better than layer 1. It is a claim that
+layer 1 is not better *enough* to justify invalidating a live shortlist over it.
+
+### The paper does not use it
+
+`build_headline_tables.py`, `visualize_taskb_mseed.py` and the per-layer table
+builders take the pure argmax, with no stickiness anywhere. Every layer subscript
+in `overleaf_drafts/` is the unmodified train-set argmax, which is why
+`taskA_headline.tex` still reports Qwen3-0.6B baseline at layer 26 and not at 28.
+`--no_sticky_layers` reproduces that behaviour here.
+
+### What shipped
+
+Under the sticky rule the deployed layers are unchanged in all 24 (variant,
+model) cells, and the predictions differ from the deployed ones only where the
+two corrected directories reach:
+
+| variant | rank1_dir changed vs deployed | layer flips |
+|---|---|---|
+| `raw` | 8 / 13,428 | none |
+| `sif` | 6 / 13,428 | none |
+| `abtt` | 11 / 13,428 | none |
+| `sif_abtt` | **14** / 13,428 | none |
+
+Per model, changed top-1 answers out of 2,238 queries each:
+
+| model | raw | sif | abtt | sif_abtt |
+|---|---|---|---|---|
+| LaTa | 0 | 0 | 2 | 1 |
+| PhilTa | 0 | 0 | 0 | 1 |
+| mT5-base | 5 | 2 | 2 | 3 |
+| LaBSE | 0 | 1 | 4 | 4 |
+| Qwen3-0.6B | 2 | 2 | 1 | 4 |
+| KaLM-mini | 1 | 1 | 2 | 1 |
+
+`sif_abtt` goes from 1,286 changed answers to 14, and the remaining 14 are the
+ones the two relabelled directories actually reach. The six `qq_sim_*.npz`
+matrices were rebuilt at the same sticky layers, so the predictions and the
+reviewer-directory scores stay in one embedding space.
+
+Two things this pass does *not* settle, both pre-existing and neither in scope
+for #113:
+
+1. `select_best` chooses the layer by `overall_assignment_acc` on the **test**
+   split. That is a test-set selection, unlike the train-only rule the paper
+   uses, and it predates this branch. The sticky rule reduces its blast radius
+   but does not fix it.
+2. Reviewer feedback rows already recorded against a shortlist are keyed by
+   query and directory, not by layer. Nothing in this pass invalidates them,
+   because nothing they were recorded against has moved, but a future deliberate
+   layer change would need that question answered before it ships.
+
+## 6. Deliberately not re-run
 
 **The 200-pair attribution metrics.** `scripts/ig/sample_positive_test_pairs.py`
 draws its pairs from `runs/phase9/phase9_split.csv`, the legacy phase 9 split over
@@ -264,7 +410,7 @@ time and Ian's approval:
    means all 600 pairs change, so every IG NPZ, MaRC mask, summary CSV, sweep
    table and the rho-LOO figure would have to be regenerated.
 
-## 6. How to reproduce
+## 7. How to reproduce
 
 ```bash
 # 1. Install the corrected split (backs itself up first).
@@ -291,7 +437,7 @@ python scripts/paper/numeric_token_diff.py overleaf_drafts/acl_latex.tex
 python scripts/paper/numeric_token_diff.py overleaf_drafts/tables/*.tex
 ```
 
-## 7. Compile
+## 8. Compile
 
 Fresh-aux `latexmk -pdf` on a clean tree: **0 undefined references, 0 overfull
 boxes, 0 LaTeX warnings**. Thirteen underfull hboxes remain, all justification

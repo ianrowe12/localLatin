@@ -97,6 +97,7 @@ for _p in (REPO_ROOT / "src", REPO_ROOT / "scripts" / "resubmit", Path(__file__)
         sys.path.insert(0, str(_p))
 
 from canon_retrieval import l2_normalize  # noqa: E402
+from embedding_alignment import AlignmentResolver  # noqa: E402
 
 from run_resubmit_unlabelled_retrieval import VARIANTS as CSV_VARIANTS  # noqa: E402
 from run_resubmit_unlabelled_retrieval import model_slug  # noqa: E402
@@ -368,6 +369,10 @@ def build_layer_context(
     PC files.
     """
     ctx = LayerContext(slug=slug, layer=layer, cleaners={})
+    # Labelled rows are indexed by split row everywhere below (``dir_members``,
+    # ``split_filenames``), so the cache is aligned on filename rather than
+    # trusted to still be in the split's order. One resolver for both poolings.
+    resolver = AlignmentResolver(split)
     pc_path = pc_file_path(pc_root, slug, layer)
     cached: dict[str, Cleaner] = {}
     if pc_path.exists():
@@ -379,12 +384,17 @@ def build_layer_context(
 
     for pooling in ("mean", "sif"):
         lab = load_pooled_embeddings(
-            labelled_bases, slug, pooling, layer, n_expected=len(split)
+            labelled_bases, slug, pooling, layer, n_expected=len(split),
+            resolver=resolver,
         )
+        # The unlabelled cache is indexed by ``unlabelled_meta.csv``, not by the
+        # split, so it keeps its own order.
         unlab = load_pooled_embeddings(unlabelled_bases, slug, pooling, layer)
         cleaner = cached.get(pooling)
         if cleaner is None:
-            cleaner = fit_cleaner(labelled_bases, slug, pooling, layer, split)
+            cleaner = fit_cleaner(
+                labelled_bases, slug, pooling, layer, split, resolver=resolver
+            )
         else:
             print(f"[{slug} L{layer}] {pooling} cleaner from cache (D={cleaner.D})")
         ctx.cleaners[pooling] = cleaner

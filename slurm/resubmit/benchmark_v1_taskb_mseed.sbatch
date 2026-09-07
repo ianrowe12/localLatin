@@ -27,6 +27,11 @@ FIG_DIR="$REPO_ROOT/overleaf_drafts/figures"
 
 mkdir -p "$OUT_DIR" "$FIG_DIR"
 
+echo "=== Alignment gate ==="
+$PY scripts/resubmit/verify_embedding_alignment.py \
+  --split_csv "$SPLIT_CSV" \
+  --runs_root "$RUNS_ROOT/phase9_bases" | tail -5
+
 echo "=== Task B M-seed evaluation (M=5) ==="
 $PY scripts/resubmit/run_taskb_mseed.py \
   --canon_root data/canon_labelled \

@@ -32,6 +32,11 @@ BEST_LAYERS="$REPO_ROOT/runs/active/resubmit/results/taskA_per_model_summary.csv
 INTERMEDIATE="$REPO_ROOT/runs/active/resubmit/cluster_viz"
 FIG_DIR="$REPO_ROOT/overleaf_drafts/figures"
 
+echo "=== Alignment gate ==="
+$PY scripts/resubmit/verify_embedding_alignment.py \
+  --split_csv "$SPLIT_CSV" \
+  --runs_root "$BASES" | tail -5
+
 run_group() {
   local group="$1"; shift
   local suffix="_${group}"

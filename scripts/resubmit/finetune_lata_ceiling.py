@@ -386,24 +386,60 @@ def bases_dir(bases_root: Path, label: str) -> Path:
     return bases_root / "phase9_bases" / model_slug(label) / "hidden_mean_tokempty"
 
 
+MANIFEST_COLUMNS = ("file_id", "folder_id", "filename", "path")
+
+
+def write_row_manifest(out_dir: Path, split_meta: pd.DataFrame) -> Path:
+    """Record, beside the matrices, the row order they were written in.
+
+    Extraction here follows the split CSV, so the split's own order *is* the
+    cache order. Saying so on disk is what keeps the cache self-describing:
+    without a ``meta.csv`` an ``AlignmentResolver`` falls back to a
+    ``row_order.csv`` at an ancestor bases root, which records the *paper's*
+    extraction order and would permute these rows into the wrong labels.
+    """
+    cols = [c for c in MANIFEST_COLUMNS if c in split_meta.columns]
+    if not ({"path", "filename"} & set(cols)):
+        raise ValueError(
+            "split_meta needs a 'path' or 'filename' column to write a row manifest"
+        )
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / "meta.csv"
+    split_meta[cols].to_csv(path, index=False)
+    return path
+
+
 def extract_and_save(
     enc: Encoder, texts: Sequence[str], layers: Sequence[int],
-    out_dir: Path, batch_size: int,
+    out_dir: Path, batch_size: int, split_meta: pd.DataFrame,
 ) -> Dict[int, np.ndarray]:
+    if len(split_meta) != len(texts):
+        raise ValueError(
+            f"{len(texts)} texts but {len(split_meta)} split rows; the manifest "
+            "would not describe the matrices."
+        )
     out_dir.mkdir(parents=True, exist_ok=True)
     embs = enc.encode_layers(texts, layers, batch_size, log_every=20)
     for layer, emb in embs.items():
         np.save(out_dir / f"hidden_layer{layer}_embeddings.npy", emb)
         np.save(out_dir / f"hidden_layer{layer}_embeddings_norm.npy", l2_normalize(emb))
-    print(f"  wrote {len(embs)} layers to {out_dir}", flush=True)
+    manifest = write_row_manifest(out_dir, split_meta)
+    print(f"  wrote {len(embs)} layers to {out_dir} (row order in {manifest.name})", flush=True)
     return embs
 
 
 def parity_check(
     enc_pre: Encoder, texts: Sequence[str], layers: Sequence[int],
-    baseline_bases_root: Path, batch_size: int,
+    baseline_bases_root: Path, batch_size: int, aligner: AlignmentResolver,
 ) -> Dict[str, float]:
-    """Confirm this script's extraction reproduces the paper's cached embeddings."""
+    """Confirm this script's extraction reproduces the paper's cached embeddings.
+
+    ``texts`` are read in split-CSV order, while the cached matrix is frozen in
+    the order the paper's extractor walked the corpus. A relabelling permutes
+    one and not the other, so the reference is loaded through ``aligner``
+    (built on the same split as ``texts``) rather than with ``np.load``:
+    otherwise a pure re-ordering would show up as a parity failure.
+    """
     ref_dir = bases_dir(baseline_bases_root, "bowphs/LaTa")
     probe = [l for l in layers if (ref_dir / f"hidden_layer{l}_embeddings.npy").exists()]
     probe = probe[-1:] + probe[:1]  # last and first available layer
@@ -412,7 +448,7 @@ def parity_check(
     embs = enc_pre.encode_layers(texts, sorted(set(probe)), batch_size)
     report: Dict[str, float] = {"parity_layers": len(embs)}
     for layer, emb in embs.items():
-        ref = np.load(ref_dir / f"hidden_layer{layer}_embeddings.npy")
+        ref = aligner.load(ref_dir / f"hidden_layer{layer}_embeddings.npy")
         diff = float(np.max(np.abs(emb - ref)))
         cos = float(np.mean(np.sum(l2_normalize(emb) * l2_normalize(ref), axis=1)))
         report[f"parity_layer{layer}_max_abs_diff"] = diff
@@ -714,7 +750,8 @@ def main() -> None:
         if args.parity_check:
             print("Parity check against the paper's cached LaTa embeddings...")
             run_info["parity"] = parity_check(
-                enc, texts, layers, Path(args.baseline_bases_root), args.eval_batch_size
+                enc, texts, layers, Path(args.baseline_bases_root),
+                args.eval_batch_size, aligner,
             )
 
     # ---- train ------------------------------------------------------------ #
@@ -740,7 +777,7 @@ def main() -> None:
         enc.encoder.load_state_dict(state)
         enc.encoder.to(device)
         print("Extracting fine-tuned embeddings for all labelled files...")
-        extract_and_save(enc, texts, layers, ft_dir, args.eval_batch_size)
+        extract_and_save(enc, texts, layers, ft_dir, args.eval_batch_size, split_meta)
 
     if enc is not None:
         del enc

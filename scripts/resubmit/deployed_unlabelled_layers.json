@@ -1,0 +1,41 @@
+{
+  "description": "Layer each (variant, model) is currently serving in the reviewer pilot. run_resubmit_unlabelled_retrieval.py keeps these layers unless a re-run's best layer beats them on overall_assignment_acc by more than the sticky tolerance. Paper tables do not use this file; they take the pure argmax.",
+  "selection_metric": "overall_assignment_acc",
+  "sticky_tolerance": 0.005,
+  "recorded_from": "runs/active/resubmit/unlabelled/benchmark_v1_pre_correction",
+  "recorded_on": "2026-09-06",
+  "layers": {
+    "abtt": {
+      "KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5": 1,
+      "Qwen/Qwen3-Embedding-0.6B": 5,
+      "bowphs/LaTa": 1,
+      "bowphs/PhilTa": 1,
+      "google/mt5-base": 1,
+      "sentence-transformers/LaBSE": 11
+    },
+    "raw": {
+      "KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5": 22,
+      "Qwen/Qwen3-Embedding-0.6B": 28,
+      "bowphs/LaTa": 1,
+      "bowphs/PhilTa": 1,
+      "google/mt5-base": 6,
+      "sentence-transformers/LaBSE": 11
+    },
+    "sif": {
+      "KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5": 23,
+      "Qwen/Qwen3-Embedding-0.6B": 28,
+      "bowphs/LaTa": 1,
+      "bowphs/PhilTa": 1,
+      "google/mt5-base": 3,
+      "sentence-transformers/LaBSE": 12
+    },
+    "sif_abtt": {
+      "KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5": 1,
+      "Qwen/Qwen3-Embedding-0.6B": 7,
+      "bowphs/LaTa": 1,
+      "bowphs/PhilTa": 1,
+      "google/mt5-base": 1,
+      "sentence-transformers/LaBSE": 11
+    }
+  }
+}

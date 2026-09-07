@@ -146,6 +146,14 @@ into each run directory as the row-order manifest
 `scripts/resubmit/verify_embedding_alignment.py` checks for named files across
 all 19 caches. See `benchmark_v1_rerun_diff.md` for the resulting number diff.
 
+One consequence reaches outside the paper. The reviewer pilot's predictions pick
+their layer by argmax over near-tied layers, so the correction flipped
+Qwen3-0.6B's deployed `sif_abtt` layer from 7 to 1 and would have rewritten 1,276
+of its 2,238 reviewer-facing top-1 answers. Those CSVs now hold their deployed
+layer unless a re-run beats it by more than 0.005 on the selection metric
+(`scripts/resubmit/deployed_unlabelled_layers.json`); the paper's tables keep the
+plain argmax. Section 5 of `benchmark_v1_rerun_diff.md` has the numbers.
+
 ## Freeze rule
 
 1. Benchmark v1 is the 1,705 labelled files and 840 directories whose digest is above,

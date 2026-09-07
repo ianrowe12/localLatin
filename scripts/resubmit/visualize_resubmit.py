@@ -93,7 +93,16 @@ def filter_release_rows(results: pd.DataFrame, repr_name: str) -> pd.DataFrame:
 
 def save(fig: plt.Figure, out_dir: Path, stem: str) -> None:
     fig.savefig(out_dir / f"{stem}.png", dpi=180, bbox_inches="tight")
-    fig.savefig(out_dir / f"{stem}.pdf", bbox_inches="tight")
+    # ``CreationDate: None`` drops the wall-clock stamp matplotlib otherwise
+    # writes into the PDF trailer. Without it every re-run of the figure job
+    # rewrites five bytes in each PDF and dirties the tree, which makes it
+    # impossible to tell a real figure change from a re-run. PNGs carry no
+    # such stamp and were already byte-reproducible.
+    fig.savefig(
+        out_dir / f"{stem}.pdf",
+        bbox_inches="tight",
+        metadata={"CreationDate": None},
+    )
     plt.close(fig)
 
 

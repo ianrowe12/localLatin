@@ -231,6 +231,13 @@ The webapp reads these files (relative to `data_root` in `web/config.yaml`):
   `scripts/resubmit/build_qq_matrices.py` at exactly the deployed `sif_abtt` layer/cleaner.
   Reviewer-created directories are scored from these. Optional: a model without one simply
   serves no reviewer-directory candidates.
+
+The layer each (variant, model) serves in these two files is **sticky**:
+`scripts/resubmit/deployed_unlabelled_layers.json` records what is deployed, and a re-run keeps
+it unless the new best layer beats it by more than 0.005 on the selection metric. Without that,
+a near-tied argmax flip rewrites thousands of reviewer-facing top-1 answers for a change that
+touches a handful of files. Paper tables are unaffected: they take the plain argmax. Refresh the
+record with `--record_deployed_layers` after a deliberate layer change ships.
 - `runs/active/ig_examples/` — IG visualization artifacts (CSV + NPZ)
 - `runs/active/resubmit/webapp/feedback.db` — auto-created SQLite
 

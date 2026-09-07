@@ -6,7 +6,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=48g
-#SBATCH --time=04:00:00
+#SBATCH --time=00:45:00
 #SBATCH --output=slurm/logs/benchmark_v1_downstream_%j.out
 #SBATCH --error=slurm/logs/benchmark_v1_downstream_%j.err
 
@@ -30,6 +30,11 @@ UNLAB_DIR="$REPO_ROOT/runs/active/resubmit/unlabelled"
 TABLE_DIR="$REPO_ROOT/overleaf_drafts/tables"
 
 export PYTHONDONTWRITEBYTECODE=1
+
+echo "=== Alignment gate ==="
+$PY scripts/resubmit/verify_embedding_alignment.py \
+  --split_csv "$SPLIT_CSV" \
+  --runs_root "$RUNS_ROOT/phase9_bases" | tail -5
 
 echo "=== Layer geometry diagnostics ==="
 $PY scripts/resubmit/run_layer_geometry_diagnostics.py \

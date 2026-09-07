@@ -6,7 +6,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=64g
-#SBATCH --time=03:00:00
+#SBATCH --time=00:20:00
 #SBATCH --output=slurm/logs/benchmark_v1_lexical_%j.out
 #SBATCH --error=slurm/logs/benchmark_v1_lexical_%j.err
 

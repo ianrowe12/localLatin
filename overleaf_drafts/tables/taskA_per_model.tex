@@ -1,0 +1,16 @@
+\begin{table}
+\caption{Per-model best Task~A configuration on the refreshed split (best layer chosen by \texttt{overall\_assignment\_acc}).}
+\label{tab:taskA_per_model}
+\begin{tabular}{lcccccccc}
+\toprule
+Model & Layer & Method & D & Acc@1 & AssignAcc & AUROC & Exist.Acc & New.Acc \\
+\midrule
+LaTa & 1 & sif\_abtt\_fixed & 10 & 0.889 & 0.920 & 0.972 & 0.914 & 0.929 \\
+PhilTa & 1 & sif\_abtt\_fixed & 10 & 0.889 & 0.914 & 0.975 & 0.905 & 0.929 \\
+LaBSE & 11 & abtt\_fixed & 10 & 0.885 & 0.908 & 0.987 & 0.923 & 0.882 \\
+Qwen3-0.6B & 5 & abtt\_fixed & 10 & 0.894 & 0.915 & 0.981 & 0.910 & 0.923 \\
+KaLM-mini & 1 & abtt\_fixed & 10 & 0.902 & 0.921 & 0.981 & 0.921 & 0.920 \\
+mT5-base & 1 & sif\_abtt\_fixed & 10 & 0.880 & 0.907 & 0.974 & 0.908 & 0.904 \\
+\bottomrule
+\end{tabular}
+\end{table}
