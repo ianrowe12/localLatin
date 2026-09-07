@@ -3,7 +3,7 @@
 Post-2026-04-20 layout:
   Main paper (3 models: LaTa, PhilTa, mT5-base) compares only
   `baseline` vs `abtt_optimal` (pure ABTT, not SIF+ABTT).
-  Appendix carries the remaining 3 models (LaBSE, Qwen3-0.6B, KaLM-mini)
+  Appendix carries the 3 non-T5 models (LaBSE, Qwen3-0.6B, KaLM-mini)
   under the same 2-method view, plus SIF-variant sweeps across all 6 models.
 
 Inputs:
@@ -566,7 +566,7 @@ def main() -> None:
         out_tex=tex_dir / "taskA_main.tex",
         out_audit=audit_dir / "taskA_main.csv",
         caption=(
-            r"Per-layer Task~A pairwise duplicate-detection metrics for the three headline models "
+            r"Per-layer Task~A pairwise duplicate-detection metrics for the three T5 encoders "
             r"(LaTa, PhilTa, mT5-base). " + CAP_TASKA_METHOD
             + _best_layer_caption("ABTT", "AUROC")
         ),
@@ -584,7 +584,7 @@ def main() -> None:
         out_tex=tex_dir / "taskA_appendix.tex",
         out_audit=audit_dir / "taskA_appendix.csv",
         caption=(
-            r"Per-layer Task~A pairwise metrics for the remaining three models "
+            r"Per-layer Task~A pairwise metrics for the non-T5 models "
             r"(LaBSE, Qwen3-0.6B, KaLM-mini), under the same two-method comparison as the main paper. "
             + CAP_TASKA_METHOD + _best_layer_caption("ABTT", "AUROC")
         ),
@@ -624,7 +624,7 @@ def main() -> None:
         out_tex=tex_dir / "taskB_routing_main.tex",
         out_audit=audit_dir / "taskB_routing_main.csv",
         caption=(
-            r"Per-layer Task~B autonomous routing accuracy for the three headline models. "
+            r"Per-layer Task~B autonomous routing accuracy for the three T5 encoders. "
             + CAP_ROUTING_METHOD
             + _best_layer_caption("ABTT", "overall assignment accuracy")
         ),
@@ -642,7 +642,7 @@ def main() -> None:
         out_tex=tex_dir / "taskB_routing_appendix.tex",
         out_audit=audit_dir / "taskB_routing_appendix.csv",
         caption=(
-            r"Per-layer Task~B autonomous routing accuracy for the remaining three models. "
+            r"Per-layer Task~B autonomous routing accuracy for the non-T5 models. "
             + CAP_ROUTING_METHOD
             + _best_layer_caption("ABTT", "overall assignment accuracy")
         ),
@@ -681,7 +681,7 @@ def main() -> None:
         out_tex=tex_dir / "taskB_ranking_main.tex",
         out_audit=audit_dir / "taskB_ranking_main.csv",
         caption=(
-            r"Per-layer Task~B top-$k$ ranking metrics for the three headline models. "
+            r"Per-layer Task~B top-$k$ ranking metrics for the three T5 encoders. "
             + CAP_RANK_SINGLE_METHOD
             + _best_layer_caption("ABTT", "Acc@1")
         ),
@@ -699,7 +699,7 @@ def main() -> None:
         out_tex=tex_dir / "taskB_ranking_appendix.tex",
         out_audit=audit_dir / "taskB_ranking_appendix.csv",
         caption=(
-            r"Per-layer Task~B top-$k$ ranking metrics for the remaining three models. "
+            r"Per-layer Task~B top-$k$ ranking metrics for the non-T5 models. "
             + CAP_RANK_SINGLE_METHOD
             + _best_layer_caption("ABTT", "Acc@1")
         ),
