@@ -85,6 +85,16 @@ jobs:
           cd "${DEPLOY_PATH}"
           git fetch origin main
           git checkout main
+          # The deploy itself modifies tracked files on the host: npm rebuilds
+          # web/static, and the data release re-installs the tracked members of
+          # runs/active. Restore them so a commit touching those paths does not
+          # abort the fast-forward (#150). Untracked release files and the
+          # reviewer feedback DB are not tracked and are never touched here.
+          git checkout -- web/static
+          if [ -n "${DATA_RELEASE_TAG:-}" ]; then
+            git checkout -- runs/active
+          fi
+          git status --short | head -20
           git pull --ff-only origin main
           PUBLIC_BASE_PATH="${PUBLIC_BASE_PATH}" \
           DATA_RELEASE_TAG="${DATA_RELEASE_TAG:-}" \
