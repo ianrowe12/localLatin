@@ -37,6 +37,32 @@ class LoopbackSecureCookiePolicy(DefaultCookiePolicy):
         return urlsplit(request.full_url).hostname in LOOPBACK_HOSTS
 
 
+class ResponseHeaders(dict):
+    """Response headers that answer to any casing, like the wire allows.
+
+    ``send`` used to hand back ``dict(response.headers.items())``. That throws
+    away the case-insensitivity of the ``email.message.Message`` urllib parses
+    the response into, and uvicorn writes header names lowercase, so
+    ``headers.get("Content-Type")`` was always ``""`` -- which made the two
+    content-type assertions in this script (``/api/feedback/export`` must be
+    text/csv, ``/api/packets/review`` must be application/pdf) impossible to
+    pass against the real server. Nothing caught it: web/tests reaches the same
+    endpoints through httpx, whose headers are case-insensitive already.
+    """
+
+    def __init__(self, items) -> None:
+        super().__init__((key.lower(), value) for key, value in items)
+
+    def get(self, key: str, default=None):  # noqa: ANN001,ANN206 (dict signature)
+        return super().get(key.lower(), default)
+
+    def __getitem__(self, key: str):  # noqa: ANN001,ANN204 (dict signature)
+        return super().__getitem__(key.lower())
+
+    def __contains__(self, key: object) -> bool:
+        return super().__contains__(key.lower() if isinstance(key, str) else key)
+
+
 class SmokeClient:
     def __init__(self, base_url: str) -> None:
         self.base_url = base_url.rstrip("/")
@@ -49,7 +75,7 @@ class SmokeClient:
         path: str,
         *,
         json_body: dict | None = None,
-    ) -> tuple[int, bytes, dict[str, str]]:
+    ) -> tuple[int, bytes, ResponseHeaders]:
         """Perform the request and report the status instead of asserting one.
 
         Used by checks whose expected outcome is genuinely one of several -- a
@@ -71,9 +97,13 @@ class SmokeClient:
         )
         try:
             with self.opener.open(req, timeout=60) as response:
-                return response.status, response.read(), dict(response.headers.items())
+                return (
+                    response.status,
+                    response.read(),
+                    ResponseHeaders(response.headers.items()),
+                )
         except HTTPError as exc:
-            return exc.code, exc.read(), dict(exc.headers.items())
+            return exc.code, exc.read(), ResponseHeaders(exc.headers.items())
         except URLError as exc:
             raise RuntimeError(f"{method} {path} failed: {exc}") from exc
 
@@ -84,7 +114,7 @@ class SmokeClient:
         *,
         json_body: dict | None = None,
         expect: int = 200,
-    ) -> tuple[bytes, dict[str, str]]:
+    ) -> tuple[bytes, ResponseHeaders]:
         status, body, response_headers = self.send(method, path, json_body=json_body)
         if status != expect:
             snippet = body[:300].decode("utf-8", errors="replace")

@@ -124,7 +124,7 @@ file before and after and reports only the ones whose value moved.
 | `attribution_metrics_sweep_*.tex` | 598 | **0** | - |
 | `taskB_topk.tex` (was inline) | 65 | 47 | 0.6 |
 | `lexical_baselines.tex` | 35 | 8 | 0.003 |
-| `finetune_ceiling.tex` | 44 | 4 | 1.0 (a Top-1 percentage, 83.6 to 82.6) |
+| `finetune_ceiling.tex` (superseded, see below) | 44 | 4 | 1.0 (a Top-1 percentage, 83.6 to 82.6) |
 
 Reading the table:
 
@@ -270,12 +270,19 @@ have hit exactly the misalignment this issue exists to prevent.
 
 The rescore is an interim, not a promotion. The checkpoint itself was trained on
 the pre-correction labels, and the correction changes the pair set it learned
-from: the train positive pairs stay at 565, but two it trained on as positives
-are now wrong (`BN2123.89r.5` with `KoeD213.10r.1` and with `Vat5845.10r.7`) and
-two it never saw are now positives (`BN2123.89r.5` with `C1525.7v.6` and with
-`Hat42.149r.3`). Four pairs in 565, about 0.35 percent, so rescoring the frozen
-checkpoint is a reasonable stand-in for the table, but the checkpoint is not a
-benchmark v1 artifact and #138 stays open until it is retrained on v1 labels.
+from, so the checkpoint is not a benchmark v1 artifact and #138 stays open until
+it is retrained on v1 labels.
+
+**#138 has since retrained it, and measured the pair-set change exactly.** The
+resolved figures, which supersede an earlier estimate in this section: the 565
+available train positive pairs are unchanged, and **exactly two pairs enter the
+training set while none leave**, `BN2123.89r.5` with `C1525.7v.6` and with
+`Hat42.149r.3`, both in `Can.apost.49`. `Can.apost.48`, where `BN2123.89r.5` used
+to sit, is a **dev** directory under the seed-42 carve, so its pairs were never
+trained on either before or after; what the correction did there was shrink the
+dev pool from 72 files to 71. Fit pairs go 497 to 499 and batches per epoch 31 to
+32. See `finetune_ceiling.md` for the retrained numbers, which move by at most 0.7
+points and leave all three of the experiment's findings standing.
 
 ## 5. The reviewer pilot's predictions, and why their layer is now sticky
 
