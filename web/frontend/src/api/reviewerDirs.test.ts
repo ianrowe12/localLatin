@@ -72,12 +72,12 @@ describe('fetchReviewerDirs', () => {
   it('rejects an entry with no identity rather than showing it as a grouping', async () => {
     stubBody([{ label: 'Unattested homily' }])
     await expect(fetchReviewerDirs({ seedQueryId: QUERY_ID })).rejects.toThrow(
-      /missing its identity/,
+      /incomplete record/,
     )
 
-    stubBody([{ ...dirFixture(), seed_query_id: '7' }])
+    stubBody([{ ...dirFixture(), seed_query_id: 4242 }])
     await expect(fetchReviewerDirs({ seedQueryId: QUERY_ID })).rejects.toThrow(
-      /missing its identity/,
+      /seeded by 4242/,
     )
   })
 

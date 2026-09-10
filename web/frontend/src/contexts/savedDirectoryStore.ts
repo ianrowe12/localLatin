@@ -77,7 +77,15 @@ export type SavedConfirmation =
   /** A predictions response carried it in `seeded_dirs`. */
   | 'predictions'
 
-/** The naming form, which outlives the component that renders it. */
+/**
+ * The naming form's OPERATION, which outlives the form itself.
+ *
+ * Deliberately not the same thing as "is the form on screen". A reviewer who
+ * closes a form has hidden a panel; they have not recalled a write, cancelled a
+ * permanent record or forgotten the name they chose. Conflating the two is how
+ * closing a pending form released the single-write lock and let a second POST
+ * go out for one document (issue #161 review, finding 1).
+ */
 export type CreationState =
   | { readonly status: 'idle' }
   /** Named but not sent: Cancel here genuinely cancels. */
@@ -100,19 +108,34 @@ export type CreationState =
        * `not-created`: reconciled against the server, no directory exists for
        * this seed, so retrying creates rather than duplicates.
        * `unknown`: reconciliation itself failed. The write may have landed;
-       * the UI must not claim it did not.
+       * the UI must not claim it did not, and must not offer to send another.
        */
       readonly outcome: 'not-created' | 'unknown'
     }
 
+/**
+ * True while the outcome of an issued write is genuinely unknown. Editing the
+ * name, submitting again and discarding the proposal are all refused in this
+ * state, because each of them acts on an answer nobody has.
+ */
+export function isWriteUnsettled(creation: CreationState): boolean {
+  return (
+    creation.status === 'pending' ||
+    (creation.status === 'failed' && creation.outcome === 'unknown')
+  )
+}
+
 export interface SavedDirectoryRecord {
   readonly identity: DirectoryIdentity
   readonly creation: CreationState
+  /** Whether the naming panel is on screen. Never a fact about the write. */
+  readonly formOpen: boolean
 }
 
 export const BLANK_RECORD: SavedDirectoryRecord = Object.freeze({
   identity: Object.freeze({ status: 'unknown' as const }),
   creation: Object.freeze({ status: 'idle' as const }),
+  formOpen: false,
 })
 
 export type CreateResult =
@@ -125,6 +148,11 @@ export type CreateResult =
   | { readonly outcome: 'unresolved'; readonly error: string }
   /** A POST for this query is already in flight; no second one was sent. */
   | { readonly outcome: 'already-pending' }
+  /**
+   * A previous write's outcome is still unknown, so a second one is refused:
+   * it could be the duplicate that a lost 201 already created.
+   */
+  | { readonly outcome: 'blocked-unresolved' }
   /** This seed is already known saved; creating again is not possible. */
   | {
       readonly outcome: 'already-saved'
@@ -154,6 +182,69 @@ function orderBySeniority(dirs: readonly ReviewerDir[]): ReviewerDir[] {
   })
 }
 
+/**
+ * Fold new evidence about one directory into what is already confirmed, never
+ * subtracting.
+ *
+ * Both backend tables are append-only, so every fact this app has ever been
+ * told about a directory stays true: a group that existed still exists, a
+ * document filed into it is still filed into it, and `matched` -- which
+ * `web/services/reviewer_dirs.py` derives from a human having filed a second
+ * distinct witness -- cannot revert to `awaiting_match`. Responses, by
+ * contrast, are snapshots that can arrive out of order: an older seed lookup
+ * can resolve after a newer predictions payload, and a predictions payload can
+ * be served from a cache built before the second witness was filed. Overwriting
+ * with the newest arrival therefore deletes history for no reason (review
+ * finding 4).
+ *
+ * The score fields are the exception and take the incoming value: they are
+ * recomputed server-side against the selected model's q-q matrix, are
+ * informational, and never decide status.
+ */
+function mergeDir(known: ReviewerDir, incoming: ReviewerDir): ReviewerDir {
+  const members = new Set<number>([
+    ...known.member_query_ids,
+    ...incoming.member_query_ids,
+  ])
+  return {
+    ...known,
+    ...incoming,
+    status:
+      known.status === 'matched' || incoming.status === 'matched'
+        ? 'matched'
+        : 'awaiting_match',
+    member_query_ids: [...members].sort((a, b) => a - b),
+    best_match_score: incoming.best_match_score ?? known.best_match_score,
+  }
+}
+
+/** Union by `dir_id`: a group this app has confirmed is never dropped. */
+function mergeDirs(
+  known: readonly ReviewerDir[],
+  incoming: readonly ReviewerDir[],
+): ReviewerDir[] {
+  const byId = new Map<string, ReviewerDir>()
+  for (const dir of known) byId.set(dir.dir_id, dir)
+  for (const dir of incoming) {
+    const existing = byId.get(dir.dir_id)
+    byId.set(dir.dir_id, existing ? mergeDir(existing, dir) : dir)
+  }
+  return orderBySeniority([...byId.values()])
+}
+
+/**
+ * `created` and `recovered` are first-hand facts about THIS reviewer's attempt,
+ * so a later routine refresh does not overwrite them: the acknowledgement would
+ * otherwise stop saying where the grouping came from halfway through a session.
+ */
+function mergeConfirmation(
+  known: SavedConfirmation,
+  incoming: SavedConfirmation,
+): SavedConfirmation {
+  if (known === 'created' || known === 'recovered') return known
+  return incoming
+}
+
 export class SavedDirectoryStore {
   private records = new Map<number, SavedDirectoryRecord>()
   private listeners = new Set<() => void>()
@@ -161,6 +252,18 @@ export class SavedDirectoryStore {
   private lookupGeneration = new Map<number, number>()
   private lookupSeq = 0
   private operationSeq = 0
+  /**
+   * How many write attempts have been STARTED for a query, and how many are
+   * still in flight.
+   *
+   * A lookup's empty answer only authorises a fresh Create if it describes a
+   * world in which no write of ours could have been racing it. Generations
+   * alone cannot see that: they only change when another LOOKUP starts, so a
+   * pre-write GET happily resolved a post-write uncertainty as "no directory
+   * here" (review finding 5).
+   */
+  private writeSeq = new Map<number, number>()
+  private writesInFlight = new Map<number, number>()
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener)
@@ -192,6 +295,8 @@ export class SavedDirectoryStore {
   clear(): void {
     this.records.clear()
     this.lookupGeneration.clear()
+    this.writeSeq.clear()
+    this.writesInFlight.clear()
     this.emit()
   }
 
@@ -223,6 +328,10 @@ export class SavedDirectoryStore {
 
     const generation = ++this.lookupSeq
     this.lookupGeneration.set(queryId, generation)
+    // Captured before the request goes out. An empty answer is only permission
+    // to create if no write of ours could have been in flight beside it.
+    const writesAtStart = this.writeSeq.get(queryId) ?? 0
+    const racedAWrite = (this.writesInFlight.get(queryId) ?? 0) > 0
     this.update(queryId, (current) => ({
       ...current,
       identity:
@@ -238,12 +347,27 @@ export class SavedDirectoryStore {
       })
       if (this.lookupGeneration.get(queryId) !== generation) return
       if (dirs.length > 0) {
+        // Positive evidence is always usable: a row that exists, exists,
+        // whenever the response was built.
         this.recordSaved(queryId, dirs, 'server-list')
         return
       }
       // Only a well-formed, empty list gets here: `fetchReviewerDirs` throws on
       // a body it cannot read, so absence is always something the server said
       // rather than something this client inferred.
+      const writesSince = (this.writeSeq.get(queryId) ?? 0) !== writesAtStart
+      const stillWriting = (this.writesInFlight.get(queryId) ?? 0) > 0
+      if (racedAWrite || writesSince || stillWriting) {
+        // This answer describes a world the reviewer has since acted on. It is
+        // not proof that the write did not land, so it must not put a Create
+        // button back in front of them.
+        this.markUnresolved(
+          queryId,
+          'The app checked before your last attempt finished, so this answer cannot settle it.',
+          { onlyWhileChecking: true },
+        )
+        return
+      }
       this.recordAbsent(queryId)
     } catch (err) {
       if (this.lookupGeneration.get(queryId) !== generation) return
@@ -279,24 +403,38 @@ export class SavedDirectoryStore {
 
   // --- creation ------------------------------------------------------------
 
-  /** Open the naming form, or re-open it on the name already proposed. */
+  /**
+   * Open the naming panel, on the name already proposed if there is one.
+   *
+   * Never resets a proposal. A reviewer who closed the panel over a failure and
+   * re-opened it is continuing one act of naming, and retyping a name is how a
+   * second grouping ends up under a near-duplicate of the first one's label.
+   */
   beginNaming(queryId: number, suggestion: string): void {
-    const record = this.getRecord(queryId)
-    if (record.creation.status === 'pending') return
+    const { creation } = this.getRecord(queryId)
     const proposedLabel =
-      record.creation.status === 'editing' || record.creation.status === 'failed'
-        ? record.creation.proposedLabel
-        : suggestion
+      creation.status === 'idle' ? suggestion : creation.proposedLabel
     this.update(queryId, (current) => ({
       ...current,
-      creation: { status: 'editing', proposedLabel },
+      formOpen: true,
+      creation:
+        current.creation.status === 'idle'
+          ? { status: 'editing', proposedLabel }
+          : current.creation,
     }))
   }
 
-  /** Type into the name field. Ignored once the write has been issued. */
+  /**
+   * Type into the name field.
+   *
+   * Refused while the outcome of an issued write is unknown. Editing there
+   * would replace the failure with a clean `editing` state, taking the
+   * uncertainty explanation off screen and re-arming a submit that might
+   * duplicate a directory the server has already stored.
+   */
   setProposedLabel(queryId: number, proposedLabel: string): void {
-    const record = this.getRecord(queryId)
-    if (record.creation.status === 'pending') return
+    const { creation } = this.getRecord(queryId)
+    if (isWriteUnsettled(creation)) return
     this.update(queryId, (current) => ({
       ...current,
       creation: { status: 'editing', proposedLabel },
@@ -304,27 +442,45 @@ export class SavedDirectoryStore {
   }
 
   /**
-   * Cancel the naming form. Returns false — and changes nothing — once a POST
-   * has been issued, because at that point there is no client-side action that
-   * undoes the write. The caller must disable the control or relabel it as
-   * closing the form rather than cancelling the creation.
+   * Cancel the naming form.
+   *
+   * Only an unsent form can be cancelled. Once a write has been issued this
+   * closes the panel and returns false, keeping the operation and the proposed
+   * name: there is no client-side action that undoes a write, and discarding
+   * the name while the outcome is unknown loses the one piece of context a
+   * reviewer needs to decide what to do next.
    */
   cancelNaming(queryId: number): boolean {
-    const record = this.getRecord(queryId)
-    if (record.creation.status === 'pending') return false
-    this.update(queryId, (current) => ({ ...current, creation: { status: 'idle' } }))
+    const { creation } = this.getRecord(queryId)
+    if (isWriteUnsettled(creation)) {
+      this.closeForm(queryId)
+      return false
+    }
+    this.update(queryId, (current) => ({
+      ...current,
+      formOpen: false,
+      creation: { status: 'idle' },
+    }))
     return true
   }
 
   /**
-   * Close the form over an in-flight write WITHOUT claiming a rollback. The
-   * request keeps running and still records its result against this query; only
-   * the form is dismissed, and a late failure will not re-open it.
+   * Close the panel over an issued write WITHOUT claiming a rollback.
+   *
+   * The request keeps running and still records its result against this query.
+   * Crucially the operation itself is untouched, so the single-write lock holds
+   * and the proposed name survives: hiding a panel is not settling a write
+   * (review finding 1).
    */
   dismissPendingForm(queryId: number): void {
-    const record = this.getRecord(queryId)
-    if (record.creation.status !== 'pending') return
-    this.update(queryId, (current) => ({ ...current, creation: { status: 'idle' } }))
+    this.closeForm(queryId)
+  }
+
+  /** Hide the naming panel, leaving every fact about the write in place. */
+  private closeForm(queryId: number): void {
+    this.update(queryId, (current) =>
+      current.formOpen ? { ...current, formOpen: false } : current,
+    )
   }
 
   /**
@@ -352,9 +508,18 @@ export class SavedDirectoryStore {
     if (record.identity.status === 'saved') {
       return { outcome: 'already-saved', dirs: record.identity.dirs }
     }
+    if (isWriteUnsettled(record.creation)) {
+      // The previous attempt may already have written the row. Sending another
+      // one on the strength of not knowing is exactly how a document ends up
+      // with two permanent groupings; the reviewer has to resolve the question
+      // first, which `ensureLookup(force)` does.
+      return { outcome: 'blocked-unresolved' }
+    }
 
     const proposedLabel = input.label
     const operationId = ++this.operationSeq
+    this.writeSeq.set(queryId, (this.writeSeq.get(queryId) ?? 0) + 1)
+    this.writesInFlight.set(queryId, (this.writesInFlight.get(queryId) ?? 0) + 1)
     this.update(queryId, (current) => ({
       ...current,
       creation: { status: 'pending', proposedLabel, operationId },
@@ -374,12 +539,16 @@ export class SavedDirectoryStore {
         // refresh result (successful or not) arrives.
         { notify: false },
       )
+      this.writeSettled(queryId)
       this.recordSaved(queryId, [dir], 'created')
       this.settleOperation(queryId, operationId, { status: 'idle' })
       notifyReviewerDirsUpdated()
       return { outcome: 'created', dir }
     } catch (err) {
       const error = messageOf(err)
+      // Counted as settled before the reconciling GET goes out, so that GET is
+      // allowed to establish absence: this request is over, whatever it did.
+      this.writeSettled(queryId)
       let reconciled: ReviewerDir[] | null = null
       try {
         // A malformed answer throws here, which is what keeps it out of the
@@ -428,10 +597,15 @@ export class SavedDirectoryStore {
     }
   }
 
-  /** Clear a failed attempt's error without discarding the proposed name. */
+  /**
+   * Clear a RESOLVED failure's error without discarding the proposed name.
+   *
+   * Refused while the outcome is unknown, for the same reason editing is: a
+   * clean form invites a second write that could duplicate a stored directory.
+   */
   retryNaming(queryId: number): void {
     const creation = this.getRecord(queryId).creation
-    if (creation.status !== 'failed') return
+    if (creation.status !== 'failed' || creation.outcome !== 'not-created') return
     const { proposedLabel } = creation
     this.update(queryId, (current) => ({
       ...current,
@@ -441,41 +615,72 @@ export class SavedDirectoryStore {
 
   // --- internals -----------------------------------------------------------
 
+  /** One issued write is over, whatever it managed to do. */
+  private writeSettled(queryId: number): void {
+    const inFlight = this.writesInFlight.get(queryId) ?? 0
+    if (inFlight <= 1) this.writesInFlight.delete(queryId)
+    else this.writesInFlight.set(queryId, inFlight - 1)
+  }
+
   /**
    * A confirmed save is a durable fact about the database, so unlike the
    * transient form state it is applied whatever generation it arrives in. The
    * label stored is the one the SERVER holds, which for a recovery is somebody
    * else's wording rather than the name this reviewer proposed.
+   *
+   * Evidence is FOLDED IN, never substituted (review finding 4): responses
+   * arrive out of order and some of them are partial views, so a snapshot that
+   * mentions one group is not a statement that the others were removed -- and
+   * nothing can remove them. See `mergeDirs`.
    */
   private recordSaved(
     queryId: number,
     dirs: readonly ReviewerDir[],
     confirmedBy: SavedConfirmation,
   ): void {
-    const ordered = orderBySeniority(dirs)
-    const primary = ordered[0]
-    if (!primary) return
-    this.update(queryId, (current) => ({
-      ...current,
-      identity: {
-        status: 'saved',
-        dirs: ordered,
-        primary,
-        confirmedBy,
-        refreshing: false,
-        refreshError: null,
-      },
-    }))
+    if (dirs.length === 0) return
+    this.update(queryId, (current) => {
+      const known = current.identity.status === 'saved' ? current.identity.dirs : []
+      const merged = mergeDirs(known, dirs)
+      const primary = merged[0]
+      if (!primary) return current
+      return {
+        ...current,
+        identity: {
+          status: 'saved',
+          dirs: merged,
+          primary,
+          confirmedBy:
+            current.identity.status === 'saved'
+              ? mergeConfirmation(current.identity.confirmedBy, confirmedBy)
+              : confirmedBy,
+          refreshing: false,
+          refreshError: null,
+        },
+      }
+    })
   }
 
   /**
-   * "The server answered, and this seed has no directories."
+   * "The server answered, for this seed, with no directories."
    *
-   * Sticky in the other direction: a confirmed save is never downgraded by a
-   * later empty answer, because an empty answer can be stale (a lookup issued
-   * before the write) while a 201 cannot be.
+   * Sticky in two directions. A confirmed save is never downgraded, because an
+   * empty answer can be stale (a lookup issued before the write) while a 201
+   * cannot be. And an unsettled write is never resolved by it: the caller is
+   * responsible for not calling this with an answer that raced a write, but the
+   * guard is repeated here because "absent" is the one state that hands out
+   * permission to write again.
+   *
+   * A resolved absence does settle a previous failure whose outcome was
+   * unknown: the database has now been read cleanly with nothing in flight, so
+   * that write demonstrably did not land and the reviewer can retry the name
+   * they still have.
    */
   private recordAbsent(queryId: number): void {
+    // Measured in outstanding REQUESTS, not in form state: a write that has
+    // returned an error is over even though its record still says `pending`
+    // until the reconciliation it triggered comes back.
+    if ((this.writesInFlight.get(queryId) ?? 0) > 0) return
     this.update(queryId, (current) => {
       if (current.identity.status === 'saved') {
         return {
@@ -483,7 +688,11 @@ export class SavedDirectoryStore {
           identity: { ...current.identity, refreshing: false, refreshError: null },
         }
       }
-      return { ...current, identity: { status: 'absent' } }
+      const creation: CreationState =
+        current.creation.status === 'failed' && current.creation.outcome === 'unknown'
+          ? { ...current.creation, outcome: 'not-created' }
+          : current.creation
+      return { ...current, identity: { status: 'absent' }, creation }
     })
   }
 
@@ -495,14 +704,25 @@ export class SavedDirectoryStore {
    * the state that offers a Create button -- is now stale, and acting on it is
    * how a second permanent directory gets created for one document. A confirmed
    * save is not downgraded: that one cannot become false.
+   *
+   * `onlyWhileChecking` is for a lookup that has been overtaken by a write: it
+   * has to release the `checking` state it put the record into, but it must not
+   * disturb a more specific answer that arrived while it was out.
    */
-  private markUnresolved(queryId: number, error: string): void {
+  private markUnresolved(
+    queryId: number,
+    error: string,
+    options: { onlyWhileChecking?: boolean } = {},
+  ): void {
     this.update(queryId, (current) => {
       if (current.identity.status === 'saved') {
         return {
           ...current,
           identity: { ...current.identity, refreshing: false, refreshError: error },
         }
+      }
+      if (options.onlyWhileChecking && current.identity.status !== 'checking') {
+        return current
       }
       return { ...current, identity: { status: 'unresolved', error } }
     })

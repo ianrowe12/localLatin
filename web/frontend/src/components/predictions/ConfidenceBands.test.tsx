@@ -82,7 +82,17 @@ function installFetch(): void {
         }
         if (reviewerDirStatus === 201) {
           return jsonResponse(
-            { dir_id: 'rev-42', label: 'New directory 42', status: 'awaiting_match' },
+            {
+              dir_id: 'rev-42',
+              label: 'New directory 42',
+              status: 'awaiting_match',
+              seed_query_id: QUERY_ID,
+              member_query_ids: [QUERY_ID],
+              created_at: '2026-08-26 00:00:00',
+              created_by: 'Abigail',
+              best_match_score: null,
+              has_potential_match: false,
+            },
             201,
           )
         }

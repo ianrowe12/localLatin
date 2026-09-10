@@ -59,6 +59,14 @@ export const DIRECTORY_CREATION_COPY = {
   checking: 'Checking whether this document already has a directory…',
   checkAgain: 'Check again',
   /**
+   * The panel closed over a write whose outcome is not known yet. The reviewer
+   * is not offered a name field or a Create button here: both would act on an
+   * answer nobody has.
+   */
+  pendingClosed: 'Saving a new directory for this document…',
+  unknownClosed:
+    'A directory may have been created for this document. Until the app can check, it will not offer to create another.',
+  /**
    * A failed lookup is not an empty lookup. Offering Create here would invite
    * a duplicate the server will refuse.
    */
@@ -87,9 +95,29 @@ export function savedByNote(creator: string): string {
   return `Created by ${creator}. The name shown is the one it was saved under.`
 }
 
-/** A create that turned into a recovery. The proposed name was not stored. */
-export const RECOVERED_INSTEAD_OF_CREATED =
-  'This document already had a directory, so nothing new was created and the name you proposed was not saved.'
+/** A second, older grouping for the same document, listed rather than hidden. */
+export function alsoGroupedNote(count: number): string {
+  return count === 1
+    ? 'This document is also recorded under another directory:'
+    : `This document is also recorded under ${count} other directories:`
+}
+
+/**
+ * A create that ended in a recovery.
+ *
+ * Deliberately neutral about whose write this row is. The app reaches this
+ * message whenever a POST failed and the seed-filtered lookup then found a
+ * directory, and those two facts are also exactly what a LOST RESPONSE looks
+ * like: the write landed, its 201 never arrived, and the row that comes back is
+ * the reviewer's own. Saying "nothing new was created and the name you proposed
+ * was not saved" is true for a refusal and false for a lost response, and this
+ * layer cannot tell them apart -- the message text of a 409 is not a contract,
+ * and a directory's timestamps are the server's clock, not the browser's. So
+ * the app reports what it can actually see: a directory exists for this
+ * document now, and the details shown are the stored ones.
+ */
+export const RECOVERED_AFTER_FAILURE =
+  'A directory for this document is on the server. The app could not confirm whether your attempt created it, so the details shown are the stored ones rather than what you proposed.'
 
 /**
  * What a low similarity does and does not establish.

@@ -2,11 +2,14 @@ import {
   useSavedDirectoryFor,
   useSavedDirectoryStore,
 } from '../../contexts/SavedDirectoryContext'
+import { isWriteUnsettled } from '../../contexts/savedDirectoryStore'
 import {
+  alsoGroupedNote,
   DIRECTORY_CREATION_COPY,
-  RECOVERED_INSTEAD_OF_CREATED,
+  RECOVERED_AFTER_FAILURE,
   savedByNote,
 } from '../../utils/reviewerDirectoryCopy'
+import AwaitingMatchBadge from './AwaitingMatchBadge'
 import DirectoryCreationGuidance from './DirectoryCreationGuidance'
 import DirectorySavedNotice from './DirectorySavedNotice'
 
@@ -87,7 +90,11 @@ export default function NewDirectoryCta({
   onCreated,
 }: NewDirectoryCtaProps) {
   const store = useSavedDirectoryStore()
-  const { identity, creation } = useSavedDirectoryFor(queryId, { model })
+  const { identity, creation, formOpen } = useSavedDirectoryFor(queryId, { model })
+  // "Is a write outstanding" is a different question from "is the panel open".
+  // Closing the panel hides a form; it does not settle a permanent write, and
+  // the controls below stay withheld until the server has been heard from.
+  const unsettled = isWriteUnsettled(creation)
 
   const suggestion = filename
     ? `New directory from ${filename.replace(/\.txt$/, '')}`
@@ -97,17 +104,31 @@ export default function NewDirectoryCta({
 
   // --- saved: the acknowledgement ------------------------------------------
   if (identity.status === 'saved') {
-    const { primary, confirmedBy } = identity
+    const { primary, dirs, confirmedBy } = identity
+    const others = dirs.filter((dir) => dir.dir_id !== primary.dir_id)
     return (
-      <div className={inline ? 'mt-2' : 'mt-2 mx-2'}>
+      <div
+        className={inline ? 'mt-2' : 'mt-2 mx-2'}
+        data-testid="new-directory-saved"
+      >
         <DirectorySavedNotice label={primary.label} />
+        {/*
+          Status belongs beside the acknowledgement, not only in the header the
+          predictions response feeds: `matched` means a human filed a second
+          witness into this grouping, and a reviewer recovering from a failed
+          create is exactly the person who needs to know that already happened.
+          Recovery must not depend on a successful predictions refresh.
+        */}
+        <div className="mt-1">
+          <AwaitingMatchBadge seededDirs={[...dirs]} />
+        </div>
         {confirmedBy === 'recovered' && (
           <p
             data-testid="new-directory-recovered"
             role="status"
             className="font-ui text-xs leading-snug text-stone-600 dark:text-stone-400 mt-1"
           >
-            {RECOVERED_INSTEAD_OF_CREATED}
+            {RECOVERED_AFTER_FAILURE}
           </p>
         )}
         {confirmedBy !== 'created' && (
@@ -118,6 +139,23 @@ export default function NewDirectoryCta({
             {savedByNote(primary.created_by)}
           </p>
         )}
+        {others.length > 0 && (
+          // Historical duplicates, from before issue #160's atomic creation.
+          // Nothing can remove them, so hiding them behind the oldest one would
+          // misdescribe the database a reviewer is being asked to trust.
+          <div data-testid="new-directory-other-groups" className="mt-1">
+            <p className="font-ui text-xs leading-snug text-stone-600 dark:text-stone-400">
+              {alsoGroupedNote(others.length)}
+            </p>
+            <ul className="font-ui text-xs leading-snug text-stone-600 dark:text-stone-400 list-disc pl-4">
+              {others.map((dir) => (
+                <li key={dir.dir_id}>
+                  {dir.label} — {savedByNote(dir.created_by)}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
     )
   }
@@ -125,7 +163,41 @@ export default function NewDirectoryCta({
   // --- the naming form ------------------------------------------------------
   // Ahead of the identity states below: an issued write is the one thing a
   // reviewer must not lose sight of while the lookup catches up.
-  if (creation.status !== 'idle') {
+  // An outstanding write with the panel closed. There is nothing to edit and
+  // nothing safe to submit, so the reviewer is told the state and -- if the
+  // outcome is unknown rather than merely slow -- offered the one action that
+  // can settle it. Crucially there is NO Create button here: the record is not
+  // `absent`, and closing a panel never made it so.
+  if (unsettled && !formOpen) {
+    const pending = creation.status === 'pending'
+    return (
+      <div className={block} data-testid="new-directory-pending-closed">
+        <p
+          role="status"
+          data-testid="new-directory-pending-note"
+          className="font-ui text-xs leading-snug text-stone-600 dark:text-stone-300"
+        >
+          {pending
+            ? DIRECTORY_CREATION_COPY.pendingClosed
+            : DIRECTORY_CREATION_COPY.unknownClosed}
+        </p>
+        {!pending && (
+          <button
+            type="button"
+            data-testid="new-directory-check-again"
+            onClick={() => {
+              void store.ensureLookup(queryId, { force: true, model })
+            }}
+            className="mt-1 rounded-md border border-stone-300 dark:border-stone-600 text-stone-600 dark:text-stone-400 text-xs px-3 py-1.5"
+          >
+            {DIRECTORY_CREATION_COPY.checkAgain}
+          </button>
+        )}
+      </div>
+    )
+  }
+
+  if (creation.status !== 'idle' && formOpen) {
     const pending = creation.status === 'pending'
     return (
       <form
@@ -158,7 +230,12 @@ export default function NewDirectoryCta({
           onChange={(event) => store.setProposedLabel(queryId, event.target.value)}
           placeholder={suggestion}
           maxLength={200}
-          disabled={pending}
+          // Editing is withheld for the whole life of an unsettled write, not
+          // just while the request is open: after a lost response the name in
+          // this field may already be the name of a permanent directory, and a
+          // reviewer who edits it is describing a row they cannot change.
+          disabled={unsettled}
+          readOnly={unsettled}
           autoFocus
           className="w-full rounded-md border border-stone-300 dark:border-stone-600 bg-white dark:bg-surface-800 px-2 py-1.5 text-sm disabled:opacity-60"
         />
@@ -194,7 +271,10 @@ export default function NewDirectoryCta({
         <div className="flex gap-2 mt-2">
           <button
             type="submit"
-            disabled={pending}
+            // Re-submission stays closed until the first write's outcome is
+            // known. A retry is offered only once a clean lookup has shown the
+            // directory is genuinely not there.
+            disabled={unsettled}
             data-testid="new-directory-submit"
             className="flex-1 rounded-md bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-xs font-medium px-3 py-1.5"
           >
@@ -221,12 +301,12 @@ export default function NewDirectoryCta({
               // Two different actions behind one position. Before the request
               // Cancel abandons an unsent form; afterwards there is nothing to
               // cancel, so the control says what it really does.
-              if (pending) store.dismissPendingForm(queryId)
+              if (unsettled) store.dismissPendingForm(queryId)
               else store.cancelNaming(queryId)
             }}
             className="rounded-md border border-stone-300 dark:border-stone-600 text-stone-600 dark:text-stone-400 text-xs px-3 py-1.5"
           >
-            {pending
+            {unsettled
               ? DIRECTORY_CREATION_COPY.closePending
               : DIRECTORY_CREATION_COPY.cancel}
           </button>

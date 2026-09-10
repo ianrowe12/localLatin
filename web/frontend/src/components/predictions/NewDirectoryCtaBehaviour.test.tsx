@@ -291,9 +291,12 @@ describe('NewDirectoryCta: when the write does not obviously succeed', () => {
     // The stored label, not the one this reviewer typed.
     expect(notice.textContent).toContain('Stored under another name')
     expect(notice.textContent).not.toContain('My proposed name')
-    expect(screen.getByTestId('new-directory-recovered').textContent).toContain(
-      'the name you proposed was not saved',
-    )
+    // Neutral about authorship: this evidence is also what a lost 201 looks
+    // like, so the app must not tell the reviewer their write was refused.
+    const recovered = screen.getByTestId('new-directory-recovered').textContent ?? ''
+    expect(recovered).toContain('could not confirm')
+    expect(recovered).not.toContain('nothing new was created')
+    expect(recovered).not.toContain('was not saved')
     expect(screen.getByTestId('new-directory-attribution').textContent).toContain(
       'Created by Another reviewer',
     )

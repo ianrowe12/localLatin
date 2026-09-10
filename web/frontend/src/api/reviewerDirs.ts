@@ -78,10 +78,15 @@ export async function createReviewerDir(
   payload: CreateReviewerDirPayload,
   options: CreateReviewerDirOptions = {},
 ): Promise<ReviewerDir> {
-  const created = await apiFetch<ReviewerDir>('/api/reviewer_dirs', {
+  const body = await apiFetch<unknown>('/api/reviewer_dirs', {
     method: 'POST',
     body: JSON.stringify(payload),
   })
+  // Checked for the same reason the list is: this row becomes the
+  // acknowledgement a reviewer reads. An unreadable 201 is treated as a failed
+  // write, which sends the caller to the seed-filtered lookup and recovers the
+  // real row instead of displaying a half-built one.
+  const created = assertReviewerDir(body, payload.query_file_id)
   if (options.notify !== false) notifyReviewerDirsUpdated()
   return created
 }
@@ -122,42 +127,81 @@ export async function fetchReviewerDirs(
     `/api/reviewer_dirs${search ? `?${search}` : ''}`,
     query.signal ? { signal: query.signal } : undefined,
   )
-  return assertReviewerDirList(body)
+  return assertReviewerDirList(body, query.seedQueryId)
 }
 
 /**
- * A 200 whose body is not a list of directories is a FAILURE, not an empty
- * answer (issue #161).
+ * A 200 this client cannot read is a FAILURE, not an empty answer (issue #161).
  *
  * The one question this endpoint answers is "does this document already have a
- * directory?", and the two possible answers are treated very differently: an
- * empty list is permission to create a permanent, unremovable record. So a body
- * this client cannot read -- a proxy's HTML error page, a truncated response, a
- * future shape -- must not be quietly rounded down to "no". Throwing puts it on
- * the failure path, where the store leaves the question unresolved and the
- * reviewer is offered a retry rather than a Create button.
+ * directory?", and the two answers are treated very differently: an empty list
+ * is permission to create a permanent, unremovable record. So a body that does
+ * not parse -- a proxy's HTML error page, a truncated response, a future shape
+ * -- must not be rounded down to "no". Throwing puts it on the failure path,
+ * where the store leaves the question unresolved and the reviewer is offered a
+ * retry rather than a Create button.
+ *
+ * The check covers EVERY field the acknowledgement actually consumes, not just
+ * the ones needed to keep TypeScript quiet. A row with no `created_by` renders
+ * "Created by undefined"; a row with no `status` or `member_query_ids` silently
+ * downgrades a matched grouping (a human filed a second witness into it) to an
+ * awaiting one; a row with no `created_at` breaks the oldest-first ordering
+ * that decides which of several historical groups is named. Half a row is not
+ * evidence that a permanent record exists in a particular shape.
+ *
+ * `seedQueryId`, when the request was filtered, is checked too: a row for
+ * another document would mark this one saved and suppress its creation
+ * controls. A mismatch is a broken response, so it is rejected whole rather
+ * than filtered away -- filtering it would turn a server fault into "no
+ * directory here", which is the permission this function exists to withhold.
  */
-export function assertReviewerDirList(body: unknown): ReviewerDir[] {
+export function assertReviewerDirList(
+  body: unknown,
+  seedQueryId?: number,
+): ReviewerDir[] {
   if (!Array.isArray(body)) {
     throw new Error(
       'The reviewer directory list could not be read: the server sent an unexpected response.',
     )
   }
   for (const entry of body) {
-    if (
-      entry === null ||
-      typeof entry !== 'object' ||
-      typeof (entry as ReviewerDir).dir_id !== 'string' ||
-      typeof (entry as ReviewerDir).label !== 'string' ||
-      typeof (entry as ReviewerDir).seed_query_id !== 'number'
-    ) {
-      // An unreadable entry is worse than an unreadable list: it would be shown
-      // as an acknowledgement, naming a directory whose label and seed nobody
-      // can vouch for.
-      throw new Error(
-        'The reviewer directory list could not be read: an entry was missing its identity.',
-      )
-    }
+    assertReviewerDir(entry, seedQueryId)
   }
   return body as ReviewerDir[]
+}
+
+const DIR_STATUSES: readonly string[] = ['awaiting_match', 'matched']
+
+/**
+ * One directory, checked field by field. Also used for the 201 body: a create
+ * response that cannot be read is treated as a failed write and reconciled
+ * against the database, which recovers the row rather than inventing one.
+ */
+export function assertReviewerDir(entry: unknown, seedQueryId?: number): ReviewerDir {
+  const dir = entry as ReviewerDir | null
+  const wellFormed =
+    dir !== null &&
+    typeof dir === 'object' &&
+    typeof dir.dir_id === 'string' &&
+    dir.dir_id.length > 0 &&
+    typeof dir.label === 'string' &&
+    typeof dir.seed_query_id === 'number' &&
+    typeof dir.created_at === 'string' &&
+    typeof dir.created_by === 'string' &&
+    DIR_STATUSES.includes(dir.status) &&
+    Array.isArray(dir.member_query_ids) &&
+    dir.member_query_ids.every((id) => typeof id === 'number') &&
+    (dir.best_match_score === null || typeof dir.best_match_score === 'number') &&
+    typeof dir.has_potential_match === 'boolean'
+  if (!wellFormed) {
+    throw new Error(
+      'A reviewer directory could not be read: the server sent an incomplete record.',
+    )
+  }
+  if (seedQueryId !== undefined && dir.seed_query_id !== seedQueryId) {
+    throw new Error(
+      `A reviewer directory could not be read: the server answered for document ${seedQueryId} with a record seeded by ${dir.seed_query_id}.`,
+    )
+  }
+  return dir
 }

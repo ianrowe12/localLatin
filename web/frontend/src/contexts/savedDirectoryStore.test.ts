@@ -402,13 +402,21 @@ describe('pending write controls', () => {
 
     const creating = store.createDirectory(QUERY_A, { label: 'My wording' })
     store.dismissPendingForm(QUERY_A)
-    expect(store.getRecord(QUERY_A).creation.status).toBe('idle')
+    // Closing the panel closes the PANEL. The write is still out there, so the
+    // record keeps it -- and keeps the name it was issued with (finding 1).
+    expect(store.getRecord(QUERY_A).formOpen).toBe(false)
+    expect(store.getRecord(QUERY_A).creation.status).toBe('pending')
 
     pendingCreate.resolve(jsonResponse({ detail: 'nope' }, 500))
     await creating
 
     // The abandoned attempt does not re-open a form the reviewer closed...
-    expect(store.getRecord(QUERY_A).creation.status).toBe('idle')
+    expect(store.getRecord(QUERY_A).formOpen).toBe(false)
+    // ...it settles where the evidence puts it, keeping the typed name...
+    const settled = store.getRecord(QUERY_A).creation
+    if (settled.status !== 'failed') throw new Error('expected failed')
+    expect(settled.outcome).toBe('not-created')
+    expect(settled.proposedLabel).toBe('My wording')
     // ...and its reconciliation still answers the question it was asked.
     expect(store.getRecord(QUERY_A).identity.status).toBe('absent')
   })
@@ -519,5 +527,81 @@ describe('an unreadable answer is a failure, not an empty one', () => {
     await store.ensureLookup(QUERY_A)
 
     expect(store.getRecord(QUERY_A).identity.status).toBe('absent')
+  })
+})
+
+describe('known groupings are append-only', () => {
+  // Review finding 4. Every source of directory rows here is a SNAPSHOT taken
+  // at some moment: the predictions payload, the seed-filtered lookup, a 201.
+  // None of them is a statement that what it omits was deleted, and reviewer
+  // directories cannot be deleted at all. So evidence accumulates.
+
+  it('keeps historical groupings and matched membership through a thinner snapshot', () => {
+    const store = new SavedDirectoryStore()
+    store.observeSeededDirs(QUERY_A, [
+      dirFixture({ status: 'matched', member_query_ids: [QUERY_A, 9] }),
+      dirFixture({
+        dir_id: 'reviewer-dir-2',
+        label: 'Historical second group',
+        created_at: '2026-08-27 00:00:00',
+      }),
+    ])
+
+    // A later refresh mentions only the first directory, un-matched.
+    store.observeSeededDirs(QUERY_A, [dirFixture()])
+
+    const identity = store.getRecord(QUERY_A).identity
+    if (identity.status !== 'saved') throw new Error('expected saved')
+    expect(identity.dirs).toHaveLength(2)
+    // `matched` is a human act -- somebody filed a second witness in here --
+    // and no snapshot can undo it.
+    expect(identity.primary.status).toBe('matched')
+    expect(identity.primary.member_query_ids).toEqual([QUERY_A, 9])
+  })
+
+  it('does not let a lookup that was already in flight erase a newer observation', async () => {
+    const slowLookup = deferred<Response>()
+    installFetch({ get: () => slowLookup.promise })
+    const store = new SavedDirectoryStore()
+
+    const lookup = store.ensureLookup(QUERY_A)
+    // The predictions payload arrives while the lookup is still out, carrying
+    // more than the lookup will.
+    store.observeSeededDirs(QUERY_A, [
+      dirFixture({ status: 'matched', member_query_ids: [QUERY_A, 9] }),
+      dirFixture({ dir_id: 'reviewer-dir-2', created_at: '2026-08-27 00:00:00' }),
+    ])
+    slowLookup.resolve(jsonResponse([dirFixture()]))
+    await lookup
+
+    const identity = store.getRecord(QUERY_A).identity
+    if (identity.status !== 'saved') throw new Error('expected saved')
+    expect(identity.dirs).toHaveLength(2)
+    expect(identity.primary.status).toBe('matched')
+  })
+
+  it('folds a later observation in beside a recovered directory', async () => {
+    installFetch({
+      post: () => jsonResponse({ detail: 'conflict' }, 409),
+      get: () =>
+        jsonResponse([
+          dirFixture({ dir_id: 'reviewer-dir-2', created_at: '2026-08-27 00:00:00' }),
+        ]),
+    })
+    const store = new SavedDirectoryStore()
+
+    await store.createDirectory(QUERY_A, { label: 'My wording' })
+    // A predictions payload then mentions a different, older grouping. Two
+    // partial views of the same document; neither denies the other.
+    store.observeSeededDirs(QUERY_A, [dirFixture()])
+
+    const identity = store.getRecord(QUERY_A).identity
+    if (identity.status !== 'saved') throw new Error('expected saved')
+    expect(identity.dirs.map((dir) => dir.dir_id)).toEqual([
+      'reviewer-dir-1',
+      'reviewer-dir-2',
+    ])
+    // How this reviewer got here does not change because a refresh landed.
+    expect(identity.confirmedBy).toBe('recovered')
   })
 })
