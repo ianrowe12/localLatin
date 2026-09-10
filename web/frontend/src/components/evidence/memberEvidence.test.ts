@@ -165,7 +165,9 @@ describe('resolveMemberEvidence', () => {
     const copy = describeScoreAttribution(evidence)
     expect(copy.label).toBe('Similarity')
     expect(copy.tone).toBe('neutral')
-    expect(copy.sentence).toBe('Similarity to the only witness in this group.')
+    expect(copy.sentence).toBe(
+      'Similarity to the witness shown below, the only member this response lists.',
+    )
   })
 
   it('does not call a labelled directory score a member aggregate', () => {
@@ -338,8 +340,29 @@ describe('resolveMemberEvidence', () => {
       }),
     )!
     expect(evidence.scoreScope).toBe('single-witness')
+    // The score sentence has already named it; a second line would repeat it.
+    expect(describeSoleWitness(evidence)).toBeNull()
+  })
+
+  it('will not call a legacy payload a group of one', () => {
+    // The pre-#163 serializer dropped any member whose filename it could not
+    // resolve and still scored it, so a one-file list with no evidence field
+    // is exactly the shape that hides a higher-scoring member.
+    const evidence = resolveMemberEvidence(
+      reviewerGroup({
+        dir_files: ['seed.txt'],
+        candidate_files: [{ filename: 'seed.txt', text: 'seed text' }],
+        supporting_member: null,
+      }),
+    )!
+    expect(evidence.scoreScope).toBe('group-maximum')
+    expect(evidence.displayedIsSupport).toBe(false)
+    const copy = describeScoreAttribution(evidence)
+    expect(copy.sentence).not.toContain('only member this response lists')
+    expect(copy.sentence).toContain('does not identify which witness produced it')
+    expect(copy.tone).toBe('attention')
     expect(describeSoleWitness(evidence)).toBe(
-      'One member witness: query-2.txt.',
+      'Showing seed.txt, the only member witness available here.',
     )
   })
 

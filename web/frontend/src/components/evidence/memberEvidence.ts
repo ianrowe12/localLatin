@@ -198,9 +198,9 @@ export function resolveMemberEvidence(
   const named = candidate.dir_files ?? []
   const openable = new Set(witnesses.map((w) => w.filename))
   // A named supporting member the response neither lists nor opens is still a
-  // member, and proves the group is not a singleton however short the lists
-  // are. Counting it is what stops "the only witness in this group" from
-  // being printed over a witness that did not produce the number.
+  // member, and proves the group is larger than the list however short the
+  // list is. Counting it is what stops a witness that did not produce the
+  // number from being presented as all there is.
   const supportUncounted =
     support.kind === 'named' &&
     !openable.has(support.filename) &&
@@ -224,18 +224,23 @@ export function resolveMemberEvidence(
   const selected = requested ?? supportWitness ?? witnesses[0] ?? null
 
   const isReviewer = candidate.source === 'reviewer'
-  // Only a response that positively accounts for exactly one member may say
-  // so. Zero members is unknown membership, not a group of one. An unnamed
-  // winner is the same: nothing pairs that query id with the listed file, so
-  // the file on screen may not be the whole group, and "the only witness in
-  // this group" would credit it with a number it may not have earned. A
-  // response with no evidence field at all is left alone: it predates #163,
-  // its `dir_files` is all there is to go on, and with exactly one member the
-  // group maximum is that member's score by definition.
-  const provablySingleton = memberCount === 1 && support.kind !== 'unnamed'
+  // A response's lists are not a census of the group. The serializer drops any
+  // member whose filename it cannot resolve while still scoring it, so one
+  // listed file does not mean one member, and no absent or unnamed evidence
+  // field can make it mean that. The only wording that survives this is a
+  // claim about the response rather than about the group, and it is reserved
+  // for the case where the one listed witness is also the named, unambiguous
+  // source of the number.
+  const provablySole =
+    memberCount === 1 &&
+    witnesses.length === 1 &&
+    support.kind === 'named' &&
+    !support.ambiguous &&
+    support.inspectable &&
+    selected?.isSupporting === true
   const scoreScope: ScoreScope = !isReviewer
     ? 'directory'
-    : provablySingleton
+    : provablySole
       ? 'single-witness'
       : 'group-maximum'
 
@@ -281,7 +286,8 @@ const SCOPE_LABEL: Record<ScoreScope, string> = {
 const SCOPE_LEAD: Record<ScoreScope, string> = {
   'group-maximum':
     "Highest similarity across this group's scorable member witnesses.",
-  'single-witness': 'Similarity to the only witness in this group.',
+  'single-witness':
+    'Similarity to the witness shown below, the only member this response lists.',
   directory:
     'Score for the whole directory from the retrieval run, not for one file in it.',
 }
@@ -305,14 +311,12 @@ export function describeScoreAttribution(
   }
 
   if (support.kind === 'absent') {
-    // A missing evidence field is not a licence to nominate the seed.
+    // A missing evidence field is not a licence to nominate the seed, and it
+    // cannot reach the sole-witness wording, which requires named support.
     return {
       label,
-      sentence:
-        evidence.scoreScope === 'single-witness'
-          ? lead
-          : `${lead} This response does not identify which witness produced it.`,
-      tone: evidence.scoreScope === 'single-witness' ? 'neutral' : 'attention',
+      sentence: `${lead} This response does not identify which witness produced it.`,
+      tone: 'attention',
     }
   }
 
@@ -385,23 +389,25 @@ export function describeWitnessOption(witness: MemberWitness): string {
 /**
  * The line under the number when there is nothing to choose between.
  *
- * It says "the only member witness available here" unless the response
- * proves the group has exactly one member, because a shorter list is not
- * evidence of a smaller group.
+ * A response's member list is not a census: members whose filename cannot be
+ * resolved are dropped from it and scored anyway. So this says "the only
+ * member witness available here", about the response, and never that the
+ * group has one member. It is null in the sole-witness case, where the score
+ * sentence has already said it.
  */
 export function describeSoleWitness(evidence: MemberEvidence): string | null {
   if (evidence.selectable || evidence.selected == null) return null
-  return evidence.scoreScope === 'single-witness'
-    ? `One member witness: ${evidence.selected.filename}.`
-    : `Showing ${evidence.selected.filename}, the only member witness available here.`
+  if (evidence.scoreScope === 'single-witness') return null
+  return `Showing ${evidence.selected.filename}, the only member witness available here.`
 }
 
-/** "1 of 3 member witnesses cannot be opened here", or null when all can. */export function describeUnopenableMembers(
+/** "1 of 3 member witnesses cannot be opened here", or null when all can. */
+export function describeUnopenableMembers(
   evidence: MemberEvidence,
 ): string | null {
   if (evidence.unopenableCount <= 0) return null
   if (evidence.memberCount <= 1) {
-    return "This group's only member witness cannot be opened here."
+    return 'The one member witness this response lists cannot be opened here.'
   }
   return `${evidence.unopenableCount} of ${evidence.memberCount} member witnesses cannot be opened here.`
 }

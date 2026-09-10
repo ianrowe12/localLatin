@@ -553,12 +553,10 @@ describe('member evidence over the real prediction fetch (issue #163)', () => {
 
     await waitFor(() => expect(witnessName()).toBe('query-2.txt'))
     expect(screen.queryByTestId('member-selector')).toBeNull()
-    expect(screen.getByTestId('member-evidence-single').textContent).toBe(
-      'One member witness: query-2.txt.',
-    )
+    expect(screen.queryByTestId('member-evidence-single')).toBeNull()
     expect(screen.getByText('0.200')).toBeTruthy()
     expect(attributionText()).toBe(
-      'Similarity to the only witness in this group.',
+      'Similarity to the witness shown below, the only member this response lists.',
     )
   })
 
