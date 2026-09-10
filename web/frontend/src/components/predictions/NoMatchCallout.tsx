@@ -93,7 +93,8 @@ export default function NoMatchCallout({
           className="mt-2 font-ui text-xs italic text-stone-600 dark:text-stone-300"
         >
           You already started a directory from this document. Record your
-          assessment as &ldquo;None of top {topK}&rdquo; if none of the ranked
+          assessment as &ldquo;None of the {topK} model{' '}
+          {topK === 1 ? 'candidate' : 'candidates'}&rdquo; if none of the ranked
           candidates fits.
         </p>
       ) : (

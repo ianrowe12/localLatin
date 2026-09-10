@@ -97,7 +97,7 @@ export const REVIEW_TOUR_STEPS: TourStep[] = [
     target: 'match-options',
     title: 'Record a Match',
     description:
-      'Mark which predicted source is correct, or choose \u201cNone of top N\u201d if none fit.',
+      'Mark which predicted source is correct, or reject the model\u2019s candidates with the \u201cNone\u201d option if none fit. Only the candidates this ranking actually offers are shown.',
     placement: 'left',
   },
   {

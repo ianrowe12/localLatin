@@ -331,9 +331,12 @@ export default function PredictionList() {
               key={activeQueryId}
               queryFileId={activeQueryId}
               topScore={topScore}
-              // Same fallback as MatchPills, so the copy names the pill the
-              // reviewer can actually see.
-              topK={modelPredictions.length || 10}
+              // The number of model candidates the None pill is named after,
+              // so the copy matches the control the reviewer can see. There is
+              // no fallback any more: MatchPills draws real ranks only, and
+              // this callout renders only when a top hit exists, so the count
+              // is never zero here (issue #157).
+              topK={modelPredictions.length}
               model={activeModel}
               filename={response?.filename}
               alreadySeeded={alreadySeeded}

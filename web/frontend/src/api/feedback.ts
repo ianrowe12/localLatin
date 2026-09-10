@@ -15,8 +15,26 @@ export interface FeedbackPayload {
   variant?: PredictionVariant
   outcome?: FeedbackOutcome
   correct_rank: number | null
+  /**
+   * Never an assignment authority: `web/routers/feedback.py` resolves the
+   * directory from the rank against its own snapshot and ignores this field.
+   * New saves send null and let `expected_candidate_dirs` carry what the
+   * reviewer actually saw.
+   */
   correct_dir: string | null
   selected_ranks?: number[] | null
+  /**
+   * The directory displayed at every selected rank when the choice was made,
+   * keyed by rank (issue #157). The server compares each one against its own
+   * resolution and answers 409 `CANDIDATE_IDENTITY_CHANGED` before appending
+   * anything if one has moved, so a reviewer-created directory that shifted
+   * rank cannot silently receive the assignment.
+   *
+   * Required for every selected rank when sent at all, and only sent with
+   * `matched_rank`. It is an identity precondition, not proof that a reviewer
+   * saw the evidence, and not a ranking revision token.
+   */
+  expected_candidate_dirs?: Record<string, string>
   notes: string
 }
 

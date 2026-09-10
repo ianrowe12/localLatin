@@ -262,7 +262,7 @@ describe('one shared ranking', () => {
 
     await screen.findByTestId('band-chip-1')
     // The panel's pill count comes from the same candidates the list drew.
-    expect(await screen.findByText('None of top 3')).toBeTruthy()
+    expect(await screen.findByText('None of the 3 model candidates')).toBeTruthy()
     expect(predictionRequests).toHaveLength(1)
   })
 

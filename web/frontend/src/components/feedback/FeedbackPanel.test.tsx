@@ -12,6 +12,8 @@ import type { FeedbackEntry } from '../../api/feedback'
 const QUERY_ID = 7
 const MODEL = 'bowphs_LaTa'
 const DRAFT_STORAGE_KEY = 'locallatin-feedback-drafts'
+/** Drafts belong to the signed-in account (issue #157); here that is Bob, id 2. */
+const DRAFT_KEY = `acct2:${QUERY_ID}-${MODEL}-sif_abtt`
 
 /**
  * What GET /api/feedback/latest returns to reviewer B when reviewer A has left
@@ -88,7 +90,10 @@ function installFetch(): void {
             score: 1 - rank / 100,
             dir_files: [`${rank}.txt`],
             preview_text: 'preview',
-            candidate_files: null,
+            // Readable text, so these candidates are eligible to be chosen:
+            // eligibility is now the server's rule, not a rendering detail
+            // (issue #157).
+            candidate_files: [{ filename: `${rank}.txt`, text: 'incipit textus' }],
           })),
         })
       }
@@ -201,12 +206,7 @@ describe('shared notes across reviewers', () => {
     // Reviewer B was mid-sentence when the shared prefill arrived.
     localStorage.setItem(
       DRAFT_STORAGE_KEY,
-      JSON.stringify([
-        [
-          `${QUERY_ID}-${MODEL}-sif_abtt`,
-          { correctRank: 3, notes: 'still typing this' },
-        ],
-      ]),
+      JSON.stringify([[DRAFT_KEY, { correctRank: 3, notes: 'still typing this' }]]),
     )
     renderPanel()
 
@@ -219,11 +219,15 @@ describe('shared notes across reviewers', () => {
     // Give the prefill every chance to clobber the draft before asserting.
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(notesBox().value).toBe('still typing this')
+    // The draft names a rank but not the directory that stood there, so the
+    // choice is offered back for confirmation rather than pressed: rank 3 in
+    // an older draft is not proof of what rank 3 holds now (issue #157).
+    const pill = screen.getByRole('button', { name: 'Match prediction #3' })
+    expect(pill.getAttribute('aria-pressed')).toBe('false')
+    expect(pill.getAttribute('data-unconfirmed')).toBe('true')
     expect(
-      screen
-        .getByRole('button', { name: 'Match prediction #3' })
-        .getAttribute('aria-pressed'),
-    ).toBe('true')
+      (screen.getByRole('button', { name: /Submit/ }) as HTMLButtonElement).disabled,
+    ).toBe(true)
   })
 
   it('does not claim an unsaved draft after the draft has been saved', async () => {
@@ -234,7 +238,15 @@ describe('shared notes across reviewers', () => {
     localStorage.setItem(
       DRAFT_STORAGE_KEY,
       JSON.stringify([
-        [`${QUERY_ID}-${MODEL}-sif_abtt`, { correctRank: 1, notes: 'my answer' }],
+        [
+          DRAFT_KEY,
+          {
+            correctRank: 1,
+            selectedRanks: [1],
+            selections: [{ rank: 1, dirName: 'candidate-1', source: 'model' }],
+            notes: 'my answer',
+          },
+        ],
       ]),
     )
     renderPanel()

@@ -90,3 +90,34 @@ does not prove a reviewer saw evidence, bind text or score revisions, provide
 exactly-once delivery, or make feedback and membership inserts transactional.
 Repeated accepted writes still append feedback. No feedback UPDATE or DELETE is
 introduced.
+
+## What the reviewer webapp sends (client side, issue #157)
+
+The frontend derives every assessment control from the ranking currently on
+screen (`src/contexts/assessmentEligibility.ts` over the shared prediction state
+of issue #156), applying the same usability rule as `_candidate_is_usable`: a
+control is offered only where a save behind it would be accepted. No candidates
+means no rank pills, no None pill and no Submit, and a ranking whose model
+candidates are all unreadable disables every pill with the reason on screen;
+Skip with a note stays available throughout. `web/tests/test_feedback_client_contract.py` posts the literal bodies
+below against this API.
+
+Every save sends `correct_dir: null`. The client no longer claims to know the
+assignment, and the server resolves it from the rank.
+
+* Positive choice: `outcome: "matched_rank"`, `correct_rank` = the FIRST rank
+  clicked, `selected_ranks` in click order, and `expected_candidate_dirs`
+  covering exactly those ranks, keyed by rank as a JSON string, holding the
+  directory each rank displayed when it was chosen.
+* None: `outcome: "none_of_top_k"`, `correct_rank: 0`, no `selected_ranks` and
+  no precondition. Offered only when every model candidate on screen is usable.
+* Skip: `outcome: "skipped"`, `correct_rank: null`, a non-blank note, no
+  precondition. Never inferred from a technical failure.
+
+Drafts are keyed by reviewer account, query, model and variant, and each stored
+choice keeps the directory name and source it was made against. A draft choice
+whose rank has vanished or now holds a different directory is dropped and
+reported to the reviewer rather than re-pointed; a choice restored without an
+identity (an older draft, or a saved answer's non-canonical rank) is shown
+unpressed for reconfirmation, and cannot be submitted until it is clicked again.
+A 409 keeps the draft and offers a reload of the ranking.
