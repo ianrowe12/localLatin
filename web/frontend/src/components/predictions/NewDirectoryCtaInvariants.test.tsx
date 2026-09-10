@@ -7,7 +7,11 @@ import {
   useSavedDirectoryStore,
 } from '../../contexts/SavedDirectoryContext'
 import type { SavedDirectoryStore } from '../../contexts/savedDirectoryStore'
-import type { ReviewerDir } from '../../api/reviewerDirs'
+import {
+  REVIEWER_DIRS_UPDATED_EVENT,
+  type ReviewerDir,
+} from '../../api/reviewerDirs'
+import { usePredictions } from '../../api/queries'
 import NewDirectoryCta from './NewDirectoryCta'
 
 /**
@@ -26,6 +30,8 @@ import NewDirectoryCta from './NewDirectoryCta'
 
 const MODEL = 'bowphs_LaTa'
 const QUERY_A = 7
+/** A query whose predictions are already cached when the write happens. */
+const OTHER_QUERY = 12
 
 function dirFixture(overrides: Partial<ReviewerDir> = {}): ReviewerDir {
   return {
@@ -358,5 +364,189 @@ describe('finding 7: identity rows are validated before they are believed', () =
     expect(screen.queryByTestId('new-directory-saved')).toBeNull()
     expect(document.body.textContent).not.toContain('Created by undefined')
     expect(screen.queryByTestId('new-directory-cta')).toBeNull()
+  })
+})
+
+describe('finding 8: a recovery that arrives late still invalidates other caches', () => {
+  // A reviewer directory is a candidate for every OTHER query, so learning of
+  // one has to reach the prediction caches. Two of the three ways this store
+  // can learn of a write already broadcast that; the third -- a `Check again`
+  // that succeeds after the immediate reconciliation failed -- did not, which
+  // left an already-cached query rendering a candidate list built before the
+  // directory existed, with nothing to invalidate it short of a reload.
+
+  it('broadcasts once when Check again resolves an uncertain write', async () => {
+    const user = userEvent.setup()
+    let saved = false
+    let lookupWorks = false
+    let predictionGets = 0
+    let events = 0
+    const listener = () => {
+      events += 1
+    }
+    window.addEventListener(REVIEWER_DIRS_UPDATED_EVENT, listener)
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url.includes('/predictions')) {
+          predictionGets += 1
+          return jsonResponse({
+            file_id: OTHER_QUERY,
+            filename: `query-${OTHER_QUERY}.txt`,
+            model: MODEL,
+            variant: 'sif_abtt',
+            seeded_dirs: [],
+            // The directory only becomes a candidate for the other query once
+            // it exists on the server.
+            predictions: saved
+              ? [
+                  {
+                    rank: 11,
+                    dir_name: 'reviewer-dir-1',
+                    score: 0.8,
+                    dir_files: [],
+                    preview_text: '',
+                    candidate_files: null,
+                    source: 'reviewer',
+                    label: 'Saved proposal',
+                    seed_query_id: QUERY_A,
+                  },
+                ]
+              : [],
+          })
+        }
+        if ((init?.method ?? 'GET') === 'POST') {
+          // The write LANDS and the response is lost.
+          saved = true
+          throw new Error('Failed to fetch')
+        }
+        if (!saved) return jsonResponse([])
+        // The immediate reconciliation fails, so the attempt is left uncertain
+        // and only an explicit Check again can settle it.
+        return lookupWorks
+          ? jsonResponse([dirFixture()])
+          : jsonResponse({ detail: 'unavailable' }, 503)
+      }),
+    )
+
+    function OtherQueryCandidates() {
+      const result = usePredictions(OTHER_QUERY, MODEL)
+      return (
+        <span data-testid="other-query-candidates">
+          {result.loading ? 'loading' : String(result.data?.predictions.length ?? 0)}
+        </span>
+      )
+    }
+
+    try {
+      render(
+        <SavedDirectoryProvider accountKey="reviewer-1">
+          <NewDirectoryCta queryId={QUERY_A} model={MODEL} emphasised />
+          <OtherQueryCandidates />
+        </SavedDirectoryProvider>,
+      )
+      // The other query is cached before anything is created, with no reviewer
+      // candidate in it. This is the cache that must not be allowed to persist.
+      await waitFor(() => {
+        expect(screen.getByTestId('other-query-candidates').textContent).toBe('0')
+      })
+      const cachedGets = predictionGets
+
+      await startCreation(user)
+      await screen.findByTestId('new-directory-outcome')
+      expect(events).toBe(0)
+
+      lookupWorks = true
+      await user.click(screen.getByTestId('new-directory-check-again'))
+      await screen.findByTestId('new-directory-saved')
+
+      // The acknowledgement is not the whole job: the rest of the app has to
+      // hear about it too.
+      expect(events).toBe(1)
+      await waitFor(() => {
+        expect(screen.getByTestId('other-query-candidates').textContent).toBe('1')
+      })
+      expect(predictionGets).toBeGreaterThan(cachedGets)
+    } finally {
+      window.removeEventListener(REVIEWER_DIRS_UPDATED_EVENT, listener)
+    }
+  })
+
+  it('does not broadcast on a routine lookup or a seeded observation', async () => {
+    let store!: SavedDirectoryStore
+    let events = 0
+    const listener = () => {
+      events += 1
+    }
+    window.addEventListener(REVIEWER_DIRS_UPDATED_EVENT, listener)
+    function Probe() {
+      store = useSavedDirectoryStore()
+      return null
+    }
+    installFetch({ get: () => jsonResponse([dirFixture()]) })
+
+    try {
+      render(
+        <SavedDirectoryProvider accountKey="reviewer-1">
+          <Probe />
+        </SavedDirectoryProvider>,
+      )
+      await act(async () => {
+        await store.ensureLookup(QUERY_A)
+        await store.ensureLookup(QUERY_A, { force: true })
+        store.observeSeededDirs(QUERY_A, [dirFixture()])
+      })
+
+      expect(store.getRecord(QUERY_A).identity.status).toBe('saved')
+      // Nothing was written here. Broadcasting on an ordinary read would clear
+      // every prediction cache, which refetches, which reads again.
+      expect(events).toBe(0)
+    } finally {
+      window.removeEventListener(REVIEWER_DIRS_UPDATED_EVENT, listener)
+    }
+  })
+
+  it('does not broadcast twice when a lookup and the POST find the same row', async () => {
+    const pendingPost = deferred<Response>()
+    let events = 0
+    let store!: SavedDirectoryStore
+    const listener = () => {
+      events += 1
+    }
+    window.addEventListener(REVIEWER_DIRS_UPDATED_EVENT, listener)
+    function Probe() {
+      store = useSavedDirectoryStore()
+      return null
+    }
+    installFetch({
+      post: () => pendingPost.promise,
+      get: () => jsonResponse([dirFixture()]),
+    })
+
+    try {
+      render(
+        <SavedDirectoryProvider accountKey="reviewer-1">
+          <Probe />
+        </SavedDirectoryProvider>,
+      )
+      let operation!: Promise<unknown>
+      await act(async () => {
+        operation = store.createDirectory(QUERY_A, { label: 'Saved proposal' })
+        // A forced lookup overlaps the write and sees the row first.
+        await store.ensureLookup(QUERY_A, { force: true })
+      })
+      await act(async () => {
+        pendingPost.resolve(jsonResponse(dirFixture(), 201))
+        await operation
+      })
+
+      // Two paths, one directory, one invalidation.
+      expect(events).toBe(1)
+      expect(store.getRecord(QUERY_A).identity.status).toBe('saved')
+    } finally {
+      window.removeEventListener(REVIEWER_DIRS_UPDATED_EVENT, listener)
+    }
   })
 })

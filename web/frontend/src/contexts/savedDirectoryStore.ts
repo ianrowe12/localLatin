@@ -347,9 +347,31 @@ export class SavedDirectoryStore {
       })
       if (this.lookupGeneration.get(queryId) !== generation) return
       if (dirs.length > 0) {
+        // A lookup that answers an outstanding write of ours is the last step
+        // of a creation, not a routine read, and it has to finish that creation
+        // properly: the row it found is a candidate for every OTHER query too,
+        // and any prediction response already cached was built without it.
+        // The 201 and the immediate-recovery paths both broadcast; a recovery
+        // that arrives later over `Check again` must broadcast as well, or a
+        // cached query goes on omitting a directory that exists.
+        const answersOwnWrite = isWriteUnsettled(this.getRecord(queryId).creation)
+        const knownBefore = this.knownDirIds(queryId)
         // Positive evidence is always usable: a row that exists, exists,
         // whenever the response was built.
         this.recordSaved(queryId, dirs, 'server-list')
+        if (answersOwnWrite) {
+          // The write is over and its outcome is now known: it landed. The
+          // reviewer is looking at an acknowledgement, not at a form.
+          this.update(queryId, (current) =>
+            current.creation.status === 'failed' && current.creation.outcome === 'unknown'
+              ? { ...current, creation: { status: 'idle' }, formOpen: false }
+              : current,
+          )
+          // Gated on the write, and on this row being new to the client, so a
+          // routine refresh of an already-known directory cannot start a cycle
+          // of broadcast, refetch, broadcast.
+          if (this.hasNewDirs(knownBefore, dirs)) notifyReviewerDirsUpdated()
+        }
         return
       }
       // Only a well-formed, empty list gets here: `fetchReviewerDirs` throws on
@@ -540,9 +562,12 @@ export class SavedDirectoryStore {
         { notify: false },
       )
       this.writeSettled(queryId)
+      const knownBefore = this.knownDirIds(queryId)
       this.recordSaved(queryId, [dir], 'created')
       this.settleOperation(queryId, operationId, { status: 'idle' })
-      notifyReviewerDirsUpdated()
+      // Normally unconditional: a 201 is a row nobody had. The guard only bites
+      // when a lookup running beside this write already announced the same row.
+      if (this.hasNewDirs(knownBefore, [dir])) notifyReviewerDirsUpdated()
       return { outcome: 'created', dir }
     } catch (err) {
       const error = messageOf(err)
@@ -563,13 +588,13 @@ export class SavedDirectoryStore {
       }
 
       if (reconciled && reconciled.length > 0) {
-        const wasKnown = this.getRecord(queryId).identity.status === 'saved'
+        const knownBefore = this.knownDirIds(queryId)
         this.recordSaved(queryId, reconciled, 'recovered')
         this.settleOperation(queryId, operationId, { status: 'idle' })
         // A recovered directory the app had not seen is new to every candidate
         // list in this tab. Already-known ones broadcast nothing, so recovery
         // cannot feed a refresh loop.
-        if (!wasKnown) notifyReviewerDirsUpdated()
+        if (this.hasNewDirs(knownBefore, reconciled)) notifyReviewerDirsUpdated()
         return { outcome: 'recovered', dirs: reconciled }
       }
 
@@ -620,6 +645,32 @@ export class SavedDirectoryStore {
     const inFlight = this.writesInFlight.get(queryId) ?? 0
     if (inFlight <= 1) this.writesInFlight.delete(queryId)
     else this.writesInFlight.set(queryId, inFlight - 1)
+  }
+
+  /** The directories this store can already name for a query. */
+  private knownDirIds(queryId: number): ReadonlySet<string> {
+    const { identity } = this.getRecord(queryId)
+    return new Set(
+      identity.status === 'saved' ? identity.dirs.map((dir) => dir.dir_id) : [],
+    )
+  }
+
+  /**
+   * Did this evidence teach the client about a directory it could not name?
+   *
+   * The refresh broadcast is keyed on this rather than on "a write finished",
+   * because the answer is what the caches actually care about: a directory the
+   * client already knew is already in the candidate lists it built, and
+   * re-broadcasting it would only make every mounted query refetch. Two paths
+   * can also learn of the same row at once -- a forced lookup running beside a
+   * POST -- and both of them asking this question is what keeps the pair to one
+   * broadcast between them.
+   */
+  private hasNewDirs(
+    knownBefore: ReadonlySet<string>,
+    dirs: readonly ReviewerDir[],
+  ): boolean {
+    return dirs.some((dir) => !knownBefore.has(dir.dir_id))
   }
 
   /**
