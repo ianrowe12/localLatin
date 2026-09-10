@@ -64,16 +64,26 @@ async def create_feedback(
             current_user=current_user,
         )
         excluded = (snapshot.status or "").strip().startswith("excluded")
-        usable_model_ranking = any(
-            candidate.source == CandidateSource.MODEL and _candidate_is_usable(candidate)
+        model_candidate_usability = [
+            _candidate_is_usable(candidate)
             for candidate in snapshot.predictions
-        )
-        if excluded or not usable_model_ranking:
+            if candidate.source == CandidateSource.MODEL
+        ]
+        if excluded or not any(model_candidate_usability):
             return _feedback_error(
                 422,
                 "RANKING_NOT_EVALUABLE",
                 "Evaluation requires a usable model ranking. "
                 "Keep a draft or deliberately skip with a note.",
+            )
+        if body.outcome == FeedbackOutcome.NONE_OF_TOP_K and not all(
+            model_candidate_usability
+        ):
+            return _feedback_error(
+                422,
+                "RANKING_NOT_EVALUABLE",
+                "None requires usable evidence for every offered model candidate. "
+                "Choose a readable candidate, keep a draft or deliberately skip with a note.",
             )
         candidates = {candidate.rank: candidate for candidate in snapshot.predictions}
 

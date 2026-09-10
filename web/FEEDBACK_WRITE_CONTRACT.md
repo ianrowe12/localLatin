@@ -6,8 +6,11 @@ variant. The deployment's default variant still applies when omitted.
 - `matched_rank` and `none_of_top_k` require at least one usable model candidate.
   A usable candidate has a directory identity, a finite score and at least one
   nonblank candidate text. Every selected candidate must also be usable.
-  Blank candidates disable only their own choices. Reviewer-only candidates do
-  not make an empty model ranking evaluable. Confidence thresholds do not gate
+  An unusable candidate does not block readable positive choices.
+- `none_of_top_k` also requires every offered model candidate to be usable.
+  A partial ranking with missing or blank candidate text cannot support None.
+  Reviewer extras neither replace model evidence nor make None unavailable when
+  all offered model candidates are usable. Confidence thresholds do not gate
   evaluation.
 - A source status beginning with `excluded` rejects evaluation even if candidates
   remain in that row. Missing source status on an older artifact does not reject
@@ -63,7 +66,8 @@ That response has HTTP status 409. Keep the draft and request a fresh ranking;
 do not silently accept the new directory at that rank or blindly retry.
 
 Source-level ineligibility returns HTTP 422 with the same error envelope and code
-`RANKING_NOT_EVALUABLE`. An unusable selected candidate returns
+`RANKING_NOT_EVALUABLE`, including None on a partially usable model ranking.
+An unusable selected candidate returns
 `CANDIDATE_NOT_EVALUABLE`. Invalid request fields return FastAPI's usual 422
 `detail` list. A missing selected rank without a precondition retains a 422
 string `detail`. A missing query prediction row returns 404. Source-level

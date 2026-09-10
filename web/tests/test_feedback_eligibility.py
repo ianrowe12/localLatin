@@ -190,21 +190,58 @@ def test_unusable_model_evidence_cannot_be_evaluated(
     assert client.get("/api/stats").json()["feedback_count"] == 0
 
 
-def test_blank_candidates_are_disabled_individually(ranked_client: TestClient) -> None:
-    get_store().labelled_texts["candidate-a"]["a.txt"] = " \t "
+@pytest.mark.parametrize("none_assessment", [{"correct_rank": 0}, {"outcome": "none_of_top_k"}])
+@pytest.mark.parametrize("unusable", ["blank", "missing", "nonfinite"])
+def test_partial_model_evidence_allows_readable_positive_but_not_none(
+    ranked_client: TestClient, none_assessment: dict, unusable: str,
+) -> None:
+    store = get_store()
+    if unusable == "blank":
+        store.labelled_texts["candidate-a"]["a.txt"] = " \t "
+    elif unusable == "missing":
+        store.labelled_texts.pop("candidate-a")
+    else:
+        store.predictions[("bowphs_LaTa", "sif_abtt")][1]["predictions"][0]["score"] = float("nan")
     rejected = ranked_client.post(
         "/api/feedback",
         json={"query_id": 1, "model_slug": "bowphs_LaTa", "correct_rank": 1},
     )
     assert rejected.status_code == 422, rejected.text
     assert rejected.json()["error"]["code"] == "CANDIDATE_NOT_EVALUABLE"
-    for rank in (2, 0):
-        response = ranked_client.post(
-            "/api/feedback",
-            json={"query_id": 1, "model_slug": "bowphs_LaTa", "correct_rank": rank},
-        )
-        assert response.status_code == 201, response.text
-    assert ranked_client.get("/api/stats").json()["feedback_count"] == 2
+    assert ranked_client.get("/api/stats").json()["feedback_count"] == 0
+    readable = ranked_client.post(
+        "/api/feedback",
+        json={"query_id": 1, "model_slug": "bowphs_LaTa", "correct_rank": 2},
+    )
+    assert readable.status_code == 201, readable.text
+    assert readable.json()["correct_dir"] == "candidate-b"
+    none = ranked_client.post(
+        "/api/feedback",
+        json={"query_id": 1, "model_slug": "bowphs_LaTa", **none_assessment},
+    )
+    assert none.status_code == 422, none.text
+    assert none.json()["error"]["code"] == "RANKING_NOT_EVALUABLE"
+    assert ranked_client.get("/api/stats").json()["feedback_count"] == 1
+
+
+@pytest.mark.parametrize("reviewer_text", ["Readable reviewer candidate.", " \t\n "])
+def test_none_eligibility_ignores_reviewer_extra_text(
+    ranked_client: TestClient, reviewer_text: str,
+) -> None:
+    _create_dir(ranked_client, 0)
+    get_store().unlabelled_texts[0] = reviewer_text
+    predictions = ranked_client.get(
+        "/api/query/1/predictions", params={"model": "bowphs_LaTa"}
+    ).json()["predictions"]
+    assert [candidate["rank"] for candidate in predictions] == [1, 2, 11]
+    response = ranked_client.post(
+        "/api/feedback",
+        json={"query_id": 1, "model_slug": "bowphs_LaTa", "outcome": "none_of_top_k"},
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["outcome"] == "none_of_top_k"
+    assert ranked_client.get("/api/stats").json()["feedback_count"] == 1
+    assert ranked_client.get("/api/reviewer_dirs").json()[0]["member_query_ids"] == [0]
 
 
 @pytest.mark.parametrize(
