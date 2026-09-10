@@ -27,6 +27,12 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class QQScore:
+    score: float
+    supporting_query_id: int | None
+
+
 @dataclass
 class QQMatrix:
     """One model's 2,238 x 2,238 query-query cosine matrix.
@@ -74,6 +80,18 @@ class QQMatrix:
         would otherwise score a perfect 1.0 when q is the one being reviewed.
         Returns None when no member is usable.
         """
+        result = self.score_with_support(query_file_id, member_file_ids)
+        return result.score if result is not None else None
+
+    def score_with_support(
+        self, query_file_id: int, member_file_ids: list[int]
+    ) -> QQScore | None:
+        """The same max score, with its supporting member's query id.
+
+        Ties choose the smallest query id, independent of member or matrix
+        order. Non-finite maxima retain their score but have no support;
+        they must not be replaced by a lower, finite member's score.
+        """
         row = self.row_of(query_file_id)
         if row is None:
             return None
@@ -85,16 +103,25 @@ class QQMatrix:
         ]
         if not cols:
             return None
-        return float(np.max(self.sim[row, cols].astype(np.float32)))
+        values = self.sim[row, cols].astype(np.float32)
+        score = float(np.max(values))
+        supporting_query_id = (
+            min(
+                int(self.file_ids[col])
+                for col, value in zip(cols, values)
+                if value == score
+            )
+            if np.isfinite(score)
+            else None
+        )
+        return QQScore(score=score, supporting_query_id=supporting_query_id)
 
     def best_external_score(self, member_file_ids: list[int]) -> float:
         """Best score any *non-member* query achieves against these members.
 
-        This is what decides whether a reviewer directory is still awaiting a
-        match: the directory is matched as soon as some other query in the
-        corpus reaches the band. Computed live rather than stored, so the answer
-        is always consistent with the matrix currently deployed and nothing has
-        to be mutated when it changes.
+        Informational only: this supplies a potential-match lead, not the
+        directory's status. A directory is matched only after a human files a
+        second distinct witness. Computed live from the deployed matrix.
         """
         rows = [
             idx
