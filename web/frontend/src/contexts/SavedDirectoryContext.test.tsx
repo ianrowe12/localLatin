@@ -287,21 +287,39 @@ describe('SavedDirectoryProvider', () => {
     expect(screen.getByTestId('creation').textContent).toBe('idle')
   })
 
-  it('drops another account\'s state on sign-out', async () => {
-    const store = new SavedDirectoryStore()
-    const { rerender } = render(<Harness queryId={QUERY_A} store={store} />)
-    await userEvent.click(screen.getByTestId('create'))
+  it("never paints another account's state, not even for one render", async () => {
+    // Query ids are bare integers, so a record from one account is a
+    // well-formed lookup key for the next one. Clearing in an effect would be
+    // one paint too late: the new reviewer would see "Directory saved" for a
+    // document that, for them, may have no directory at all.
+    const painted: string[] = []
+    function Recorder({ queryId }: { queryId: number }) {
+      const { identity } = useSavedDirectoryFor(queryId)
+      painted.push(identity.status)
+      return <div data-testid="identity">{identity.status}</div>
+    }
+    function Scoped({ accountKey }: { accountKey: string | null }) {
+      return (
+        <SavedDirectoryProvider accountKey={accountKey}>
+          <Recorder queryId={QUERY_A} />
+        </SavedDirectoryProvider>
+      )
+    }
+
+    installFetch({ get: () => jsonResponse([dirFixture()]) })
+    const { rerender } = render(<Scoped accountKey="account-1" />)
     await waitFor(() => {
       expect(screen.getByTestId('identity').textContent).toBe('saved')
     })
 
-    rerender(<Harness queryId={QUERY_A} accountKey={null} store={store} />)
+    // The next account's lookup never answers, so anything the reviewer sees
+    // before it does can only have come from the previous session.
+    installFetch({ get: () => new Promise<Response>(() => {}) })
+    painted.length = 0
+    rerender(<Scoped accountKey="account-2" />)
 
-    // Query ids are bare integers: what one account could see is no evidence
-    // about what the next one can.
-    await waitFor(() => {
-      expect(screen.getByTestId('identity').textContent).not.toBe('saved')
-    })
+    expect(painted).not.toContain('saved')
+    expect(screen.getByTestId('identity').textContent).not.toBe('saved')
   })
 
   it('broadcasts the refresh only after the identity is readable', async () => {
@@ -335,61 +353,20 @@ describe('SavedDirectoryProvider', () => {
 })
 
 describe('useSavedDirectory outside a provider', () => {
-  // Until App composition mounts the provider (deferred to issue #156's
-  // handoff), the CTA still renders in the real app and in the list's own
-  // tests. Throwing there would trade a durability bug for a blank screen, and
-  // a per-mount store would silently reinstate the bug it is here to fix, so
-  // the hooks fall back to one process-wide store.
-  it('shares one fallback store across separate mounts', async () => {
-    function Orphan({ queryId }: { queryId: number }) {
-      const store = useSavedDirectoryStore()
-      const { identity } = useSavedDirectoryFor(queryId)
-      return (
-        <div>
-          <button onClick={() => void store.ensureLookup(queryId)}>look</button>
-          <span data-testid="status">{identity.status}</span>
-        </div>
-      )
+  it('refuses to invent a store', () => {
+    // The two fallbacks that would make this "work" are both worse than an
+    // error. A component-lifetime store type-checks and silently restores the
+    // exact bug this module exists to fix, because the acknowledgement dies
+    // with the component that made it. A process-wide one survives, but it is
+    // not account-scoped, so one reviewer's groupings become readable by
+    // whoever signs in next. Composition is a build-time mistake and is caught
+    // at build time.
+    function Orphan() {
+      useSavedDirectoryStore()
+      return null
     }
-
-    let listing: unknown[] = [dirFixture()]
-    installFetch({ get: () => jsonResponse(listing) })
-    const first = render(<Orphan queryId={QUERY_A} />)
-    await waitFor(() => {
-      expect(screen.getByTestId('status').textContent).toBe('saved')
-    })
-    first.unmount()
-
-    // A second, unrelated mount asks the same question. If the fallback were
-    // per-mount this would start at `unknown` and offer to create a directory
-    // that already exists.
-    listing = []
-    render(<Orphan queryId={QUERY_A} />)
-    expect(screen.getByTestId('status').textContent).toBe('saved')
-  })
-
-  it('is not consulted once a provider is mounted', async () => {
-    function Probe({ queryId }: { queryId: number }) {
-      const { identity } = useSavedDirectoryFor(queryId)
-      return <span data-testid="status">{identity.status}</span>
-    }
-
-    let listing: unknown[] = [dirFixture()]
-    installFetch({ get: () => jsonResponse(listing) })
-    const orphan = render(<Probe queryId={QUERY_A} />)
-    await waitFor(() => {
-      expect(screen.getByTestId('status').textContent).toBe('saved')
-    })
-    orphan.unmount()
-
-    listing = []
-    render(
-      <SavedDirectoryProvider accountKey="someone-else">
-        <Probe queryId={QUERY_A} />
-      </SavedDirectoryProvider>,
-    )
-    await waitFor(() => {
-      expect(screen.getByTestId('status').textContent).toBe('absent')
-    })
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    expect(() => render(<Orphan />)).toThrow(/SavedDirectoryProvider/)
+    spy.mockRestore()
   })
 })

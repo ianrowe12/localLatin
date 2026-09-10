@@ -314,9 +314,11 @@ describe('uncertain creation outcomes', () => {
     if (creation.status !== 'failed') throw new Error('expected failed')
     expect(creation.outcome).toBe('unknown')
     expect(creation.proposedLabel).toBe('My wording')
-    // A lost response is not proof of absence, so the identity stays open
-    // rather than inviting a second permanent directory.
-    expect(store.getRecord(QUERY_A).identity.status).toBe('unknown')
+    // A lost response is not proof of absence, so the identity is marked
+    // unresolved rather than inviting a second permanent directory: whatever
+    // was believed before the attempt is now stale, because the write may well
+    // have landed.
+    expect(store.getRecord(QUERY_A).identity.status).toBe('unresolved')
   })
 
   it('recovers a lost 201 response instead of creating a second directory', async () => {
@@ -441,5 +443,81 @@ describe('pending write controls', () => {
 
     expect(calls.every((call) => !call.url.includes('/api/feedback'))).toBe(true)
     expect(calls.filter((call) => call.method === 'POST')).toHaveLength(1)
+  })
+})
+
+describe('an unreadable answer is a failure, not an empty one', () => {
+  // The endpoint answers one question -- "does this document already have a
+  // directory?" -- and an empty list is permission to write a permanent,
+  // unremovable record. A body this client cannot parse is not that permission.
+  const MALFORMED_BODIES: [string, unknown][] = [
+    ['an object where a list belongs', { detail: 'ok' }],
+    ['a bare null', null],
+    ['a string', 'reviewer_dirs'],
+    ['a list whose entry has no identity', [{ label: 'Unattested homily' }]],
+    ['a list whose entry has no seed', [{ ...dirFixture(), seed_query_id: null }]],
+  ]
+
+  it.each(MALFORMED_BODIES)(
+    'leaves the initial lookup unresolved when the server sends %s',
+    async (_name, body) => {
+      installFetch({ get: () => jsonResponse(body) })
+      const store = new SavedDirectoryStore()
+      await store.ensureLookup(QUERY_A)
+
+      const identity = store.getRecord(QUERY_A).identity
+      // Not `absent`: that would put a Create button in front of a reviewer on
+      // the strength of a response nobody could read.
+      expect(identity.status).toBe('unresolved')
+      expect(identity.status === 'unresolved' && identity.error).toMatch(
+        /could not be read/,
+      )
+    },
+  )
+
+  it('does not un-save a known grouping when a refresh comes back unreadable', async () => {
+    const store = new SavedDirectoryStore()
+    await store.createDirectory(QUERY_A, { label: 'Unattested homily' })
+
+    installFetch({ get: () => jsonResponse({ unexpected: true }) })
+    await store.ensureLookup(QUERY_A, { force: true })
+
+    const identity = store.getRecord(QUERY_A).identity
+    if (identity.status !== 'saved') throw new Error('expected saved')
+    expect(identity.primary.dir_id).toBe('reviewer-dir-1')
+    expect(identity.refreshError).toMatch(/could not be read/)
+  })
+
+  it('refuses to say "nothing was created" when reconciliation is unreadable', async () => {
+    installFetch({
+      post: () => jsonResponse({ detail: 'Gateway timeout' }, 504),
+      get: () => jsonResponse({ detail: 'Gateway timeout' }),
+    })
+    const store = new SavedDirectoryStore()
+    store.beginNaming(QUERY_A, 'New directory from query-7')
+    store.setProposedLabel(QUERY_A, 'Council of Aachen, canon 4')
+    const result = await store.createDirectory(QUERY_A, {
+      label: 'Council of Aachen, canon 4',
+    })
+
+    expect(result.outcome).toBe('unresolved')
+    const record = store.getRecord(QUERY_A)
+    if (record.creation.status !== 'failed') throw new Error('expected failed')
+    // The write may well have landed, so the reviewer is told the truth and
+    // keeps the name they chose rather than retyping it into a duplicate.
+    expect(record.creation.outcome).toBe('unknown')
+    expect(record.creation.proposedLabel).toBe('Council of Aachen, canon 4')
+    expect(record.creation.error).toBe('Gateway timeout')
+    // And the identity is open again: closing the form must not fall back to
+    // whatever was believed before the write was attempted.
+    expect(record.identity.status).toBe('unresolved')
+  })
+
+  it('still recognises a well-formed empty list as absence', async () => {
+    installFetch({ get: () => jsonResponse([]) })
+    const store = new SavedDirectoryStore()
+    await store.ensureLookup(QUERY_A)
+
+    expect(store.getRecord(QUERY_A).identity.status).toBe('absent')
   })
 })

@@ -182,6 +182,12 @@ export class SavedDirectoryStore {
    * browser storage for the same reason: a bare numeric query id from another
    * deployment must never be able to assert that this query is saved. Reload
    * recovery is the server's job, not localStorage's.
+   *
+   * `SavedDirectoryProvider` does not call this on an account change; it builds
+   * a new store instead, so the old records are unreachable rather than emptied
+   * and a request still in flight from the previous session cannot land in the
+   * new one. This stays for a host that owns one store across a lifecycle event
+   * of its own.
    */
   clear(): void {
     this.records.clear()
@@ -231,10 +237,13 @@ export class SavedDirectoryStore {
         model: options.model,
       })
       if (this.lookupGeneration.get(queryId) !== generation) return
-      if (Array.isArray(dirs) && dirs.length > 0) {
+      if (dirs.length > 0) {
         this.recordSaved(queryId, dirs, 'server-list')
         return
       }
+      // Only a well-formed, empty list gets here: `fetchReviewerDirs` throws on
+      // a body it cannot read, so absence is always something the server said
+      // rather than something this client inferred.
       this.recordAbsent(queryId)
     } catch (err) {
       if (this.lookupGeneration.get(queryId) !== generation) return
@@ -373,11 +382,13 @@ export class SavedDirectoryStore {
       const error = messageOf(err)
       let reconciled: ReviewerDir[] | null = null
       try {
-        const found = await fetchReviewerDirs({
+        // A malformed answer throws here, which is what keeps it out of the
+        // `reconciled.length === 0` branch below: that branch is a claim that
+        // the write did not land.
+        reconciled = await fetchReviewerDirs({
           seedQueryId: queryId,
           model: input.model,
         })
-        reconciled = Array.isArray(found) ? found : []
       } catch {
         reconciled = null
       }
@@ -406,6 +417,7 @@ export class SavedDirectoryStore {
         return { outcome: 'failed', error }
       }
 
+      this.markUnresolved(queryId, error)
       this.settleOperation(queryId, operationId, {
         status: 'failed',
         proposedLabel,
@@ -472,6 +484,27 @@ export class SavedDirectoryStore {
         }
       }
       return { ...current, identity: { status: 'absent' } }
+    })
+  }
+
+  /**
+   * "The question is open again."
+   *
+   * Used when a write may or may not have landed and the follow-up check could
+   * not say which. Whatever the app believed a moment ago -- typically `absent`,
+   * the state that offers a Create button -- is now stale, and acting on it is
+   * how a second permanent directory gets created for one document. A confirmed
+   * save is not downgraded: that one cannot become false.
+   */
+  private markUnresolved(queryId: number, error: string): void {
+    this.update(queryId, (current) => {
+      if (current.identity.status === 'saved') {
+        return {
+          ...current,
+          identity: { ...current.identity, refreshing: false, refreshError: error },
+        }
+      }
+      return { ...current, identity: { status: 'unresolved', error } }
     })
   }
 

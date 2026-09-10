@@ -72,6 +72,10 @@ interface NewDirectoryCtaProps {
  * A late completion is recorded against the query it was started on even if
  * this instance is showing another one, so navigating away no longer throws the
  * acknowledgement away, and cannot paint it onto the next fragment either.
+ *
+ * This component therefore REQUIRES a `SavedDirectoryProvider` above it and
+ * throws without one. Mounting it in App composition is deferred to issue
+ * #156's handoff; every surface that renders this CTA must wrap it until then.
  */
 export default function NewDirectoryCta({
   queryId,

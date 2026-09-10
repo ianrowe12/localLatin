@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppProvider, useApp } from '../../contexts/AppContext'
 import { PredictionProvider } from '../../contexts/PredictionContext'
 import AwaitingMatchBadge from './AwaitingMatchBadge'
+import { SavedDirectoryProvider } from '../../contexts/SavedDirectoryContext'
 import PredictionList from './PredictionList'
 
 const MODEL = 'bowphs_LaTa'
@@ -97,6 +98,20 @@ function installFetch(createResponse?: () => Response): void {
       }
       return jsonResponse({})
     }
+      if (url.includes('/api/reviewer_dirs')) {
+        // The seed lookup (issue #161). It is a real endpoint, so the fixture
+        // answers it like one: the directories this query seeds, and an empty
+        // list when it seeds none. A body this stub cannot produce would be a
+        // failure, not an empty answer.
+        const seed = Number(
+          new URL(url, 'http://test.local').searchParams.get('seed_query_id'),
+        )
+        return jsonResponse(
+          (predictions.seeded_dirs as { seed_query_id: number }[]).filter(
+            (dir) => dir.seed_query_id === seed,
+          ),
+        )
+      }
     if (url.includes('/api/models')) return jsonResponse(modelsPayload())
     if (url.includes('/predictions')) {
       return jsonResponse({
@@ -124,9 +139,11 @@ function Harness() {
 function renderList() {
   return render(
     <AppProvider>
-      <PredictionProvider>
-        <Harness />
-      </PredictionProvider>
+      <SavedDirectoryProvider accountKey="test-account">
+        <PredictionProvider>
+          <Harness />
+        </PredictionProvider>
+      </SavedDirectoryProvider>
     </AppProvider>,
   )
 }

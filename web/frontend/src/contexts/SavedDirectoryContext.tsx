@@ -30,6 +30,13 @@ import {
  * over from another account — or another deployment's database — must not be
  * able to claim that this query is already saved. Pass the current account id
  * (for example `useReviewer().user?.id`) when mounting this provider.
+ *
+ * MOUNTING IT IS NOT OPTIONAL: the hooks throw without it rather than falling
+ * back to a store of their own. A per-component fallback would type-check and
+ * silently reinstate the bug this module exists to fix; a process-wide one
+ * would leak one reviewer's state into the next session. Until App composition
+ * mounts this provider (deferred to issue #156's handoff), any surface that
+ * renders `NewDirectoryCta` has to wrap it.
  */
 
 interface SavedDirectoryContextValue {
@@ -37,33 +44,6 @@ interface SavedDirectoryContextValue {
 }
 
 const SavedDirectoryContext = createContext<SavedDirectoryContextValue | null>(null)
-
-/**
- * The store used when no provider is mounted.
- *
- * App composition is externally owned until issue #156 hands it over, so the
- * creation form has to be durable BEFORE `SavedDirectoryProvider` is wired in.
- * Throwing instead would take the running app down; giving each consumer its
- * own store would silently reinstate the bug, since the whole point is that the
- * acknowledgement outlives the component that made it.
- *
- * It is process-wide and therefore NOT account-scoped: mounting the provider
- * with an `accountKey` is what adds sign-out clearing, and doing so is the
- * remaining integration step. The claim it holds ("this document seeds a
- * grouping") is a global fact about the database rather than a per-reviewer
- * one, which is why an unscoped fallback is tolerable in the meantime.
- */
-let defaultStore: SavedDirectoryStore | null = null
-
-function getDefaultStore(): SavedDirectoryStore {
-  if (defaultStore === null) defaultStore = new SavedDirectoryStore()
-  return defaultStore
-}
-
-/** Test isolation for the fallback, like `__resetModelsCache` for models. */
-export function __resetDefaultSavedDirectoryStore(): void {
-  defaultStore = null
-}
 
 export function SavedDirectoryProvider({
   children,
@@ -75,18 +55,24 @@ export function SavedDirectoryProvider({
   /** Test seam: supply a pre-populated store instead of a fresh one. */
   store?: SavedDirectoryStore
 }) {
-  const storeRef = useRef<SavedDirectoryStore | null>(injected ?? null)
-  if (storeRef.current === null) storeRef.current = new SavedDirectoryStore()
-  const store = storeRef.current
-
-  const previousAccount = useRef<string | number | null>(accountKey)
-  useEffect(() => {
-    if (previousAccount.current === accountKey) return
-    previousAccount.current = accountKey
-    // Sign-out, sign-in as somebody else, or a forced re-authentication: what
-    // the previous session could see says nothing about this one.
-    store.clear()
-  }, [accountKey, store])
+  // Scoped DURING RENDER, not in an effect. An effect runs after the children
+  // have already painted, so a sign-out or a switch to another account would
+  // show the previous reviewer's acknowledgements for one frame -- and one
+  // frame is enough to tell somebody a document is already grouped when, for
+  // them, it may not be. A new account therefore gets a new store rather than
+  // a cleaned one: the old records are unreachable instead of merely emptied,
+  // and a request still in flight from the old session resolves into a store
+  // nothing is subscribed to.
+  const scopedRef = useRef<{
+    accountKey: string | number | null
+    store: SavedDirectoryStore
+  } | null>(null)
+  if (scopedRef.current === null) {
+    scopedRef.current = { accountKey, store: injected ?? new SavedDirectoryStore() }
+  } else if (scopedRef.current.accountKey !== accountKey) {
+    scopedRef.current = { accountKey, store: new SavedDirectoryStore() }
+  }
+  const store = scopedRef.current.store
 
   const value = useMemo<SavedDirectoryContextValue>(() => ({ store }), [store])
   return (
@@ -96,9 +82,24 @@ export function SavedDirectoryProvider({
   )
 }
 
+/**
+ * REQUIRES a mounted `SavedDirectoryProvider`, and says so rather than
+ * inventing a store.
+ *
+ * A component-lifetime fallback would satisfy every type and reinstate exactly
+ * the bug issue #161 exists to fix, silently. A process-wide one would satisfy
+ * the tests and leave one reviewer's account state readable by the next. So the
+ * durability of a permanent write is not allowed to depend on remembering to
+ * mount a provider: forgetting it is loud.
+ */
 export function useSavedDirectoryStore(): SavedDirectoryStore {
   const ctx = useContext(SavedDirectoryContext)
-  return ctx?.store ?? getDefaultStore()
+  if (ctx === null) {
+    throw new Error(
+      'useSavedDirectory* requires a <SavedDirectoryProvider>. Mount it above the prediction list so a created directory survives the refresh that unmounts the component which created it.',
+    )
+  }
+  return ctx.store
 }
 
 /** Subscribe to one query's saved/creation record. */

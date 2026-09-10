@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppProvider, useApp } from '../../contexts/AppContext'
 import { PredictionProvider } from '../../contexts/PredictionContext'
 import NoMatchCallout from './NoMatchCallout'
+import { SavedDirectoryProvider } from '../../contexts/SavedDirectoryContext'
 import PredictionList from './PredictionList'
 
 const MODEL = 'google_mt5-base'
@@ -145,9 +146,11 @@ function renderList(topScores: number[]) {
   scores = topScores
   return render(
     <AppProvider>
-      <PredictionProvider>
-        <Harness />
-      </PredictionProvider>
+      <SavedDirectoryProvider accountKey="test-account">
+        <PredictionProvider>
+          <Harness />
+        </PredictionProvider>
+      </SavedDirectoryProvider>
     </AppProvider>,
   )
 }
@@ -300,9 +303,11 @@ describe('CTA staleness (reviewer navigates mid-request)', () => {
     scores = [0.2]
     render(
       <AppProvider>
-        <PredictionProvider>
-          <NavigableHarness />
-        </PredictionProvider>
+        <SavedDirectoryProvider accountKey="test-account">
+          <PredictionProvider>
+            <NavigableHarness />
+          </PredictionProvider>
+        </SavedDirectoryProvider>
       </AppProvider>,
     )
 
@@ -337,15 +342,22 @@ describe('CTA staleness (reviewer navigates mid-request)', () => {
     // it is recorded against query 11 -- but query 12 must show none of it.
     deferReviewerDir = true
     const user = userEvent.setup()
-    const { rerender } = render(
-      <NoMatchCallout
-        queryFileId={QUERY_ID}
-        topScore={0.2}
-        topK={10}
-        model={MODEL}
-        alreadySeeded={false}
-      />,
-    )
+
+    function Callout({ queryFileId }: { queryFileId: number }) {
+      return (
+        <SavedDirectoryProvider accountKey="test-account">
+          <NoMatchCallout
+            queryFileId={queryFileId}
+            topScore={0.2}
+            topK={10}
+            model={MODEL}
+            alreadySeeded={false}
+          />
+        </SavedDirectoryProvider>
+      )
+    }
+
+    const { rerender } = render(<Callout queryFileId={QUERY_ID} />)
 
     await user.click(
       await screen.findByRole('button', { name: 'New directory / New file' }),
@@ -355,15 +367,7 @@ describe('CTA staleness (reviewer navigates mid-request)', () => {
       expect(reviewerDirPosts).toHaveLength(1)
     })
 
-    rerender(
-      <NoMatchCallout
-        queryFileId={NEXT_QUERY_ID}
-        topScore={0.3}
-        topK={10}
-        model={MODEL}
-        alreadySeeded={false}
-      />,
-    )
+    rerender(<Callout queryFileId={NEXT_QUERY_ID} />)
     await act(async () => {
       releaseReviewerDir()
     })
@@ -374,15 +378,7 @@ describe('CTA staleness (reviewer navigates mid-request)', () => {
     ).toBeTruthy()
 
     // ...and query 11's acknowledgement is waiting when the reviewer returns.
-    rerender(
-      <NoMatchCallout
-        queryFileId={QUERY_ID}
-        topScore={0.2}
-        topK={10}
-        model={MODEL}
-        alreadySeeded={false}
-      />,
-    )
+    rerender(<Callout queryFileId={QUERY_ID} />)
     expect(screen.getByTestId('new-directory-created')).toBeTruthy()
   })
 })

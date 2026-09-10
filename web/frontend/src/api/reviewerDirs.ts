@@ -118,8 +118,46 @@ export async function fetchReviewerDirs(
     params.set('seed_query_id', String(query.seedQueryId))
   }
   const search = params.toString()
-  return apiFetch<ReviewerDir[]>(
+  const body = await apiFetch<unknown>(
     `/api/reviewer_dirs${search ? `?${search}` : ''}`,
     query.signal ? { signal: query.signal } : undefined,
   )
+  return assertReviewerDirList(body)
+}
+
+/**
+ * A 200 whose body is not a list of directories is a FAILURE, not an empty
+ * answer (issue #161).
+ *
+ * The one question this endpoint answers is "does this document already have a
+ * directory?", and the two possible answers are treated very differently: an
+ * empty list is permission to create a permanent, unremovable record. So a body
+ * this client cannot read -- a proxy's HTML error page, a truncated response, a
+ * future shape -- must not be quietly rounded down to "no". Throwing puts it on
+ * the failure path, where the store leaves the question unresolved and the
+ * reviewer is offered a retry rather than a Create button.
+ */
+export function assertReviewerDirList(body: unknown): ReviewerDir[] {
+  if (!Array.isArray(body)) {
+    throw new Error(
+      'The reviewer directory list could not be read: the server sent an unexpected response.',
+    )
+  }
+  for (const entry of body) {
+    if (
+      entry === null ||
+      typeof entry !== 'object' ||
+      typeof (entry as ReviewerDir).dir_id !== 'string' ||
+      typeof (entry as ReviewerDir).label !== 'string' ||
+      typeof (entry as ReviewerDir).seed_query_id !== 'number'
+    ) {
+      // An unreadable entry is worse than an unreadable list: it would be shown
+      // as an acknowledgement, naming a directory whose label and seed nobody
+      // can vouch for.
+      throw new Error(
+        'The reviewer directory list could not be read: an entry was missing its identity.',
+      )
+    }
+  }
+  return body as ReviewerDir[]
 }

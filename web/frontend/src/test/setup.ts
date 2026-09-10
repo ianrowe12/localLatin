@@ -1,7 +1,6 @@
 import { afterEach } from 'vitest'
 import { cleanup } from '@testing-library/react'
 import { __resetModelsCache } from '../api/models'
-import { __resetDefaultSavedDirectoryStore } from '../contexts/SavedDirectoryContext'
 
 // jsdom has no layout engine, so framer-motion's layout animations would warn
 // on every render. It also lacks matchMedia, which AppProvider reads to pick
@@ -35,8 +34,4 @@ afterEach(() => {
   cleanup()
   localStorage.clear()
   __resetModelsCache()
-  // The saved-directory fallback store is process-wide until App composition
-  // mounts a provider, so one test's confirmed grouping would otherwise be the
-  // next test's starting state.
-  __resetDefaultSavedDirectoryStore()
 })
