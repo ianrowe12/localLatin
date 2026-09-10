@@ -206,8 +206,32 @@ def _parse_predictions_row(row: pd.Series) -> dict:
     return {
         "file_id": int(row["file_id"]),
         "filename": str(row["filename"]),
+        "status": _parse_row_status(row),
         "predictions": preds,
     }
+
+
+def _parse_row_status(row: pd.Series) -> str | None:
+    """The retrieval run's own verdict on this (model, variant, query) row.
+
+    ``scripts/resubmit/run_resubmit_unlabelled_retrieval.py`` writes ``ok`` for a
+    scored query and ``excluded_blank_source`` / ``excluded_zero_norm`` for one
+    its degenerate-source guard dropped. An excluded query still gets a row, with
+    every ``rank*`` cell blank -- so without this column an intentional exclusion
+    and a broken empty row are the same bytes on the wire.
+
+    Kept verbatim rather than mapped to a closed enum: the writer owns the
+    vocabulary, and a value this webapp has never heard of must still reach the
+    reviewer as itself. ``None`` means the artifact predates the column, which is
+    "unknown", never "excluded".
+    """
+    if "status" not in row:
+        return None
+    value = row["status"]
+    if pd.isna(value):
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 def _load_variant(store: DataStore, variant: str) -> None:

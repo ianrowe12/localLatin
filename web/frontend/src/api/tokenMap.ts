@@ -162,7 +162,12 @@ export function useTokenMap(
   method?: AttributionMethod | null,
   variant?: AttributionVariant,
 ): HookState<TokenMapResponse> {
-  const [state, setState] = useState<HookState<TokenMapResponse>>({
+  const key =
+    queryId === null || candidateId === null
+      ? null
+      : `${queryId}:${candidateId}:${model ?? ''}:${method ?? ''}:${variant ?? ''}`
+  const [state, setState] = useState<HookState<TokenMapResponse> & { key: string | null }>({
+    key: null,
     data: null,
     loading: false,
     error: null,
@@ -170,15 +175,14 @@ export function useTokenMap(
   const cache = useRef(new Map<string, TokenMapResponse>())
 
   useEffect(() => {
-    if (queryId === null || candidateId === null) {
-      setState({ data: null, loading: false, error: null })
+    if (key === null) {
+      setState({ key: null, data: null, loading: false, error: null })
       return
     }
 
-    const key = `${queryId}:${candidateId}:${model ?? ''}:${method ?? ''}:${variant ?? ''}`
     const cached = cacheGet(cache.current, key)
     if (cached) {
-      setState({ data: cached, loading: false, error: null })
+      setState({ key, data: cached, loading: false, error: null })
       return
     }
 
@@ -189,9 +193,9 @@ export function useTokenMap(
     // fetch takes -- and forever if it 404s, since the error branch below only
     // sets `error`. That is the "highlights don't update after switching
     // post-processing" report in issue #73.
-    setState({ data: null, loading: true, error: null })
+    setState({ key, data: null, loading: true, error: null })
 
-    const params = new URLSearchParams({ candidate_dir: candidateId })
+    const params = new URLSearchParams({ candidate_dir: candidateId as string })
     if (model) params.set('model', model)
     if (method) params.set('method', method)
     if (variant) params.set('variant', variant)
@@ -201,14 +205,14 @@ export function useTokenMap(
       .then((data) => {
         if (cancelled) return
         cachePut(cache.current, key, data)
-        setState({ data, loading: false, error: null })
+        setState({ key, data, loading: false, error: null })
       })
       .catch((err: Error) => {
         if (cancelled) return
         // No data for this key: a pair with no artifact for the requested
         // variant must render as "nothing to show", never as the last pair
         // that happened to load.
-        setState({ data: null, loading: false, error: err.message })
+        setState({ key, data: null, loading: false, error: err.message })
       })
 
     // React runs this cleanup before the next effect, so `cancelled` also
@@ -217,9 +221,17 @@ export function useTokenMap(
     return () => {
       cancelled = true
     }
-  }, [queryId, candidateId, model, method, variant])
+  }, [key, queryId, candidateId, model, method, variant])
 
-  return state
+  // Render-time guard on top of the effect (issue #156). The effect above
+  // clears one commit late, so the paint between "the reviewer chose a new
+  // candidate" and "the effect ran" would otherwise hand the caller the
+  // previous pair's matrices -- highlights belonging to one comparison, drawn
+  // over another one's words.
+  if (state.key !== key) {
+    return { data: null, loading: key !== null, error: null }
+  }
+  return { data: state.data, loading: state.loading, error: state.error }
 }
 
 // ---------------------------------------------------------------------------

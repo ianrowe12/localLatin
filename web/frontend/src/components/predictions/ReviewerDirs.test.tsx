@@ -3,6 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppProvider, useApp } from '../../contexts/AppContext'
+import { PredictionProvider } from '../../contexts/PredictionContext'
 import AwaitingMatchBadge from './AwaitingMatchBadge'
 import PredictionList from './PredictionList'
 
@@ -123,7 +124,9 @@ function Harness() {
 function renderList() {
   return render(
     <AppProvider>
-      <Harness />
+      <PredictionProvider>
+        <Harness />
+      </PredictionProvider>
     </AppProvider>,
   )
 }

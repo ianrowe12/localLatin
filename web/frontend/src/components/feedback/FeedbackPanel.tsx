@@ -3,7 +3,8 @@ import { useApp } from '../../contexts/AppContext'
 import { useFeedback, type FeedbackDraft } from '../../contexts/FeedbackContext'
 import { isFeedbackDraftEmpty } from '../../contexts/feedbackDraft'
 import { useReviewer } from '../../contexts/ReviewerContext'
-import { fetchNextQuery, usePredictions } from '../../api/queries'
+import { fetchNextQuery } from '../../api/queries'
+import { usePredictionState } from '../../contexts/PredictionContext'
 import { fetchLatestFeedback, type FeedbackEntry } from '../../api/feedback'
 import MatchPills, { type MatchSelection } from './MatchPills'
 import NotesTextarea from './NotesTextarea'
@@ -58,11 +59,13 @@ export default function FeedbackPanel() {
   // reviewers no longer switch pipelines, but the keying stays so a deployment
   // that served a different one could not silently pair an old assessment with
   // a new ranking.
-  const { data: predictionData } = usePredictions(
-    activeQueryId,
-    activeModel,
-    activeVariant,
-  )
+  //
+  // The candidates come from the SHARED prediction state (issue #156), not from
+  // this panel's own copy of the request: an independent hook meant the pills
+  // here could offer ranks from a response the list beside them had never seen,
+  // or had seen fail. Eligibility and save behaviour are untouched here; they
+  // are issue #157's and #158's.
+  const { predictions: currentPredictions } = usePredictionState()
   const [skipNeedsNote, setSkipNeedsNote] = useState(false)
   const [multiSelect, setMultiSelect] = useState(false)
   const [seeded, setSeeded] = useState<{ key: string; draft: FeedbackDraft } | null>(null)
@@ -79,7 +82,7 @@ export default function FeedbackPanel() {
 
   const draft =
     activeQueryId !== null ? getDraft(activeQueryId, activeModel, activeVariant) : null
-  const predictions = predictionData?.predictions?.slice(0, 10) ?? []
+  const predictions = currentPredictions.slice(0, 10)
   const draftKey =
     activeQueryId !== null
       ? makeDraftKey(activeQueryId, activeModel, activeVariant)

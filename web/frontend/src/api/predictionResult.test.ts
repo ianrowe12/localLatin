@@ -1,0 +1,304 @@
+import { describe, expect, it } from 'vitest'
+import { ApiError, toApiErrorInfo } from './client'
+import {
+  candidateHasText,
+  classifyExclusion,
+  modelCandidates,
+  predictionKeyString,
+  reviewerCandidates,
+  samePredictionKey,
+  validatePredictionResponse,
+  type PredictionRequestKey,
+} from './queries'
+
+const KEY: PredictionRequestKey = {
+  queryId: 7,
+  model: 'bowphs_LaTa',
+  variant: 'sif_abtt',
+}
+
+/** A response body as the route actually builds it. */
+function body(overrides: Record<string, unknown> = {}) {
+  return {
+    file_id: 7,
+    filename: 'query-7.txt',
+    model: 'bowphs_LaTa',
+    variant: 'sif_abtt',
+    status: 'ok',
+    predictions: [
+      {
+        rank: 1,
+        dir_name: 'candidate-1',
+        score: 0.81,
+        dir_files: ['1.txt'],
+        preview_text: 'preview',
+        candidate_files: [{ filename: '1.txt', text: 'candidate text' }],
+        source: 'model',
+      },
+    ],
+    seeded_dirs: [],
+    ...overrides,
+  }
+}
+
+function card(overrides: Record<string, unknown>) {
+  return {
+    rank: 1,
+    dir_name: 'candidate-1',
+    score: 0.5,
+    dir_files: [],
+    preview_text: '',
+    candidate_files: null,
+    source: 'model',
+    ...overrides,
+  }
+}
+
+describe('validatePredictionResponse (issue #156)', () => {
+  it('accepts the route’s own shape and keeps the status verbatim', () => {
+    const result = validatePredictionResponse(body(), KEY)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value.status).toBe('ok')
+    expect(result.value.predictions).toHaveLength(1)
+    expect(result.value.predictions[0].dir_name).toBe('candidate-1')
+  })
+
+  it('rejects a ranking for a different document', () => {
+    // The reviewer's whole judgement rests on these words being about the text
+    // on screen. A 200 for the wrong file_id is not "mostly right".
+    const result = validatePredictionResponse(body({ file_id: 8 }), KEY)
+    expect(result).toEqual({ ok: false, reason: 'file_id mismatch' })
+  })
+
+  it('rejects a ranking produced by a different model', () => {
+    const result = validatePredictionResponse(body({ model: 'other' }), KEY)
+    expect(result).toEqual({ ok: false, reason: 'model mismatch' })
+  })
+
+  it('rejects a ranking produced by a different variant', () => {
+    const result = validatePredictionResponse(body({ variant: 'raw' }), KEY)
+    expect(result).toEqual({ ok: false, reason: 'variant mismatch' })
+  })
+
+  it('keeps a sparse ranking, because rank 11 is where reviewer dirs live', () => {
+    // [1, 11] is a real response: the model returned one candidate and a
+    // reviewer directory was appended at its anchor rank. Demanding 1..n would
+    // throw away a legitimate ranking.
+    const result = validatePredictionResponse(
+      body({
+        predictions: [
+          card({ rank: 1 }),
+          card({ rank: 11, dir_name: 'reviewer-dir-1', source: 'reviewer' }),
+        ],
+      }),
+      KEY,
+    )
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value.predictions.map((p) => p.rank)).toEqual([1, 11])
+  })
+
+  it('rejects the whole response on a duplicate rank', () => {
+    // Two candidates at rank 3 means "rank 3" no longer names one directory.
+    // Dropping one of them would renumber what the reviewer sees against what
+    // the server resolves a saved rank to.
+    const result = validatePredictionResponse(
+      body({ predictions: [card({ rank: 3 }), card({ rank: 3, dir_name: 'b' })] }),
+      KEY,
+    )
+    expect(result).toEqual({ ok: false, reason: 'duplicate candidate rank' })
+  })
+
+  it.each([
+    ['NaN', Number.NaN],
+    ['Infinity', Number.POSITIVE_INFINITY],
+    ['a string', '0.5'],
+  ])('rejects a score that is %s', (_label, score) => {
+    const result = validatePredictionResponse(
+      body({ predictions: [card({ score })] }),
+      KEY,
+    )
+    expect(result).toEqual({ ok: false, reason: 'candidate score is not finite' })
+  })
+
+  it('rejects a candidate with no directory behind it', () => {
+    const result = validatePredictionResponse(
+      body({ predictions: [card({ dir_name: '' })] }),
+      KEY,
+    )
+    expect(result).toEqual({ ok: false, reason: 'candidate has no directory' })
+  })
+
+  it('rejects a rank that is not a positive integer', () => {
+    const result = validatePredictionResponse(
+      body({ predictions: [card({ rank: 0 })] }),
+      KEY,
+    )
+    expect(result).toEqual({
+      ok: false,
+      reason: 'candidate rank is not a positive integer',
+    })
+  })
+
+  it('rejects an unknown candidate source rather than guessing "model"', () => {
+    const result = validatePredictionResponse(
+      body({ predictions: [card({ source: 'oracle' })] }),
+      KEY,
+    )
+    expect(result).toEqual({ ok: false, reason: 'candidate source is unknown' })
+  })
+
+  it('rejects malformed candidate_files', () => {
+    const result = validatePredictionResponse(
+      body({ predictions: [card({ candidate_files: [{ filename: 'a.txt' }] })] }),
+      KEY,
+    )
+    expect(result).toEqual({ ok: false, reason: 'candidate_files is malformed' })
+  })
+
+  it('rejects a non-string status instead of coercing it', () => {
+    const result = validatePredictionResponse(body({ status: 3 }), KEY)
+    expect(result).toEqual({ ok: false, reason: 'status is not a string' })
+  })
+
+  it('tolerates a legacy body with no status and no seeded_dirs', () => {
+    // The mock server and any older deployment answer without either field.
+    // Absent is not "excluded"; it is unknown.
+    const legacy = body()
+    delete (legacy as Record<string, unknown>).status
+    delete (legacy as Record<string, unknown>).seeded_dirs
+    const result = validatePredictionResponse(legacy, KEY)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value.status).toBeNull()
+    expect(result.value.seeded_dirs).toEqual([])
+  })
+
+  it('rejects a body that is not an object at all', () => {
+    expect(validatePredictionResponse('<html>502</html>', KEY).ok).toBe(false)
+    expect(validatePredictionResponse(null, KEY).ok).toBe(false)
+    expect(validatePredictionResponse([], KEY).ok).toBe(false)
+  })
+
+  it('defaults a legacy candidate with no source to the model', () => {
+    const result = validatePredictionResponse(
+      body({ predictions: [{ rank: 1, dir_name: 'candidate-1', score: 0.5 }] }),
+      KEY,
+    )
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value.predictions[0].source).toBe('model')
+    expect(result.value.predictions[0].dir_files).toEqual([])
+  })
+})
+
+describe('classifyExclusion (issue #156)', () => {
+  it('names the two reasons the retrieval run actually writes', () => {
+    // scripts/resubmit/run_resubmit_unlabelled_retrieval.py writes these.
+    expect(classifyExclusion('excluded_blank_source')).toBe('blank_source')
+    expect(classifyExclusion('excluded_zero_norm')).toBe('zero_norm')
+  })
+
+  it('keeps an unrecognised exclusion an exclusion', () => {
+    // The writer owns this vocabulary. A reason this build has never heard of
+    // is still an exclusion, and must not be reported as an empty ranking.
+    expect(classifyExclusion('excluded_something_new')).toBe('other')
+  })
+
+  it('is not an exclusion for ok, for null or for unknown values', () => {
+    expect(classifyExclusion('ok')).toBeNull()
+    expect(classifyExclusion(null)).toBeNull()
+    expect(classifyExclusion(undefined)).toBeNull()
+    expect(classifyExclusion('')).toBeNull()
+  })
+})
+
+describe('candidate helpers', () => {
+  it('separates model candidates from reviewer directories', () => {
+    const all = [
+      { ...card({ rank: 1 }), source: 'model' as const, label: null, created_by: null, seed_query_id: null, candidate_files: null },
+      { ...card({ rank: 11 }), source: 'reviewer' as const, label: null, created_by: null, seed_query_id: null, candidate_files: null },
+    ]
+    expect(modelCandidates(all).map((p) => p.rank)).toEqual([1])
+    expect(reviewerCandidates(all).map((p) => p.rank)).toEqual([11])
+  })
+
+  it('reports missing candidate text rather than inventing an excerpt', () => {
+    // The route fills candidate_files with texts.get(fname, ""), so a candidate
+    // really can arrive with a filename and no words.
+    const base = { rank: 1, dir_name: 'd', score: 0.5, dir_files: [], preview_text: '', source: 'model' as const, label: null, created_by: null, seed_query_id: null }
+    expect(candidateHasText({ ...base, candidate_files: null })).toBe(false)
+    expect(candidateHasText({ ...base, candidate_files: [] })).toBe(false)
+    expect(
+      candidateHasText({ ...base, candidate_files: [{ filename: 'a.txt', text: '   ' }] }),
+    ).toBe(false)
+    expect(
+      candidateHasText({ ...base, candidate_files: [{ filename: 'a.txt', text: 'uerba' }] }),
+    ).toBe(true)
+  })
+
+  it('compares request keys by value, and treats null as no selection', () => {
+    expect(samePredictionKey(KEY, { ...KEY })).toBe(true)
+    expect(samePredictionKey(KEY, { ...KEY, model: 'other' })).toBe(false)
+    expect(samePredictionKey(null, null)).toBe(true)
+    expect(samePredictionKey(KEY, null)).toBe(false)
+    expect(predictionKeyString(KEY)).toBe('7:bowphs_LaTa:sif_abtt')
+  })
+})
+
+describe('ApiError (issue #156)', () => {
+  it('carries the FastAPI domain error shape', () => {
+    // web/app.py's handlers answer {"error": {"code", "message"}}.
+    const err = new ApiError({
+      kind: 'http',
+      status: 409,
+      code: 'reviewer_dir_exists',
+      message: 'This document already seeds a directory.',
+    })
+    expect(err.kind).toBe('http')
+    expect(err.status).toBe(409)
+    expect(err.code).toBe('reviewer_dir_exists')
+    expect(err.message).toBe('This document already seeds a directory.')
+    expect(err instanceof Error).toBe(true)
+  })
+
+  it('is readable by every existing `catch (err) => err.message` caller', () => {
+    // The old client threw a plain Error. Nothing downstream had to change.
+    const err: unknown = new ApiError({
+      kind: 'http',
+      status: 401,
+      code: null,
+      message: 'Authentication required',
+    })
+    expect(err instanceof Error && err.message).toBe('Authentication required')
+  })
+
+  it('preserves a structured error through toApiErrorInfo', () => {
+    const info = toApiErrorInfo(
+      new ApiError({ kind: 'network', status: null, code: null, message: 'Failed to fetch' }),
+      'fallback',
+    )
+    expect(info).toEqual({
+      kind: 'network',
+      status: null,
+      code: null,
+      message: 'Failed to fetch',
+    })
+  })
+
+  it('degrades an unknown throw to a stated fallback, not to silence', () => {
+    expect(toApiErrorInfo(new Error('boom'), 'fallback')).toEqual({
+      kind: 'network',
+      status: null,
+      code: null,
+      message: 'boom',
+    })
+    expect(toApiErrorInfo('not an error', 'fallback')).toEqual({
+      kind: 'network',
+      status: null,
+      code: null,
+      message: 'fallback',
+    })
+  })
+})

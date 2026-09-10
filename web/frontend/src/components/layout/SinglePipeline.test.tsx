@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppProvider } from '../../contexts/AppContext'
 import { FeedbackProvider } from '../../contexts/FeedbackContext'
+import { PredictionProvider } from '../../contexts/PredictionContext'
 import { ReviewerProvider } from '../../contexts/ReviewerContext'
 import { getReviewTourSteps } from '../onboarding/tourSteps'
 import RightSidebar from './RightSidebar'
@@ -53,9 +54,11 @@ function renderSidebar() {
   return render(
     <ReviewerProvider>
       <AppProvider>
-        <FeedbackProvider>
-          <RightSidebar isOpen onToggle={() => {}} />
-        </FeedbackProvider>
+        <PredictionProvider>
+          <FeedbackProvider>
+            <RightSidebar isOpen onToggle={() => {}} />
+          </FeedbackProvider>
+        </PredictionProvider>
       </AppProvider>
     </ReviewerProvider>,
   )

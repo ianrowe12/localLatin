@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import FeedbackPanel from './FeedbackPanel'
 import { AppProvider, useApp } from '../../contexts/AppContext'
 import { FeedbackProvider } from '../../contexts/FeedbackContext'
+import { PredictionProvider } from '../../contexts/PredictionContext'
 import { ReviewerProvider } from '../../contexts/ReviewerContext'
 import type { FeedbackEntry } from '../../api/feedback'
 
@@ -109,10 +110,12 @@ function renderPanel() {
   return render(
     <AppProvider>
       <ReviewerProvider>
-        <FeedbackProvider>
-          <SelectQuery />
-          <FeedbackPanel />
-        </FeedbackProvider>
+        <PredictionProvider>
+          <FeedbackProvider>
+            <SelectQuery />
+            <FeedbackPanel />
+          </FeedbackProvider>
+        </PredictionProvider>
       </ReviewerProvider>
     </AppProvider>,
   )

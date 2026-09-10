@@ -1,11 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useApp } from '../../contexts/AppContext'
-import {
-  useQueryDetail,
-  usePredictions,
-  useCandidateDirFiles,
-} from '../../api/queries'
+import { usePredictionState } from '../../contexts/PredictionContext'
+import { useQueryDetail, useCandidateDirFiles } from '../../api/queries'
 import { TokenRefProvider } from '../connections/TokenRefRegistry'
 import ConnectionOverlay from '../connections/ConnectionOverlay'
 import DocumentPanel from '../document/DocumentPanel'
@@ -32,41 +29,29 @@ export default function CenterArea() {
     setOverrideCandidateDir,
   } = useApp()
 
-  // Fetch query detail
+  // Fetch query detail. Its own render-time key guard means the text on screen
+  // is this query's text or nothing -- never the previous document's words
+  // beside the new document's ranking (issue #156).
   const queryDetail = useQueryDetail(activeQueryId)
 
-  // Fetch predictions
-  const predictions = usePredictions(activeQueryId, activeModel, activeVariant)
+  // The one shared ranking for the current query/model/variant. The provider
+  // owns the request; this view, the prediction list and the assessment panel
+  // read the same result, so they cannot disagree about what is on screen.
+  const predictions = usePredictionState()
 
   // Derive current prediction.
   //
-  // The key check is load-bearing, not defensive. Selecting a model updates
-  // activeModel during render; usePredictions only clears its data from an
-  // effect, one commit later. Without the guard, that in-between render pairs
-  // the OLD selection's rank-1 candidate with the NEW one and fires a
-  // multi-MB token-map fetch for a (candidate, model) combination the
-  // reviewer never selected -- which then paints as the "current" evidence
-  // (issue #73). PredictionResponse echoes both `model` and `variant` from
-  // the request exactly (web/routers/predictions.py resolves them or raises),
-  // so comparing them is an exact key check.
+  // The identity check that used to live here -- comparing the response's
+  // `model` and `variant` against the selection, because `usePredictions`
+  // cleared its data an effect too late -- now lives in the shared state, which
+  // refuses to expose old-key data from the first render after a change and
+  // validates the response's identity before exposing it at all. What remains
+  // here is the rank lookup.
   //
-  // Since issue #94 the model is the half a reviewer can actually move: there
-  // is one pipeline, so `variant` can no longer diverge. It is still compared
-  // because the field is still on the wire and the day a second pipeline is
-  // served again, this guard should already be right.
-  const currentPrediction = useMemo(() => {
-    if (!predictions.data?.predictions) return null
-    if (predictions.data.variant !== activeVariant) return null
-    if (predictions.data.model !== activeModel) return null
-    // Looked up BY RANK, not by array index. Reviewer directories are
-    // anchored at rank 11 regardless of how many model candidates came back,
-    // so the list can have a gap in it and index arithmetic would pair a rank
-    // with the wrong card.
-    return (
-      predictions.data.predictions.find((p) => p.rank === activePredictionRank) ??
-      null
-    )
-  }, [predictions.data, activePredictionRank, activeVariant, activeModel])
+  // Looked up BY RANK, not by array index. Reviewer directories are anchored at
+  // rank 11 regardless of how many model candidates came back, so the list can
+  // have a gap in it and index arithmetic would pair a rank with the wrong card.
+  const currentPrediction = predictions.getByRank(activePredictionRank)
 
   // Derive candidate info — override wins over the normal prediction path
   const candidateDir = overrideCandidateDir ?? currentPrediction?.dir_name ?? null
@@ -95,6 +80,35 @@ export default function CenterArea() {
     }
     return undefined
   }, [candidateFile])
+
+  /**
+   * Why the candidate pane has nothing in it, when there is a knowable reason.
+   *
+   * A ranking that failed, was excluded or came back empty leaves this panel
+   * blank, and a blank panel reads as a verdict on the document. It is not one.
+   * Missing candidate text gets its own line rather than an invented excerpt:
+   * `web/routers/predictions.py` fills `candidate_files` with `texts.get(fname,
+   * "")`, so a candidate really can arrive with a filename and no words.
+   */
+  const candidateEvidenceNote = useMemo(() => {
+    if (predictions.phase === 'error') {
+      return 'The ranking for this document did not load, so there is no candidate to compare against. See the prediction list for details.'
+    }
+    if (predictions.phase === 'excluded') {
+      return 'The retrieval run excluded this document for this model, so it has no candidates to compare against.'
+    }
+    if (predictions.phase === 'empty') {
+      return 'No candidates came back for this document, and no reason was recorded.'
+    }
+    if (
+      predictions.phase === 'ready' &&
+      currentPrediction !== null &&
+      !predictions.hasText(currentPrediction)
+    ) {
+      return 'This candidate directory has no readable text in this deployment, so there is nothing to compare word by word.'
+    }
+    return null
+  }, [predictions, currentPrediction])
 
   // Word-match similarity for cross-panel highlighting
   const wordMatchMap = useMemo(() => {
@@ -278,7 +292,7 @@ export default function CenterArea() {
               // seeded, so it belongs on the query panel, not on a candidate.
               badge={
                 <AwaitingMatchBadge
-                  seededDirs={predictions.data?.seeded_dirs ?? []}
+                  seededDirs={predictions.seededDirs}
                 />
               }
             />
@@ -302,6 +316,20 @@ export default function CenterArea() {
                 >
                   Exit
                 </button>
+              </div>
+            )}
+            {/* Why the panel is empty, when it is empty for a knowable reason.
+                An unexplained blank pane reads as "the model found nothing";
+                these three states are not that (issue #156). The gallery
+                override is deliberately exempt: it is an inspection, and it
+                carries its own candidate regardless of the ranking. */}
+            {!overrideCandidateDir && candidateEvidenceNote && (
+              <div
+                role="status"
+                data-testid="candidate-evidence-note"
+                className="px-3 py-1.5 bg-stone-100 dark:bg-stone-800 border-b border-stone-200 dark:border-stone-700 text-xs text-stone-600 dark:text-stone-300 flex-shrink-0"
+              >
+                {candidateEvidenceNote}
               </div>
             )}
             <AnimatePresence mode="wait">
@@ -330,7 +358,7 @@ export default function CenterArea() {
                   loading={
                     overrideCandidateDir
                       ? overrideCandidateFiles.loading
-                      : predictions.loading
+                      : predictions.isLoading
                   }
                   scrollRef={candidateScrollRef}
                 />

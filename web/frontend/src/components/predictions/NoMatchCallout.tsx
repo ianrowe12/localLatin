@@ -14,6 +14,11 @@ interface NoMatchCalloutProps {
   filename?: string
   /** This document already seeds a directory, so creation is not on offer. */
   alreadySeeded: boolean
+  /**
+   * Told when creation succeeds, so a parent that outlives the prediction
+   * refetch can keep the acknowledgement on screen (issue #156).
+   */
+  onCreated?: (label: string) => void
 }
 
 /**
@@ -41,6 +46,7 @@ export default function NoMatchCallout({
   model,
   filename,
   alreadySeeded,
+  onCreated,
 }: NoMatchCalloutProps) {
   return (
     <div
@@ -97,6 +103,7 @@ export default function NoMatchCallout({
           filename={filename}
           emphasised
           inline
+          onCreated={onCreated}
         />
       )}
     </div>

@@ -12,6 +12,18 @@ interface NewDirectoryCtaProps {
    * outer padding and adopts the callout's red, so the two read as one block.
    */
   inline?: boolean
+  /**
+   * Acknowledgement owned by the parent (issue #156).
+   *
+   * Creation is permanent and unrepeatable, and creating one triggers a
+   * prediction refetch that can unmount this component. When a parent that
+   * outlives the refetch passes the created label, it wins over the local copy
+   * so the confirmation survives loading and failed refreshes. Left undefined,
+   * the component keeps its own state exactly as before.
+   */
+  createdLabel?: string | null
+  /** Called once, with the created label, on a success still on screen. */
+  onCreated?: (label: string) => void
 }
 
 /**
@@ -42,6 +54,8 @@ export default function NewDirectoryCta({
   emphasised,
   filename,
   inline = false,
+  createdLabel,
+  onCreated,
 }: NewDirectoryCtaProps) {
   const [open, setOpen] = useState(false)
   const [label, setLabel] = useState('')
@@ -86,6 +100,7 @@ export default function NewDirectoryCta({
       })
       if (currentQuery.current !== forQuery) return
       setCreated(dir.label)
+      onCreated?.(dir.label)
       setOpen(false)
       setLabel('')
     } catch (err) {
@@ -98,7 +113,11 @@ export default function NewDirectoryCta({
 
   const pad = inline ? '' : 'mx-2'
 
-  if (created) {
+  // A parent-owned acknowledgement wins: it is the one that survives the
+  // prediction refetch this creation triggered.
+  const shownCreated = createdLabel !== undefined ? createdLabel : created
+
+  if (shownCreated) {
     return (
       <div
         data-testid="new-directory-created"
@@ -108,7 +127,7 @@ export default function NewDirectoryCta({
           Directory created
         </div>
         <div className="font-ui text-xs text-stone-600 dark:text-stone-400 mt-0.5">
-          {created} — it is now a candidate for every other document.
+          {shownCreated} — it is now a candidate for every other document.
         </div>
       </div>
     )

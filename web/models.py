@@ -123,6 +123,19 @@ class PredictionResponse(BaseModel):
     model: str
     variant: PredictionVariant
     predictions: List[Prediction]
+    # The retrieval run's status for THIS (model, variant, query) row, copied
+    # verbatim from the predictions CSV: `ok`, or `excluded_blank_source` /
+    # `excluded_zero_norm` for a query its degenerate-source guard dropped.
+    #
+    # It exists because an excluded row keeps its place in the CSV with every
+    # `rank*` cell blank, so `predictions: []` alone cannot tell an intentional,
+    # explicable exclusion apart from a row that is empty for no known reason.
+    # `None` means the artifact predates the column: unknown, never excluded, and
+    # never a reason to refuse or reinterpret a ranking that is present.
+    #
+    # Per (model, variant, query). It is NOT a substitute for q-q availability,
+    # which only decides whether reviewer directories can be scored.
+    status: Optional[str] = None
     # Reviewer directories seeded by *this* query. Drives the "Awaiting future
     # match" badge on the document, which is about the query's own directories
     # rather than about its candidates.
