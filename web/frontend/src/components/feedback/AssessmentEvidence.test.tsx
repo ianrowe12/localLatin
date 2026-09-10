@@ -1,12 +1,14 @@
 import { useEffect } from 'react'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppProvider, useApp } from '../../contexts/AppContext'
 import { FeedbackProvider } from '../../contexts/FeedbackContext'
 import { PredictionProvider } from '../../contexts/PredictionContext'
 import { ReviewerProvider } from '../../contexts/ReviewerContext'
+import { TokenProvider } from '../../contexts/TokenContext'
 import FeedbackPanel from './FeedbackPanel'
+import CenterArea from '../layout/CenterArea'
 import PredictionList from '../predictions/PredictionList'
 import type { FeedbackEntry } from '../../api/feedback'
 
@@ -73,6 +75,9 @@ let postResult: { status: number; body: unknown } = {
   status: 200,
   body: { success: true },
 }
+/** Set to make the POST reject the way a dropped connection does. */
+let postFails: Error | null = null
+let postAttempts = 0
 let account = { id: 2, username: 'bob', display_name: 'Bob Bibliothecarius' }
 let latestEntry: FeedbackEntry | null = null
 
@@ -83,6 +88,7 @@ function answerFor(model: string): Answer {
 function installFetch(): void {
   predictionRequests = 0
   posted = []
+  postAttempts = 0
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -90,6 +96,10 @@ function installFetch(): void {
       const params = new URL(url, 'http://localhost').searchParams
 
       if (init?.method === 'POST' && url.includes('/api/feedback')) {
+        postAttempts += 1
+        // A network failure is not an HTTP status: fetch rejects, and the body
+        // may well have reached the server first.
+        if (postFails) throw postFails
         posted.push(JSON.parse(String(init.body)))
         return jsonResponse(postResult.body, postResult.status)
       }
@@ -117,6 +127,19 @@ function installFetch(): void {
       }
       if (url.includes('/api/feedback/latest')) return jsonResponse(latestEntry)
       if (url.includes('/api/queries/next')) return jsonResponse({ file_id: QUERY_ID })
+      // Only reached by the mounted-evidence tests; CenterArea reads the query
+      // text from here and the candidate text out of the prediction payload.
+      if (url.includes('/token_map')) {
+        return jsonResponse({ error: { message: 'no artifact' } }, 404)
+      }
+      if (/\/api\/query\/\d+$/.test(new URL(url, 'http://localhost').pathname)) {
+        return jsonResponse({
+          file_id: QUERY_ID,
+          filename: 'query-7.txt',
+          text: 'query text under review',
+          dir_name: null,
+        })
+      }
       if (url.includes('/predictions')) {
         predictionRequests += 1
         const model = params.get('model') ?? ''
@@ -151,17 +174,24 @@ function SelectQuery({ model = MODEL }: { model?: string }) {
   return null
 }
 
-function renderPanel(options: { withList?: boolean; model?: string } = {}) {
+function renderPanel(
+  options: { withList?: boolean; withCenter?: boolean; model?: string } = {},
+) {
   return render(
     <AppProvider>
       <ReviewerProvider>
-        <PredictionProvider>
-          <FeedbackProvider>
-            <SelectQuery model={options.model} />
-            {options.withList === true && <PredictionList />}
-            <FeedbackPanel />
-          </FeedbackProvider>
-        </PredictionProvider>
+        <TokenProvider>
+          <PredictionProvider>
+            <FeedbackProvider>
+              <SelectQuery model={options.model} />
+              {options.withList === true && <PredictionList />}
+              {/* The evidence pane itself, so a test can ask what is actually
+                  legible on screen rather than trusting the payload. */}
+              {options.withCenter === true && <CenterArea />}
+              <FeedbackPanel />
+            </FeedbackProvider>
+          </PredictionProvider>
+        </TokenProvider>
       </ReviewerProvider>
     </AppProvider>,
   )
@@ -198,10 +228,15 @@ beforeEach(() => {
   latestEntry = null
   account = { id: 2, username: 'bob', display_name: 'Bob Bibliothecarius' }
   postResult = { status: 200, body: { success: true } }
+  postFails = null
   installFetch()
 })
 
-afterEach(() => {
+// The panel advances to the next query on a 500ms timer after a save, so a
+// test can finish with that request still pending. Keeping the mock installed
+// until the file is done means such a straggler hits the fixture rather than
+// jsdom's real fetch, which would reject into nobody's catch block.
+afterAll(() => {
   vi.unstubAllGlobals()
 })
 
@@ -328,7 +363,7 @@ describe('the pills are the ranking', () => {
     // here, and the server refuses it (RANKING_NOT_EVALUABLE).
     expect(nonePill().disabled).toBe(true)
     expect(screen.getByTestId('assessment-notice').textContent).toContain(
-      'no readable text',
+      'cannot be read on this screen',
     )
 
     // The readable candidate is still a real answer.
@@ -373,26 +408,62 @@ describe('the pills are the ranking', () => {
     expect(posted[0]).toMatchObject({ outcome: 'skipped' })
   })
 
-  it('accepts a directory whose first witness is blank but whose text exists', async () => {
-    // The server's rule is directory-wide: refusing this choice would silence
-    // a real answer. What the evidence pane says about the blank witness on
-    // screen is a separate statement (issue #156).
+  it('refuses a candidate whose only readable witness is off screen', async () => {
+    // Mounted with the real evidence pane, because the claim under test is
+    // about what a reviewer can read, not about what the payload contains.
+    // The server would accept this directory (it has one readable file), but
+    // this build shows candidate_files[0] and has no witness selector, so the
+    // readable file is text nobody is ever shown. Enabling the pill would
+    // solicit a judgement of evidence that never reached the screen; enabling
+    // None would let it be rejected the same way. Both stay shut until a
+    // witness selector exists (issue #163).
     answers[MODEL] = {
       predictions: [
         {
           ...modelCard(1),
           candidate_files: [
             { filename: 'blank.txt', text: '' },
-            { filename: 'readable.txt', text: 'incipit' },
+            { filename: 'hidden-witness.txt', text: 'incipit sermo lupi' },
           ],
         },
       ],
     }
-    renderPanel()
+    renderPanel({ withCenter: true, withList: true })
 
     await screen.findByTestId('match-pill-1')
-    expect(pill(1).disabled).toBe(false)
-    expect(nonePill().disabled).toBe(false)
+
+    // The hidden witness is nowhere on screen: not its text, not its name.
+    expect(document.body.textContent).not.toContain('incipit sermo lupi')
+    expect(document.body.textContent).not.toContain('hidden-witness.txt')
+
+    // So neither answer about it is offered.
+    expect(pill(1).disabled).toBe(true)
+    expect(nonePill().disabled).toBe(true)
+    expect(submitButton().disabled).toBe(true)
+    await userEvent.click(pill(1))
+    expect(pill(1).getAttribute('aria-pressed')).toBe('false')
+    expect(localStorage.getItem(DRAFT_STORAGE_KEY)).toBe('[]')
+
+    // The #156 note still explains the blank pane honestly, including that
+    // other files in the directory do carry text.
+    const note = await screen.findByTestId('candidate-evidence-note')
+    expect(note.textContent).toContain('blank.txt')
+    expect(note.textContent).toContain('no readable text')
+
+    // Inspection is untouched: the rank is still selectable for reading, and
+    // it still shows the blank first witness rather than silently swapping in
+    // the readable one.
+    await userEvent.click(screen.getByRole('button', { name: /Prediction rank 1:/ }))
+    expect((await screen.findByTestId('candidate-evidence-note')).textContent).toContain(
+      'blank.txt',
+    )
+    expect(document.body.textContent).not.toContain('incipit sermo lupi')
+
+    // Skip with a note remains the way to report it.
+    await userEvent.type(notesBox(), 'only the second file has text')
+    await userEvent.click(skipButton())
+    await waitFor(() => expect(posted).toHaveLength(1))
+    expect(posted[0]).toMatchObject({ outcome: 'skipped' })
   })
 
   it('records an explicit None without any candidate identity', async () => {
@@ -599,39 +670,60 @@ describe('drafts belong to a reviewer', () => {
     expect(storedDrafts()[draftKeyFor(2)]).toMatchObject({ notes: 'bob was here' })
   })
 
-  it('offers an unowned pre-#157 note as text, never as a decision', async () => {
-    localStorage.setItem(
-      DRAFT_STORAGE_KEY,
-      JSON.stringify([
-        [
-          `${QUERY_ID}-${MODEL}-sif_abtt`,
-          {
-            correctRank: 2,
-            selectedRanks: [2],
-            notes: 'unsent thought from an older build',
-          },
-        ],
-      ]),
-    )
+  it('quarantines an unowned pre-#157 draft instead of disclosing it', async () => {
+    // A draft written before drafts were keyed by reviewer carries no account.
+    // Showing its words to whoever signs in next would hand one person's
+    // unsent sentence to another, and there is no evidence that says whose it
+    // was. So the panel states that something is held and stops there: no
+    // content, no copy button, and the stored bytes untouched, because
+    // deleting it would destroy the only copy of a real reviewer's thinking.
+    // Notes deliberately shared through a submitted review are a different
+    // thing and still arrive via /api/feedback/latest.
+    const LEGACY_KEY = `${QUERY_ID}-${MODEL}-sif_abtt`
+    const legacyEntry = {
+      correctRank: 2,
+      selectedRanks: [2],
+      notes: 'unsent thought from an older build',
+    }
+    const storedRaw = JSON.stringify([[LEGACY_KEY, legacyEntry]])
+    localStorage.setItem(DRAFT_STORAGE_KEY, storedRaw)
     answers[MODEL] = { predictions: [modelCard(1), modelCard(2)] }
+
+    const expectQuarantined = async () => {
+      const notice = await screen.findByTestId('legacy-draft-notice')
+      expect(notice.textContent).not.toContain('unsent thought from an older build')
+      expect(notice.textContent).toContain('not shown here')
+      expect(screen.queryByTestId('adopt-legacy-note')).toBeNull()
+      expect(document.body.textContent).not.toContain(
+        'unsent thought from an older build',
+      )
+      expect(notesBox().value).toBe('')
+      expect(pill(2).getAttribute('aria-pressed')).toBe('false')
+    }
+
+    // Reviewer A sees only the notice.
+    const view = renderPanel()
+    await screen.findByTestId('match-pill-1')
+    await expectQuarantined()
+
+    // A signs out through the real control...
+    await userEvent.click(screen.getByRole('button', { name: 'sign out' }))
+    await waitFor(() => expect(screen.queryByText('Bob Bibliothecarius')).toBeNull())
+
+    // ...and B signs in. The unowned words are still nobody's.
+    view.unmount()
+    account = { id: 3, username: 'carol', display_name: 'Carol Codex' }
     renderPanel()
+    await screen.findByTestId('match-pill-1')
+    await expectQuarantined()
 
-    const notice = await screen.findByTestId('legacy-draft-notice')
-    expect(notice.textContent).toContain('unsent thought from an older build')
-    expect(pill(2).getAttribute('aria-pressed')).toBe('false')
-    expect(notesBox().value).toBe('')
-
-    await userEvent.click(screen.getByTestId('adopt-legacy-note'))
-    expect(notesBox().value).toBe('unsent thought from an older build')
-    // Only the words are taken: no rank is pressed, and the unowned entry is
-    // still there rather than being consumed by whoever signed in.
-    expect(pill(2).getAttribute('aria-pressed')).toBe('false')
-    expect(storedDrafts()[`${QUERY_ID}-${MODEL}-sif_abtt`]).toBeTruthy()
+    // Neither session consumed, rewrote or dropped the stored entry.
+    expect(storedDrafts()[LEGACY_KEY]).toEqual(legacyEntry)
   })
 })
 
 describe('save failures', () => {
-  it('keeps the draft when the server says the candidate moved', async () => {
+  it('promises an empty log only when the server refused before writing', async () => {
     answers[MODEL] = { predictions: [modelCard(1), reviewerCard(11, 'reviewer-dir-a')] }
     postResult = {
       status: 409,
@@ -650,6 +742,9 @@ describe('save failures', () => {
 
     const error = await screen.findByTestId('assessment-save-error')
     expect(error.textContent).toContain('different directory')
+    // A named 4xx is raised by the router before db.insert, so this is the
+    // one case where "nothing was saved" is a fact and not a hope.
+    expect(error.getAttribute('data-outcome')).toBe('rejected')
     expect(error.textContent).toContain('Nothing was saved')
     // The answer is still on screen, still theirs to resubmit or revise.
     expect(pill(11).getAttribute('aria-pressed')).toBe('true')
@@ -674,7 +769,11 @@ describe('save failures', () => {
     })
   })
 
-  it('reports a plain failure without offering a reload', async () => {
+  it('refuses to guess after a 500, because the write may already have landed', async () => {
+    // feedback.py commits the feedback row and only then writes reviewer
+    // directory membership, so a 500 can arrive after the assessment is in an
+    // append-only table. Telling the reviewer nothing was saved would send
+    // them back to save a duplicate.
     answers[MODEL] = { predictions: [modelCard(1)] }
     postResult = {
       status: 500,
@@ -686,9 +785,52 @@ describe('save failures', () => {
     await userEvent.click(submitButton())
 
     const error = await screen.findByTestId('assessment-save-error')
+    expect(error.getAttribute('data-outcome')).toBe('uncertain')
     expect(error.textContent).toContain('Database is locked.')
+    expect(error.textContent).toContain('cannot tell whether your assessment was recorded')
+    expect(error.textContent).not.toContain('Nothing was saved')
+    // No reload button, and nothing retries on its own: a silent retry into an
+    // append-only table is exactly the duplicate this copy warns against.
     expect(screen.queryByTestId('assessment-refresh-ranking')).toBeNull()
+    expect(posted).toHaveLength(1)
     expect(storedDrafts()[draftKeyFor(2)]).toMatchObject({ correctRank: 1 })
+  })
+
+  it('refuses to guess when the request never came back', async () => {
+    // A dropped connection says nothing about what the server did with the
+    // body it may already have received.
+    answers[MODEL] = { predictions: [modelCard(1)] }
+    renderPanel()
+
+    await userEvent.click(await screen.findByTestId('match-pill-1'))
+    await userEvent.type(notesBox(), 'ends mid-word')
+    postFails = new TypeError('Failed to fetch')
+    await userEvent.click(submitButton())
+
+    const error = await screen.findByTestId('assessment-save-error')
+    expect(error.getAttribute('data-outcome')).toBe('uncertain')
+    expect(error.textContent).not.toContain('Nothing was saved')
+    expect(screen.queryByTestId('assessment-refresh-ranking')).toBeNull()
+    expect(notesBox().value).toBe('ends mid-word')
+    expect(storedDrafts()[draftKeyFor(2)]).toMatchObject({ correctRank: 1 })
+
+    // Still no automatic second attempt after the failure settles.
+    await new Promise((r) => setTimeout(r, 50))
+    expect(postAttempts).toBe(1)
+  })
+
+  it('refuses to send a skip with no note, and says so without a save claim', async () => {
+    // A local refusal: nothing left the browser, so the panel does not have to
+    // guess about the log at all. It asks for the note instead.
+    answers[MODEL] = { predictions: [modelCard(1)] }
+    renderPanel()
+
+    await screen.findByTestId('match-pill-1')
+    await userEvent.click(skipButton())
+
+    expect(screen.queryByTestId('assessment-save-error')).toBeNull()
+    expect(document.body.textContent).toContain('Add a note')
+    expect(postAttempts).toBe(0)
   })
 })
 

@@ -35,6 +35,7 @@ import {
   draftWithNone,
   draftWithSelections,
   emptyDraft,
+  isFeedbackDraftEmpty,
   legacyDraftKey,
   makeDraftKey,
   seedDraftMapIfEmpty,
@@ -62,13 +63,19 @@ export interface FeedbackContextValue {
     variant?: PredictionVariant,
   ) => FeedbackDraft
   /**
-   * A draft written before drafts had an owner, for this query/model/variant.
-   * Read-only: it is somebody's unsent work, so it is neither deleted nor
-   * adopted as the signed-in account's decision.
+   * Whether this browser still holds an unowned draft for this
+   * query/model/variant, written before drafts were scoped to an account.
+   *
+   * A boolean, not the draft (issue #157 repair). The pre-#157 key carries no
+   * reviewer identity, so its prose could belong to anybody who used this
+   * browser; showing it to -- or letting it be copied by -- whichever account
+   * signs in next is disclosure, and "read-only" is not consent. The entry is
+   * kept exactly as stored and never deleted, because it is somebody's unsent
+   * work; it is simply not readable from here. Deliberately submitted notes
+   * are a different thing entirely and still arrive, attributed, through
+   * GET /api/feedback/latest.
    */
-  legacyDraft: FeedbackDraft | null
-  /** Copy the unowned note into this reviewer's draft. Never its decision. */
-  adoptLegacyNotes: () => void
+  hasQuarantinedLegacyDraft: boolean
 
   /** What the current ranking supports. The single source for every control. */
   evidence: AssessmentEvidence
@@ -156,10 +163,15 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
 
   const draft = (draftKey === null ? undefined : drafts.get(draftKey)) ?? emptyDraft()
 
-  const legacyDraft =
-    activeQueryId === null || !activeModel
-      ? null
-      : (drafts.get(legacyDraftKey(activeQueryId, activeModel, activeVariant)) ?? null)
+  // Presence only. The entry is never read into anything the UI can render or
+  // copy, and it is never rewritten or removed: unsent prose that cannot be
+  // attributed is nobody's to show and nobody's to delete.
+  const hasQuarantinedLegacyDraft =
+    activeQueryId !== null &&
+    Boolean(activeModel) &&
+    !isFeedbackDraftEmpty(
+      drafts.get(legacyDraftKey(activeQueryId, activeModel, activeVariant)),
+    )
 
   const evidence = useMemo(
     () =>
@@ -304,17 +316,6 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
     [accountId, draftKey],
   )
 
-  const adoptLegacyNotes = useCallback(() => {
-    const text = legacyDraft?.notes ?? ''
-    if (!text.trim()) return
-    // The text is copied; the stored entry stays where it is, and its rank
-    // selection is not carried over. An unattributed decision is nobody's.
-    writeDraft((existing) => ({
-      ...existing,
-      notes: existing.notes.trim() ? `${existing.notes}\n${text}` : text,
-    }))
-  }, [legacyDraft, writeDraft])
-
   // Everything the save paths read, always at its current value: a handler
   // bound in an earlier render must not save an earlier ranking.
   const currentRef = useRef<CurrentAssessment>({
@@ -425,8 +426,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
     makeDraftKey,
     draft,
     getDraft,
-    legacyDraft,
-    adoptLegacyNotes,
+    hasQuarantinedLegacyDraft,
     evidence,
     selectionReview,
     readiness,

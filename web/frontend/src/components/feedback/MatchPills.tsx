@@ -1,4 +1,22 @@
-import type { AssessmentCandidate } from '../../contexts/assessmentEligibility'
+import type {
+  AssessmentCandidate,
+  CandidateEvidence,
+} from '../../contexts/assessmentEligibility'
+
+/** Why this candidate cannot be chosen, as a fact rather than a verdict. */
+export function unreadableCandidateReason(
+  candidate: AssessmentCandidate,
+): string | null {
+  const evidence: CandidateEvidence = candidate.evidence
+  if (evidence === 'readable') return null
+  if (evidence === 'unidentified') {
+    return 'This candidate arrived without a usable directory name or score, so there is nothing to assign the document to.'
+  }
+  if (evidence === 'hidden_witness') {
+    return `The file shown for ${candidate.dirName} has no readable text in this deployment. Other files in that directory do carry text, but this view cannot open them, so there is nothing here to judge it by.`
+  }
+  return `${candidate.dirName} has no readable text in this deployment, so it cannot be chosen.`
+}
 
 interface MatchPillsProps {
   /** The candidates the current ranking actually offers, in its own order. */
@@ -59,9 +77,9 @@ export default function MatchPills({
         const reviewer = candidate.source === 'reviewer'
         const disabled = !candidate.usable || !canEvaluate
         const title = !candidate.usable
-          ? `${candidate.dirName} has no readable text in this deployment, so it cannot be chosen.`
+          ? (unreadableCandidateReason(candidate) ?? undefined)
           : !canEvaluate
-            ? 'This ranking has no readable model candidate, so there is nothing to judge it against.'
+            ? 'This ranking has no model candidate readable on this screen, so there is nothing to judge it against.'
             : isUnconfirmed
               ? `Restored from an earlier draft with no directory recorded. Select #${candidate.rank} again to confirm ${candidate.dirName}.`
               : reviewer
@@ -115,7 +133,7 @@ export default function MatchPills({
         title={
           noneAvailable
             ? undefined
-            : 'Some model candidates have no readable text here, so they cannot be rejected.'
+            : 'Some model candidates cannot be read on this screen, so they cannot be rejected.'
         }
         className={`col-span-5 ${PILL_BASE} ${
           !noneAvailable

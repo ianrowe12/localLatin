@@ -16,7 +16,11 @@ import {
 import { useReviewer } from '../../contexts/ReviewerContext'
 import { fetchNextQuery } from '../../api/queries'
 import { usePredictionState } from '../../contexts/PredictionContext'
-import { toApiErrorInfo } from '../../api/client'
+import {
+  classifySaveFailure,
+  isIdentityRejection,
+  type SaveFailure,
+} from '../../contexts/saveFailure'
 import { fetchLatestFeedback, type FeedbackEntry } from '../../api/feedback'
 import MatchPills from './MatchPills'
 import NotesTextarea from './NotesTextarea'
@@ -109,14 +113,14 @@ function evidenceCopy(block: EvidenceBlock): { title: string; detail: string } {
   return {
     title: 'No readable candidate evidence',
     detail:
-      'This ranking has no candidate whose text is readable in this deployment, so there is nothing to judge it against. Skip with a note if it needs following up.',
+      'This ranking has no candidate whose text this view can show you, so there is nothing to judge it against. Skip with a note if it needs following up.',
   }
 }
 
 function noneCopy(block: NoneBlock | null): string | null {
   if (block === null) return null
   if (block === 'partial_model_evidence') {
-    return 'Some model candidates have no readable text in this deployment. Rejecting all of them would claim you had read text that is not here, so "None" is unavailable; a readable candidate can still be chosen, and a note plus Skip records the problem.'
+    return 'Some model candidates cannot be read on this screen: their text is missing in this deployment, or it sits in a file this view cannot open. Rejecting all of them would claim you had read words you were never shown, so "None" is unavailable; a readable candidate can still be chosen, and a note plus Skip records the problem.'
   }
   return null
 }
@@ -131,6 +135,9 @@ function issueCopy(issue: SelectionIssue): string {
     return `Rank #${issue.rank} now holds ${issue.nowDirName}, not ${issue.dirName}, so that choice was removed rather than moved to a different directory.`
   }
   if (issue.kind === 'unreadable') {
+    if (issue.evidence === 'hidden_witness') {
+      return `Rank #${issue.rank} (${issue.dirName}) shows a file with no readable text here. Its other files do carry text, but this view cannot open them, so that choice cannot be submitted from this screen.`
+    }
     return `Rank #${issue.rank} (${issue.dirName}) has no readable text in this deployment, so it cannot be submitted as an answer.`
   }
   return `Rank #${issue.rank} was restored from an earlier draft with no directory recorded. Select it again to confirm the directory now shown there.`
@@ -144,8 +151,7 @@ export default function FeedbackPanel() {
     drafts,
     accountId,
     makeDraftKey,
-    legacyDraft,
-    adoptLegacyNotes,
+    hasQuarantinedLegacyDraft,
     evidence,
     selectionReview,
     readiness,
@@ -177,9 +183,7 @@ export default function FeedbackPanel() {
   const [latest, setLatest] = useState<{ key: string; entry: FeedbackEntry } | null>(
     null,
   )
-  const [saveError, setSaveError] = useState<{ message: string; stale: boolean } | null>(
-    null,
-  )
+  const [saveError, setSaveError] = useState<SaveFailure | null>(null)
 
   // Always-current view of the draft map for use inside async callbacks.
   const draftsRef = useRef(drafts)
@@ -272,14 +276,11 @@ export default function FeedbackPanel() {
     [setActiveQueryId],
   )
 
-  // Save failures keep the draft. A changed candidate identity is called out
-  // separately, because the answer to it is to look again rather than retry.
+  // Save failures keep the draft. What they are allowed to PROMISE differs:
+  // only a local refusal or a server rejection is known not to have written
+  // anything (see saveFailure.ts).
   const reportSaveFailure = useCallback((err: unknown) => {
-    const info = toApiErrorInfo(err, 'The assessment could not be saved.')
-    setSaveError({
-      message: info.message,
-      stale: info.code === 'CANDIDATE_IDENTITY_CHANGED',
-    })
+    setSaveError(classifySaveFailure(err, 'The assessment could not be saved.'))
   }, [])
 
   const handleSubmit = useCallback(async () => {
@@ -341,7 +342,6 @@ export default function FeedbackPanel() {
       ? formatNoteAttribution(latest.entry)
       : null
   const noneNotice = noneCopy(evidence.noneBlock)
-  const legacyNote = legacyDraft?.notes.trim() ?? ''
 
   return (
     <div data-tour="feedback" className="flex-shrink-0 flex flex-col gap-3">
@@ -441,15 +441,24 @@ export default function FeedbackPanel() {
         <div
           role="alert"
           data-testid="assessment-save-error"
+          data-outcome={saveError.outcome}
           className="rounded-lg border border-incorrect/50 bg-incorrect/10 px-2.5 py-2"
         >
           <p className="font-ui text-xs leading-snug text-stone-700 dark:text-stone-200">
             {saveError.message}
           </p>
+          {/* Only a refusal this app made, or one the server made before it
+              writes, can promise an empty log. A lost, unreadable or 500
+              answer cannot: the feedback row is committed before the
+              reviewer-directory membership write, so "nothing was saved" would
+              be a guess dressed as a receipt -- and the reviewer would act on
+              it by saving again, into an append-only table. */}
           <p className="mt-1 font-ui text-xs leading-snug text-stone-600 dark:text-stone-300">
-            Your draft is still here. Nothing was saved.
+            {saveError.outcome === 'uncertain'
+              ? 'This app did not get an answer it can trust, so it cannot tell whether your assessment was recorded. Your draft is kept here. Reload the ranking and check the last review for this document before saving again, because saving again may record it twice.'
+              : 'Your draft is still here. Nothing was saved.'}
           </p>
-          {saveError.stale && (
+          {isIdentityRejection(saveError) && (
             <button
               type="button"
               data-testid="assessment-refresh-ranking"
@@ -495,31 +504,23 @@ export default function FeedbackPanel() {
 
       <NotesTextarea value={draft.notes} onChange={handleNotesChange} />
 
-      {/* Unsent prose from before drafts had an owner. It is not deleted and it
-          is not adopted as this account's answer; only its words can be taken,
-          deliberately, and only into the note. */}
-      {legacyNote !== '' && draftKey !== null && (
-        <div
+      {/* Unsent prose from before drafts had an owner, kept and not shown.
+          The pre-#157 key names a query, a model and a variant but no
+          reviewer, so this text could be anyone's; displaying it to, or
+          letting it be copied by, whichever account signs in next would be
+          disclosure, and read-only display is not consent. It is not deleted
+          either: it is somebody's unsent work. Deliberately submitted notes
+          are shared on purpose and still appear above, attributed. */}
+      {hasQuarantinedLegacyDraft && draftKey !== null && (
+        <p
           data-testid="legacy-draft-notice"
-          className="rounded-lg border border-stone-300 dark:border-stone-600 px-2.5 py-2 flex flex-col gap-1"
+          className="rounded-lg border border-stone-300 dark:border-stone-600 px-2.5 py-2 font-ui text-xs leading-snug text-stone-500 dark:text-stone-400"
         >
-          <p className="font-ui text-xs leading-snug text-stone-600 dark:text-stone-300">
-            This browser holds an unsent note for this document from before
-            drafts were kept per reviewer. It is not attributed to anyone and has
-            not been saved.
-          </p>
-          <p className="font-ui text-xs italic leading-snug text-stone-500 dark:text-stone-400">
-            {legacyNote}
-          </p>
-          <button
-            type="button"
-            data-testid="adopt-legacy-note"
-            onClick={adoptLegacyNotes}
-            className="self-start rounded-md border border-stone-300 dark:border-stone-600 px-3 py-1 font-ui text-xs text-stone-600 dark:text-stone-300 hover:border-indigo-400 hover:text-indigo-600 transition-colors"
-          >
-            Copy this text into my note
-          </button>
-        </div>
+          This browser still holds unsent draft text for this document from
+          before drafts were kept per reviewer. It cannot be attributed to an
+          account, so it is not shown here and cannot be copied; it has not been
+          saved, changed or deleted.
+        </p>
       )}
 
       {(skipNeedsNote || !draft.notes.trim()) && (

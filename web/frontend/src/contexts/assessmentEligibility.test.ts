@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Prediction } from '../api/queries'
 import {
   assessmentEvidence,
+  candidateEvidence,
   candidateIsUsable,
   evaluationReadiness,
   expectedCandidateDirs,
@@ -47,7 +48,7 @@ const READY = (predictions: Prediction[]) =>
   assessmentEvidence({ phase: 'ready', predictions, hasReviewerAccount: true })
 
 describe('candidateIsUsable', () => {
-  it('agrees with the server: identity, finite score, some readable text', () => {
+  it('requires identity, a finite score and readable words on screen', () => {
     expect(candidateIsUsable(model(1))).toBe(true)
     expect(candidateIsUsable(model(1, { dir_name: '  ' }))).toBe(false)
     expect(candidateIsUsable(model(1, { score: Number.NaN }))).toBe(false)
@@ -60,17 +61,25 @@ describe('candidateIsUsable', () => {
     ).toBe(false)
   })
 
-  it('is the directory-wide question, not the displayed witness', () => {
-    // The server accepts a directory with one readable file, so refusing the
-    // choice because the FIRST witness is blank would block a real answer.
-    // What the evidence pane says about that witness is a separate statement.
-    const partial = model(1, {
+  it('asks about the witness this build shows, not the whole directory', () => {
+    // CenterArea renders candidate_files[0] and there is no witness selector,
+    // so a readable second file is text the reviewer is never shown. The
+    // server would accept the save; this client must not offer it, because
+    // offering it invites a judgement of evidence that never reached the
+    // screen. Stricter than the server, in the one safe direction.
+    const hidden = model(1, {
       candidate_files: [
         { filename: 'blank.txt', text: '' },
         { filename: 'readable.txt', text: 'incipit' },
       ],
     })
-    expect(candidateIsUsable(partial)).toBe(true)
+    expect(candidateIsUsable(hidden)).toBe(false)
+    expect(candidateEvidence(hidden)).toBe('hidden_witness')
+    // Told apart from a directory with nothing readable at all, so the copy
+    // can state which fact it is.
+    expect(candidateEvidence(model(1, { candidate_files: [] }))).toBe('no_text')
+    expect(candidateEvidence(model(1))).toBe('readable')
+    expect(candidateEvidence(model(1, { dir_name: ' ' }))).toBe('unidentified')
   })
 
   it('scores low candidates as usable: confidence is not eligibility', () => {
@@ -197,7 +206,33 @@ describe('reviewSelections', () => {
     )
     expect(review.selections).toHaveLength(1)
     expect(review.confirmed).toEqual([])
-    expect(review.issues[0].kind).toBe('unreadable')
+    expect(review.issues[0]).toEqual({
+      kind: 'unreadable',
+      rank: 1,
+      dirName: 'candidate-1',
+      evidence: 'no_text',
+    })
+  })
+
+  it('reports a choice whose text moved out of view as its own fact', () => {
+    const hidden = READY([
+      model(1, {
+        candidate_files: [
+          { filename: 'blank.txt', text: '' },
+          { filename: 'readable.txt', text: 'incipit' },
+        ],
+      }),
+      model(2),
+    ])
+    const review = reviewSelections(
+      [{ rank: 1, dirName: 'candidate-1', source: 'model' }],
+      hidden,
+    )
+    expect(review.confirmed).toEqual([])
+    expect(review.issues[0]).toMatchObject({
+      kind: 'unreadable',
+      evidence: 'hidden_witness',
+    })
   })
 
   it('treats a source change at the same rank as a different candidate', () => {
@@ -288,13 +323,21 @@ describe('evaluationReadiness', () => {
 
 describe('choice bookkeeping', () => {
   const candidates: AssessmentCandidate[] = [
-    { rank: 1, dirName: 'candidate-1', source: 'model', label: null, usable: true },
+    {
+      rank: 1,
+      dirName: 'candidate-1',
+      source: 'model',
+      label: null,
+      usable: true,
+      evidence: 'readable',
+    },
     {
       rank: 11,
       dirName: 'reviewer-dir-11',
       source: 'reviewer',
       label: 'Homily',
       usable: true,
+      evidence: 'readable',
     },
   ]
 

@@ -95,11 +95,23 @@ introduced.
 
 The frontend derives every assessment control from the ranking currently on
 screen (`src/contexts/assessmentEligibility.ts` over the shared prediction state
-of issue #156), applying the same usability rule as `_candidate_is_usable`: a
-control is offered only where a save behind it would be accepted. No candidates
-means no rank pills, no None pill and no Submit, and a ranking whose model
-candidates are all unreadable disables every pill with the reason on screen;
-Skip with a note stays available throughout. `web/tests/test_feedback_client_contract.py` posts the literal bodies
+of issue #156): a control is offered only where a save behind it would be
+accepted, and only where the reviewer can actually read what they are being
+asked about. No candidates means no rank pills, no None pill and no Submit, and
+a ranking whose model candidates are none of them readable disables every pill
+with the reason on screen; Skip with a note stays available throughout.
+
+The client is deliberately stricter than `_candidate_is_usable` on one point.
+The server asks whether the *directory* holds any text; the client asks whether
+the *witness on screen* does. `CenterArea` renders `candidate_files[0]` and this
+build has no witness selector, so a directory whose first file is blank and
+whose second file carries the text is a directory the reviewer is shown nothing
+of. Such a candidate is left disabled, and None is disabled with it, because
+rejecting unreadable evidence is as much a claim as accepting it. The server
+would take either save; refusing it here costs a small number of answers and
+buys the guarantee that no recorded judgement was made on unseen text. When a
+witness selector lands (issue #163) the rule should relax to "any witness the
+reviewer can reach", not back to the directory-wide test. `web/tests/test_feedback_client_contract.py` posts the literal bodies
 below against this API.
 
 Every save sends `correct_dir: null`. The client no longer claims to know the
@@ -121,3 +133,22 @@ reported to the reviewer rather than re-pointed; a choice restored without an
 identity (an older draft, or a saved answer's non-canonical rank) is shown
 unpressed for reconfirmation, and cannot be submitted until it is clicked again.
 A 409 keeps the draft and offers a reload of the ranking.
+
+Drafts written before this keying (no account prefix) cannot be attributed to
+anyone. They are quarantined: the panel states that unsent text is held, and
+shows none of it, offers no way to copy it, and leaves the stored entry exactly
+as found. Displaying it would hand one reviewer's unsent sentence to whoever
+signs in next; deleting it would destroy the only copy. Notes deliberately
+shared through a submitted review are unaffected and still arrive over
+`/api/feedback/latest`.
+
+A failed save never claims more than the client knows
+(`src/contexts/saveFailure.ts`). "Nothing was saved" is said only for a refusal
+raised in the browser and for a 4xx from this router, every one of which is
+raised before `db.insert`. A dropped connection, an unreadable response or a 5xx
+is reported as an uncertain save: the feedback row is committed before the
+reviewer-directory membership write, so a fault can arrive after the record
+exists. In that case the reviewer is asked to check the last review for the
+document before saving again, the draft is kept, and nothing retries
+automatically, because a silent retry into an append-only log is the duplicate
+that copy is warning about.
