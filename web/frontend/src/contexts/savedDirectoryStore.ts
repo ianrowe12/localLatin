@@ -363,30 +363,11 @@ export class SavedDirectoryStore {
       })
       if (this.lookupGeneration.get(queryId) !== generation) return
       if (dirs.length > 0) {
-        // A lookup that answers an outstanding write of ours is the last step
-        // of a creation, not a routine read, and it has to finish that creation
-        // properly: the row it found is a candidate for every OTHER query too,
-        // and any prediction response already cached was built without it.
-        // The 201 and the immediate-recovery paths both broadcast; a recovery
-        // that arrives later over `Check again` must broadcast as well, or a
-        // cached query goes on omitting a directory that exists.
-        const answersOwnWrite = isWriteUnsettled(this.getRecord(queryId).creation)
         // Positive evidence is always usable: a row that exists, exists,
-        // whenever the response was built.
-        this.recordSaved(queryId, dirs, 'server-list')
-        if (answersOwnWrite) {
-          // The write is over and its outcome is now known: it landed. The
-          // reviewer is looking at an acknowledgement, not at a form.
-          this.update(queryId, (current) =>
-            current.creation.status === 'failed' && current.creation.outcome === 'unknown'
-              ? { ...current, creation: { status: 'idle' }, formOpen: false }
-              : current,
-          )
-        }
-        // Identity first, then the event. Quiet unless a write of ours is still
-        // waiting to be announced, so ordinary reads cannot start a cycle of
-        // broadcast, refetch, broadcast.
-        this.announceWrite(queryId)
+        // whenever the response was built. If this lookup is the last step of a
+        // creation -- typically a `Check again` after a lost response -- that is
+        // `confirmSaved`'s business, not this branch's.
+        this.confirmSaved(queryId, dirs, 'server-list')
         return
       }
       // Only a well-formed, empty list gets here: `fetchReviewerDirs` throws on
@@ -435,7 +416,12 @@ export class SavedDirectoryStore {
     if (dirs.length === 0) return
     const seeded = dirs.filter((dir) => dir.seed_query_id === queryId)
     if (seeded.length === 0) return
-    this.recordSaved(queryId, seeded, 'predictions')
+    // Positive, seed-matched and server-sourced: the same class of evidence a
+    // lookup returns, so it finishes an outstanding write of ours exactly as a
+    // lookup would. Recording the identity and stopping short of that is what
+    // stranded a reviewer with an acknowledgement, no `Check again` and a
+    // refresh nobody would ever send.
+    this.confirmSaved(queryId, seeded, 'predictions')
   }
 
   // --- creation ------------------------------------------------------------
@@ -580,10 +566,7 @@ export class SavedDirectoryStore {
         { notify: false },
       )
       this.writeSettled(queryId)
-      this.recordSaved(queryId, [dir], 'created')
-      this.settleOperation(queryId, operationId, { status: 'idle' })
-      // Identity first: the refresh unmounts whatever issued this call.
-      this.announceWrite(queryId)
+      this.confirmSaved(queryId, [dir], 'created')
       return { outcome: 'created', dir }
     } catch (err) {
       const error = messageOf(err)
@@ -604,12 +587,7 @@ export class SavedDirectoryStore {
       }
 
       if (reconciled && reconciled.length > 0) {
-        this.recordSaved(queryId, reconciled, 'recovered')
-        this.settleOperation(queryId, operationId, { status: 'idle' })
-        // Whatever the reconciliation found, this write is why the client is
-        // looking: a directory it had not announced is now known, and every
-        // candidate list in this tab was built without it.
-        this.announceWrite(queryId)
+        this.confirmSaved(queryId, reconciled, 'recovered')
         return { outcome: 'recovered', dirs: reconciled }
       }
 
@@ -672,6 +650,42 @@ export class SavedDirectoryStore {
   private announceWrite(queryId: number): void {
     if (!this.unannouncedWrites.delete(queryId)) return
     notifyReviewerDirsUpdated()
+  }
+
+  /**
+   * The one way this store accepts positive evidence: record it, finish any
+   * write of ours it answers, tell the rest of the app.
+   *
+   * Every source of a confirmed directory goes through here -- the 201, the
+   * reconciliation after a failed POST, an explicit lookup, and a `seeded_dirs`
+   * observation -- because they are four ways of learning the SAME thing, and a
+   * reviewer's recovery must not depend on which one happens to arrive. When a
+   * seed observation was allowed to record identity alone, it produced a state
+   * with no exit: the CTA's saved branch hid `Check again`, the identity was
+   * no longer unknown so nothing would look it up again, and the write stayed
+   * unannounced with no reachable action left to announce it. The write was
+   * acknowledged on screen while every other cached query went on omitting it.
+   *
+   * The two gates are unchanged and both live in one place now. Settling only
+   * touches a write that is genuinely unsettled, and `announceWrite` only
+   * speaks if this store owes a refresh, so an ordinary read or observation --
+   * no write of ours outstanding -- still passes through silently.
+   */
+  private confirmSaved(
+    queryId: number,
+    dirs: readonly ReviewerDir[],
+    confirmedBy: SavedConfirmation,
+  ): void {
+    this.recordSaved(queryId, dirs, confirmedBy)
+    // The outcome nobody could establish is established: it landed. A late
+    // failure from that same attempt can no longer reopen the form, because
+    // `settleOperation` only writes over a pending operation of its own id.
+    this.update(queryId, (current) =>
+      isWriteUnsettled(current.creation)
+        ? { ...current, creation: { status: 'idle' }, formOpen: false }
+        : current,
+    )
+    this.announceWrite(queryId)
   }
 
   /**

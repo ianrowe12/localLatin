@@ -508,20 +508,28 @@ describe('finding 8: a recovery that arrives late still invalidates other caches
     }
   })
 
-  // A silent `observeSeededDirs` can land between issuing a write and learning
-  // its outcome -- a predictions response for the seed itself, after a model
-  // change or a navigation, carries the new row in `seeded_dirs`. It records
-  // the identity and says nothing, by design. Whether the caches have been told
-  // is therefore a fact about this store's own history, not something readable
-  // off the identity: keying the broadcast on "is this row already known" let
-  // that observation eat the only notification the write would ever send.
+  /**
+   * A `seeded_dirs` observation is the fourth way this store can learn that its
+   * write landed, and for a while it was the only one that did nothing about
+   * it. It recorded the identity silently, which was right for an ordinary
+   * refresh and wrong for a write still waiting on an answer: the CTA's saved
+   * branch then hid `Check again`, the identity was no longer unknown so
+   * nothing would look it up again, and the refresh other queries were owed had
+   * no remaining path to reach them. The acknowledgement was on screen and the
+   * rest of the app never heard.
+   *
+   * These drive the real CTA. Where the reviewer has a control, the control is
+   * clicked; where the evidence arrives on its own, it arrives through the
+   * public observation API, as a predictions response does.
+   */
   it.each([
-    ['a 201 that arrives after it', 'created'],
-    ['recovery after an immediately failed write', 'recovered'],
-    ['a delayed Check again after a lost response', 'delayed'],
+    ['while the POST is still in flight', 'in-flight'],
+    ['after the POST failed and reconciliation recovered', 'recovered'],
+    ['after both requests have failed', 'both-failed'],
   ])(
-    'a silent seeded observation cannot consume the refresh owed by %s',
-    async (_name, path) => {
+    'a seeded observation %s completes the owed refresh exactly once',
+    async (_name, phase) => {
+      const user = userEvent.setup()
       let store!: SavedDirectoryStore
       let events = 0
       const snapshots: string[] = []
@@ -535,16 +543,19 @@ describe('finding 8: a recovery that arrives late still invalidates other caches
         return null
       }
       const pendingPost = deferred<Response>()
-      let lookupWorks = false
       installFetch({
-        post: () =>
-          path === 'created'
-            ? pendingPost.promise
-            : jsonResponse({ detail: 'Gateway timeout' }, 504),
+        post: () => {
+          if (phase === 'in-flight') return pendingPost.promise
+          if (phase === 'recovered') {
+            return jsonResponse({ detail: 'Gateway timeout' }, 504)
+          }
+          throw new Error('Failed to fetch')
+        },
         get: () => {
-          if (path === 'created') return jsonResponse([])
-          if (path === 'recovered') return jsonResponse([dirFixture()])
-          return lookupWorks
+          // Before the write the seed is free; after it, the reconciliation
+          // either finds the row or cannot read the server at all.
+          if (!posts) return jsonResponse([])
+          return phase === 'recovered'
             ? jsonResponse([dirFixture()])
             : jsonResponse({ detail: 'unavailable' }, 503)
         },
@@ -553,52 +564,59 @@ describe('finding 8: a recovery that arrives late still invalidates other caches
       try {
         render(
           <SavedDirectoryProvider accountKey="reviewer-1">
+            <NewDirectoryCta queryId={QUERY_A} model={MODEL} emphasised />
             <Probe />
           </SavedDirectoryProvider>,
         )
 
-        if (path === 'created') {
-          let operation!: Promise<unknown>
-          await act(async () => {
-            operation = store.createDirectory(QUERY_A, { label: 'Saved proposal' })
-            // The seed's own predictions arrive while the POST is in flight.
-            store.observeSeededDirs(QUERY_A, [dirFixture()])
-          })
-          expect(store.getRecord(QUERY_A).identity.status).toBe('saved')
-          expect(events).toBe(0)
-          await act(async () => {
-            pendingPost.resolve(jsonResponse(dirFixture(), 201))
-            await operation
-          })
-        } else if (path === 'recovered') {
-          await act(async () => {
-            const operation = store.createDirectory(QUERY_A, {
-              label: 'Saved proposal',
-            })
-            store.observeSeededDirs(QUERY_A, [dirFixture()])
-            await operation
-          })
-        } else {
-          await act(async () => {
-            await store.createDirectory(QUERY_A, { label: 'Saved proposal' })
-          })
+        if (phase === 'recovered') {
+          // The reconciliation finds the row itself, so the observation is the
+          // late arrival and must add nothing.
+          await startCreation(user)
+          await screen.findByTestId('new-directory-saved')
+          expect(events).toBe(1)
           await act(async () => {
             store.observeSeededDirs(QUERY_A, [dirFixture()])
           })
-          expect(events).toBe(0)
-          lookupWorks = true
-          await act(async () => {
-            await store.ensureLookup(QUERY_A, { force: true })
-          })
+          expect(events).toBe(1)
+          return
         }
 
-        // Exactly one refresh, and the acknowledgement is already readable when
-        // the listener wakes up.
+        await startCreation(user)
+        if (phase === 'both-failed') {
+          // The reviewer is looking at Check again when the predictions payload
+          // answers the question for them.
+          await screen.findByTestId('new-directory-outcome')
+          expect(screen.getByTestId('new-directory-check-again')).toBeTruthy()
+        }
+        expect(events).toBe(0)
+
+        await act(async () => {
+          store.observeSeededDirs(QUERY_A, [dirFixture()])
+        })
+
+        // One refresh, with the acknowledgement already readable, and no
+        // half-finished write left behind a hidden control.
         expect(events).toBe(1)
         expect(snapshots).toEqual(['saved'])
+        expect(await screen.findByTestId('new-directory-saved')).toBeTruthy()
         expect(store.getRecord(QUERY_A).creation.status).toBe('idle')
+        expect(screen.queryByTestId('new-directory-check-again')).toBeNull()
 
-        // Nothing further: the write has been announced.
+        if (phase === 'in-flight') {
+          // The write it was waiting for lands afterwards. It is the same
+          // directory and it has already been announced.
+          await act(async () => {
+            pendingPost.resolve(jsonResponse(dirFixture(), 201))
+          })
+          await waitFor(() => {
+            expect(posts).toBe(1)
+          })
+          expect(events).toBe(1)
+          expect(store.getRecord(QUERY_A).identity.status).toBe('saved')
+        }
+
+        // Nothing further from routine reads or repeated observations.
         await act(async () => {
           await store.ensureLookup(QUERY_A, { force: true })
           store.observeSeededDirs(QUERY_A, [dirFixture()])
@@ -609,6 +627,165 @@ describe('finding 8: a recovery that arrives late still invalidates other caches
       }
     },
   )
+
+  it('refreshes a cached other query when only an observation confirms the write', async () => {
+    // The reviewer's whole journey, end to end, with no direct store call
+    // standing in for a control: the other query is cached before the write,
+    // the write's response is lost, its reconciliation fails, and the only
+    // thing that ever confirms the directory is a later predictions payload.
+    const user = userEvent.setup()
+    let saved = false
+    let predictionGets = 0
+    let store!: SavedDirectoryStore
+    let events = 0
+    const listener = () => {
+      events += 1
+    }
+    window.addEventListener(REVIEWER_DIRS_UPDATED_EVENT, listener)
+    function Probe() {
+      store = useSavedDirectoryStore()
+      return null
+    }
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url.includes('/predictions')) {
+          predictionGets += 1
+          return jsonResponse({
+            file_id: OTHER_QUERY,
+            filename: `query-${OTHER_QUERY}.txt`,
+            model: MODEL,
+            variant: 'sif_abtt',
+            seeded_dirs: [],
+            predictions: saved
+              ? [
+                  {
+                    rank: 11,
+                    dir_name: 'reviewer-dir-1',
+                    score: 0.8,
+                    dir_files: [],
+                    preview_text: '',
+                    candidate_files: null,
+                    source: 'reviewer',
+                    label: 'Saved proposal',
+                    seed_query_id: QUERY_A,
+                  },
+                ]
+              : [],
+          })
+        }
+        if ((init?.method ?? 'GET') === 'POST') {
+          saved = true
+          throw new Error('Failed to fetch')
+        }
+        // The seed is free until the write; afterwards the server cannot be
+        // read, so the app is left genuinely uncertain.
+        return saved
+          ? jsonResponse({ detail: 'lookup unavailable' }, 503)
+          : jsonResponse([])
+      }),
+    )
+
+    function OtherQueryCandidates() {
+      const result = usePredictions(OTHER_QUERY, MODEL)
+      return (
+        <span data-testid="other-query-candidates">
+          {result.loading ? 'loading' : String(result.data?.predictions.length ?? 0)}
+        </span>
+      )
+    }
+
+    try {
+      render(
+        <SavedDirectoryProvider accountKey="reviewer-1">
+          <NewDirectoryCta queryId={QUERY_A} model={MODEL} emphasised />
+          <OtherQueryCandidates />
+          <Probe />
+        </SavedDirectoryProvider>,
+      )
+      await waitFor(() => {
+        expect(screen.getByTestId('other-query-candidates').textContent).toBe('0')
+      })
+      const cachedGets = predictionGets
+
+      await user.click(await screen.findByTestId('new-directory-cta'))
+      const field = screen.getByLabelText('Name the new directory')
+      await user.clear(field)
+      await user.type(field, 'Saved proposal')
+      await user.click(screen.getByTestId('new-directory-submit'))
+      await screen.findByTestId('new-directory-outcome')
+      expect(events).toBe(0)
+
+      // The seed's own predictions come back carrying the directory.
+      await act(async () => {
+        store.observeSeededDirs(QUERY_A, [dirFixture()])
+      })
+
+      expect(await screen.findByTestId('new-directory-saved')).toBeTruthy()
+      expect(events).toBe(1)
+      await waitFor(() => {
+        expect(screen.getByTestId('other-query-candidates').textContent).toBe('1')
+      })
+      expect(predictionGets).toBeGreaterThan(cachedGets)
+    } finally {
+      window.removeEventListener(REVIEWER_DIRS_UPDATED_EVENT, listener)
+    }
+  })
+
+  it('a late failure cannot reopen a write an observation already confirmed', async () => {
+    const user = userEvent.setup()
+    let store!: SavedDirectoryStore
+    let events = 0
+    const listener = () => {
+      events += 1
+    }
+    window.addEventListener(REVIEWER_DIRS_UPDATED_EVENT, listener)
+    function Probe() {
+      store = useSavedDirectoryStore()
+      return null
+    }
+    const pendingPost = deferred<Response>()
+    installFetch({
+      post: () => pendingPost.promise,
+      // Everything after the write fails: the reconciliation cannot read the
+      // server either.
+      get: () => (posts ? jsonResponse({ detail: 'down' }, 503) : jsonResponse([])),
+    })
+
+    try {
+      render(
+        <SavedDirectoryProvider accountKey="reviewer-1">
+          <NewDirectoryCta queryId={QUERY_A} model={MODEL} emphasised />
+          <Probe />
+        </SavedDirectoryProvider>,
+      )
+      await startCreation(user)
+      await act(async () => {
+        store.observeSeededDirs(QUERY_A, [dirFixture()])
+      })
+      expect(events).toBe(1)
+
+      await act(async () => {
+        pendingPost.resolve(jsonResponse({ detail: 'Gateway timeout' }, 504))
+      })
+      await waitFor(() => {
+        expect(screen.getByTestId('new-directory-saved')).toBeTruthy()
+      })
+
+      // The attempt that failed is the same attempt the observation confirmed.
+      // Its error must not reopen the form, take back the acknowledgement, or
+      // spend a second notification.
+      expect(store.getRecord(QUERY_A).creation.status).toBe('idle')
+      expect(store.getRecord(QUERY_A).identity.status).toBe('saved')
+      expect(screen.queryByTestId('new-directory-form')).toBeNull()
+      expect(screen.queryByTestId('new-directory-cta')).toBeNull()
+      expect(events).toBe(1)
+    } finally {
+      window.removeEventListener(REVIEWER_DIRS_UPDATED_EVENT, listener)
+    }
+  })
 
   it('does not broadcast twice when a lookup and the POST find the same row', async () => {
     const pendingPost = deferred<Response>()
