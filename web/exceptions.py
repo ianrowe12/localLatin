@@ -33,3 +33,25 @@ class ExampleNotFoundError(Exception):
         self.example_id = example_id
         self.message = f"IG example_id={example_id} not found"
         super().__init__(self.message)
+
+
+class ReviewerDirSeedExistsError(Exception):
+    def __init__(self, seed_query_id: int, dir_id: str, label: str) -> None:
+        self.seed_query_id = seed_query_id
+        self.dir_id = dir_id
+        self.message = (
+            f"Query {seed_query_id} already seeds reviewer directory "
+            f"'{dir_id}' ({label})."
+        )
+        super().__init__(self.message)
+
+
+class ReviewerDirLimitError(Exception):
+    def __init__(self, created_count: int, limit: int) -> None:
+        self.created_count = created_count
+        self.limit = limit
+        self.message = (
+            f"You have created {created_count} reviewer directories, the "
+            f"maximum is {limit}. Ask a PI/admin if you genuinely need more."
+        )
+        super().__init__(self.message)
