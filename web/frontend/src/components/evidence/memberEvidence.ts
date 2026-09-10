@@ -225,10 +225,17 @@ export function resolveMemberEvidence(
 
   const isReviewer = candidate.source === 'reviewer'
   // Only a response that positively accounts for exactly one member may say
-  // so; zero members is unknown membership, not a group of one.
+  // so. Zero members is unknown membership, not a group of one. An unnamed
+  // winner is the same: nothing pairs that query id with the listed file, so
+  // the file on screen may not be the whole group, and "the only witness in
+  // this group" would credit it with a number it may not have earned. A
+  // response with no evidence field at all is left alone: it predates #163,
+  // its `dir_files` is all there is to go on, and with exactly one member the
+  // group maximum is that member's score by definition.
+  const provablySingleton = memberCount === 1 && support.kind !== 'unnamed'
   const scoreScope: ScoreScope = !isReviewer
     ? 'directory'
-    : memberCount === 1
+    : provablySingleton
       ? 'single-witness'
       : 'group-maximum'
 
@@ -375,8 +382,21 @@ export function describeWitnessOption(witness: MemberWitness): string {
     : witness.filename
 }
 
-/** "1 of 3 member witnesses cannot be opened here", or null when all can. */
-export function describeUnopenableMembers(
+/**
+ * The line under the number when there is nothing to choose between.
+ *
+ * It says "the only member witness available here" unless the response
+ * proves the group has exactly one member, because a shorter list is not
+ * evidence of a smaller group.
+ */
+export function describeSoleWitness(evidence: MemberEvidence): string | null {
+  if (evidence.selectable || evidence.selected == null) return null
+  return evidence.scoreScope === 'single-witness'
+    ? `One member witness: ${evidence.selected.filename}.`
+    : `Showing ${evidence.selected.filename}, the only member witness available here.`
+}
+
+/** "1 of 3 member witnesses cannot be opened here", or null when all can. */export function describeUnopenableMembers(
   evidence: MemberEvidence,
 ): string | null {
   if (evidence.unopenableCount <= 0) return null

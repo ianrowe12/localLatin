@@ -2,6 +2,7 @@ import { useId } from 'react'
 import {
   describeAttributionScope,
   describeScoreAttribution,
+  describeSoleWitness,
   describeUnopenableMembers,
   describeWitnessOption,
   type AttributionScope,
@@ -60,6 +61,7 @@ export default function MemberEvidenceBar({
   if (!evidence) return null
 
   const unopenableNote = describeUnopenableMembers(evidence)
+  const soleWitnessNote = describeSoleWitness(evidence)
 
   // A labelled directory showing its only file, with nothing to warn about,
   // has nothing to say. Staying silent there keeps the strip meaningful.
@@ -164,14 +166,12 @@ export default function MemberEvidenceBar({
           )}
         </div>
       ) : (
-        evidence.selected != null && (
+        soleWitnessNote && (
           <div
             data-testid="member-evidence-single"
             className="mt-1 text-stone-500 dark:text-stone-400"
           >
-            {evidence.memberCount > 1
-              ? `Showing ${evidence.selected.filename}, the only member witness available here.`
-              : `One member witness: ${evidence.selected.filename}.`}
+            {soleWitnessNote}
           </div>
         )
       )}

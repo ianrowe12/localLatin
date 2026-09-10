@@ -3,6 +3,7 @@ import {
   attributionAppliesToWitness,
   describeAttributionScope,
   describeScoreAttribution,
+  describeSoleWitness,
   describeUnopenableMembers,
   describeWitnessOption,
   displayedWitnessKey,
@@ -296,6 +297,49 @@ describe('resolveMemberEvidence', () => {
     expect(second.selected?.position).toBe(1)
     expect(describeWitnessOption(second.selected!)).toBe(
       'same.txt (entry 2 under this name)',
+    )
+  })
+
+  it('will not call a group a singleton on the word of an unnamed winner', () => {
+    // One readable file, and a winner the response identifies only by query
+    // id. Nothing pairs that id with the file on screen, so the group may be
+    // larger than the list and this file may not have earned the number.
+    const evidence = resolveMemberEvidence(
+      reviewerGroup({
+        dir_files: ['query-2.txt'],
+        candidate_files: [{ filename: 'query-2.txt', text: 'seed text' }],
+        supporting_member: { query_id: 41, filename: null, score: GROUP_MAX },
+      }),
+    )!
+    expect(evidence.scoreScope).toBe('group-maximum')
+    expect(evidence.displayedIsSupport).toBe(false)
+    const copy = describeScoreAttribution(evidence)
+    expect(copy.sentence).not.toContain('only witness in this group')
+    expect(copy.sentence).toContain(
+      'Produced by member query 41, which this response does not name',
+    )
+    expect(copy.tone).toBe('attention')
+    expect(describeSoleWitness(evidence)).toBe(
+      'Showing query-2.txt, the only member witness available here.',
+    )
+  })
+
+  it('still calls a proven single-member group what it is', () => {
+    const evidence = resolveMemberEvidence(
+      reviewerGroup({
+        dir_files: ['query-2.txt'],
+        candidate_files: [{ filename: 'query-2.txt', text: 'only text' }],
+        supporting_member: {
+          query_id: 2,
+          filename: 'query-2.txt',
+          score: SEED_ONLY,
+        },
+        score: SEED_ONLY,
+      }),
+    )!
+    expect(evidence.scoreScope).toBe('single-witness')
+    expect(describeSoleWitness(evidence)).toBe(
+      'One member witness: query-2.txt.',
     )
   })
 
