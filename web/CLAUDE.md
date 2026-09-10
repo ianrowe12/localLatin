@@ -138,13 +138,31 @@ The webapp reads these from `data_root`:
   `src/api/variants.ts` is the only place that bridges the two vocabularies.
 - Confidence bands: `src/utils/confidenceBands.ts` owns the band function, the copy and the
   styling, but **not** the thresholds — those come from `GET /api/models`
-  (`confidence_bands`) via `bandsFrom()`, because the backend decides reviewer-directory
-  status with the same numbers. The literals in that file are the pre-flight fallback only.
+  (`confidence_bands`) via `bandsFrom()`, because the backend applies the same numbers to
+  reviewer directories. What they decide there is `has_potential_match` (an unconfirmed
+  lead), **not** status: `status_of` returns `matched` only once a human has filed a second,
+  distinct witness. The literals in that file are the pre-flight fallback only.
   `PredictionList` resolves them once and passes them to each `PredictionCard`.
   Below the no-match band the list renders `NoMatchCallout` (issue #94's red `role="alert"`
   framing) with issue #95's `NewDirectoryCta` as the action inside it; above the band the
   same CTA renders un-emphasised at the foot of the list. #94's feature detection for a
   not-yet-deployed endpoint is gone, since #95 ships it.
+- Directory guidance (issue #162): every reviewer-facing sentence about creating a
+  provisional directory lives in `src/utils/reviewerDirectoryCopy.ts`, and the blocks around
+  the naming field are their own components (`DirectoryCreationGuidance`,
+  `DirectorySavedNotice`), so wording and creation behaviour can change independently. Three
+  facts must survive any rewrite: creation is a permanent write with no rename or removal,
+  it is not the assessment and Submit/Skip cannot undo it, and a saved directory is offered
+  only where the model can score it — never "every other document".
+- Candidate provenance (issue #162): `src/utils/documentProvenance.ts` maps a candidate to
+  `labeled_reference` (a witness the labelled corpus already groups) or `reviewer_group` (an
+  originally unlabeled witness in a provisional reviewer directory), and
+  `DocumentPanel`/`DocumentHeader` caption the panel from it. `provenanceOf` prefers the
+  prediction's `source`, falls back to the backend's `reviewer-dir-` prefix rule for an
+  off-list candidate, and otherwise stays `unknown`: an unidentified candidate must never be
+  captioned as a labelled reference. **`CenterArea` does not pass the prop yet** — that one
+  hunk waits on issue #156's current-candidate identity, so the right panel currently reads
+  the neutral "Candidate witness".
 - Default model: `DEFAULT_MODEL_SLUG` in `src/api/models.ts` (`google_mt5-base`, displayed
   as "mT5-base" by `services/data_store.py`), with a fallback to the first served model.
 - Token classification duplicated in `src/utils/tokens.ts` (matches `services/text_tokenizer.py`)
