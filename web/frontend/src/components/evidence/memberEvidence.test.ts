@@ -40,6 +40,41 @@ function reviewerGroup(
   }
 }
 
+/**
+ * A reviewer-directory prediction whose maximum is a TIE, exactly as the
+ * backend serializes it.
+ *
+ * Produced by running the real path -- QQMatrix.score_with_support ->
+ * reviewer_dirs._to_prediction -> Prediction.model_dump -- over the #163
+ * fixture with sim[1, 2] set equal to sim[1, 0]. Both members then score
+ * 0.7998046875 against query 1, and `score_with_support` designates query 0
+ * only because its id is the smaller one.
+ *
+ * The payload below is that output verbatim, minus the fields this module
+ * does not read (rank 11, preview_text "text of query-0.txt", created_by,
+ * seed_query_id 2). It is byte-identical in shape to a strictly-won group,
+ * which is the whole point: nothing on the wire distinguishes the two, so no
+ * copy may claim the viewed member did not reach the number.
+ */
+function tiedReviewerGroup(): MemberEvidenceCandidate {
+  return {
+    dir_name: 'reviewer-dir-1',
+    score: 0.7998046875,
+    dir_files: ['query-2.txt', 'query-0.txt'],
+    candidate_files: [
+      { filename: 'query-2.txt', text: 'text of query-2.txt' },
+      { filename: 'query-0.txt', text: 'text of query-0.txt' },
+    ],
+    source: 'reviewer',
+    label: 'Unattested homily',
+    supporting_member: {
+      query_id: 0,
+      filename: 'query-0.txt',
+      score: 0.7998046875,
+    },
+  }
+}
+
 describe('resolveMemberEvidence', () => {
   it('defaults to the supporting witness, not to the first member', () => {
     const evidence = resolveMemberEvidence(reviewerGroup())!
@@ -65,8 +100,58 @@ describe('resolveMemberEvidence', () => {
     expect(evidence.selected?.filename).toBe('query-2.txt')
     expect(evidence.displayedIsSupport).toBe(false)
     expect(evidence.score).toBe(GROUP_MAX)
-    expect(describeScoreAttribution(evidence).sentence).toContain(
-      'Produced by query-0.txt, not by the witness shown below',
+    const sentence = describeScoreAttribution(evidence).sentence
+    expect(sentence).toContain(
+      'This response designates query-0.txt as the supporting witness.',
+    )
+    expect(sentence).toContain(
+      'The individual similarity of the witness shown below is not supplied.',
+    )
+    // The designation breaks ties by query id, so it cannot rule the viewed
+    // member out of having reached the same number.
+    expect(sentence).not.toContain('not by the witness shown below')
+  })
+
+  it('does not deny a tied member the maximum it also reached', () => {
+    // Backend-serialized equal maxima: query-2.txt scores 0.7998046875 too,
+    // and is passed over only by the smallest-query-id tie-break. Saying the
+    // number was "not by" it would be false about this very payload.
+    const evidence = resolveMemberEvidence(tiedReviewerGroup(), 'query-2.txt')!
+    expect(evidence.selected?.filename).toBe('query-2.txt')
+    expect(evidence.displayedIsSupport).toBe(false)
+    expect(evidence.score).toBe(0.7998046875)
+
+    const copy = describeScoreAttribution(evidence)
+    expect(copy.sentence).not.toContain('not by the witness shown below')
+    expect(copy.sentence).not.toContain('Produced by query-0.txt,')
+    expect(copy.sentence).toBe(
+      "Highest similarity across this group's scorable member witnesses. " +
+        'This response designates query-0.txt as the supporting witness. ' +
+        'The individual similarity of the witness shown below is not supplied.',
+    )
+    // Still worth the reviewer's attention: they are not on the designated
+    // witness, and no per-member number exists to justify reading it as one.
+    expect(copy.tone).toBe('attention')
+  })
+
+  it('keeps the designation, number and tie-break untouched under a tie', () => {
+    const evidence = resolveMemberEvidence(tiedReviewerGroup())!
+    // The deterministic designation still drives the default and the marker.
+    expect(evidence.selected?.filename).toBe('query-0.txt')
+    expect(evidence.displayedIsSupport).toBe(true)
+    expect(evidence.support).toMatchObject({
+      kind: 'named',
+      queryId: 0,
+      filename: 'query-0.txt',
+      ambiguous: false,
+      inspectable: true,
+    })
+    expect(evidence.witnesses.map((w) => w.filename)).toEqual([
+      'query-2.txt',
+      'query-0.txt',
+    ])
+    expect(describeWitnessOption(evidence.witnesses[1])).toBe(
+      'query-0.txt (produced the score)',
     )
   })
 

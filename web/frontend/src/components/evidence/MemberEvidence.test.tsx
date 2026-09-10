@@ -358,7 +358,7 @@ describe('member evidence over the real prediction fetch (issue #163)', () => {
     expect(screen.getByText('0.800')).toBeTruthy()
     expect(screen.queryByText(SEED_ONLY.toFixed(3))).toBeNull()
     expect(attributionText()).toContain(
-      'Produced by query-0.txt, not by the witness shown below.',
+      'This response designates query-0.txt as the supporting witness. The individual similarity of the witness shown below is not supplied.',
     )
   })
 

@@ -4,11 +4,11 @@ import type { CandidateFile, CandidateSource } from '../../api/queries'
  * The witness behind a directory candidate's number (issue #163).
  *
  * A reviewer directory's similarity is the MAXIMUM over its member witnesses
- * (web/services/qq_matrix.py), so the number on screen belongs to exactly one
- * member and not to whichever member happens to be rendered. The candidate
- * panel has always rendered `candidate_files[0]`, normally the seed, which in
- * the fixture behind #163 scores 0.199951171875 while the directory's number
- * is 0.7998046875 and comes from a different member entirely.
+ * (web/services/qq_matrix.py), so it is earned by a member rather than by
+ * whichever member happens to be rendered. The candidate panel has always
+ * rendered `candidate_files[0]`, normally the seed, which in the fixture
+ * behind #163 scores 0.199951171875 while the directory's number is
+ * 0.7998046875 and was reached by a different member entirely.
  *
  * This module turns a candidate payload into the small view model the panel
  * needs to say that honestly, and nothing else: it does not fetch, score,
@@ -28,6 +28,11 @@ import type { CandidateFile, CandidateSource } from '../../api/queries'
  * best_match_score` and never a per-member score for any other member.
  * `filename` is null when the winning member has no filename metadata; the
  * winner is still that member, so nothing here may substitute a readable one.
+ *
+ * It is a DESIGNATION, not a uniqueness claim. `score_with_support` resolves
+ * equal maxima by the smallest member query id, and a tied payload is
+ * byte-identical to a strictly-won one, so nothing on the wire says whether
+ * another member reached the same number. No copy in this module may deny it.
  */
 export interface SupportingMember {
   query_id: number
@@ -345,9 +350,13 @@ export function describeScoreAttribution(
   }
 
   if (!displayedIsSupport) {
+    // NOT "not by the witness shown below". The backend designates one
+    // maximising member and breaks equal maxima by the smallest query id, so
+    // the member on screen may have reached the same number; the response
+    // carries no per-member score that could tell the reviewer either way.
     return {
       label,
-      sentence: `${lead} Produced by ${support.filename}, not by the witness shown below.`,
+      sentence: `${lead} This response designates ${support.filename} as the supporting witness. The individual similarity of the witness shown below is not supplied.`,
       tone: 'attention',
     }
   }
