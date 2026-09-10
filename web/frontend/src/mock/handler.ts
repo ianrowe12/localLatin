@@ -501,14 +501,30 @@ function handleModels(): ModelInfo[] {
 // covered by the backend tests.
 const mockReviewerDirs: ReviewerDir[] = []
 
-function handleCreateReviewerDir(init?: RequestInit): ReviewerDir {
+function handleCreateReviewerDir(init?: RequestInit): Response {
   const body = JSON.parse(String(init?.body ?? '{}'))
+  const seedQueryId = body.query_file_id
+  // One directory per seed, exactly as the backend enforces with a 409. The
+  // mock used to create a second one on every POST, which made a double-click
+  // or a retry look like a legitimate new grouping and left the recovery path
+  // untestable in mock mode.
+  const existing = mockReviewerDirs.find((dir) => dir.seed_query_id === seedQueryId)
+  if (existing) {
+    return mockResponse(
+      {
+        detail:
+          `Query ${seedQueryId} already seeds reviewer directory ` +
+          `'${existing.dir_id}' (${existing.label}).`,
+      },
+      409,
+    )
+  }
   const dir: ReviewerDir = {
     dir_id: `reviewer-dir-mock${mockReviewerDirs.length + 1}`,
-    label: body.label || `New directory from query ${body.query_file_id}`,
+    label: body.label || `New directory from query ${seedQueryId}`,
     status: 'awaiting_match',
-    seed_query_id: body.query_file_id,
-    member_query_ids: [body.query_file_id],
+    seed_query_id: seedQueryId,
+    member_query_ids: [seedQueryId],
     created_at: new Date().toISOString(),
     created_by: 'scholar',
     model_slug: body.model_slug ?? 'bowphs_LaTa',
@@ -517,7 +533,20 @@ function handleCreateReviewerDir(init?: RequestInit): ReviewerDir {
     has_potential_match: false,
   }
   mockReviewerDirs.push(dir)
-  return dir
+  return mockResponse(dir, 201)
+}
+
+/**
+ * `GET /api/reviewer_dirs?seed_query_id=N` is the reload/recovery lookup, so
+ * the mock has to honour the filter: answering with every group regardless of
+ * seed would make any document look already saved.
+ */
+function handleListReviewerDirs(url: string): ReviewerDir[] {
+  const params = new URL(url, 'http://mock.local').searchParams
+  const seed = params.get('seed_query_id')
+  if (seed === null) return mockReviewerDirs
+  const seedQueryId = Number(seed)
+  return mockReviewerDirs.filter((dir) => dir.seed_query_id === seedQueryId)
 }
 
 // ---------------------------------------------------------------------------
@@ -610,9 +639,9 @@ export function installMockHandler(): void {
     // Reviewer directories
     if (url.includes('/api/reviewer_dirs')) {
       if (init?.method === 'POST') {
-        return mockResponse(handleCreateReviewerDir(init), 201)
+        return handleCreateReviewerDir(init)
       }
-      return mockResponse(mockReviewerDirs)
+      return mockResponse(handleListReviewerDirs(url))
     }
 
     // Models

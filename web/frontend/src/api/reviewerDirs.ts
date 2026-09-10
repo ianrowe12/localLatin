@@ -57,20 +57,69 @@ export interface CreateReviewerDirPayload {
  */
 export const REVIEWER_DIRS_UPDATED_EVENT = 'locallatin:reviewer-dirs-updated'
 
+/** Fire the refresh broadcast on its own, see `CreateReviewerDirOptions.notify`. */
+export function notifyReviewerDirsUpdated(): void {
+  window.dispatchEvent(new CustomEvent(REVIEWER_DIRS_UPDATED_EVENT))
+}
+
+export interface CreateReviewerDirOptions {
+  /**
+   * Broadcast REVIEWER_DIRS_UPDATED_EVENT as soon as the POST resolves
+   * (default). The refresh it triggers unmounts whatever rendered the call, so
+   * a caller that has to *record* the saved directory first passes `false` and
+   * calls `notifyReviewerDirsUpdated()` once the identity is committed. Issue
+   * #161: a refresh that then fails must not be able to lose the only record
+   * of a permanent write.
+   */
+  notify?: boolean
+}
+
 export async function createReviewerDir(
   payload: CreateReviewerDirPayload,
+  options: CreateReviewerDirOptions = {},
 ): Promise<ReviewerDir> {
   const created = await apiFetch<ReviewerDir>('/api/reviewer_dirs', {
     method: 'POST',
     body: JSON.stringify(payload),
   })
-  window.dispatchEvent(new CustomEvent(REVIEWER_DIRS_UPDATED_EVENT))
+  if (options.notify !== false) notifyReviewerDirsUpdated()
   return created
 }
 
-export async function fetchReviewerDirs(model?: string): Promise<ReviewerDir[]> {
+export interface ReviewerDirQuery {
+  /**
+   * Model slug whose q-q matrix supplies `best_match_score`. Optional, and
+   * deliberately so for identity lookups: which directories exist is a
+   * property of the database, not of the model a reviewer happens to have
+   * selected, and the server falls back to its first served model.
+   */
+  model?: string
+  /**
+   * Restrict the answer to directories seeded by this query
+   * (`GET /api/reviewer_dirs?seed_query_id=N`).
+   *
+   * This is the reload/recovery path for issue #161: the seed of a directory
+   * is the query that created it, so one authenticated GET answers "does this
+   * document already have a grouping?" after a full page reload, after a
+   * failed prediction refresh, or when a create response was lost in flight.
+   * It returns EVERY directory recorded for that seed, including historical
+   * duplicates, rather than picking one and hiding the rest.
+   */
+  seedQueryId?: number
+  signal?: AbortSignal
+}
+
+export async function fetchReviewerDirs(
+  query: ReviewerDirQuery = {},
+): Promise<ReviewerDir[]> {
   const params = new URLSearchParams()
-  if (model) params.set('model', model)
-  const query = params.toString()
-  return apiFetch<ReviewerDir[]>(`/api/reviewer_dirs${query ? `?${query}` : ''}`)
+  if (query.model) params.set('model', query.model)
+  if (query.seedQueryId !== undefined) {
+    params.set('seed_query_id', String(query.seedQueryId))
+  }
+  const search = params.toString()
+  return apiFetch<ReviewerDir[]>(
+    `/api/reviewer_dirs${search ? `?${search}` : ''}`,
+    query.signal ? { signal: query.signal } : undefined,
+  )
 }
