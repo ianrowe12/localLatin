@@ -201,6 +201,111 @@ describe('resolveMemberEvidence', () => {
       '2 of 2 member witnesses cannot be opened here.',
     )
   })
+
+  it('does not call an empty response a group of one witness', () => {
+    const evidence = resolveMemberEvidence(
+      reviewerGroup({
+        dir_files: [],
+        candidate_files: [],
+        supporting_member: null,
+      }),
+    )!
+    expect(evidence.memberCount).toBe(0)
+    // Nothing is known about the membership, which is not the same as knowing
+    // there is exactly one member.
+    expect(evidence.scoreScope).not.toBe('single-witness')
+    const copy = describeScoreAttribution(evidence)
+    expect(copy.sentence).not.toContain('only witness')
+    expect(copy.sentence).toContain('does not identify which witness')
+    expect(copy.tone).toBe('attention')
+  })
+
+  it('counts a supporting member the lists leave out', () => {
+    // The response lists one openable member but credits the score to another
+    // file. Whatever the lists say, the group is not a singleton.
+    const evidence = resolveMemberEvidence(
+      reviewerGroup({
+        dir_files: ['query-2.txt'],
+        candidate_files: [{ filename: 'query-2.txt', text: 'seed text' }],
+        supporting_member: {
+          query_id: 9,
+          filename: 'query-9.txt',
+          score: GROUP_MAX,
+        },
+      }),
+    )!
+    expect(evidence.memberCount).toBe(2)
+    expect(evidence.unopenableCount).toBe(1)
+    expect(evidence.scoreScope).toBe('group-maximum')
+    expect(evidence.displayedIsSupport).toBe(false)
+    const copy = describeScoreAttribution(evidence)
+    expect(copy.sentence).not.toContain('only witness')
+    expect(copy.sentence).toContain(
+      'Produced by query-9.txt, which cannot be opened here',
+    )
+    expect(describeUnopenableMembers(evidence)).toBe(
+      '1 of 2 member witnesses cannot be opened here.',
+    )
+  })
+
+  it('refuses to pick a winner when two members share a name', () => {
+    const evidence = resolveMemberEvidence(
+      reviewerGroup({
+        dir_files: ['same.txt', 'same.txt'],
+        candidate_files: [
+          { filename: 'same.txt', text: 'first text' },
+          { filename: 'same.txt', text: 'second text' },
+        ],
+        supporting_member: {
+          query_id: 4,
+          filename: 'same.txt',
+          score: GROUP_MAX,
+        },
+      }),
+    )!
+    // Opening the first entry and calling it the source would be the very
+    // mistake this issue exists to remove.
+    expect(evidence.witnesses.some((w) => w.isSupporting)).toBe(false)
+    expect(evidence.displayedIsSupport).toBe(false)
+    expect(evidence.support).toMatchObject({
+      kind: 'named',
+      ambiguous: true,
+      inspectable: false,
+    })
+    const copy = describeScoreAttribution(evidence)
+    expect(copy.tone).toBe('attention')
+    expect(copy.sentence).toContain('more than one witness under that name')
+    expect(copy.sentence).not.toContain('The witness shown below produced it')
+  })
+
+  it('keeps repeated filenames separately selectable', () => {
+    const candidate = reviewerGroup({
+      dir_files: ['same.txt', 'same.txt'],
+      candidate_files: [
+        { filename: 'same.txt', text: 'first text' },
+        { filename: 'same.txt', text: 'second text' },
+      ],
+      supporting_member: null,
+    })
+    const evidence = resolveMemberEvidence(candidate)!
+    const keys = evidence.witnesses.map((w) => w.key)
+    expect(new Set(keys).size).toBe(2)
+    // Choosing the second entry must open the second text, not the first.
+    const second = resolveMemberEvidence(candidate, keys[1])!
+    expect(second.selected?.text).toBe('second text')
+    expect(second.selected?.position).toBe(1)
+    expect(describeWitnessOption(second.selected!)).toBe(
+      'same.txt (entry 2 under this name)',
+    )
+  })
+
+  it('leaves the key equal to the filename when names are unique', () => {
+    const evidence = resolveMemberEvidence(reviewerGroup())!
+    expect(evidence.witnesses.map((w) => w.key)).toEqual([
+      'query-2.txt',
+      'query-0.txt',
+    ])
+  })
 })
 
 describe('memberEvidenceKey', () => {
@@ -337,6 +442,30 @@ describe('attributionAppliesToWitness', () => {
         source: 'model',
       }),
     ).toEqual({ applicable: true })
+  })
+
+  it('will not verify an artifact path that names no directory', () => {
+    // A basename alone cannot prove the artifact was built from the witness
+    // on screen: the same filename occurs in many directories.
+    expect(
+      attributionAppliesToWitness({
+        candidatePath: 'a.txt',
+        dirName: 'CANT.328.12',
+        filename: 'a.txt',
+        source: 'model',
+      }),
+    ).toEqual({ applicable: false, reason: 'unverifiable' })
+  })
+
+  it('will not verify an artifact when the displayed directory is unknown', () => {
+    expect(
+      attributionAppliesToWitness({
+        candidatePath: 'data/canon_labelled/OTHER/a.txt',
+        dirName: null,
+        filename: 'a.txt',
+        source: 'model',
+      }),
+    ).toEqual({ applicable: false, reason: 'unverifiable' })
   })
 })
 

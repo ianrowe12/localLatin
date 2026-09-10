@@ -755,4 +755,46 @@ describe('member evidence and model attribution', () => {
     expect(select.value).toBe('query-0.txt')
     expect(screen.getByRole('region', { name: 'Member evidence' })).toBeTruthy()
   })
+
+  it('opens the second of two identically named witnesses, and claims nothing about which won', async () => {
+    const candidate: MemberEvidenceCandidate = {
+      dir_name: 'reviewer-dir-1',
+      score: GROUP_MAX,
+      dir_files: ['same.txt', 'same.txt'],
+      candidate_files: [
+        { filename: 'same.txt', text: 'first text' },
+        { filename: 'same.txt', text: 'second text' },
+      ],
+      source: 'reviewer',
+      supporting_member: {
+        query_id: 4,
+        filename: 'same.txt',
+        score: GROUP_MAX,
+      },
+    }
+
+    function DuplicateHarness() {
+      const [choice, setChoice] = useState<string | null>(null)
+      const evidence = resolveMemberEvidence(candidate, choice)!
+      return (
+        <>
+          <MemberEvidenceBar evidence={evidence} onSelectWitness={setChoice} />
+          <p data-testid="open-text">{evidence.selected?.text}</p>
+        </>
+      )
+    }
+
+    render(<DuplicateHarness />)
+    expect(
+      screen.getByTestId('member-evidence-attribution').textContent,
+    ).toContain('more than one witness under that name')
+    // Nothing to return to: no entry is provably the source.
+    expect(screen.queryByTestId('show-supporting-witness')).toBeNull()
+
+    await userEvent.selectOptions(
+      screen.getByLabelText('Viewing witness'),
+      screen.getByRole('option', { name: 'same.txt (entry 2 under this name)' }),
+    )
+    expect(screen.getByTestId('open-text').textContent).toBe('second text')
+  })
 })

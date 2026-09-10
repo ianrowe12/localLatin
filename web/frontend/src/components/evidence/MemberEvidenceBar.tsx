@@ -73,9 +73,9 @@ export default function MemberEvidenceBar({
   const scoreCopy = describeScoreAttribution(evidence)
   const attention = scoreCopy.tone === 'attention'
 
-  const supportFilename =
+  const supportKey =
     evidence.support.kind === 'named' && evidence.support.inspectable
-      ? evidence.support.filename
+      ? (evidence.witnesses.find((w) => w.isSupporting)?.key ?? null)
       : null
 
   return (
@@ -132,7 +132,7 @@ export default function MemberEvidenceBar({
           <select
             id={selectId}
             data-testid="member-selector"
-            value={evidence.selected?.filename ?? ''}
+            value={evidence.selected?.key ?? ''}
             onChange={(e) => onSelectWitness(e.target.value)}
             className="h-8 max-w-[22rem] px-1.5 rounded border border-stone-300 dark:border-stone-600
                        bg-white dark:bg-surface-800 text-xs
@@ -140,10 +140,7 @@ export default function MemberEvidenceBar({
                        focus:outline-none focus:ring-2 focus:ring-accent/40"
           >
             {evidence.witnesses.map((witness) => (
-              <option
-                key={`${witness.position}:${witness.filename}`}
-                value={witness.filename}
-              >
+              <option key={witness.key} value={witness.key}>
                 {describeWitnessOption(witness)}
               </option>
             ))}
@@ -153,11 +150,11 @@ export default function MemberEvidenceBar({
               ? `${evidence.witnesses.length} of ${evidence.memberCount} members`
               : `${evidence.memberCount} members`}
           </span>
-          {!evidence.displayedIsSupport && supportFilename != null && (
+          {!evidence.displayedIsSupport && supportKey != null && (
             <button
               type="button"
               data-testid="show-supporting-witness"
-              onClick={() => onSelectWitness(supportFilename)}
+              onClick={() => onSelectWitness(supportKey)}
               className="px-1.5 py-0.5 rounded font-medium underline underline-offset-2
                          hover:bg-black/5 dark:hover:bg-white/10
                          focus:outline-none focus:ring-2 focus:ring-accent/40"

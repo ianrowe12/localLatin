@@ -59,6 +59,16 @@ export interface MemberEvidenceCandidate {
 
 export interface MemberWitness {
   filename: string
+  /**
+   * Stable identity of this entry, and the value the selector round-trips.
+   *
+   * It is the filename whenever the filename is unique in the response, which
+   * is the only shape production serves (unlabelled queries live flat in one
+   * directory, so two members cannot share a name). When a response does
+   * repeat a name, the position disambiguates it, so choosing the second
+   * entry cannot silently open the first.
+   */
+  key: string
   text: string
   /** Position in the API's member order, which is never re-sorted here. */
   position: number
@@ -86,6 +96,13 @@ export type SupportState =
       /** The named member is among this response's openable witnesses. */
       inspectable: boolean
       hasText: boolean
+      /**
+       * The response lists more than one witness under that name, so which
+       * one produced the number cannot be told from the payload. Never
+       * resolved by picking the first: an ambiguous winner is stated as
+       * ambiguous.
+       */
+      ambiguous: boolean
     }
   | { kind: 'unnamed'; queryId: number; score: number }
   | { kind: 'absent' }
@@ -119,13 +136,23 @@ function normaliseWitnesses(
   supportFilename: string | null,
 ): MemberWitness[] {
   const files = candidate.candidate_files ?? []
-  return files.map((file, position) => ({
-    filename: file.filename,
-    text: file.text ?? '',
-    position,
-    hasText: (file.text ?? '').trim().length > 0,
-    isSupporting: supportFilename != null && file.filename === supportFilename,
-  }))
+  const occurrences = new Map<string, number>()
+  for (const file of files) {
+    occurrences.set(file.filename, (occurrences.get(file.filename) ?? 0) + 1)
+  }
+  return files.map((file, position) => {
+    const repeated = (occurrences.get(file.filename) ?? 0) > 1
+    return {
+      filename: file.filename,
+      key: repeated ? `${file.filename}#${position}` : file.filename,
+      text: file.text ?? '',
+      position,
+      hasText: (file.text ?? '').trim().length > 0,
+      // A repeated name cannot mark any single entry as the source.
+      isSupporting:
+        !repeated && supportFilename != null && file.filename === supportFilename,
+    }
+  })
 }
 
 function resolveSupport(
@@ -137,14 +164,16 @@ function resolveSupport(
   if (support.filename == null) {
     return { kind: 'unnamed', queryId: support.query_id, score: support.score }
   }
-  const match = witnesses.find((w) => w.filename === support.filename)
+  const matches = witnesses.filter((w) => w.filename === support.filename)
+  const unique = matches.length === 1 ? matches[0] : null
   return {
     kind: 'named',
     queryId: support.query_id,
     filename: support.filename,
     score: support.score,
-    inspectable: match != null,
-    hasText: match?.hasText ?? false,
+    inspectable: unique != null,
+    hasText: unique?.hasText ?? false,
+    ambiguous: matches.length > 1,
   }
 }
 
@@ -158,7 +187,7 @@ function resolveSupport(
  */
 export function resolveMemberEvidence(
   candidate: MemberEvidenceCandidate | null | undefined,
-  selectedFilename: string | null = null,
+  selectedKey: string | null = null,
 ): MemberEvidence | null {
   if (!candidate) return null
 
@@ -166,14 +195,19 @@ export function resolveMemberEvidence(
   const witnesses = normaliseWitnesses(candidate, supportFilename)
   const support = resolveSupport(candidate, witnesses)
 
-  const memberCount = Math.max(
-    candidate.dir_files?.length ?? 0,
-    witnesses.length,
-  )
+  const named = candidate.dir_files ?? []
   const openable = new Set(witnesses.map((w) => w.filename))
-  const namedButClosed = (candidate.dir_files ?? []).filter(
-    (name) => !openable.has(name),
-  ).length
+  // A named supporting member the response neither lists nor opens is still a
+  // member, and proves the group is not a singleton however short the lists
+  // are. Counting it is what stops "the only witness in this group" from
+  // being printed over a witness that did not produce the number.
+  const supportUncounted =
+    support.kind === 'named' &&
+    !openable.has(support.filename) &&
+    !named.includes(support.filename)
+  const memberCount =
+    Math.max(named.length, witnesses.length) + (supportUncounted ? 1 : 0)
+  const namedButClosed = named.filter((name) => !openable.has(name)).length
   const unopenableCount = Math.max(
     namedButClosed,
     memberCount - witnesses.length,
@@ -183,21 +217,20 @@ export function resolveMemberEvidence(
   // the first member when it is not openable is a display fallback only, and
   // `displayedIsSupport` stays false so no copy can call it the source.
   const requested =
-    selectedFilename != null
-      ? (witnesses.find((w) => w.filename === selectedFilename) ?? null)
+    selectedKey != null
+      ? (witnesses.find((w) => w.key === selectedKey) ?? null)
       : null
-  const supportWitness =
-    support.kind === 'named'
-      ? (witnesses.find((w) => w.filename === support.filename) ?? null)
-      : null
+  const supportWitness = witnesses.find((w) => w.isSupporting) ?? null
   const selected = requested ?? supportWitness ?? witnesses[0] ?? null
 
   const isReviewer = candidate.source === 'reviewer'
+  // Only a response that positively accounts for exactly one member may say
+  // so; zero members is unknown membership, not a group of one.
   const scoreScope: ScoreScope = !isReviewer
     ? 'directory'
-    : memberCount > 1
-      ? 'group-maximum'
-      : 'single-witness'
+    : memberCount === 1
+      ? 'single-witness'
+      : 'group-maximum'
 
   return {
     scoreScope,
@@ -209,8 +242,9 @@ export function resolveMemberEvidence(
     selected,
     displayedIsSupport:
       support.kind === 'named' &&
+      !support.ambiguous &&
       selected != null &&
-      selected.filename === support.filename,
+      selected.isSupporting,
     selectable: witnesses.length > 1,
   }
 }
@@ -283,6 +317,14 @@ export function describeScoreAttribution(
     }
   }
 
+  if (support.ambiguous) {
+    return {
+      label,
+      sentence: `${lead} Produced by a member named ${support.filename}, and this group lists more than one witness under that name, so this response cannot say which.`,
+      tone: 'attention',
+    }
+  }
+
   if (!support.inspectable) {
     return {
       label,
@@ -323,6 +365,10 @@ export function describeScoreAttribution(
 export function describeWitnessOption(witness: MemberWitness): string {
   const notes: string[] = []
   if (witness.isSupporting) notes.push('produced the score')
+  // Two entries under one name would otherwise be indistinguishable choices.
+  if (witness.key !== witness.filename) {
+    notes.push(`entry ${witness.position + 1} under this name`)
+  }
   if (!witness.hasText) notes.push('no text available')
   return notes.length > 0
     ? `${witness.filename} (${notes.join(', ')})`
@@ -381,9 +427,9 @@ export function memberEvidenceKey(identity: MemberEvidenceIdentity): string {
  */
 export function displayedWitnessKey(
   identityKey: string,
-  filename: string | null,
+  witnessKey: string | null,
 ): string {
-  return `${identityKey}::${filename ?? ''}`
+  return `${identityKey}::${witnessKey ?? ''}`
 }
 
 // ---------------------------------------------------------------------------
@@ -448,7 +494,13 @@ export function attributionAppliesToWitness(params: {
   if (basename !== filename) {
     return { applicable: false, reason: 'other-witness' }
   }
-  if (parent != null && dirName != null && parent !== dirName) {
+  // A basename alone does not say which directory's witness was attributed,
+  // and directory names repeat filenames across the corpus. Without both
+  // sides of that comparison the artifact is unverified, not verified.
+  if (parent == null || dirName == null) {
+    return { applicable: false, reason: 'unverifiable' }
+  }
+  if (parent !== dirName) {
     return { applicable: false, reason: 'other-witness' }
   }
   return { applicable: true }
