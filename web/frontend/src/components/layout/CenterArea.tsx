@@ -99,20 +99,42 @@ export default function CenterArea() {
   }, [candidateFile])
 
   /**
+   * The boundary the candidate panel's animation is allowed to live inside.
+   *
+   * Everything that changes WHICH PAIR is under review: the document, the
+   * model, the pipeline, the request generation, and whether a gallery example
+   * is open. Not the rank, because moving between candidates of one settled
+   * ranking is the transition the crossfade exists for.
+   *
+   * This keys the `AnimatePresence` element itself, so a change here unmounts
+   * the presence owner and every panel it was holding, in the same commit and
+   * with no exit animation to sit through. Keying only the inner child cannot
+   * do that: a key change is what STARTS an exit, and the outgoing panel --
+   * with its old token map and its old highlights -- stays mounted for the
+   * length of it. Two gallery examples that share a directory are the case
+   * that proves the difference: their evidence identities differ only by
+   * query, both are non-null, and nothing in between is ever null, so there is
+   * no loading render to rescue the boundary.
+   */
+  const presenceBoundary = [
+    activeQueryId ?? 'no-query',
+    activeModel,
+    activeVariant,
+    `g${predictions.generation}`,
+    overrideCandidateDir ?? 'ranked',
+  ].join('|')
+
+  /**
    * Identity of the evidence actually on screen, or null when there is none.
    *
-   * Null is the load-bearing half. The shared state stops handing out old-key
-   * data, but a mounted `AnimatePresence` keeps the OUTGOING panel alive for the
-   * length of its exit animation, so the previous model's candidate stayed
-   * legible for 200ms after the reviewer switched -- animated out under the new
-   * selection's heading. A key change cannot fix that; only unmounting the
-   * presence wrapper can, which is why the panel below is rendered plainly
-   * whenever this is null.
+   * Within one boundary this distinguishes one candidate from the next, and
+   * null means there is nothing to animate at all -- so the panel renders
+   * outside `AnimatePresence` entirely and cannot be retained by an exit.
    *
    * For a ranked candidate the identity comes from the provider and therefore
-   * carries the request generation, so a refresh invalidates it too. For a
-   * gallery inspection it carries the query, so the pair cannot outlive the
-   * document it was opened from.
+   * carries the request generation. For a gallery inspection it carries the
+   * query, and it stays null until the directory's files have actually
+   * arrived, so a failed fetch animates nothing.
    */
   const evidenceIdentity = useMemo(() => {
     if (activeQueryId === null) return null
@@ -131,6 +153,13 @@ export default function CenterArea() {
     predictions,
   ])
 
+  // Whether the app has actually SEEN this candidate's files. A ranking carries
+  // them inline, so a prediction is proof; a gallery inspection has to fetch
+  // them, and a fetch can fail.
+  const candidateEvidenceLoaded = overrideCandidateDir
+    ? overrideCandidateFiles.data !== null
+    : currentPrediction !== null
+
   /**
    * Why the candidate pane has nothing in it, when there is a knowable reason.
    *
@@ -144,11 +173,20 @@ export default function CenterArea() {
    * render an unexplained blank pane while a whole-directory check said there
    * was text. The two cases now get two different sentences, because they are
    * two different facts.
+   *
+   * And a request that never arrived is a third fact again. Only files this app
+   * has actually read can support a claim about what a manuscript contains.
    */
   const candidateEvidenceNote = useMemo(() => {
-    // The phase notes are about the ranking, so a gallery inspection -- which
-    // carries its own candidate regardless of the ranking -- is exempt.
-    if (!overrideCandidateDir) {
+    if (overrideCandidateDir) {
+      // A failed fetch is not a blank manuscript. Saying "no readable text"
+      // here would report a transport failure as a fact about the source.
+      if (overrideCandidateFiles.error !== null) {
+        return `The files for this example candidate did not load (${overrideCandidateFiles.error}), so there is nothing to compare yet. That is a failed request, not an empty directory: leave the example and open it again to retry.`
+      }
+    } else {
+      // The phase notes are about the ranking, so a gallery inspection -- which
+      // carries its own candidate regardless of the ranking -- is exempt.
       if (predictions.phase === 'error') {
         return 'The ranking for this document did not load, so there is no candidate to compare against. See the prediction list for details.'
       }
@@ -159,8 +197,14 @@ export default function CenterArea() {
         return 'No candidates came back for this document, and no reason was recorded.'
       }
     }
-    // A gallery inspection can be just as blank, so this half is not exempt.
-    if (candidateDir !== null && !candidateLoading && !fileHasText(candidateFile)) {
+    // A gallery inspection can be just as blank, so this half is not exempt --
+    // but only once its files are in hand.
+    if (
+      candidateDir !== null &&
+      !candidateLoading &&
+      candidateEvidenceLoaded &&
+      !fileHasText(candidateFile)
+    ) {
       if (candidateWitnesses.slice(1).some(fileHasText)) {
         return `The file shown here (${candidateFile?.filename ?? 'the first in the directory'}) has no readable text in this deployment, so there is nothing to compare word by word. Other files in this directory do carry text.`
       }
@@ -170,8 +214,10 @@ export default function CenterArea() {
   }, [
     predictions.phase,
     overrideCandidateDir,
+    overrideCandidateFiles.error,
     candidateDir,
     candidateLoading,
+    candidateEvidenceLoaded,
     candidateFile,
     candidateWitnesses,
   ])
@@ -420,14 +466,14 @@ export default function CenterArea() {
                 {candidateEvidenceNote}
               </div>
             )}
-            {/* The animated wrapper exists only while there IS current evidence.
-                Its exit animation is what kept a superseded candidate on screen
-                after the request it belonged to was invalidated, and unmounting
-                AnimatePresence is the only thing that ends an exit animation
-                immediately. Crossfading between candidates of one live ranking
-                is unchanged. */}
+            {/* The animated wrapper is keyed on the pair boundary, so a new
+                document, model, pipeline or request replaces the presence owner
+                outright rather than asking it to animate its old panel away.
+                Inside one boundary the inner key still crossfades between
+                candidates of the same settled ranking, which is the only
+                transition that can never show evidence under a new identity. */}
             {evidenceIdentity !== null ? (
-              <AnimatePresence mode="wait">
+              <AnimatePresence key={presenceBoundary} mode="wait">
                 <motion.div
                   key={evidenceIdentity}
                   initial={{ opacity: 0 }}
