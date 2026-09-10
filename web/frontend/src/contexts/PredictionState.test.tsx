@@ -338,8 +338,23 @@ describe('failure is reported as failure', () => {
     expect(note.textContent).toContain('did not load')
   })
 
-  it('treats a 200 for the wrong document as a failure, not as a ranking', async () => {
-    // A validated identity mismatch is the difference between "no candidates"
+  it('survives a malformed seeded directory instead of blanking the app', async () => {
+    // AwaitingMatchBadge reads .status on every seeded directory during render,
+    // so an unchecked entry threw inside React and took the whole review view
+    // down -- no list, no evidence, no explanation. A rejected payload is a
+    // reported failure instead.
+    answers[MODEL_A] = { predictions: [modelCard(1, 0.9)], seeded_dirs: [null] }
+    renderReview()
+
+    const alert = await screen.findByTestId('predictions-error')
+    expect(alert.textContent).toContain('not with a ranking this app can read')
+    // The document panel is still mounted; only the ranking is missing.
+    expect(screen.getByTestId('candidate-evidence-note').textContent).toContain(
+      'did not load',
+    )
+  })
+
+  it('treats a 200 for the wrong document as a failure, not as a ranking', async () => {    // A validated identity mismatch is the difference between "no candidates"
     // and "candidates for somebody else's manuscript".
     answers[MODEL_A] = {
       predictions: [modelCard(1, 0.9)],

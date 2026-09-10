@@ -193,6 +193,105 @@ describe('validatePredictionResponse (issue #156)', () => {
   })
 })
 
+describe('validatePredictionResponse: seeded_dirs (issue #156)', () => {
+  const dir = (over: Record<string, unknown> = {}) => ({
+    dir_id: 'reviewer-dir-3',
+    label: 'Ordo de catechizandis',
+    status: 'awaiting_match',
+    seed_query_id: 7,
+    member_query_ids: [7],
+    best_match_score: 0.61,
+    has_potential_match: true,
+    created_at: '2026-01-04T10:00:00Z',
+    created_by: 'reviewer-1',
+    model_slug: 'bowphs_LaTa',
+    variant: 'sif_abtt',
+    ...over,
+  })
+
+  const seeded = (dirs: unknown) => validatePredictionResponse(body({ seeded_dirs: dirs }), KEY)
+
+  it('accepts a well-formed directory unchanged', () => {
+    const result = seeded([dir()])
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value.seeded_dirs).toEqual([dir()])
+  })
+
+  // The badge reads `dir.status` and `dir.best_match_score.toFixed(2)` at render
+  // time. Before this, `seeded_dirs` was cast, not checked, so a malformed entry
+  // reached the badge and threw during render -- the whole panel went blank,
+  // which is precisely the unexplained-absence failure this issue exists to end.
+  it('rejects a null entry rather than casting it onto the badge', () => {
+    expect(seeded([null])).toEqual({
+      ok: false,
+      reason: 'seeded_dirs[0] is not an object',
+    })
+  })
+
+  it('rejects a directory with no id, which nothing downstream could key on', () => {
+    expect(seeded([dir({ dir_id: '' })])).toEqual({
+      ok: false,
+      reason: 'seeded_dirs[0].dir_id is missing',
+    })
+  })
+
+  it('rejects a score the badge would call .toFixed on', () => {
+    expect(seeded([dir({ best_match_score: '0.61' })])).toEqual({
+      ok: false,
+      reason: 'seeded_dirs[0].best_match_score is not a number',
+    })
+  })
+
+  // Deliberate: an unknown status fails the whole response instead of being
+  // dropped. The badge is the only report a reviewer gets about a directory
+  // they created, so a silently missing badge is the same unexplained absence
+  // by another route. Frontend and backend ship together (web/ subtree), so a
+  // status the client has never heard of means the payload is wrong, loudly.
+  it('rejects a status it cannot render', () => {
+    expect(seeded([dir({ status: 'archived' })])).toEqual({
+      ok: false,
+      reason: 'seeded_dirs[0].status is not a known status',
+    })
+  })
+
+  it('rejects member ids that are not integers', () => {
+    expect(seeded([dir({ member_query_ids: [7, 'eight'] })])).toEqual({
+      ok: false,
+      reason: 'seeded_dirs[0].member_query_ids is malformed',
+    })
+  })
+
+  it('rejects seeded_dirs that is not an array', () => {
+    expect(seeded({ 'reviewer-dir-3': dir() })).toEqual({
+      ok: false,
+      reason: 'seeded_dirs is not an array',
+    })
+  })
+
+  it('fills the optional fields the backend defaults, without inventing an id', () => {
+    // web/models.py gives model_slug, member_query_ids and has_potential_match
+    // defaults, so an older payload can legitimately omit them.
+    const result = seeded([
+      {
+        dir_id: 'reviewer-dir-9',
+        label: 'Sparse',
+        status: 'matched',
+        seed_query_id: 12,
+      },
+    ])
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value.seeded_dirs?.[0]).toMatchObject({
+      dir_id: 'reviewer-dir-9',
+      member_query_ids: [],
+      best_match_score: null,
+      has_potential_match: false,
+      model_slug: '',
+    })
+  })
+})
+
 describe('classifyExclusion (issue #156)', () => {
   it('names the two reasons the retrieval run actually writes', () => {
     // scripts/resubmit/run_resubmit_unlabelled_retrieval.py writes these.

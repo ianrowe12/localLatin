@@ -418,6 +418,19 @@ export function candidateHasText(prediction: Prediction): boolean {
   )
 }
 
+/**
+ * Whether ONE witness carries readable words.
+ *
+ * Deliberately separate from `candidateHasText`, which answers the
+ * whole-directory question. The review view shows a single file, so "does this
+ * directory have text somewhere" is the wrong test for explaining a blank pane:
+ * a blank first witness beside a readable second one produced an unexplained
+ * empty panel. Callers that need the directory-wide meaning still have it.
+ */
+export function fileHasText(file: CandidateFile | null | undefined): boolean {
+  return typeof file?.text === 'string' && file.text.trim().length > 0
+}
+
 export type PredictionValidation =
   | { ok: true; value: PredictionResponse }
   | { ok: false; reason: string }
@@ -437,6 +450,83 @@ function validateCandidateFiles(value: unknown): CandidateFile[] | null | false 
     files.push({ filename: entry.filename, text: entry.text })
   }
   return files
+}
+
+/**
+ * One seeded reviewer directory, checked rather than cast.
+ *
+ * `seeded_dirs` used to be waved through as `ReviewerDir[]` once the container
+ * was known to be an array. Its entries are not inert data: `AwaitingMatchBadge`
+ * reads `.status` on every one of them the moment the ranking arrives, so a
+ * single null entry took down the review view with a TypeError -- the loudest
+ * possible version of the silent failure this issue is about.
+ *
+ * `status` is checked against the closed set the badge understands. An
+ * unrecognised status is treated as malformed rather than filtered out: the
+ * badge is the ONLY thing that reports what became of a directory the reviewer
+ * created, and quietly rendering no badge for a state this build cannot name
+ * would be the same unexplained absence in a new place. Both sides of the wire
+ * ship together (web/ is a subtree), so a third status means the frontend has
+ * to be taught what it means.
+ *
+ * Returns the normalised directory, or a reason string naming the entry.
+ */
+function validateReviewerDir(value: unknown, index: number): ReviewerDir | string {
+  const at = `seeded_dirs[${index}]`
+  if (!isRecord(value)) return `${at} is not an object`
+  if (typeof value.dir_id !== 'string' || value.dir_id.length === 0) {
+    return `${at}.dir_id is missing`
+  }
+  if (typeof value.label !== 'string') return `${at}.label is not a string`
+  if (value.status !== 'awaiting_match' && value.status !== 'matched') {
+    return `${at}.status is not a known status`
+  }
+  if (typeof value.seed_query_id !== 'number' || !Number.isInteger(value.seed_query_id)) {
+    return `${at}.seed_query_id is not an integer`
+  }
+  const members = value.member_query_ids
+  if (members !== undefined && !Array.isArray(members)) {
+    return `${at}.member_query_ids is malformed`
+  }
+  if (
+    Array.isArray(members) &&
+    members.some((id) => typeof id !== 'number' || !Number.isInteger(id))
+  ) {
+    return `${at}.member_query_ids is malformed`
+  }
+  // The badge renders this number with .toFixed(2); a string would throw there
+  // and a NaN would print "NaN" beside a reviewer's own directory.
+  const score = value.best_match_score
+  if (score !== undefined && score !== null) {
+    if (typeof score !== 'number' || !Number.isFinite(score)) {
+      return `${at}.best_match_score is not a number`
+    }
+  }
+  const potential = value.has_potential_match
+  if (potential !== undefined && typeof potential !== 'boolean') {
+    return `${at}.has_potential_match is not a boolean`
+  }
+  for (const field of ['created_at', 'created_by', 'model_slug'] as const) {
+    if (value[field] !== undefined && typeof value[field] !== 'string') {
+      return `${at}.${field} is not a string`
+    }
+  }
+  if (value.variant !== undefined && value.variant !== null && typeof value.variant !== 'string') {
+    return `${at}.variant is not a string`
+  }
+  return {
+    dir_id: value.dir_id,
+    label: value.label,
+    status: value.status,
+    seed_query_id: value.seed_query_id,
+    member_query_ids: (members as number[] | undefined) ?? [],
+    created_at: typeof value.created_at === 'string' ? value.created_at : '',
+    created_by: typeof value.created_by === 'string' ? value.created_by : '',
+    model_slug: typeof value.model_slug === 'string' ? value.model_slug : '',
+    variant: (value.variant as ReviewerDir['variant'] | undefined) ?? null,
+    best_match_score: typeof score === 'number' ? score : null,
+    has_potential_match: potential === true,
+  }
 }
 
 /**
@@ -473,6 +563,14 @@ export function validatePredictionResponse(
   }
   if (payload.seeded_dirs !== undefined && !Array.isArray(payload.seeded_dirs)) {
     return { ok: false, reason: 'seeded_dirs is not an array' }
+  }
+
+  const seededDirs: ReviewerDir[] = []
+  const rawSeeded = (payload.seeded_dirs as unknown[] | undefined) ?? []
+  for (let i = 0; i < rawSeeded.length; i++) {
+    const dir = validateReviewerDir(rawSeeded[i], i)
+    if (typeof dir === 'string') return { ok: false, reason: dir }
+    seededDirs.push(dir)
   }
 
   const seen = new Set<number>()
@@ -531,7 +629,7 @@ export function validatePredictionResponse(
       variant: key.variant,
       predictions,
       status: typeof status === 'string' ? status : null,
-      seeded_dirs: (payload.seeded_dirs as ReviewerDir[] | undefined) ?? [],
+      seeded_dirs: seededDirs,
     },
   }
 }
