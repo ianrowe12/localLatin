@@ -264,6 +264,21 @@ export class SavedDirectoryStore {
    */
   private writeSeq = new Map<number, number>()
   private writesInFlight = new Map<number, number>()
+  /**
+   * Has the write this store issued for `queryId` been announced yet?
+   *
+   * The broadcast is a fact about THIS STORE'S OWN HISTORY -- did the refresh
+   * event for the directory we wrote go out -- and nothing about the identity
+   * record answers it. `observeSeededDirs` deliberately records a directory
+   * without announcing anything, so "the client can already name this row" is
+   * not evidence that the caches were told about it; reading the announcement
+   * out of the identity is what let a seeded observation arriving before the
+   * 201 swallow the only notification the write was ever going to send.
+   *
+   * A query is added when a write is issued and removed when that write is
+   * announced, or when the write is proven not to have landed.
+   */
+  private readonly unannouncedWrites = new Set<number>()
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener)
@@ -297,6 +312,7 @@ export class SavedDirectoryStore {
     this.lookupGeneration.clear()
     this.writeSeq.clear()
     this.writesInFlight.clear()
+    this.unannouncedWrites.clear()
     this.emit()
   }
 
@@ -355,7 +371,6 @@ export class SavedDirectoryStore {
         // that arrives later over `Check again` must broadcast as well, or a
         // cached query goes on omitting a directory that exists.
         const answersOwnWrite = isWriteUnsettled(this.getRecord(queryId).creation)
-        const knownBefore = this.knownDirIds(queryId)
         // Positive evidence is always usable: a row that exists, exists,
         // whenever the response was built.
         this.recordSaved(queryId, dirs, 'server-list')
@@ -367,11 +382,11 @@ export class SavedDirectoryStore {
               ? { ...current, creation: { status: 'idle' }, formOpen: false }
               : current,
           )
-          // Gated on the write, and on this row being new to the client, so a
-          // routine refresh of an already-known directory cannot start a cycle
-          // of broadcast, refetch, broadcast.
-          if (this.hasNewDirs(knownBefore, dirs)) notifyReviewerDirsUpdated()
         }
+        // Identity first, then the event. Quiet unless a write of ours is still
+        // waiting to be announced, so ordinary reads cannot start a cycle of
+        // broadcast, refetch, broadcast.
+        this.announceWrite(queryId)
         return
       }
       // Only a well-formed, empty list gets here: `fetchReviewerDirs` throws on
@@ -542,6 +557,9 @@ export class SavedDirectoryStore {
     const operationId = ++this.operationSeq
     this.writeSeq.set(queryId, (this.writeSeq.get(queryId) ?? 0) + 1)
     this.writesInFlight.set(queryId, (this.writesInFlight.get(queryId) ?? 0) + 1)
+    // From here until this write is announced or disproved, whichever path
+    // learns it landed owes the rest of the app a refresh.
+    this.unannouncedWrites.add(queryId)
     this.update(queryId, (current) => ({
       ...current,
       creation: { status: 'pending', proposedLabel, operationId },
@@ -562,12 +580,10 @@ export class SavedDirectoryStore {
         { notify: false },
       )
       this.writeSettled(queryId)
-      const knownBefore = this.knownDirIds(queryId)
       this.recordSaved(queryId, [dir], 'created')
       this.settleOperation(queryId, operationId, { status: 'idle' })
-      // Normally unconditional: a 201 is a row nobody had. The guard only bites
-      // when a lookup running beside this write already announced the same row.
-      if (this.hasNewDirs(knownBefore, [dir])) notifyReviewerDirsUpdated()
+      // Identity first: the refresh unmounts whatever issued this call.
+      this.announceWrite(queryId)
       return { outcome: 'created', dir }
     } catch (err) {
       const error = messageOf(err)
@@ -588,13 +604,12 @@ export class SavedDirectoryStore {
       }
 
       if (reconciled && reconciled.length > 0) {
-        const knownBefore = this.knownDirIds(queryId)
         this.recordSaved(queryId, reconciled, 'recovered')
         this.settleOperation(queryId, operationId, { status: 'idle' })
-        // A recovered directory the app had not seen is new to every candidate
-        // list in this tab. Already-known ones broadcast nothing, so recovery
-        // cannot feed a refresh loop.
-        if (this.hasNewDirs(knownBefore, reconciled)) notifyReviewerDirsUpdated()
+        // Whatever the reconciliation found, this write is why the client is
+        // looking: a directory it had not announced is now known, and every
+        // candidate list in this tab was built without it.
+        this.announceWrite(queryId)
         return { outcome: 'recovered', dirs: reconciled }
       }
 
@@ -647,30 +662,16 @@ export class SavedDirectoryStore {
     else this.writesInFlight.set(queryId, inFlight - 1)
   }
 
-  /** The directories this store can already name for a query. */
-  private knownDirIds(queryId: number): ReadonlySet<string> {
-    const { identity } = this.getRecord(queryId)
-    return new Set(
-      identity.status === 'saved' ? identity.dirs.map((dir) => dir.dir_id) : [],
-    )
-  }
-
   /**
-   * Did this evidence teach the client about a directory it could not name?
+   * Emit the refresh for an owned write, at most once per write.
    *
-   * The refresh broadcast is keyed on this rather than on "a write finished",
-   * because the answer is what the caches actually care about: a directory the
-   * client already knew is already in the candidate lists it built, and
-   * re-broadcasting it would only make every mounted query refetch. Two paths
-   * can also learn of the same row at once -- a forced lookup running beside a
-   * POST -- and both of them asking this question is what keeps the pair to one
-   * broadcast between them.
+   * Callers must have recorded the identity first: the refresh clears every
+   * prediction cache and re-renders the list into its loading branch, so a
+   * listener has to be able to see the acknowledgement the moment it wakes up.
    */
-  private hasNewDirs(
-    knownBefore: ReadonlySet<string>,
-    dirs: readonly ReviewerDir[],
-  ): boolean {
-    return dirs.some((dir) => !knownBefore.has(dir.dir_id))
+  private announceWrite(queryId: number): void {
+    if (!this.unannouncedWrites.delete(queryId)) return
+    notifyReviewerDirsUpdated()
   }
 
   /**
@@ -732,6 +733,12 @@ export class SavedDirectoryStore {
     // returned an error is over even though its record still says `pending`
     // until the reconciliation it triggered comes back.
     if ((this.writesInFlight.get(queryId) ?? 0) > 0) return
+    if (this.getRecord(queryId).identity.status !== 'saved') {
+      // The server has been read cleanly with nothing in flight and this seed
+      // has no directories, so any write of ours did not land. There is no new
+      // row for the caches to hear about.
+      this.unannouncedWrites.delete(queryId)
+    }
     this.update(queryId, (current) => {
       if (current.identity.status === 'saved') {
         return {

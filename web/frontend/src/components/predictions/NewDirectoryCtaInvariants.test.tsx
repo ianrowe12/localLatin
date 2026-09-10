@@ -508,6 +508,108 @@ describe('finding 8: a recovery that arrives late still invalidates other caches
     }
   })
 
+  // A silent `observeSeededDirs` can land between issuing a write and learning
+  // its outcome -- a predictions response for the seed itself, after a model
+  // change or a navigation, carries the new row in `seeded_dirs`. It records
+  // the identity and says nothing, by design. Whether the caches have been told
+  // is therefore a fact about this store's own history, not something readable
+  // off the identity: keying the broadcast on "is this row already known" let
+  // that observation eat the only notification the write would ever send.
+  it.each([
+    ['a 201 that arrives after it', 'created'],
+    ['recovery after an immediately failed write', 'recovered'],
+    ['a delayed Check again after a lost response', 'delayed'],
+  ])(
+    'a silent seeded observation cannot consume the refresh owed by %s',
+    async (_name, path) => {
+      let store!: SavedDirectoryStore
+      let events = 0
+      const snapshots: string[] = []
+      const listener = () => {
+        events += 1
+        snapshots.push(store.getRecord(QUERY_A).identity.status)
+      }
+      window.addEventListener(REVIEWER_DIRS_UPDATED_EVENT, listener)
+      function Probe() {
+        store = useSavedDirectoryStore()
+        return null
+      }
+      const pendingPost = deferred<Response>()
+      let lookupWorks = false
+      installFetch({
+        post: () =>
+          path === 'created'
+            ? pendingPost.promise
+            : jsonResponse({ detail: 'Gateway timeout' }, 504),
+        get: () => {
+          if (path === 'created') return jsonResponse([])
+          if (path === 'recovered') return jsonResponse([dirFixture()])
+          return lookupWorks
+            ? jsonResponse([dirFixture()])
+            : jsonResponse({ detail: 'unavailable' }, 503)
+        },
+      })
+
+      try {
+        render(
+          <SavedDirectoryProvider accountKey="reviewer-1">
+            <Probe />
+          </SavedDirectoryProvider>,
+        )
+
+        if (path === 'created') {
+          let operation!: Promise<unknown>
+          await act(async () => {
+            operation = store.createDirectory(QUERY_A, { label: 'Saved proposal' })
+            // The seed's own predictions arrive while the POST is in flight.
+            store.observeSeededDirs(QUERY_A, [dirFixture()])
+          })
+          expect(store.getRecord(QUERY_A).identity.status).toBe('saved')
+          expect(events).toBe(0)
+          await act(async () => {
+            pendingPost.resolve(jsonResponse(dirFixture(), 201))
+            await operation
+          })
+        } else if (path === 'recovered') {
+          await act(async () => {
+            const operation = store.createDirectory(QUERY_A, {
+              label: 'Saved proposal',
+            })
+            store.observeSeededDirs(QUERY_A, [dirFixture()])
+            await operation
+          })
+        } else {
+          await act(async () => {
+            await store.createDirectory(QUERY_A, { label: 'Saved proposal' })
+          })
+          await act(async () => {
+            store.observeSeededDirs(QUERY_A, [dirFixture()])
+          })
+          expect(events).toBe(0)
+          lookupWorks = true
+          await act(async () => {
+            await store.ensureLookup(QUERY_A, { force: true })
+          })
+        }
+
+        // Exactly one refresh, and the acknowledgement is already readable when
+        // the listener wakes up.
+        expect(events).toBe(1)
+        expect(snapshots).toEqual(['saved'])
+        expect(store.getRecord(QUERY_A).creation.status).toBe('idle')
+
+        // Nothing further: the write has been announced.
+        await act(async () => {
+          await store.ensureLookup(QUERY_A, { force: true })
+          store.observeSeededDirs(QUERY_A, [dirFixture()])
+        })
+        expect(events).toBe(1)
+      } finally {
+        window.removeEventListener(REVIEWER_DIRS_UPDATED_EVENT, listener)
+      }
+    },
+  )
+
   it('does not broadcast twice when a lookup and the POST find the same row', async () => {
     const pendingPost = deferred<Response>()
     let events = 0
