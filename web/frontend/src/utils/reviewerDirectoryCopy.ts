@@ -33,6 +33,38 @@ export const DIRECTORY_CREATION_COPY = {
   submitting: 'Creating…',
   cancel: 'Cancel',
 
+  /**
+   * Cancel, once the request has gone (issue #161).
+   *
+   * Before the request there is genuinely something to cancel. Afterwards
+   * there is not: closing a form does not reach the server, and aborting the
+   * fetch would not either, since the write may already be committed. So the
+   * control changes its name rather than keeping a promise it cannot keep.
+   */
+  closePending: 'Close',
+  pendingNote:
+    'Saving. Closing this form does not cancel the save, and nothing in the app can remove a directory once the server has it.',
+
+  /** Reconciled with the server: the write certainly did not land. */
+  failedNotCreated:
+    'Nothing was created. Your name is kept, so you can try again.',
+  /**
+   * The request failed AND the follow-up check failed. Saying "not saved"
+   * here would be a guess, and acting on that guess is how a second permanent
+   * directory gets created for one document.
+   */
+  failedUnknown:
+    'The app could not confirm whether the directory was created. Check again before trying a different name.',
+
+  checking: 'Checking whether this document already has a directory…',
+  checkAgain: 'Check again',
+  /**
+   * A failed lookup is not an empty lookup. Offering Create here would invite
+   * a duplicate the server will refuse.
+   */
+  unresolvedNote:
+    'The app could not check whether this document already has a directory. Creating one now could be refused as a duplicate.',
+
   savedHeading: 'Directory saved',
   /**
    * Deliberately conditional. A directory is scored from the model's q-q
@@ -44,6 +76,20 @@ export const DIRECTORY_CREATION_COPY = {
     'Saved permanently and seeded with this document. It can be offered as a candidate on other documents this model can score, not on every one.',
   savedIndependence: 'Submitting or skipping your assessment does not undo it.',
 } as const
+
+/**
+ * Attribution for a grouping this reviewer is being shown rather than one they
+ * just made (issue #161): recovered after a refused or lost create, or found on
+ * the server after a reload. `created_by` is often somebody else, and the label
+ * is always the stored one rather than anything this reviewer proposed.
+ */
+export function savedByNote(creator: string): string {
+  return `Created by ${creator}. The name shown is the one it was saved under.`
+}
+
+/** A create that turned into a recovery. The proposed name was not stored. */
+export const RECOVERED_INSTEAD_OF_CREATED =
+  'This document already had a directory, so nothing new was created and the name you proposed was not saved.'
 
 /**
  * What a low similarity does and does not establish.

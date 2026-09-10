@@ -231,7 +231,7 @@ export class SavedDirectoryStore {
         model: options.model,
       })
       if (this.lookupGeneration.get(queryId) !== generation) return
-      if (dirs.length > 0) {
+      if (Array.isArray(dirs) && dirs.length > 0) {
         this.recordSaved(queryId, dirs, 'server-list')
         return
       }
@@ -373,10 +373,11 @@ export class SavedDirectoryStore {
       const error = messageOf(err)
       let reconciled: ReviewerDir[] | null = null
       try {
-        reconciled = await fetchReviewerDirs({
+        const found = await fetchReviewerDirs({
           seedQueryId: queryId,
           model: input.model,
         })
+        reconciled = Array.isArray(found) ? found : []
       } catch {
         reconciled = null
       }

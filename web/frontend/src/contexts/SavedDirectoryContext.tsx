@@ -38,6 +38,33 @@ interface SavedDirectoryContextValue {
 
 const SavedDirectoryContext = createContext<SavedDirectoryContextValue | null>(null)
 
+/**
+ * The store used when no provider is mounted.
+ *
+ * App composition is externally owned until issue #156 hands it over, so the
+ * creation form has to be durable BEFORE `SavedDirectoryProvider` is wired in.
+ * Throwing instead would take the running app down; giving each consumer its
+ * own store would silently reinstate the bug, since the whole point is that the
+ * acknowledgement outlives the component that made it.
+ *
+ * It is process-wide and therefore NOT account-scoped: mounting the provider
+ * with an `accountKey` is what adds sign-out clearing, and doing so is the
+ * remaining integration step. The claim it holds ("this document seeds a
+ * grouping") is a global fact about the database rather than a per-reviewer
+ * one, which is why an unscoped fallback is tolerable in the meantime.
+ */
+let defaultStore: SavedDirectoryStore | null = null
+
+function getDefaultStore(): SavedDirectoryStore {
+  if (defaultStore === null) defaultStore = new SavedDirectoryStore()
+  return defaultStore
+}
+
+/** Test isolation for the fallback, like `__resetModelsCache` for models. */
+export function __resetDefaultSavedDirectoryStore(): void {
+  defaultStore = null
+}
+
 export function SavedDirectoryProvider({
   children,
   accountKey = null,
@@ -71,12 +98,7 @@ export function SavedDirectoryProvider({
 
 export function useSavedDirectoryStore(): SavedDirectoryStore {
   const ctx = useContext(SavedDirectoryContext)
-  if (!ctx) {
-    throw new Error(
-      'useSavedDirectoryStore must be used within a SavedDirectoryProvider',
-    )
-  }
-  return ctx.store
+  return ctx?.store ?? getDefaultStore()
 }
 
 /** Subscribe to one query's saved/creation record. */
@@ -90,10 +112,15 @@ export function useSavedDirectory(queryId: number | null): SavedDirectoryRecord 
 }
 
 /**
- * Read this query's record and resolve it from the database if it has never
- * been resolved. Model is passed only because the endpoint scores the returned
- * records under one; identity itself does not depend on it, and a lookup is not
- * repeated when the reviewer switches model.
+ * Read this query's record and resolve it from the database while it is still
+ * unknown. Model is passed only because the endpoint scores the returned
+ * records under one; identity itself does not depend on it, so switching model
+ * does not re-ask the question.
+ *
+ * Keyed on the status rather than run once per mount, so a record left unknown
+ * by a create whose outcome could not be established re-checks itself instead
+ * of sitting there unresolved. It cannot loop: every answer moves the status
+ * off `unknown`.
  */
 export function useSavedDirectoryFor(
   queryId: number | null,
@@ -102,9 +129,11 @@ export function useSavedDirectoryFor(
   const store = useSavedDirectoryStore()
   const record = useSavedDirectory(queryId)
   const { model } = options
+  const status = record.identity.status
   useEffect(() => {
     if (queryId === null) return
+    if (status !== 'unknown') return
     void store.ensureLookup(queryId, { model })
-  }, [queryId, model, store])
+  }, [queryId, model, store, status])
   return record
 }

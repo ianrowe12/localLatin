@@ -54,6 +54,22 @@ function installFetch(): void {
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.includes('/api/reviewer_dirs')) {
+        // The seed lookup (issue #161) shares this path with creation, so the
+        // two are separated by method: only a POST is a creation attempt, and
+        // only a POST is deferred by `deferReviewerDir`.
+        if (init?.method !== 'POST') {
+          return jsonResponse(
+            seededDirs.filter(
+              (dir) =>
+                (dir as { seed_query_id?: number }).seed_query_id ===
+                Number(
+                  new URL(url, 'http://test.local').searchParams.get(
+                    'seed_query_id',
+                  ),
+                ),
+            ),
+          )
+        }
         reviewerDirPosts.push({
           url,
           body: init?.body ? JSON.parse(String(init.body)) : null,
@@ -314,9 +330,11 @@ describe('CTA staleness (reviewer navigates mid-request)', () => {
     expect(screen.getByRole('button', { name: 'New directory / New file' })).toBeTruthy()
   })
 
-  it('drops a late result even when the component is reused, not remounted', async () => {
-    // Directly exercises the guard inside the component, independently of the
-    // `key` in PredictionList: here the same instance is handed a new query.
+  it('keeps a late result on its own query when the component is reused, not remounted', async () => {
+    // Directly exercises the component independently of the `key` in
+    // PredictionList: here the same instance is handed a new query. Since
+    // issue #161 the late 201 is not thrown away -- it is a permanent write, so
+    // it is recorded against query 11 -- but query 12 must show none of it.
     deferReviewerDir = true
     const user = userEvent.setup()
     const { rerender } = render(
@@ -329,7 +347,9 @@ describe('CTA staleness (reviewer navigates mid-request)', () => {
       />,
     )
 
-    await user.click(screen.getByRole('button', { name: 'New directory / New file' }))
+    await user.click(
+      await screen.findByRole('button', { name: 'New directory / New file' }),
+    )
     await user.click(screen.getByTestId('new-directory-submit'))
     await waitFor(() => {
       expect(reviewerDirPosts).toHaveLength(1)
@@ -349,6 +369,20 @@ describe('CTA staleness (reviewer navigates mid-request)', () => {
     })
 
     expect(screen.queryByTestId('new-directory-created')).toBeNull()
-    expect(screen.getByRole('button', { name: 'New directory / New file' })).toBeTruthy()
+    expect(
+      await screen.findByRole('button', { name: 'New directory / New file' }),
+    ).toBeTruthy()
+
+    // ...and query 11's acknowledgement is waiting when the reviewer returns.
+    rerender(
+      <NoMatchCallout
+        queryFileId={QUERY_ID}
+        topScore={0.2}
+        topK={10}
+        model={MODEL}
+        alreadySeeded={false}
+      />,
+    )
+    expect(screen.getByTestId('new-directory-created')).toBeTruthy()
   })
 })

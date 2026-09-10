@@ -335,13 +335,61 @@ describe('SavedDirectoryProvider', () => {
 })
 
 describe('useSavedDirectory outside a provider', () => {
-  it('fails loudly rather than silently reporting "not saved"', () => {
-    function Orphan() {
-      useSavedDirectoryStore()
-      return null
+  // Until App composition mounts the provider (deferred to issue #156's
+  // handoff), the CTA still renders in the real app and in the list's own
+  // tests. Throwing there would trade a durability bug for a blank screen, and
+  // a per-mount store would silently reinstate the bug it is here to fix, so
+  // the hooks fall back to one process-wide store.
+  it('shares one fallback store across separate mounts', async () => {
+    function Orphan({ queryId }: { queryId: number }) {
+      const store = useSavedDirectoryStore()
+      const { identity } = useSavedDirectoryFor(queryId)
+      return (
+        <div>
+          <button onClick={() => void store.ensureLookup(queryId)}>look</button>
+          <span data-testid="status">{identity.status}</span>
+        </div>
+      )
     }
-    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
-    expect(() => render(<Orphan />)).toThrow(/SavedDirectoryProvider/)
-    spy.mockRestore()
+
+    let listing: unknown[] = [dirFixture()]
+    installFetch({ get: () => jsonResponse(listing) })
+    const first = render(<Orphan queryId={QUERY_A} />)
+    await waitFor(() => {
+      expect(screen.getByTestId('status').textContent).toBe('saved')
+    })
+    first.unmount()
+
+    // A second, unrelated mount asks the same question. If the fallback were
+    // per-mount this would start at `unknown` and offer to create a directory
+    // that already exists.
+    listing = []
+    render(<Orphan queryId={QUERY_A} />)
+    expect(screen.getByTestId('status').textContent).toBe('saved')
+  })
+
+  it('is not consulted once a provider is mounted', async () => {
+    function Probe({ queryId }: { queryId: number }) {
+      const { identity } = useSavedDirectoryFor(queryId)
+      return <span data-testid="status">{identity.status}</span>
+    }
+
+    let listing: unknown[] = [dirFixture()]
+    installFetch({ get: () => jsonResponse(listing) })
+    const orphan = render(<Probe queryId={QUERY_A} />)
+    await waitFor(() => {
+      expect(screen.getByTestId('status').textContent).toBe('saved')
+    })
+    orphan.unmount()
+
+    listing = []
+    render(
+      <SavedDirectoryProvider accountKey="someone-else">
+        <Probe queryId={QUERY_A} />
+      </SavedDirectoryProvider>,
+    )
+    await waitFor(() => {
+      expect(screen.getByTestId('status').textContent).toBe('absent')
+    })
   })
 })

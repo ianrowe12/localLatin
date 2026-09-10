@@ -1,6 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
-import { createReviewerDir } from '../../api/reviewerDirs'
-import { DIRECTORY_CREATION_COPY } from '../../utils/reviewerDirectoryCopy'
+import {
+  useSavedDirectoryFor,
+  useSavedDirectoryStore,
+} from '../../contexts/SavedDirectoryContext'
+import {
+  DIRECTORY_CREATION_COPY,
+  RECOVERED_INSTEAD_OF_CREATED,
+  savedByNote,
+} from '../../utils/reviewerDirectoryCopy'
 import DirectoryCreationGuidance from './DirectoryCreationGuidance'
 import DirectorySavedNotice from './DirectorySavedNotice'
 
@@ -32,30 +38,40 @@ interface NewDirectoryCtaProps {
 /**
  * "This is a new source" -- the creation flow for a reviewer directory.
  *
- * #94 HAS LANDED, so this now renders where that issue's design puts it: as the
- * default top option inside `NoMatchCallout`, at the head of the prediction
- * list, whenever the best candidate scores below the no-match band. That was
- * the integration point this component was written against, and taking it
- * needed no change to the component itself -- only to where it is mounted.
- *
- * It still renders un-emphasised at the foot of the list above the band, since
+ * Renders as the default top option inside `NoMatchCallout` below the no-match
+ * band (issue #94), and un-emphasised at the foot of the list above it, since
  * "this is a new source" is a judgement a reviewer can reach at any score.
- *
- * Two styling knobs, no behavioural ones: `emphasised` is the below-the-band
- * treatment (filled red, unmissable), `inline` drops the outer padding so it
- * sits inside the callout's frame.
+ * `emphasised` and `inline` are styling knobs only.
  *
  * NAMING IS PART OF CREATION, so the button opens a one-field form rather than
  * posting immediately. Both tables are append-only with no rename, so a
- * directory's label is permanent from the moment it exists and a reviewer has
- * to get one chance at it. The field is pre-filled with the seed's filename, so
- * accepting the default is still just a second click.
+ * directory's label is permanent from the moment it exists and a reviewer gets
+ * one chance at it. The field is pre-filled with the seed's filename, so
+ * accepting the default is still just a second click. Every sentence here lives
+ * in `utils/reviewerDirectoryCopy` and the blocks around the field are their own
+ * components (issue #162).
  *
- * Every sentence the reviewer reads here lives in
- * `utils/reviewerDirectoryCopy`, and the two blocks around the field are their
- * own components (issue #162). Creation is a permanent write that is separate
- * from the assessment, so the consequences have to be stated at the point of
- * commitment -- and stated in the same words as the tour and the callout.
+ * WHAT THIS COMPONENT NO LONGER OWNS (issue #161). It used to keep the created
+ * label in `useState` and drop any response that arrived after the reviewer
+ * moved on. Both were wrong in the same way: creation writes a permanent record,
+ * and the acknowledgement of it was living in a component that its own success
+ * unmounts -- `createReviewerDir` broadcasts a prediction refresh, and
+ * `PredictionList` returns a different subtree while that refresh is in flight.
+ * A refresh that then failed took the only evidence of the write with it and
+ * offered a fresh Create button for a directory that already existed.
+ *
+ * So the durable half lives in `contexts/savedDirectoryStore`, keyed by the SEED
+ * QUERY rather than by this component's lifetime, and this file is the view of
+ * one query's record:
+ *
+ *   saved       -> the acknowledgement, whatever the prediction request is doing
+ *   absent      -> the create button, the only state in which it is offered
+ *   checking    -> a quiet line; the question has not been answered yet
+ *   unresolved  -> an honest "could not check", with a retry, never a Create
+ *
+ * A late completion is recorded against the query it was started on even if
+ * this instance is showing another one, so navigating away no longer throws the
+ * acknowledgement away, and cannot paint it onto the next fragment either.
  */
 export default function NewDirectoryCta({
   queryId,
@@ -66,160 +82,216 @@ export default function NewDirectoryCta({
   createdLabel,
   onCreated,
 }: NewDirectoryCtaProps) {
-  const [open, setOpen] = useState(false)
-  const [label, setLabel] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [created, setCreated] = useState<string | null>(null)
+  const store = useSavedDirectoryStore()
+  const { identity, creation } = useSavedDirectoryFor(queryId, { model })
 
   const suggestion = filename
     ? `New directory from ${filename.replace(/\.txt$/, '')}`
     : 'New directory'
 
-  // The query this instance is currently showing, readable from inside an
-  // in-flight request's closure (which still holds the click-time value).
-  const currentQuery = useRef(queryId)
+  const block = inline ? 'mt-2' : 'px-2 mt-2'
 
-  // A different query is a different decision: never carry a created, failed or
-  // half-open state across. PredictionList also keys this component by query id,
-  // but the guard has to hold on its own for a reused instance.
-  useEffect(() => {
-    currentQuery.current = queryId
-    setOpen(false)
-    setLabel('')
-    setSubmitting(false)
-    setError(null)
-    setCreated(null)
-  }, [queryId])
-
-  async function submit(event: React.FormEvent) {
-    event.preventDefault()
-    // Staleness guard: a reviewer can navigate while the POST is in flight, and
-    // a response that lands afterwards belongs to a query that is no longer on
-    // screen. Dropping it here is what keeps "created" from being painted onto
-    // the next fragment.
-    const forQuery = queryId
-    setSubmitting(true)
-    setError(null)
-    try {
-      const dir = await createReviewerDir({
-        query_file_id: forQuery,
-        label: label.trim() || undefined,
-        model_slug: model || undefined,
-      })
-      if (currentQuery.current !== forQuery) return
-      setCreated(dir.label)
-      onCreated?.(dir.label)
-      setOpen(false)
-      setLabel('')
-    } catch (err) {
-      if (currentQuery.current !== forQuery) return
-      setError(err instanceof Error ? err.message : 'Could not create the directory')
-    } finally {
-      if (currentQuery.current === forQuery) setSubmitting(false)
-    }
-  }
-
-  const pad = inline ? '' : 'mx-2'
-
-  // A parent-owned acknowledgement wins: it is the one that survives the
-  // prediction refetch this creation triggered.
-  const shownCreated = createdLabel !== undefined ? createdLabel : created
-
-  if (shownCreated) {
+  // --- saved: the acknowledgement ------------------------------------------
+  if (identity.status === 'saved') {
+    const { primary, confirmedBy } = identity
     return (
-      <div className={`mt-2 ${pad}`}>
-        <DirectorySavedNotice label={shownCreated} />
+      <div className={inline ? 'mt-2' : 'mt-2 mx-2'}>
+        <DirectorySavedNotice label={primary.label} />
+        {confirmedBy === 'recovered' && (
+          <p
+            data-testid="new-directory-recovered"
+            role="status"
+            className="font-ui text-xs leading-snug text-stone-600 dark:text-stone-400 mt-1"
+          >
+            {RECOVERED_INSTEAD_OF_CREATED}
+          </p>
+        )}
+        {confirmedBy !== 'created' && (
+          <p
+            data-testid="new-directory-attribution"
+            className="font-ui text-xs leading-snug text-stone-600 dark:text-stone-400 mt-1"
+          >
+            {savedByNote(primary.created_by)}
+          </p>
+        )}
       </div>
     )
   }
 
-  if (!open) {
+  // --- the naming form ------------------------------------------------------
+  // Ahead of the identity states below: an issued write is the one thing a
+  // reviewer must not lose sight of while the lookup catches up.
+  if (creation.status !== 'idle') {
+    const pending = creation.status === 'pending'
     return (
-      <div className={inline ? 'mt-2' : 'px-2 mt-2'}>
-        <button
-          type="button"
-          data-testid="new-directory-cta"
-          onClick={() => {
-            setLabel(suggestion)
-            setOpen(true)
-          }}
-          className={
-            emphasised
-              ? `w-full rounded-lg bg-incorrect px-2 py-1.5 text-xs font-semibold
-                 text-white transition-colors hover:bg-incorrect-light
-                 focus:outline-none focus:ring-2 focus:ring-incorrect/40`
-              : 'w-full rounded-lg border border-dashed border-stone-300 dark:border-stone-600 text-stone-600 dark:text-stone-400 hover:border-indigo-400 hover:text-indigo-600 text-xs font-ui px-3 py-2 transition-colors'
-          }
-        >
-          {emphasised
-            ? DIRECTORY_CREATION_COPY.openEmphasised
-            : DIRECTORY_CREATION_COPY.openQuiet}
-        </button>
-        <p
-          data-testid="new-directory-caption"
-          className="font-ui text-[11px] leading-snug text-stone-600 dark:text-stone-300 mt-1"
-        >
-          {DIRECTORY_CREATION_COPY.buttonCaption}
-        </p>
-      </div>
-    )
-  }
-
-  return (
-    <form
-      onSubmit={submit}
-      className={inline ? 'mt-2' : 'px-2 mt-2'}
-      data-testid="new-directory-form"
-    >
-      <label
-        className="block text-[11px] font-semibold uppercase tracking-wider text-stone-400 mb-1"
-        htmlFor="reviewer-dir-label"
+      <form
+        onSubmit={(event) => {
+          event.preventDefault()
+          // The store refuses a second write for the same attempt, so a
+          // double-click or a stray Enter cannot post twice.
+          void store.createDirectory(queryId, {
+            label: creation.proposedLabel,
+            model: model || undefined,
+          })
+        }}
+        className={block}
+        data-testid="new-directory-form"
+        aria-busy={pending}
       >
-        {DIRECTORY_CREATION_COPY.fieldLabel}
-      </label>
-      <input
-        id="reviewer-dir-label"
-        type="text"
-        value={label}
-        onChange={(event) => setLabel(event.target.value)}
-        placeholder={suggestion}
-        maxLength={200}
-        autoFocus
-        className="w-full rounded-md border border-stone-300 dark:border-stone-600 bg-white dark:bg-surface-800 px-2 py-1.5 text-sm"
-      />
-      {error && (
+        <label
+          className="block text-[11px] font-semibold uppercase tracking-wider text-stone-400 mb-1"
+          htmlFor="reviewer-dir-label"
+        >
+          {DIRECTORY_CREATION_COPY.fieldLabel}
+        </label>
+        <input
+          id="reviewer-dir-label"
+          type="text"
+          // The proposed name survives an error, a re-open and an outcome
+          // nobody could establish: retyping it is how a second directory ends
+          // up under a slightly different name.
+          value={creation.proposedLabel}
+          onChange={(event) => store.setProposedLabel(queryId, event.target.value)}
+          placeholder={suggestion}
+          maxLength={200}
+          disabled={pending}
+          autoFocus
+          className="w-full rounded-md border border-stone-300 dark:border-stone-600 bg-white dark:bg-surface-800 px-2 py-1.5 text-sm disabled:opacity-60"
+        />
+        {creation.status === 'failed' && (
+          <>
+            <p
+              role="alert"
+              data-testid="new-directory-error"
+              className="text-xs text-red-600 dark:text-red-400 mt-1"
+            >
+              {creation.error}
+            </p>
+            <p
+              data-testid="new-directory-outcome"
+              className="font-ui text-xs leading-snug text-stone-600 dark:text-stone-300 mt-1"
+            >
+              {creation.outcome === 'not-created'
+                ? DIRECTORY_CREATION_COPY.failedNotCreated
+                : DIRECTORY_CREATION_COPY.failedUnknown}
+            </p>
+          </>
+        )}
+        {pending && (
+          <p
+            data-testid="new-directory-pending-note"
+            role="status"
+            className="font-ui text-xs leading-snug text-stone-600 dark:text-stone-300 mt-1"
+          >
+            {DIRECTORY_CREATION_COPY.pendingNote}
+          </p>
+        )}
+        <DirectoryCreationGuidance />
+        <div className="flex gap-2 mt-2">
+          <button
+            type="submit"
+            disabled={pending}
+            data-testid="new-directory-submit"
+            className="flex-1 rounded-md bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-xs font-medium px-3 py-1.5"
+          >
+            {pending
+              ? DIRECTORY_CREATION_COPY.submitting
+              : DIRECTORY_CREATION_COPY.submit}
+          </button>
+          {creation.status === 'failed' && creation.outcome === 'unknown' && (
+            <button
+              type="button"
+              data-testid="new-directory-check-again"
+              onClick={() => {
+                void store.ensureLookup(queryId, { force: true, model })
+              }}
+              className="rounded-md border border-stone-300 dark:border-stone-600 text-stone-600 dark:text-stone-400 text-xs px-3 py-1.5"
+            >
+              {DIRECTORY_CREATION_COPY.checkAgain}
+            </button>
+          )}
+          <button
+            type="button"
+            data-testid="new-directory-cancel"
+            onClick={() => {
+              // Two different actions behind one position. Before the request
+              // Cancel abandons an unsent form; afterwards there is nothing to
+              // cancel, so the control says what it really does.
+              if (pending) store.dismissPendingForm(queryId)
+              else store.cancelNaming(queryId)
+            }}
+            className="rounded-md border border-stone-300 dark:border-stone-600 text-stone-600 dark:text-stone-400 text-xs px-3 py-1.5"
+          >
+            {pending
+              ? DIRECTORY_CREATION_COPY.closePending
+              : DIRECTORY_CREATION_COPY.cancel}
+          </button>
+        </div>
+      </form>
+    )
+  }
+
+  // --- the question has not been answered yet -------------------------------
+  if (identity.status === 'checking' || identity.status === 'unknown') {
+    return (
+      <p
+        data-testid="new-directory-checking"
+        className={`${block} font-ui text-xs leading-snug text-stone-500 dark:text-stone-400`}
+      >
+        {DIRECTORY_CREATION_COPY.checking}
+      </p>
+    )
+  }
+
+  // --- the question could not be answered -----------------------------------
+  if (identity.status === 'unresolved') {
+    return (
+      <div className={block} data-testid="new-directory-unresolved">
         <p
-          role="alert"
-          data-testid="new-directory-error"
-          className="text-xs text-red-600 dark:text-red-400 mt-1"
+          role="status"
+          className="font-ui text-xs leading-snug text-stone-600 dark:text-stone-300"
         >
-          {error}
+          {DIRECTORY_CREATION_COPY.unresolvedNote}
         </p>
-      )}
-      <DirectoryCreationGuidance />
-      <div className="flex gap-2 mt-2">
-        <button
-          type="submit"
-          disabled={submitting}
-          data-testid="new-directory-submit"
-          className="flex-1 rounded-md bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-xs font-medium px-3 py-1.5"
-        >
-          {submitting
-            ? DIRECTORY_CREATION_COPY.submitting
-            : DIRECTORY_CREATION_COPY.submit}
-        </button>
         <button
           type="button"
+          data-testid="new-directory-check-again"
           onClick={() => {
-            setOpen(false)
-            setError(null)
+            void store.ensureLookup(queryId, { force: true, model })
           }}
-          className="rounded-md border border-stone-300 dark:border-stone-600 text-stone-600 dark:text-stone-400 text-xs px-3 py-1.5"
+          className="mt-1 rounded-md border border-stone-300 dark:border-stone-600 text-stone-600 dark:text-stone-400 text-xs px-3 py-1.5"
         >
-          {DIRECTORY_CREATION_COPY.cancel}
+          {DIRECTORY_CREATION_COPY.checkAgain}
         </button>
       </div>
-    </form>
+    )
+  }
+
+  // --- absent: the only state in which creating is on offer -----------------
+  return (
+    <div className={block}>
+      <button
+        type="button"
+        data-testid="new-directory-cta"
+        onClick={() => store.beginNaming(queryId, suggestion)}
+        className={
+          emphasised
+            ? `w-full rounded-lg bg-incorrect px-2 py-1.5 text-xs font-semibold
+               text-white transition-colors hover:bg-incorrect-light
+               focus:outline-none focus:ring-2 focus:ring-incorrect/40`
+            : 'w-full rounded-lg border border-dashed border-stone-300 dark:border-stone-600 text-stone-600 dark:text-stone-400 hover:border-indigo-400 hover:text-indigo-600 text-xs font-ui px-3 py-2 transition-colors'
+        }
+      >
+        {emphasised
+          ? DIRECTORY_CREATION_COPY.openEmphasised
+          : DIRECTORY_CREATION_COPY.openQuiet}
+      </button>
+      <p
+        data-testid="new-directory-caption"
+        className="font-ui text-[11px] leading-snug text-stone-600 dark:text-stone-300 mt-1"
+      >
+        {DIRECTORY_CREATION_COPY.buttonCaption}
+      </p>
+    </div>
   )
 }
