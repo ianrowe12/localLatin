@@ -324,9 +324,19 @@ export default function NewDirectoryCta({
         >
           {DIRECTORY_CREATION_COPY.unresolvedNote}
         </p>
+        {/* A DIFFERENT retry from the two above, which is why it is named
+            differently. Those two follow a write this reviewer made whose
+            outcome is unknown, and the question they re-ask is "did my save
+            land?". This one follows a failed lookup on a document nobody has
+            written to, and re-asks "does this document have a directory at
+            all?". They read identically on screen because the reviewer's
+            action is the same; conflating them in the markup meant a document
+            whose own lookup had failed was indistinguishable from one carrying
+            an unfinished save, including for the tests that check a pending
+            write does not follow the reviewer to the next document. */}
         <button
           type="button"
-          data-testid="new-directory-check-again"
+          data-testid="new-directory-recheck"
           onClick={() => {
             void store.ensureLookup(queryId, { force: true, model })
           }}

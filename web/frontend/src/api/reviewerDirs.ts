@@ -178,30 +178,82 @@ const DIR_STATUSES: readonly string[] = ['awaiting_match', 'matched']
  * against the database, which recovers the row rather than inventing one.
  */
 export function assertReviewerDir(entry: unknown, seedQueryId?: number): ReviewerDir {
+  // Seed identity is checked FIRST, so a row for another document is reported
+  // as that rather than as a generic unreadable one. The two faults want
+  // different diagnostics: one names a server that answered about the wrong
+  // document, the other a record this client cannot read at all.
+  const seed = (entry as ReviewerDir | null)?.seed_query_id
+  if (seedQueryId !== undefined && typeof seed === 'number' && seed !== seedQueryId) {
+    throw new Error(
+      `A reviewer directory could not be read: the server answered for document ${seedQueryId} with a record seeded by ${seed}.`,
+    )
+  }
+  if (!isCompleteReviewerDir(entry)) {
+    throw new Error(
+      'A reviewer directory could not be read: the server sent an incomplete record.',
+    )
+  }
+  if (seedQueryId !== undefined && entry.seed_query_id !== seedQueryId) {
+    throw new Error(
+      `A reviewer directory could not be read: the server answered for document ${seedQueryId} with a record seeded by ${entry.seed_query_id}.`,
+    )
+  }
+  return entry
+}
+
+/**
+ * The completeness half of the check above, as a question rather than a throw.
+ *
+ * There are two readers of a directory row and they need the same answer in
+ * different shapes. A response body is validated once, at the edge, where
+ * throwing is right because the alternative is treating an unreadable answer as
+ * "no directory here". Evidence arriving through an already-parsed value --
+ * `PredictionResponse.seeded_dirs` -- is judged by the durable record, which
+ * cannot throw at a reviewer mid-render and must simply decline to treat a
+ * half-row as proof.
+ *
+ * Sharing this predicate is what keeps those two answers the same. The shared
+ * prediction validator (issue #156) has a deliberately more permissive contract
+ * for the same rows: it tolerates a missing `member_query_ids`, `created_at` or
+ * `created_by` and substitutes `[]` and `''` so an older backend still renders
+ * a candidate. That is correct for a candidate in a ranking and wrong for a
+ * permanent identity, because those substitutes are indistinguishable from a
+ * server that really said "no members, no creator" -- which would silently
+ * downgrade a matched grouping, blank its attribution and reorder which of
+ * several groups is named as primary. So the durable boundary re-asks the
+ * stricter question here rather than either weakening #156's contract for every
+ * other consumer of a ranking or keeping a second copy of this one.
+ */
+export function isCompleteReviewerDir(entry: unknown): entry is ReviewerDir {
   const dir = entry as ReviewerDir | null
-  const wellFormed =
+  return (
     dir !== null &&
     typeof dir === 'object' &&
     typeof dir.dir_id === 'string' &&
     dir.dir_id.length > 0 &&
     typeof dir.label === 'string' &&
     typeof dir.seed_query_id === 'number' &&
+    // Non-EMPTY, not merely present. `''` is what a permissive parser puts
+    // where a missing creator or timestamp was, and it is indistinguishable
+    // from a server that really said "created by nobody, at no time". The
+    // acknowledgement renders both of these at the reviewer, and the timestamp
+    // also orders the groups, so a blank is not a value here.
     typeof dir.created_at === 'string' &&
+    dir.created_at.length > 0 &&
     typeof dir.created_by === 'string' &&
+    dir.created_by.length > 0 &&
     DIR_STATUSES.includes(dir.status) &&
     Array.isArray(dir.member_query_ids) &&
     dir.member_query_ids.every((id) => typeof id === 'number') &&
+    // A directory always contains the document that seeded it: the backend
+    // inserts that membership row in the same transaction as the directory
+    // itself (`web/services/feedback_db.py`). So an empty or seed-less member
+    // list is not a directory with no members -- there is no such thing -- it
+    // is a record this client cannot read. This is also what distinguishes a
+    // genuinely single-member group, which stays `awaiting_match`, from a
+    // substituted `[]`, which would downgrade a matched one.
+    dir.member_query_ids.includes(dir.seed_query_id) &&
     (dir.best_match_score === null || typeof dir.best_match_score === 'number') &&
     typeof dir.has_potential_match === 'boolean'
-  if (!wellFormed) {
-    throw new Error(
-      'A reviewer directory could not be read: the server sent an incomplete record.',
-    )
-  }
-  if (seedQueryId !== undefined && dir.seed_query_id !== seedQueryId) {
-    throw new Error(
-      `A reviewer directory could not be read: the server answered for document ${seedQueryId} with a record seeded by ${dir.seed_query_id}.`,
-    )
-  }
-  return dir
+  )
 }

@@ -144,7 +144,7 @@ describe('NewDirectoryCta: before anything is known', () => {
     let listing: ReviewerDir[] = []
     installFetch({ get: () => jsonResponse(listing) })
     listing = [dirFixture()]
-    await userEvent.click(screen.getByTestId('new-directory-check-again'))
+    await userEvent.click(screen.getByTestId('new-directory-recheck'))
 
     // The retry finds the directory that was there all along.
     expect(await screen.findByTestId('new-directory-created')).toBeTruthy()
@@ -260,8 +260,9 @@ describe('NewDirectoryCta: when the write does not obviously succeed', () => {
     const user = userEvent.setup()
     renderCta()
 
-    // The initial lookup fails too, so the reviewer starts from Check again.
-    await user.click(await screen.findByTestId('new-directory-check-again'))
+    // The initial lookup fails too, so the reviewer starts from the unresolved
+    // re-check rather than from a write recovery: nothing has been written yet.
+    await user.click(await screen.findByTestId('new-directory-recheck'))
     expect(await screen.findByTestId('new-directory-unresolved')).toBeTruthy()
   })
 

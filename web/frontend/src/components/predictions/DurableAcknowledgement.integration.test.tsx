@@ -506,6 +506,157 @@ describe('the provider is mounted in the real application', () => {
     const saved = await screen.findByTestId('new-directory-saved')
     expect(saved.textContent).toContain('Unattested homily')
   })
+
+  it('recovers the saved grouping after a reload whose first ranking fails', async () => {
+    // Identity has its own endpoint and does not depend on any model's ranking,
+    // but the only thing that ASKED it used to be the CTA -- and after a reload
+    // neither CTA position mounts while the ranking is loading or has failed.
+    // So a document that plainly had a directory showed nothing at all until
+    // some ranking recovered, with the directory endpoint healthy throughout.
+    storedDirs = [dirFixture()]
+    predictionsFor[QUERY_A] = { predictions: [modelCard(1, 0.72)] }
+    const first = render(<App />)
+    await screen.findByTestId('new-directory-saved')
+    first.unmount()
+
+    // The reload. Same healthy directory endpoint, same unchanged row, and a
+    // ranking that will not load.
+    const seedsBefore = dirGets
+    predictionsFor[QUERY_A] = { httpStatus: 503 }
+    render(<App />)
+    await screen.findByTestId('predictions-error')
+
+    // Asked, answered, and acknowledged through the error.
+    expect(await screen.findByTestId('new-directory-saved')).toBeTruthy()
+    expect(dirGets).toBeGreaterThan(seedsBefore)
+    // Still no fresh creation on offer: that decision needs a settled ranking
+    // and is untouched by this.
+    expect(screen.queryByTestId('new-directory-cta')).toBeNull()
+    expect(screen.queryByTestId('new-directory-form')).toBeNull()
+  })
+
+  it('reports an unanswerable lookup as unresolved, not as room to create', async () => {
+    // The other half of asking early: when BOTH endpoints fail the honest
+    // answer is "not established", offered with its own re-check. That control
+    // is deliberately not the one a half-finished write shows -- nothing has
+    // been written here.
+    dirLookupStatus = 503
+    predictionsFor[QUERY_A] = { httpStatus: 503 }
+    render(<App />)
+    await screen.findByTestId('predictions-error')
+
+    expect(await screen.findByTestId('new-directory-unresolved')).toBeTruthy()
+    expect(screen.getByTestId('new-directory-recheck')).toBeTruthy()
+    expect(screen.queryByTestId('new-directory-check-again')).toBeNull()
+    expect(screen.queryByTestId('new-directory-cta')).toBeNull()
+  })
+})
+
+describe('observed evidence has to be readable as a directory', () => {
+  // The rows here go through the REAL shared prediction validator, which is
+  // where the danger is. Its contract for a directory inside a ranking is
+  // deliberately laxer than the durable record's: it accepts a row with no
+  // `member_query_ids`, `created_at` or `created_by` and fills in `[]` and `''`
+  // so an older backend still renders a candidate. Those substitutes are
+  // type-valid, so nothing downstream can tell them from a server that really
+  // said "no members, no creator, no timestamp".
+  const incomplete = {
+    dir_id: 'reviewer-dir-incomplete',
+    label: 'Incomplete row',
+    seed_query_id: QUERY_A,
+    status: 'matched',
+  }
+
+  it('does not turn a half-row into a saved identity', async () => {
+    dirLookupStatus = 503
+    predictionsFor[QUERY_A] = {
+      predictions: [modelCard(1, 0.72)],
+      seeded_dirs: [incomplete],
+    }
+    render(<App />)
+    await screen.findByTestId('match-pill-1')
+
+    // No acknowledgement, and in particular none of the blanks: a reviewer
+    // reading "Created by ." learns nothing and cannot tell that it is a fault.
+    expect(screen.queryByTestId('new-directory-saved')).toBeNull()
+    expect(document.body.textContent).not.toContain('Created by .')
+    // Not authoritative absence either. The question is open, and the way back
+    // to an answer is on screen.
+    expect(screen.getByTestId('new-directory-unresolved')).toBeTruthy()
+    expect(screen.getByTestId('new-directory-recheck')).toBeTruthy()
+  })
+
+  it('does not let a half-row overwrite the history already recovered', async () => {
+    // Two complete groups are known from the server, oldest first. A later
+    // half-row for the younger one carries a blank timestamp, which sorts
+    // before any real one -- so accepting it would silently rename the group
+    // this document is filed under and blank out who made it.
+    const older = dirFixture({
+      dir_id: 'reviewer-dir-older',
+      label: 'Oldest group',
+      created_by: 'Older creator',
+      created_at: '2026-09-01 12:00:00',
+      status: 'matched',
+      member_query_ids: [QUERY_A, 9],
+    })
+    storedDirs = [older, dirFixture()]
+    predictionsFor[QUERY_A] = { predictions: [modelCard(1, 0.72)] }
+    const view = render(<Review model={MODEL_A} />)
+    const saved = await screen.findByTestId('new-directory-saved')
+    expect(saved.textContent).toContain('Oldest group')
+    expect(saved.textContent).toContain('Older creator')
+
+    // A model switch is a new request, which is how a later response actually
+    // reaches the record. Identity does not depend on a model, so this is the
+    // ordinary way a second opinion about the same document arrives.
+    predictionsFor[QUERY_A] = {
+      predictions: [modelCard(1, 0.72)],
+      seeded_dirs: [{ ...incomplete, dir_id: dirFixture().dir_id, status: 'awaiting_match' }],
+    }
+    const seen = predictionGets
+    view.rerender(<Review model={MODEL_B} />)
+    await waitFor(() => expect(predictionGets).toBeGreaterThan(seen))
+
+    // Everything the server actually said is still here, in the order it said
+    // it, with the attribution it gave.
+    const after = await screen.findByTestId('new-directory-saved')
+    expect(after.textContent).toContain('Oldest group')
+    expect(after.textContent).toContain('Older creator')
+    expect(after.textContent).toContain('Unattested homily')
+    expect(after.textContent).not.toContain('Created by .')
+  })
+
+  it('does not let a half-row settle a write whose outcome is unknown', async () => {
+    // The most damaging version. A write is outstanding with no outcome, so the
+    // reviewer has Check again in front of them. A half-row would close that
+    // form, retire the recovery control and announce a confirmed save on
+    // evidence that never met the bar the 201 and the lookup are held to.
+    const user = userEvent.setup()
+    postBehaviour = 'lost'
+    predictionsFor[QUERY_A] = { predictions: [modelCard(1, 0.72)] }
+    const view = render(<Review model={MODEL_A} />)
+    await screen.findByTestId('new-directory-cta')
+    dirLookupStatus = 503
+    await createDirectory(user)
+    await screen.findByTestId('new-directory-check-again')
+    const eventsBefore = refreshEvents
+
+    predictionsFor[QUERY_A] = {
+      predictions: [modelCard(1, 0.72)],
+      seeded_dirs: [incomplete],
+    }
+    const seen = predictionGets
+    view.rerender(<Review model={MODEL_B} />)
+    await waitFor(() => expect(predictionGets).toBeGreaterThan(seen))
+
+    // Still unknown, still recoverable, still unannounced, and the name the
+    // reviewer typed is still theirs to resubmit.
+    expect(screen.getByTestId('new-directory-check-again')).toBeTruthy()
+    expect(screen.queryByTestId('new-directory-saved')).toBeNull()
+    expect(screen.queryByTestId('new-directory-created')).toBeNull()
+    expect(refreshEvents).toBe(eventsBefore)
+    expect(posts).toHaveLength(1)
+  })
 })
 
 describe('the record is scoped to the signed-in account', () => {

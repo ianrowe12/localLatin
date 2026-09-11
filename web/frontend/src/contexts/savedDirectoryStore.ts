@@ -1,6 +1,7 @@
 import {
   createReviewerDir,
   fetchReviewerDirs,
+  isCompleteReviewerDir,
   notifyReviewerDirsUpdated,
   type CreateReviewerDirPayload,
   type ReviewerDir,
@@ -442,16 +443,39 @@ export class SavedDirectoryStore {
    * nothing. Predictions can be for another model, can fail, and can be served
    * from a cache that predates the write, so absence there is not absence in
    * the database.
+   *
+   * The rows still have to be READABLE as directories. They arrive through the
+   * shared prediction validator (issue #156), whose contract for the same rows
+   * is deliberately laxer than this one: it tolerates a missing
+   * `member_query_ids`, `created_at` or `created_by` and fills in `[]` and `''`
+   * so an older backend still renders a candidate in a ranking. Those
+   * substitutes are fine for a candidate and are not evidence of a permanent
+   * record: promoting them here writes a blank creator and a blank timestamp
+   * into the durable identity, where the blank timestamp sorts first and
+   * silently renames which group the document is filed under, and `[]` reads as
+   * "no human has filed a second witness" for a group where one has.
+   *
+   * So the same completeness contract the lookup and the 201 body are held to
+   * is applied here, and a list that fails it is NOT evidence in either
+   * direction. It confirms nothing, erases nothing, settles no outstanding
+   * write and announces nothing -- the question simply stays open, and every
+   * recovery path (`Check again`, the next lookup, the next good response)
+   * stays exactly as reachable as it was.
    */
   observeSeededDirs(queryId: number, dirs: readonly ReviewerDir[]): void {
     if (dirs.length === 0) return
     const seeded = dirs.filter((dir) => dir.seed_query_id === queryId)
     if (seeded.length === 0) return
-    // Positive, seed-matched and server-sourced: the same class of evidence a
-    // lookup returns, so it finishes an outstanding write of ours exactly as a
-    // lookup would. Recording the identity and stopping short of that is what
-    // stranded a reviewer with an acknowledgement, no `Check again` and a
-    // refresh nobody would ever send.
+    // Rejected whole rather than filtered, exactly as `assertReviewerDirList`
+    // rejects a list containing one bad row. Confirming the readable subset
+    // would record a partial view of this document's groups as though it were
+    // the answer.
+    if (!seeded.every(isCompleteReviewerDir)) return
+    // Positive, seed-matched, complete and server-sourced: the same class of
+    // evidence a lookup returns, so it finishes an outstanding write of ours
+    // exactly as a lookup would. Recording the identity and stopping short of
+    // that is what stranded a reviewer with an acknowledgement, no `Check
+    // again` and a refresh nobody would ever send.
     this.confirmSaved(queryId, seeded, 'predictions')
   }
 

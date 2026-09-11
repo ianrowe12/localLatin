@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { usePredictionState } from './PredictionContext'
-import { useSavedDirectoryStore } from './SavedDirectoryContext'
+import { useSavedDirectoryFor, useSavedDirectoryStore } from './SavedDirectoryContext'
 import type { SavedDirectoryStore } from './savedDirectoryStore'
 
 /**
@@ -77,6 +77,39 @@ interface Admission {
 export default function SavedDirectoryObservations() {
   const store = useSavedDirectoryStore()
   const { key, generation, phase, seededDirs, refresh } = usePredictionState()
+
+  /**
+   * ASKING THE QUESTION, which is separate from admitting an answer to it.
+   *
+   * "Does this document already seed a grouping?" is answered by its own
+   * endpoint, and that endpoint has nothing to do with a ranking. Until now the
+   * only production caller that started the lookup was inside `NewDirectoryCta`,
+   * so the question was asked only where a creation offer happened to be
+   * rendered. After a reload that makes the answer depend on the ranking: the
+   * record starts unknown, neither CTA position mounts while predictions are
+   * loading or have failed, nothing asks, and the durable acknowledgement for a
+   * directory that plainly exists stays invisible until some model's ranking
+   * recovers -- with the directory endpoint healthy the whole time.
+   *
+   * Asking from here instead fixes that at the root. This component is mounted
+   * for the whole authenticated lifetime, above the request branches, so the
+   * lookup follows the reviewer's current document rather than the visibility
+   * of a button, and survives the list unmounting.
+   *
+   * It does not relax anything about OFFERING creation. Whether Create is
+   * available is still decided downstream from evidence -- a settled ranking
+   * and an `absent` identity -- and this only ensures the identity half is
+   * actually established. The two outcomes it adds are both honest: a saved
+   * grouping is acknowledged through a failed ranking, and a failed lookup is
+   * reported as unresolved with a retry instead of as an empty question.
+   *
+   * `useSavedDirectoryFor` is the existing shared mechanism for this and is
+   * re-entrant: it asks only while the status is `unknown`, and `ensureLookup`
+   * drops a call that races one already in flight. So this does not duplicate
+   * the CTA's request, and it cannot loop, because every answer moves the
+   * status off `unknown`.
+   */
+  useSavedDirectoryFor(key?.queryId ?? null, { model: key?.model })
 
   // Adopted DURING RENDER, like the store itself. An effect would leave one
   // commit in which the new account's store is current and the old account's

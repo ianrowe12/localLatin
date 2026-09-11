@@ -16,7 +16,7 @@ const QUERY_B = 12
 const MODEL = 'bowphs_LaTa'
 
 function dirFixture(overrides: Partial<ReviewerDir> = {}): ReviewerDir {
-  return {
+  const base = {
     dir_id: 'reviewer-dir-1',
     label: 'Unattested homily',
     status: 'awaiting_match',
@@ -29,7 +29,14 @@ function dirFixture(overrides: Partial<ReviewerDir> = {}): ReviewerDir {
     best_match_score: 0.31,
     has_potential_match: false,
     ...overrides,
+  } as ReviewerDir
+  // A directory always contains the document that seeded it -- the backend
+  // writes both rows in one transaction -- so moving the seed moves the
+  // membership with it unless a case is deliberately setting both.
+  if (overrides.seed_query_id !== undefined && overrides.member_query_ids === undefined) {
+    return { ...base, member_query_ids: [overrides.seed_query_id] }
   }
+  return base
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
