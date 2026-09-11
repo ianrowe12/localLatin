@@ -1,5 +1,5 @@
 import { useMemo, useCallback } from 'react'
-import { useTokens } from '../../contexts/TokenContext'
+import { useTokens, type PinEntry } from '../../contexts/TokenContext'
 import { useTokenRefs } from '../connections/TokenRefRegistry'
 import DocumentHeader from './DocumentHeader'
 import TokenSpan from './TokenSpan'
@@ -47,9 +47,15 @@ interface DocumentPanelProps {
    * animated away keeps the value it was rendered with, which is the whole
    * point: its words are still on screen and still registered, and they are
    * no longer the words the rest of the app is reasoning about.
+   *
+   * It also decides which transient token state this panel may read at all.
+   * See `owned` below.
    */
   evidenceOwner: string
 }
+
+const NO_PINS: Map<number, PinEntry> = new Map()
+const NO_AUTO_HIGHLIGHTS: Set<number> = new Set()
 
 export default function DocumentPanel({
   side,
@@ -66,13 +72,40 @@ export default function DocumentPanel({
   evidenceOwner,
 }: DocumentPanelProps) {
   const {
-    hoveredQueryTokenIdx,
+    hoveredQueryTokenIdx: scopeHoveredQueryTokenIdx,
     setHoveredQueryTokenIdx,
     setHoveredMatches,
-    pinnedTokens,
+    pinnedTokens: scopePinnedTokens,
     viewMode,
-    autoHighlightedTokens,
+    autoHighlightedTokens: scopeAutoHighlightedTokens,
+    scopeWitness,
   } = useTokens()
+
+  /**
+   * Are the transient marks in this scope about THESE words? (issue #163)
+   *
+   * `WitnessTokenScope` is outside the animated subtree, so it advances to the
+   * incoming pair while this panel is still exiting with its old props. Context
+   * still re-renders this panel, and a re-render recomputes every highlight,
+   * pin and dim prop from scratch -- the memo comparison in `TokenSpan` runs
+   * after that, on values already computed for the wrong pair, so owning the
+   * ref callbacks cannot reach it. Reading a hover into the incoming text would
+   * repaint a word in the OUTGOING manuscript, which is the claim "this old
+   * word is what your query matches", made about a document the reviewer has
+   * already left.
+   *
+   * What this does not touch: the panel's own `tokens` and `tokenMap`. Those
+   * are props, they came with the panel, and they are honest evidence about its
+   * own pair -- so the exiting text keeps its own shading and its crossfade
+   * looks like a fade of what was there, not a blank.
+   *
+   * Null means there is no scope above (a panel mounted alone in a test), and
+   * gates nothing.
+   */
+  const owned = scopeWitness === null || scopeWitness === evidenceOwner
+  const hoveredQueryTokenIdx = owned ? scopeHoveredQueryTokenIdx : null
+  const pinnedTokens = owned ? scopePinnedTokens : NO_PINS
+  const autoHighlightedTokens = owned ? scopeAutoHighlightedTokens : NO_AUTO_HIGHLIGHTS
 
   const tokenRefs = useTokenRefs()
 
@@ -124,9 +157,13 @@ export default function DocumentPanel({
   // every render and force the memo to ignore it, which is how a hover kept
   // reporting the previous witness's matches. The identity changes exactly
   // when `tokenMap` does, which is exactly when the behaviour changes.
+  //
+  // They are gated by `owned` for the same reason the reads are: a pointer
+  // resting on a retained panel's token would otherwise publish matches into
+  // candidate indices that name different words in the pair now on screen.
   const handleQueryMouseEnter = useCallback(
     (idx: number) => {
-      if (side === 'query') {
+      if (side === 'query' && owned) {
         setHoveredQueryTokenIdx(idx)
         // Populate hover matches from tokenMap top_matches
         const topMatches = tokenMap?.top_matches?.[String(idx)]
@@ -143,15 +180,15 @@ export default function DocumentPanel({
         }
       }
     },
-    [side, setHoveredQueryTokenIdx, setHoveredMatches, tokenMap],
+    [side, owned, setHoveredQueryTokenIdx, setHoveredMatches, tokenMap],
   )
 
   const handleQueryMouseLeave = useCallback(() => {
-    if (side === 'query') {
+    if (side === 'query' && owned) {
       setHoveredQueryTokenIdx(null)
       setHoveredMatches([])
     }
-  }, [side, setHoveredQueryTokenIdx, setHoveredMatches])
+  }, [side, owned, setHoveredQueryTokenIdx, setHoveredMatches])
 
   // Loading state
   if (loading) {

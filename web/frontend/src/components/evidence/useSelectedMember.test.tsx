@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { render, screen } from '@testing-library/react'
+import { act, render, renderHook, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { useSelectedMember } from './useSelectedMember'
@@ -136,5 +136,57 @@ describe('useSelectedMember', () => {
     // The group behind key-a may have changed membership meanwhile; only a
     // fresh, validated default is honest here.
     expect(selected()).toBe('-')
+  })
+})
+
+/**
+ * The callback a departing control is actually holding.
+ *
+ * The cases above hand a stale owner to the CURRENT callback, which is a
+ * different and easier shape. A member strip retained by `AnimatePresence`
+ * holds the callback it was rendered with, and that callback's captured key is
+ * its own old group -- so the event and the closure agree, and agreement
+ * between two values captured together establishes nothing. `renderHook` is
+ * used because the capture has to be real: the old function object itself,
+ * invoked after the hook has moved on.
+ */
+describe('useSelectedMember, called through a callback its group left behind', () => {
+  it('refuses the stale action and leaves the current choice standing', () => {
+    const hook = renderHook(({ owner }) => useSelectedMember(owner), {
+      initialProps: { owner: 'old-group' },
+    })
+    const captured = hook.result.current.select
+    hook.rerender({ owner: 'current-group' })
+
+    act(() => {
+      expect(hook.result.current.select('chosen.txt', 'current-group')).toBe(true)
+    })
+
+    let accepted: boolean | undefined
+    act(() => {
+      accepted = captured('obsolete.txt', 'old-group')
+    })
+
+    // Refused BEFORE anything is written, so there is no state to hide
+    // afterwards and the caller has nothing to announce. Returning true and
+    // writing old-key state that a later render filters out is not a refusal:
+    // the caller believes the choice was taken and publishes the old pair.
+    expect(accepted).toBe(false)
+    expect(hook.result.current.filename).toBe('chosen.txt')
+  })
+
+  it('still takes an action from the callback the current group rendered', () => {
+    // The over-fix guard: a live check that refused everything would satisfy
+    // the case above and break the selector entirely.
+    const hook = renderHook(({ owner }) => useSelectedMember(owner), {
+      initialProps: { owner: 'old-group' },
+    })
+    hook.rerender({ owner: 'current-group' })
+    const current = hook.result.current.select
+
+    act(() => {
+      expect(current('chosen.txt', 'current-group')).toBe(true)
+    })
+    expect(hook.result.current.filename).toBe('chosen.txt')
   })
 })

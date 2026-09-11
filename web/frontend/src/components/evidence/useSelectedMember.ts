@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 
 export interface SelectedMember {
   /** The reviewer's choice for the CURRENT identity, or null for the default. */
@@ -8,7 +8,8 @@ export interface SelectedMember {
    *
    * Returns whether it was accepted. An event from an obsolete owner is
    * refused outright rather than re-read as a choice about the current group:
-   * see the note on the hook.
+   * see the note on the hook. A refusal writes nothing, so the current
+   * selection survives it untouched and the caller has nothing to announce.
    */
   select: (filename: string | null, owner: string) => boolean
 }
@@ -38,6 +39,20 @@ export function useSelectedMember(identityKey: string): SelectedMember {
     setState({ key: identityKey, filename: null })
   }
 
+  /**
+   * The identity that is actually current, kept for COMPARISON only.
+   *
+   * Written during render, beside the reset above, so it is already right in
+   * the first render of a new group rather than a commit later. It is never
+   * read to decide what an event is ABOUT -- doing that is the original defect,
+   * and the reason the old `keyRef` was removed: reading the current key as the
+   * event's own owner relabels an obsolete action as a current one. Here the
+   * event still names its own owner, and this only answers "is that owner still
+   * the live one?".
+   */
+  const liveKeyRef = useRef(identityKey)
+  liveKeyRef.current = identityKey
+
   // The caller names the group its control was rendered for. Reading the
   // current key from a ref instead would label every event as current, which
   // is wrong for a control that is still interactive while it animates away:
@@ -47,9 +62,18 @@ export function useSelectedMember(identityKey: string): SelectedMember {
   // chose. Both routes into this, the native select (mouse or keyboard) and
   // the "Show supporting witness" button, go through one bound handler, so
   // neither can navigate the new group from the old group's control.
+  //
+  // Two checks, because the closure alone is not enough. A bar animating away
+  // holds the callback it was rendered with, whose `identityKey` is its OWN old
+  // group -- so an event from that bar agrees with it, and agreement between
+  // two values captured together proves nothing. The second check is against
+  // the live identity, and it is made BEFORE any state is written and before
+  // the caller is told the choice was taken, so a refused event leaves no
+  // selection behind and produces no announcement.
   const select = useCallback(
     (filename: string | null, owner: string) => {
       if (owner !== identityKey) return false
+      if (owner !== liveKeyRef.current) return false
       setState({ key: owner, filename })
       return true
     },

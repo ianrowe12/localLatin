@@ -27,6 +27,7 @@ import { buildWordMatchMap } from '../../utils/wordSimilarity'
 import { useTokenMap, type TokenMapResponse, type TopMatch } from '../../api/tokenMap'
 import { toAttributionVariant } from '../../api/variants'
 import { useTokens, WitnessTokenScope } from '../../contexts/TokenContext'
+import { useLiveEvidenceStamp } from '../../contexts/evidenceStamp'
 import { METHODS } from '../common/AttributionMethodSelector'
 
 export default function CenterArea() {
@@ -354,6 +355,17 @@ export default function CenterArea() {
   )
 
   /**
+   * The evidence regime this render belongs to (issue #163).
+   *
+   * The pair identity above says WHICH pair; this says which request the app is
+   * currently entitled to show a pair for at all. Published with the method
+   * list, and recomputed live by every reader, so the two cannot both be stale
+   * and agree. Computed by the shared helper both sides call, so publisher and
+   * gate cannot drift into two slightly different definitions of "current".
+   */
+  const liveEvidenceStamp = useLiveEvidenceStamp()
+
+  /**
    * Take a witness choice from the control that made it, or refuse it.
    *
    * Rebuilt whenever the group or the boundary changes, so a bar still on
@@ -438,19 +450,36 @@ export default function CenterArea() {
   // on screen. The selector is a sibling in the sidebar, not a descendant of
   // this panel's witness scope, so an artifact for another member must never
   // reach it: it would offer enabled model-attribution methods above a
-  // comparison that is showing none. Also clear any leftover pins so each new
-  // pair starts with hover-only behavior (no sticky lines from stale state).
+  // comparison that is showing none.
+  //
+  // The publication carries the live evidence regime as well as the pair, and
+  // re-runs when that regime moves. Without it a refresh leaves both stored
+  // strings agreeing about a request that has been superseded, and the gate --
+  // which can only compare what it was given -- would let the previous
+  // witness's controls stand over a panel that has no words in it yet.
   useEffect(() => {
-    setAvailableMethods(witnessArtifact?.available_methods ?? [], witnessScope)
+    setAvailableMethods(
+      witnessArtifact?.available_methods ?? [],
+      witnessScope,
+      liveEvidenceStamp,
+    )
     announceDisplayedPair(witnessScope)
-    clearAllPins()
   }, [
     witnessArtifact,
     witnessScope,
+    liveEvidenceStamp,
     setAvailableMethods,
     announceDisplayedPair,
-    clearAllPins,
   ])
+
+  // Clear any leftover pins so each new pair starts with hover-only behavior
+  // (no sticky lines from stale state). Kept on its own triggers: a ranking
+  // refresh underneath an open gallery example moves the regime above without
+  // changing anything the reviewer is looking at, and their pins are not the
+  // refresh's to discard.
+  useEffect(() => {
+    clearAllPins()
+  }, [witnessArtifact, witnessScope, clearAllPins])
 
   // When an attribution method is selected and a matching matrix is present
   // in the token-map payload, swap similarity_matrix and recompute top_matches

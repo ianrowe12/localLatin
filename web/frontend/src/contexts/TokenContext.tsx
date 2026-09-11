@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from 'react'
 import { PIN_COLORS } from '../utils/colors'
+import { useLiveEvidenceStamp } from './evidenceStamp'
 import type { AttributionMethod } from '../api/tokenMap'
 
 export type ViewMode = 'connections' | 'heatmap' | 'ig'
@@ -59,16 +60,45 @@ export interface TokenContextValue {
   availableMethods: AttributionMethod[]
   setSelectedMethod: (m: AttributionMethod) => void
   /**
-   * Publish an artifact's methods together with the pair they describe.
+   * Publish an artifact's methods together with the pair they describe AND the
+   * evidence regime that was live when they were published.
    *
    * The owner is not decoration. The panel that loads artifacts is not the
    * only consumer of this list -- `AttributionMethodSelector` sits outside it,
    * in the sidebar, where no scope inside the panel can reach -- so the list
    * has to carry enough to be checked against the pair actually on screen.
+   *
+   * The stamp is the second half, and it is what the owner alone cannot do. Two
+   * STORED strings agreeing proves only that they were written together; after
+   * a refresh they agree and both describe the request that has just been
+   * superseded. The stamp is checked against a value read live at the moment of
+   * reading (`useLiveEvidenceStamp`), so a publication cannot vouch for itself.
+   * Null means "no live regime was available to record", which gates nothing.
    */
-  setAvailableMethods: (methods: AttributionMethod[], owner: string) => void
+  setAvailableMethods: (
+    methods: AttributionMethod[],
+    owner: string,
+    stamp: string | null,
+  ) => void
+  /**
+   * The evidence regime the current publication was made under, or null.
+   *
+   * Exposed so the gate in `useTokens` can compare it with the live one; it is
+   * not a thing any view should render.
+   */
+  attributionStamp: string | null
   /** The pair whose words are on screen; see `announceDisplayedPair`. */
   displayedPair: string | null
+  /**
+   * The witness the surrounding `WitnessTokenScope` is currently about, or null
+   * outside one (issue #163).
+   *
+   * A panel being animated away is still inside the scope and still receives
+   * its updates, so "the state I can see" and "the state that belongs to my
+   * words" are different questions for it. This answers the first, so a panel
+   * holding its own `evidenceOwner` can tell them apart.
+   */
+  scopeWitness: string | null
   /**
    * Name the pair on screen, from the same update that puts it there.
    *
@@ -86,9 +116,14 @@ export interface TokenContextValue {
 const TokenContext = createContext<TokenContextValue | null>(null)
 
 const NO_METHODS: AttributionMethod[] = []
-const NO_ATTRIBUTION: { owner: string | null; methods: AttributionMethod[] } = {
+const NO_ATTRIBUTION: {
+  owner: string | null
+  methods: AttributionMethod[]
+  stamp: string | null
+} = {
   owner: null,
   methods: NO_METHODS,
+  stamp: null,
 }
 
 function sameMethods(a: AttributionMethod[], b: AttributionMethod[]): boolean {
@@ -105,6 +140,7 @@ export function TokenProvider({ children }: { children: ReactNode }) {
   const [attribution, setAttribution] = useState<{
     owner: string | null
     methods: AttributionMethod[]
+    stamp: string | null
   }>(NO_ATTRIBUTION)
   const [displayedPair, setDisplayedPair] = useState<string | null>(null)
   // Seeded with the first method rather than null so the very first token-map
@@ -113,11 +149,13 @@ export function TokenProvider({ children }: { children: ReactNode }) {
   const [selectedMethod, setSelectedMethod] = useState<AttributionMethod | null>('ig')
 
   const setAvailableMethods = useCallback(
-    (methods: AttributionMethod[], owner: string) => {
+    (methods: AttributionMethod[], owner: string, stamp: string | null) => {
       setAttribution((prev) =>
-        prev.owner === owner && sameMethods(prev.methods, methods)
+        prev.owner === owner &&
+        prev.stamp === stamp &&
+        sameMethods(prev.methods, methods)
           ? prev
-          : { owner, methods },
+          : { owner, methods, stamp },
       )
     },
     [],
@@ -234,7 +272,9 @@ export function TokenProvider({ children }: { children: ReactNode }) {
     availableMethods,
     setSelectedMethod,
     setAvailableMethods,
+    attributionStamp: attribution.stamp,
     displayedPair,
+    scopeWitness: null,
     announceDisplayedPair,
   }
 
@@ -246,7 +286,38 @@ export function useTokens(): TokenContextValue {
   if (!ctx) {
     throw new Error('useTokens must be used within a TokenProvider')
   }
-  return ctx
+  return useOwnedTokens(ctx)
+}
+
+/**
+ * The live half of the applicability gate (issue #163).
+ *
+ * The stored half lives in the provider: a publication names the pair it
+ * describes, and a list published for another pair counts for nothing. That is
+ * necessary and not sufficient. Both stored strings are written by the same
+ * update, so after a shared refresh they still agree -- with each other, about
+ * a request that no longer exists. The first commits of that refresh have no
+ * candidate words at all and would still have offered the previous witness's
+ * method controls.
+ *
+ * So the comparison that decides this is made HERE, in the consumer, against a
+ * value read live from the shared prediction state on every render. It applies
+ * to every route into a new pair, not only the one a handler was written for,
+ * and it takes effect in the first committed frame rather than in an effect a
+ * commit later.
+ *
+ * This is a read. It performs no request, keeps no cache and changes nothing
+ * the provider stores: the artifact behind a gated list stays cached, so the
+ * pair it does describe still costs nothing to return to.
+ */
+function useOwnedTokens(ctx: TokenContextValue): TokenContextValue {
+  const liveStamp = useLiveEvidenceStamp()
+  return useMemo(() => {
+    if (liveStamp === null || ctx.attributionStamp === null) return ctx
+    if (ctx.attributionStamp === liveStamp) return ctx
+    if (ctx.availableMethods.length === 0) return ctx
+    return { ...ctx, availableMethods: NO_METHODS }
+  }, [ctx, liveStamp])
 }
 
 const NO_PINS: Map<number, PinEntry> = new Map()
@@ -308,8 +379,13 @@ export function WitnessTokenScope({
       hasAutoHighlights: stale ? false : outer.hasAutoHighlights,
       hoveredQueryTokenIdx: stale ? null : outer.hoveredQueryTokenIdx,
       hoveredMatches: stale ? NO_HOVER_MATCHES : outer.hoveredMatches,
+      // The LIVE witness this scope is about, which is not the same as the
+      // witness any given consumer inside it was rendered for. A panel being
+      // animated away compares its own `evidenceOwner` with this to find out
+      // that the five fields above have stopped being about its words.
+      scopeWitness: witness,
     }),
-    [outer, stale],
+    [outer, stale, witness],
   )
 
   return <TokenContext.Provider value={value}>{children}</TokenContext.Provider>
