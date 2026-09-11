@@ -211,6 +211,13 @@ function EvidenceHarness() {
   const selection = useSelectedMember(identityKey)
   const evidence = resolveMemberEvidence(candidate, selection.filename)
 
+  // The bar's events carry the group its control was rendered for, exactly as
+  // CenterArea binds them. Passing `selection.select` raw would leave the
+  // owner undefined and every choice refused.
+  const selectWitness = (filename: string) => {
+    selection.select(filename, identityKey)
+  }
+
   painted.push(
     `${candidate?.dir_name ?? '-'}:${evidence?.selected?.filename ?? '-'}`,
   )
@@ -230,7 +237,7 @@ function EvidenceHarness() {
     <>
       <MemberEvidenceBar
         evidence={evidence}
-        onSelectWitness={selection.select}
+        onSelectWitness={selectWitness}
         attribution={attribution}
       />
       <div data-testid="witness-name">{evidence?.selected?.filename ?? ''}</div>

@@ -39,6 +39,16 @@ interface DocumentPanelProps {
   provenance?: DocumentProvenance
   /** Status pills for the document itself; forwarded to DocumentHeader. */
   badge?: React.ReactNode
+  /**
+   * The pair whose words these are (issue #163).
+   *
+   * Registered with every token element, so geometry for this panel can only
+   * be read back by a consumer asking about this same pair. A panel being
+   * animated away keeps the value it was rendered with, which is the whole
+   * point: its words are still on screen and still registered, and they are
+   * no longer the words the rest of the app is reasoning about.
+   */
+  evidenceOwner: string
 }
 
 export default function DocumentPanel({
@@ -53,6 +63,7 @@ export default function DocumentPanel({
   scrollRef,
   provenance,
   badge,
+  evidenceOwner,
 }: DocumentPanelProps) {
   const {
     hoveredQueryTokenIdx,
@@ -268,7 +279,7 @@ export default function DocumentPanel({
                 isAutoHighlighted={isAutoHighlighted}
                 highlightScore={highlightScore}
                 colorPalette={side === 'query' ? 'blue' : 'orange'}
-                spanRef={tokenRefs.registerRef(tokenRefId)}
+                spanRef={tokenRefs.registerRef(evidenceOwner, tokenRefId)}
                 onMouseEnter={side === 'query' ? handleQueryMouseEnter : undefined}
                 onMouseLeave={side === 'query' ? handleQueryMouseLeave : undefined}
               />

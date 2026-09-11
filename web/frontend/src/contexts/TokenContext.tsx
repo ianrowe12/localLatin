@@ -52,12 +52,48 @@ export interface TokenContextValue {
   // choice (AppContext.activeVariant) shared with the prediction list, so the
   // highlights can never disagree with the ranking the reviewer is judging.
   selectedMethod: AttributionMethod | null
+  /**
+   * What the DISPLAYED pair offers, which is not the same thing as what the
+   * last publication said (issue #163). Empty whenever the two disagree.
+   */
   availableMethods: AttributionMethod[]
   setSelectedMethod: (m: AttributionMethod) => void
-  setAvailableMethods: (methods: AttributionMethod[]) => void
+  /**
+   * Publish an artifact's methods together with the pair they describe.
+   *
+   * The owner is not decoration. The panel that loads artifacts is not the
+   * only consumer of this list -- `AttributionMethodSelector` sits outside it,
+   * in the sidebar, where no scope inside the panel can reach -- so the list
+   * has to carry enough to be checked against the pair actually on screen.
+   */
+  setAvailableMethods: (methods: AttributionMethod[], owner: string) => void
+  /** The pair whose words are on screen; see `announceDisplayedPair`. */
+  displayedPair: string | null
+  /**
+   * Name the pair on screen, from the same update that puts it there.
+   *
+   * Applicability used to reach outside consumers through a passive effect,
+   * one commit after the words changed, so the first committed frame of a new
+   * witness carried the previous witness's method controls. That frame is one
+   * a reviewer reads. Announcing from the event that changes the witness makes
+   * the mismatch visible in the same render pass: this provider is an ancestor
+   * of both the panel and the sidebar, so both re-render together, and the
+   * controls are gone in the very frame the new words appear.
+   */
+  announceDisplayedPair: (owner: string) => void
 }
 
 const TokenContext = createContext<TokenContextValue | null>(null)
+
+const NO_METHODS: AttributionMethod[] = []
+const NO_ATTRIBUTION: { owner: string | null; methods: AttributionMethod[] } = {
+  owner: null,
+  methods: NO_METHODS,
+}
+
+function sameMethods(a: AttributionMethod[], b: AttributionMethod[]): boolean {
+  return a.length === b.length && a.every((m, i) => m === b[i])
+}
 
 export function TokenProvider({ children }: { children: ReactNode }) {
   const [viewMode, setViewMode] = useState<ViewMode>('connections')
@@ -66,11 +102,40 @@ export function TokenProvider({ children }: { children: ReactNode }) {
   const [pinnedTokens, setPinnedTokens] = useState<Map<number, PinEntry>>(new Map())
   const [hasIgData, setHasIgData] = useState(false)
   const [autoHighlightedTokens, setAutoHighlightedTokens] = useState<Set<number>>(new Set())
-  const [availableMethods, setAvailableMethods] = useState<AttributionMethod[]>([])
+  const [attribution, setAttribution] = useState<{
+    owner: string | null
+    methods: AttributionMethod[]
+  }>(NO_ATTRIBUTION)
+  const [displayedPair, setDisplayedPair] = useState<string | null>(null)
   // Seeded with the first method rather than null so the very first token-map
   // fetch can send ?method= and stay small; the effect below corrects it if
   // this pair has no IG matrices.
   const [selectedMethod, setSelectedMethod] = useState<AttributionMethod | null>('ig')
+
+  const setAvailableMethods = useCallback(
+    (methods: AttributionMethod[], owner: string) => {
+      setAttribution((prev) =>
+        prev.owner === owner && sameMethods(prev.methods, methods)
+          ? prev
+          : { owner, methods },
+      )
+    },
+    [],
+  )
+
+  const announceDisplayedPair = useCallback((owner: string) => {
+    setDisplayedPair((prev) => (prev === owner ? prev : owner))
+  }, [])
+
+  // The gate, and the only reading of the list anything else sees. A
+  // publication for another pair is not a weaker claim about this one, it is a
+  // claim about something else, so it counts for nothing here. The artifact
+  // behind it is untouched and stays cached, so the pair it does describe
+  // still costs no request to return to.
+  const availableMethods =
+    attribution.owner !== null && attribution.owner === displayedPair
+      ? attribution.methods
+      : NO_METHODS
 
   // Keep selectedMethod consistent with availableMethods. If the current
   // selection is no longer available (or is null), reset to the first
@@ -169,6 +234,8 @@ export function TokenProvider({ children }: { children: ReactNode }) {
     availableMethods,
     setSelectedMethod,
     setAvailableMethods,
+    displayedPair,
+    announceDisplayedPair,
   }
 
   return <TokenContext.Provider value={value}>{children}</TokenContext.Provider>

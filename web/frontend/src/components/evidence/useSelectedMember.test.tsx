@@ -15,16 +15,40 @@ import { useSelectedMember } from './useSelectedMember'
  * commit later and every `waitFor` then agrees.
  */
 let painted: string[] = []
+/** Whether each attempted choice was taken. */
+let accepted: boolean[] = []
 
-function Probe({ identityKey }: { identityKey: string }) {
+/**
+ * Renders the control bound to `owner`, which is the key the control itself
+ * was rendered for -- not whatever key the hook is being given now. A bar
+ * animating away is exactly this: a control whose owner is no longer current.
+ */
+function Probe({
+  identityKey,
+  owner,
+}: {
+  identityKey: string
+  owner?: string
+}) {
   const selection = useSelectedMember(identityKey)
+  const boundOwner = owner ?? identityKey
   painted.push(`${identityKey}:${selection.filename ?? '-'}`)
   return (
     <>
-      <button type="button" onClick={() => selection.select('query-2.txt')}>
+      <button
+        type="button"
+        onClick={() => {
+          accepted.push(selection.select('query-2.txt', boundOwner))
+        }}
+      >
         Choose query-2
       </button>
-      <button type="button" onClick={() => selection.select('query-0.txt')}>
+      <button
+        type="button"
+        onClick={() => {
+          accepted.push(selection.select('query-0.txt', boundOwner))
+        }}
+      >
         Choose query-0
       </button>
       <span data-testid="selected">{selection.filename ?? '-'}</span>
@@ -32,7 +56,13 @@ function Probe({ identityKey }: { identityKey: string }) {
   )
 }
 
-function Host({ initialKey }: { initialKey: string }) {
+function Host({
+  initialKey,
+  ownerOverride,
+}: {
+  initialKey: string
+  ownerOverride?: string
+}) {
   const [identityKey, setIdentityKey] = useState(initialKey)
   return (
     <>
@@ -42,7 +72,7 @@ function Host({ initialKey }: { initialKey: string }) {
       <button type="button" onClick={() => setIdentityKey(initialKey)}>
         Restore identity
       </button>
-      <Probe identityKey={identityKey} />
+      <Probe identityKey={identityKey} owner={ownerOverride} />
     </>
   )
 }
@@ -51,6 +81,7 @@ const selected = () => screen.getByTestId('selected').textContent
 
 beforeEach(() => {
   painted = []
+  accepted = []
 })
 
 describe('useSelectedMember', () => {
@@ -82,6 +113,18 @@ describe('useSelectedMember', () => {
     expect(new Set(painted.filter((e) => e.startsWith('key-b:')))).toEqual(
       new Set(['key-b:-']),
     )
+  })
+
+  it('refuses a choice made against a group that is no longer current', async () => {
+    // The shape that made this necessary: a member strip still on screen for
+    // its exit animation, whose group has already been replaced by one that
+    // happens to contain a file of the same name.
+    render(<Host initialKey="key-a" ownerOverride="stale-key" />)
+    await userEvent.click(screen.getByText('Choose query-2'))
+
+    expect(accepted).toEqual([false])
+    expect(selected()).toBe('-')
+    expect(painted).not.toContain('key-a:query-2.txt')
   })
 
   it('does not restore a choice when an identity comes back', async () => {

@@ -328,7 +328,48 @@ export default function CenterArea() {
     return buildWordMatchMap(queryDetail.data.tokens, candidateTokens)
   }, [queryDetail.data?.tokens, candidateTokens])
 
-  const { selectedMethod, viewMode, setAvailableMethods, clearAllPins } = useTokens()
+  const {
+    selectedMethod,
+    viewMode,
+    setAvailableMethods,
+    announceDisplayedPair,
+    clearAllPins,
+  } = useTokens()
+
+  /**
+   * The pair on screen: the one identity every consumer of this evidence has
+   * to agree on (issue #163).
+   *
+   * A pin means "this query token matches that candidate token", and the
+   * candidate token is a different word as soon as another member is shown, so
+   * the witness -- not just the directory -- is part of it. The same identity
+   * owns the token elements each panel registers, the geometry drawn between
+   * them, and the applicability published to the sidebar, so none of the three
+   * can end up describing a manuscript another of them has left behind.
+   */
+  const presenceOwner = evidenceIdentity ?? presenceBoundary
+  const witnessScope = displayedWitnessKey(
+    presenceOwner,
+    memberEvidence?.selected?.key ?? candidateFile?.filename ?? null,
+  )
+
+  /**
+   * Take a witness choice from the control that made it, or refuse it.
+   *
+   * Rebuilt whenever the group or the boundary changes, so a bar still on
+   * screen for its exit animation holds the handler of the group it belongs
+   * to, and its events are refused instead of being applied to the group that
+   * replaced it. The announcement is the accepted choice's other half: it
+   * tells the sidebar which pair is on screen in the same update that changes
+   * the words, so no committed frame pairs new words with old method controls.
+   */
+  const handleSelectWitness = useCallback(
+    (filename: string) => {
+      if (!memberSelection.select(filename, memberIdentity)) return
+      announceDisplayedPair(displayedWitnessKey(presenceOwner, filename))
+    },
+    [memberSelection, memberIdentity, presenceOwner, announceDisplayedPair],
+  )
 
   // The highlights are computed from the same pipeline as the ranking, so the
   // evidence a reviewer reads always belongs to the ranking they are judging.
@@ -400,9 +441,16 @@ export default function CenterArea() {
   // comparison that is showing none. Also clear any leftover pins so each new
   // pair starts with hover-only behavior (no sticky lines from stale state).
   useEffect(() => {
-    setAvailableMethods(witnessArtifact?.available_methods ?? [])
+    setAvailableMethods(witnessArtifact?.available_methods ?? [], witnessScope)
+    announceDisplayedPair(witnessScope)
     clearAllPins()
-  }, [witnessArtifact, setAvailableMethods, clearAllPins])
+  }, [
+    witnessArtifact,
+    witnessScope,
+    setAvailableMethods,
+    announceDisplayedPair,
+    clearAllPins,
+  ])
 
   // When an attribution method is selected and a matching matrix is present
   // in the token-map payload, swap similarity_matrix and recompute top_matches
@@ -534,18 +582,6 @@ export default function CenterArea() {
     { lexicalHighlighting },
   )
 
-  /**
-   * The pair that pins, auto-highlights and hover currently describe.
-   *
-   * A pin means "this query token matches that candidate token", and the
-   * candidate token is a different word as soon as another member is shown, so
-   * the witness -- not just the directory -- is part of the identity.
-   */
-  const witnessScope = displayedWitnessKey(
-    evidenceIdentity ?? presenceBoundary,
-    memberEvidence?.selected?.key ?? candidateFile?.filename ?? null,
-  )
-
   // Note: we deliberately do NOT auto-pin top-attribution tokens on pair entry.
   // Connection lines are drawn purely on hover (see useConnectionState). Token
   // background shading already encodes the selected attribution matrix via
@@ -563,7 +599,7 @@ export default function CenterArea() {
     <>
       <MemberEvidenceBar
         evidence={memberEvidence}
-        onSelectWitness={memberSelection.select}
+        onSelectWitness={handleSelectWitness}
         attribution={shownAttributionScope}
         lexicalHighlighting={lexicalHighlighting}
       />
@@ -588,6 +624,7 @@ export default function CenterArea() {
         tokenMap={effectiveTokenMap}
         loading={candidateLoading}
         scrollRef={candidateScrollRef}
+        evidenceOwner={witnessScope}
       />
     </>
   )
@@ -635,6 +672,7 @@ export default function CenterArea() {
                 tokenMap={effectiveTokenMap}
                 loading={queryDetail.loading}
                 scrollRef={queryScrollRef}
+                evidenceOwner={witnessScope}
                 // The badge reports the fate of directories *this* document
                 // seeded, so it belongs on the query panel, not on a candidate.
                 badge={

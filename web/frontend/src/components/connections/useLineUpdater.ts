@@ -3,12 +3,22 @@ import type { Connection } from './useConnectionState'
 import type { TokenRefRegistryValue } from './TokenRefRegistry'
 import { computeBezierPath, viewportToSvg, isRectVisible } from './bezierUtils'
 
+/**
+ * @param owner  The pair these lines are about. Token geometry is only read
+ *   from elements registered by that same pair, so a line is never measured
+ *   against a panel that is merely still on screen.
+ * @param ownerVersion  Changes when a side's registered owner does, which is
+ *   the one event that invalidates every cached path without changing the
+ *   connections, the container size or the scroll position.
+ */
 export function useLineUpdater(
   connections: Connection[],
   containerRef: React.RefObject<HTMLDivElement>,
   leftPanelRef: React.RefObject<HTMLDivElement>,
   rightPanelRef: React.RefObject<HTMLDivElement>,
   tokenRefs: TokenRefRegistryValue,
+  owner: string,
+  ownerVersion: number,
 ): Map<string, { d: string; visible: boolean }> {
   const [paths, setPaths] = useState<Map<string, { d: string; visible: boolean }>>(
     () => new Map(),
@@ -27,8 +37,8 @@ export function useLineUpdater(
 
     const newPaths = new Map<string, { d: string; visible: boolean }>()
     for (const conn of connectionsRef.current) {
-      const srcRect = tokenRefs.getRect(conn.sourceId)
-      const tgtRect = tokenRefs.getRect(conn.targetId)
+      const srcRect = tokenRefs.getRect(conn.sourceId, owner)
+      const tgtRect = tokenRefs.getRect(conn.targetId, owner)
 
       if (!srcRect || !tgtRect) {
         newPaths.set(conn.id, { d: '', visible: false })
@@ -59,7 +69,7 @@ export function useLineUpdater(
     }
 
     setPaths(newPaths)
-  }, [containerRef, tokenRefs])
+  }, [containerRef, tokenRefs, owner])
 
   const scheduleUpdate = useCallback(() => {
     if (!scheduledRef.current) {
@@ -68,10 +78,12 @@ export function useLineUpdater(
     }
   }, [updatePaths])
 
-  // Update whenever connections change
+  // Update whenever the connections change, and whenever the words they are
+  // measured against are replaced -- a new panel's elements land with the same
+  // token ids and no other input to this hook moves.
   useEffect(() => {
     updatePaths()
-  }, [connections, updatePaths])
+  }, [connections, updatePaths, ownerVersion])
 
   // Attach scroll listeners and ResizeObserver
   useEffect(() => {
