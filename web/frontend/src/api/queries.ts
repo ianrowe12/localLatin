@@ -473,7 +473,11 @@ function validateCandidateFiles(value: unknown): CandidateFile[] | null | false 
  *
  * Where it fills in a default it says so (`defaulted_fields`, issue #161): the
  * durable saved-directory record cannot act on a value this function invented,
- * and once substituted there is no way to recognise one.
+ * and once substituted there is no way to recognise one. Every substitute for
+ * a field the durable guard reads is named, including the ones whose stand-in
+ * value is unremarkable -- an absent score becoming `null` and an absent flag
+ * becoming `false` read exactly like a server that scored nothing and found no
+ * lead, and were the two that slipped through the first pass.
  */
 function validateReviewerDir(value: unknown, index: number): ReviewerDir | string {
   const at = `seeded_dirs[${index}]`
@@ -526,11 +530,19 @@ function validateReviewerDir(value: unknown, index: number): ReviewerDir | strin
   // membership rows are the same value -- so the ones actually used are named
   // rather than left to be guessed at. Named ONLY when non-empty, so a
   // complete row stays exactly the object the response carried.
+  //
+  // One entry per substitute below, and the test file holds them side by side
+  // so the two cannot drift. Note what is being asked: not "is this value
+  // odd?" but "did the server say it?". An explicit `null` score and an
+  // explicit `false` flag are ordinary answers and stay unmarked; the same
+  // values arrived at because the field was absent are this function talking.
   const defaulted: ReviewerDirOptionalField[] = []
   if (members === undefined) defaulted.push('member_query_ids')
   if (typeof value.created_at !== 'string') defaulted.push('created_at')
   if (typeof value.created_by !== 'string') defaulted.push('created_by')
   if (typeof value.model_slug !== 'string') defaulted.push('model_slug')
+  if (score === undefined) defaulted.push('best_match_score')
+  if (potential === undefined) defaulted.push('has_potential_match')
   return {
     dir_id: value.dir_id,
     label: value.label,

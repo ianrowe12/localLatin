@@ -573,16 +573,49 @@ describe('observed evidence has to be readable as a directory', () => {
   // The rows here go through the REAL shared prediction validator, which is
   // where the danger is. Its contract for a directory inside a ranking is
   // deliberately laxer than the durable record's: it accepts a row with no
-  // `member_query_ids`, `created_at` or `created_by` and fills in `[]` and `''`
-  // so an older backend still renders a candidate. Those substitutes are
-  // type-valid, so nothing downstream can tell them from a server that really
-  // said "no members, no creator, no timestamp".
+  // `member_query_ids`, `created_at`, `created_by`, `model_slug`,
+  // `best_match_score` or `has_potential_match`, and fills in `[]`, `''`,
+  // `null` and `false` so an older backend still renders a candidate. Those
+  // substitutes are type-valid, so nothing downstream can tell them from a
+  // server that really said "no members, no creator, nothing scored".
   const incomplete = {
     dir_id: 'reviewer-dir-incomplete',
     label: 'Incomplete row',
     seed_query_id: QUERY_A,
     status: 'matched',
   }
+
+  // One omission at a time, from an OTHERWISE COMPLETE row. `incomplete` above
+  // is missing several fields at once, which is a weaker test: it would still
+  // be refused if only one of the guards worked. The score and the flag went
+  // unmarked through a whole review because dropping either of them alone
+  // leaves a row that looks entirely ordinary, so each gets its own case here.
+  const completeRow = {
+    dir_id: 'reviewer-dir-one-short',
+    label: 'One field short',
+    seed_query_id: QUERY_A,
+    status: 'awaiting_match',
+    member_query_ids: [QUERY_A],
+    created_at: '2026-09-02 09:00:00',
+    created_by: 'Abigail',
+    model_slug: MODEL_A,
+    variant: 'sif_abtt',
+    best_match_score: 0.82,
+    has_potential_match: true,
+  }
+  const missingOne = (field: keyof typeof completeRow) => {
+    const row: Record<string, unknown> = { ...completeRow }
+    delete row[field]
+    return row
+  }
+  const SUPPLIED_FIELDS = [
+    'member_query_ids',
+    'created_at',
+    'created_by',
+    'model_slug',
+    'best_match_score',
+    'has_potential_match',
+  ] as const
 
   it('does not turn a half-row into a saved identity', async () => {
     dirLookupStatus = 503
@@ -641,6 +674,89 @@ describe('observed evidence has to be readable as a directory', () => {
     expect(after.textContent).toContain('Older creator')
     expect(after.textContent).toContain('Unattested homily')
     expect(after.textContent).not.toContain('Created by .')
+  })
+
+  it.each(SUPPLIED_FIELDS.map((field) => [field]))(
+    'cannot confirm a saved identity from a row whose %s the client supplied',
+    async (field) => {
+      // Reload with the authoritative lookup down, so the ranking is the only
+      // thing talking. Every other field on this row is real.
+      dirLookupStatus = 503
+      predictionsFor[QUERY_A] = {
+        predictions: [modelCard(1, 0.72)],
+        seeded_dirs: [missingOne(field)],
+      }
+      render(<App />)
+      await screen.findByTestId('match-pill-1')
+
+      expect(screen.queryByTestId('new-directory-saved')).toBeNull()
+      // And not rounded down to "no directory here" either: absence is the one
+      // answer that unlocks a permanent write.
+      expect(screen.getByTestId('new-directory-unresolved')).toBeTruthy()
+      expect(screen.getByTestId('new-directory-recheck')).toBeTruthy()
+      expect(screen.queryByTestId('new-directory-cta')).toBeNull()
+    },
+  )
+
+  it.each(SUPPLIED_FIELDS.map((field) => [field]))(
+    'cannot settle or announce an unknown write from a supplied %s',
+    async (field) => {
+      // The damaging version, per field. A write is outstanding with no
+      // outcome. Settling it here would retire Check again and spend the one
+      // notification the recovery still owes, on evidence this client wrote.
+      const user = userEvent.setup()
+      postBehaviour = 'lost'
+      predictionsFor[QUERY_A] = { predictions: [modelCard(1, 0.72)] }
+      const view = render(<Review model={MODEL_A} />)
+      await screen.findByTestId('new-directory-cta')
+      dirLookupStatus = 503
+      await createDirectory(user)
+      await screen.findByTestId('new-directory-check-again')
+      const eventsBefore = refreshEvents
+
+      predictionsFor[QUERY_A] = {
+        predictions: [modelCard(1, 0.72)],
+        seeded_dirs: [missingOne(field)],
+      }
+      const seen = predictionGets
+      view.rerender(<Review model={MODEL_B} />)
+      await waitFor(() => expect(predictionGets).toBeGreaterThan(seen))
+
+      expect(screen.getByTestId('new-directory-check-again')).toBeTruthy()
+      expect(screen.queryByTestId('new-directory-saved')).toBeNull()
+      expect(screen.queryByTestId('new-directory-created')).toBeNull()
+      expect(refreshEvents).toBe(eventsBefore)
+      expect(posts).toHaveLength(1)
+    },
+  )
+
+  it('still accepts the same row once the server states all of it', async () => {
+    // The other half. Every value the cases above refuse is here as an
+    // explicit server answer, including the ones whose substitute is the same
+    // value -- no members, nothing scored, no lead. This is a real preserved
+    // pre-#160 row, and it must confirm.
+    dirLookupStatus = 503
+    predictionsFor[QUERY_A] = {
+      predictions: [modelCard(1, 0.72)],
+      seeded_dirs: [
+        {
+          ...completeRow,
+          member_query_ids: [],
+          best_match_score: null,
+          has_potential_match: false,
+        },
+      ],
+    }
+    render(<App />)
+    await screen.findByTestId('match-pill-1')
+
+    const saved = await screen.findByTestId('new-directory-saved')
+    expect(saved.textContent).toContain('One field short')
+    expect(saved.textContent).toContain('Abigail')
+    // Stored with no members, so the acknowledgement says so rather than
+    // implying this document is filed there.
+    expect(screen.getByTestId('new-directory-membership-gap')).toBeTruthy()
+    expect(screen.queryByTestId('new-directory-unresolved')).toBeNull()
   })
 
   it('does not let a half-row settle a write whose outcome is unknown', async () => {

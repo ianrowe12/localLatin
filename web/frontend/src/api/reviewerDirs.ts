@@ -48,10 +48,12 @@ export interface ReviewerDir {
    * from raw JSON here, so every value in it is something the server said. A
    * directory inside a ranking is parsed by the shared prediction validator
    * (issue #156), which tolerates an older backend omitting
-   * `member_query_ids`, `created_at`, `created_by` or `model_slug` and fills in
-   * `[]` and `''` on its behalf. Those substitutes are type-valid and therefore
-   * invisible: `[]` from a server that said "no members" and `[]` from a field
-   * that was never on the wire are the same value.
+   * `member_query_ids`, `created_at`, `created_by`, `model_slug`,
+   * `best_match_score` or `has_potential_match`, and fills in `[]`, `''`,
+   * `null` and `false` on its behalf. Those substitutes are type-valid and
+   * therefore invisible: `[]` from a server that said "no members" and `[]`
+   * from a field that was never on the wire are the same value, and so are a
+   * scored-nothing `null` and a score that never arrived.
    *
    * That distinction matters exactly once, at the durable boundary, where the
    * difference is between a stored fact and a guess. So the normalizer names
@@ -67,12 +69,33 @@ export interface ReviewerDir {
  * The fields `web/models.py` gives defaults, and which an older backend may
  * therefore omit. Named here because both the normalizer that substitutes them
  * and the boundary that refuses the substitutes need the same list.
+ *
+ * The rule for what belongs here: EVERY field `isCompleteReviewerDir` below
+ * inspects, for which the shared prediction validator has a substitute to
+ * offer. A substitute for a field that guard reads is a value this client
+ * invented being put where a stored fact is required, and the marker is the
+ * only thing that can tell the two apart afterwards. Two of these -- the score
+ * and the match flag -- were missed on the first pass precisely because their
+ * substitutes (`null`, `false`) look like ordinary server answers; `[]` and
+ * `''` are no different, which is the whole reason this type exists.
+ *
+ * `model_slug` is marked although the guard does not read it. That is
+ * deliberate and conservative: a row missing it simply fails to confirm a
+ * write, which leaves recovery reachable rather than closing it wrongly.
+ *
+ * `variant` is deliberately NOT here. The guard does not inspect it, no
+ * durable consumer reads it, and marking it would make the observation path
+ * reject rows the directory endpoint itself accepts. `reviewerDirs.test.ts`
+ * holds this whole table field by field, so a substitute added later without
+ * a marker fails a test rather than reopening this.
  */
 export type ReviewerDirOptionalField =
   | 'member_query_ids'
   | 'created_at'
   | 'created_by'
   | 'model_slug'
+  | 'best_match_score'
+  | 'has_potential_match'
 
 export interface CreateReviewerDirPayload {
   query_file_id: number

@@ -641,18 +641,43 @@ describe('a stored empty member list is not a missing field', () => {
     expect(identity.primary.created_by).toBe('Abigail')
   })
 
-  it.each([
-    ['member_query_ids' as const],
-    ['created_at' as const],
-    ['created_by' as const],
-    ['model_slug' as const],
-  ])('refuses one whose %s the validator supplied', (field) => {
-    const store = new SavedDirectoryStore()
-    store.observeSeededDirs(QUERY_A, [stored({ defaulted_fields: [field] })])
+  // Every field the validator can supply, not just the ones whose substitute
+  // looks odd. `best_match_score` and `has_potential_match` were the two that
+  // got through review, because `null` and `false` are also what an ordinary
+  // unmatched directory carries.
+  const SUPPLIABLE = [
+    'member_query_ids',
+    'created_at',
+    'created_by',
+    'model_slug',
+    'best_match_score',
+    'has_potential_match',
+  ] as const
 
-    // Not evidence in either direction: no identity, and the question is still
-    // open for the lookup to answer.
-    expect(store.getRecord(QUERY_A).identity.status).toBe('unknown')
+  it.each(SUPPLIABLE.map((field) => [field]))(
+    'refuses one whose %s the validator supplied',
+    (field) => {
+      const store = new SavedDirectoryStore()
+      store.observeSeededDirs(QUERY_A, [stored({ defaulted_fields: [field] })])
+
+      // Not evidence in either direction: no identity, and the question is
+      // still open for the lookup to answer.
+      expect(store.getRecord(QUERY_A).identity.status).toBe('unknown')
+    },
+  )
+
+  // Each of these is the substitute's value, stated by the server. The point of
+  // the marker is that the store can tell them apart; this is the half that
+  // proves the refusal above is about provenance and not about the value.
+  it.each([
+    ['no members', { member_query_ids: [] }],
+    ['nothing scored', { best_match_score: null }],
+    ['no lead', { has_potential_match: false }],
+  ])('records one the server really reports with %s', (_name, over) => {
+    const store = new SavedDirectoryStore()
+    store.observeSeededDirs(QUERY_A, [stored(over as Partial<ReviewerDir>)])
+
+    expect(store.getRecord(QUERY_A).identity.status).toBe('saved')
   })
 
   it('refuses the whole list when one row was filled in for the server', () => {
@@ -665,27 +690,34 @@ describe('a stored empty member list is not a missing field', () => {
     expect(store.getRecord(QUERY_A).identity.status).toBe('unknown')
   })
 
-  it('does not let a supplied default settle or announce an unknown write', async () => {
-    const events = vi.fn()
-    window.addEventListener(REVIEWER_DIRS_UPDATED_EVENT, events)
-    installFetch({
-      post: () => jsonResponse({ detail: 'gateway' }, 502),
-      get: () => jsonResponse({ detail: 'gateway' }, 502),
-    })
-    const store = new SavedDirectoryStore()
-    const result = await store.createDirectory(QUERY_A, { label: 'My wording' })
-    expect(result.outcome).toBe('unresolved')
+  it.each(SUPPLIABLE.map((field) => [field]))(
+    'does not let a supplied %s settle or announce an unknown write',
+    async (field) => {
+      const events = vi.fn()
+      window.addEventListener(REVIEWER_DIRS_UPDATED_EVENT, events)
+      installFetch({
+        post: () => jsonResponse({ detail: 'gateway' }, 502),
+        get: () => jsonResponse({ detail: 'gateway' }, 502),
+      })
+      const store = new SavedDirectoryStore()
+      const result = await store.createDirectory(QUERY_A, { label: 'My wording' })
+      expect(result.outcome).toBe('unresolved')
 
-    store.observeSeededDirs(QUERY_A, [stored({ defaulted_fields: ['member_query_ids'] })])
-    window.removeEventListener(REVIEWER_DIRS_UPDATED_EVENT, events)
+      store.observeSeededDirs(QUERY_A, [stored({ defaulted_fields: [field] })])
+      window.removeEventListener(REVIEWER_DIRS_UPDATED_EVENT, events)
 
-    const record = store.getRecord(QUERY_A)
-    expect(record.creation.status).toBe('failed')
-    if (record.creation.status !== 'failed') throw new Error('expected failed')
-    expect(record.creation.outcome).toBe('unknown')
-    expect(record.creation.proposedLabel).toBe('My wording')
-    expect(events).not.toHaveBeenCalled()
-  })
+      // The write stays exactly as unresolved as it was. Settling it here would
+      // take the one notification the recovery still owes and hide Check again
+      // behind a saved identity nothing established.
+      const record = store.getRecord(QUERY_A)
+      expect(record.creation.status).toBe('failed')
+      if (record.creation.status !== 'failed') throw new Error('expected failed')
+      expect(record.creation.outcome).toBe('unknown')
+      expect(record.creation.proposedLabel).toBe('My wording')
+      expect(store.getRecord(QUERY_A).identity.status).not.toBe('saved')
+      expect(events).not.toHaveBeenCalled()
+    },
+  )
 
   it('lets the real stored row settle and announce that same write', async () => {
     const events = vi.fn()
