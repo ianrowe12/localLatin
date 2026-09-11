@@ -22,13 +22,21 @@ import {
 import { useSelectedMember } from '../evidence/useSelectedMember'
 import { provenanceOf } from '../../utils/documentProvenance'
 import AwaitingMatchBadge from '../predictions/AwaitingMatchBadge'
+import type { ReviewerDir } from '../../api/reviewerDirs'
 import DraggableDivider from './DraggableDivider'
 import { buildWordMatchMap } from '../../utils/wordSimilarity'
 import { useTokenMap, type TokenMapResponse, type TopMatch } from '../../api/tokenMap'
 import { toAttributionVariant } from '../../api/variants'
 import { useTokens, WitnessTokenScope } from '../../contexts/TokenContext'
+import { useSavedDirectory } from '../../contexts/SavedDirectoryContext'
 import { useLiveEvidenceStamp } from '../../contexts/evidenceStamp'
 import { METHODS } from '../common/AttributionMethodSelector'
+
+/**
+ * Stable empty list for the header badge, so a document with no established
+ * directories does not hand the badge a new array on every render.
+ */
+const NO_SEEDED_DIRS: readonly ReviewerDir[] = []
 
 export default function CenterArea() {
   const [splitPercent, setSplitPercent] = useState(50)
@@ -54,6 +62,39 @@ export default function CenterArea() {
   // owns the request; this view, the prediction list and the assessment panel
   // read the same result, so they cannot disagree about what is on screen.
   const predictions = usePredictionState()
+
+  /**
+   * The durable record of the directories THIS document seeds (issue #161).
+   *
+   * READ ONLY, and deliberately not a second source. The badge used to read
+   * `predictions.seededDirs`, which is a field of a request rather than a fact
+   * about the document: it is absent while the ranking loads, absent when the
+   * ranking fails, re-fetched per model, and served from a cache that can
+   * predate the write. So a permanent grouping vanished from the header the
+   * moment a refresh failed and came back when some model's ranking recovered,
+   * and what it showed in between had never been admitted for this account.
+   *
+   * Keyed on `activeQueryId`, the document the panel beside the badge is
+   * actually rendering -- not on the prediction key's query id, which lags a
+   * selection and would caption the new document with the previous one's
+   * groupings.
+   *
+   * `useSavedDirectory` subscribes and nothing more: no fetch, no cache, no
+   * second bridge. `SavedDirectoryObservations` remains the single admission
+   * point, and it is the one that decides which responses count for this
+   * account and refuses rows whose fields this client filled in on the
+   * server's behalf. This view consumes that decision rather than repeating it.
+   */
+  const savedDirectory = useSavedDirectory(activeQueryId)
+  const seededDirs =
+    savedDirectory.identity.status === 'saved'
+      ? savedDirectory.identity.dirs
+      : // `checking`, `unresolved`, `absent` and `unknown` are all "this app has
+        // not established a grouping here", which is not the same claim as
+        // "there is none" -- and the badge makes no claim at all for it. A
+        // refresh in flight or a failed one keeps `saved`, dirs included, so
+        // neither takes the badge off screen.
+        NO_SEEDED_DIRS
 
   // Derive current prediction.
   //
@@ -704,9 +745,11 @@ export default function CenterArea() {
                 evidenceOwner={witnessScope}
                 // The badge reports the fate of directories *this* document
                 // seeded, so it belongs on the query panel, not on a candidate.
+                // Sourced from the durable record, so it survives a failed
+                // refresh and a model switch (issue #161).
                 badge={
                   <AwaitingMatchBadge
-                    seededDirs={predictions.seededDirs}
+                    seededDirs={seededDirs}
                   />
                 }
               />

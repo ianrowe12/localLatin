@@ -188,4 +188,17 @@ export const DIRECTORY_STATUS_COPY = {
     `${label} — a related document scores ${score}, unconfirmed by any reviewer`,
   matchedTitle: (label: string) =>
     `${label} — a reviewer filed a second document into it`,
+  /**
+   * Marker for a grouping this document seeds but is NOT listed in, shown in
+   * the same short `· clause` form as `· lead` with the full sentence in the
+   * title (issue #161's `SEED_NOT_FILED_SHORT`).
+   *
+   * It exists because the badge sits on the document's own header, where both
+   * statuses are read as being about this document: `matched` in particular
+   * would otherwise say a second witness joined the group this document is
+   * filed in, when the stored record does not list this document at all. The
+   * app cannot add the missing membership row and will not imply one, so it
+   * marks the claim instead of making it.
+   */
+  notFiled: ' · not filed',
 } as const

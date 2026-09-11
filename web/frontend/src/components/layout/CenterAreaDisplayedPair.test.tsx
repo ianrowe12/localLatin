@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppProvider, useApp } from '../../contexts/AppContext'
 import { PredictionProvider } from '../../contexts/PredictionContext'
+import { SavedDirectoryProvider } from '../../contexts/SavedDirectoryContext'
 import { TokenProvider, useTokens } from '../../contexts/TokenContext'
 import AttributionMethodSelector from '../common/AttributionMethodSelector'
 import CenterArea from './CenterArea'
@@ -134,14 +135,19 @@ function renderApp() {
   return render(
     <AppProvider>
       <TokenProvider>
-        <PredictionProvider>
-          <Profiler id="center" onRender={observe}>
-            <Harness />
-            {/* A sidebar sibling, outside every scope the panel can apply. */}
-            <AttributionMethodSelector />
-            <CenterArea />
-          </Profiler>
-        </PredictionProvider>
+        {/* The query header's directory badge reads the durable
+            saved-directory record (issue #161), which has no fallback
+            store: mounting the provider is how App composes them. */}
+        <SavedDirectoryProvider accountKey="displayed-pair">
+          <PredictionProvider>
+            <Profiler id="center" onRender={observe}>
+              <Harness />
+              {/* A sidebar sibling, outside every scope the panel can apply. */}
+              <AttributionMethodSelector />
+              <CenterArea />
+            </Profiler>
+          </PredictionProvider>
+        </SavedDirectoryProvider>
       </TokenProvider>
     </AppProvider>,
   )

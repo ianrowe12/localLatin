@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppProvider, useApp } from '../../contexts/AppContext'
 import { PredictionProvider } from '../../contexts/PredictionContext'
+import { SavedDirectoryProvider } from '../../contexts/SavedDirectoryContext'
 import { TokenProvider } from '../../contexts/TokenContext'
 import { REVIEWER_DIRS_UPDATED_EVENT } from '../../api/reviewerDirs'
 import ModelSelector from '../predictions/ModelSelector'
@@ -263,9 +264,14 @@ function renderCenter() {
   return render(
     <AppProvider>
       <TokenProvider>
-        <PredictionProvider>
-          <Harness />
-        </PredictionProvider>
+        {/* The query header's directory badge reads the durable
+            saved-directory record (issue #161), which has no fallback
+            store: mounting the provider is how App composes them. */}
+        <SavedDirectoryProvider accountKey="center-identity">
+          <PredictionProvider>
+            <Harness />
+          </PredictionProvider>
+        </SavedDirectoryProvider>
       </TokenProvider>
     </AppProvider>,
   )

@@ -7,6 +7,7 @@ import {
   PredictionProvider,
   usePredictionState,
 } from '../../contexts/PredictionContext'
+import { SavedDirectoryProvider } from '../../contexts/SavedDirectoryContext'
 import { TokenProvider } from '../../contexts/TokenContext'
 import ModelSelector from '../predictions/ModelSelector'
 import CenterArea from './CenterArea'
@@ -266,9 +267,14 @@ function renderApp() {
   return render(
     <AppProvider>
       <TokenProvider>
-        <PredictionProvider>
-          <Harness />
-        </PredictionProvider>
+        {/* The query header's directory badge reads the durable
+            saved-directory record (issue #161), which has no fallback
+            store: mounting the provider is how App composes them. */}
+        <SavedDirectoryProvider accountKey="member-evidence">
+          <PredictionProvider>
+            <Harness />
+          </PredictionProvider>
+        </SavedDirectoryProvider>
       </TokenProvider>
     </AppProvider>,
   )
