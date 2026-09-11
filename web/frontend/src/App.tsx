@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { AppProvider, useApp } from './contexts/AppContext'
 import { TokenProvider } from './contexts/TokenContext'
 import { FeedbackProvider } from './contexts/FeedbackContext'
+import { PredictionProvider } from './contexts/PredictionContext'
 import { TourProvider } from './components/onboarding/TourProvider'
 import { ReviewerProvider, useReviewer } from './contexts/ReviewerContext'
 import { fetchNextQuery } from './api/queries'
@@ -78,11 +79,17 @@ export default function App() {
     <AppProvider>
       <ReviewerProvider>
         <TokenProvider>
-          <FeedbackProvider>
-            <TourProvider>
-              <AppContent />
-            </TourProvider>
-          </FeedbackProvider>
+          {/* Above FeedbackProvider and the review views, so the list, the
+              candidate panel and the assessment panel all read one ranking for
+              the current query/model/variant (issue #156). It issues no request
+              until a query and a model are chosen. */}
+          <PredictionProvider>
+            <FeedbackProvider>
+              <TourProvider>
+                <AppContent />
+              </TourProvider>
+            </FeedbackProvider>
+          </PredictionProvider>
         </TokenProvider>
       </ReviewerProvider>
     </AppProvider>

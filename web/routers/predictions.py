@@ -126,6 +126,11 @@ async def get_predictions(
         model=slug,
         variant=resolved,
         predictions=predictions,
+        # Straight from the CSV row, never derived from how many candidates came
+        # back: an excluded query and a query whose ranking is missing for an
+        # unknown reason both serialise `predictions: []`, and only this tells
+        # the reviewer which one they are looking at.
+        status=row.get("status"),
         seeded_dirs=seeded_dirs,
     )
 

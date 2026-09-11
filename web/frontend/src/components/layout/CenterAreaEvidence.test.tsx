@@ -3,6 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppProvider, useApp } from '../../contexts/AppContext'
+import { PredictionProvider } from '../../contexts/PredictionContext'
 import { TokenProvider } from '../../contexts/TokenContext'
 import AttributionMethodSelector from '../common/AttributionMethodSelector'
 import ModelSelector from '../predictions/ModelSelector'
@@ -234,7 +235,9 @@ function renderApp() {
   return render(
     <AppProvider>
       <TokenProvider>
-        <Harness />
+        <PredictionProvider>
+          <Harness />
+        </PredictionProvider>
       </TokenProvider>
     </AppProvider>,
   )

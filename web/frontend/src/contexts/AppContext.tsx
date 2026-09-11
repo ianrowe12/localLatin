@@ -69,40 +69,57 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [activePredictionRank, setActivePredictionRank] = useState<number>(1)
   // One pipeline, no choice to make and nothing to persist (issue #94).
   const activeVariant: PredictionVariant = DEFAULT_VARIANT
-  const [overrideCandidateDir, setOverrideCandidateDirState] = useState<
-    string | null
-  >(null)
-  // Tracks the queryId that the current override was set for. When
-  // activeQueryId diverges from this (e.g. user picks a different query),
-  // the override is auto-cleared.
-  const overrideQueryIdRef = useRef<number | null>(null)
+  /**
+   * The gallery override, bound to the query it was chosen for (issue #156).
+   *
+   * A gallery example is a pair: "this candidate directory, for THIS query".
+   * Storing only the directory made the two halves separable, and the query
+   * half was the one that moved -- navigating to another document left the old
+   * example's directory in place, and the passive effect below only cleared it
+   * a commit later. The first render for the new query therefore inspected the
+   * previous example's candidate and asked the token-map endpoint for evidence
+   * about a pair no reviewer had selected.
+   *
+   * `queryId` is captured when the override is set, never inferred afterwards.
+   */
+  const [override, setOverrideState] = useState<{
+    dir: string
+    queryId: number | null
+  } | null>(null)
+
+  // Mirror of the rendered query id, so a caller that sets an override without
+  // naming a query (the picker, as opposed to the gallery) binds it to the
+  // document actually on screen. A plain mirror, never derived state.
+  const activeQueryIdRef = useRef(activeQueryId)
+  activeQueryIdRef.current = activeQueryId
 
   const setOverrideCandidateDir = useCallback((dir: string | null) => {
-    if (dir === null) {
-      overrideQueryIdRef.current = null
-    }
-    setOverrideCandidateDirState(dir)
+    setOverrideState(
+      dir === null ? null : { dir, queryId: activeQueryIdRef.current },
+    )
   }, [])
+
+  // Render-time identity check, deliberately not an effect. Consumers derive
+  // the candidate directory, its file request and its token evidence straight
+  // from this value, so it has to be right on the FIRST render after the query
+  // changes -- one commit late is one painted screen of another document's
+  // evidence.
+  const overrideCandidateDir =
+    override !== null && override.queryId === activeQueryId ? override.dir : null
 
   useEffect(() => {
     applyThemeClass(theme)
     localStorage.setItem(THEME_KEY, theme)
   }, [theme])
 
-  // If the override belongs to a different query than the currently active
-  // one, clear it. This guarantees the override never leaks across unrelated
-  // query navigations, while still allowing navigateToExample to set it for
-  // the query it is navigating to.
+  // Housekeeping only: the guard above has already made a stale override
+  // invisible, and this drops the dead state so nothing can resurrect it by
+  // navigating back to the original query.
   useEffect(() => {
-    if (
-      overrideCandidateDir !== null &&
-      overrideQueryIdRef.current !== null &&
-      overrideQueryIdRef.current !== activeQueryId
-    ) {
-      overrideQueryIdRef.current = null
-      setOverrideCandidateDirState(null)
+    if (override !== null && override.queryId !== activeQueryId) {
+      setOverrideState(null)
     }
-  }, [activeQueryId, overrideCandidateDir])
+  }, [activeQueryId, override])
 
   const toggleTheme = useCallback(() => {
     setTheme((prev) => (prev === 'light' ? 'dark' : 'light'))
@@ -116,11 +133,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const navigateToExample = useCallback(
     (model: string, queryFileId: number, candidateDir: string) => {
-      overrideQueryIdRef.current = queryFileId
       setActiveModel(model)
       setActiveQueryId(queryFileId)
       setActivePredictionRank(1)
-      setOverrideCandidateDir(candidateDir)
+      // Bound to the query being navigated to, not to the one still on screen:
+      // this is the one call that legitimately sets an override for a document
+      // other than the current one.
+      setOverrideState({ dir: candidateDir, queryId: queryFileId })
       setCurrentView('review')
     },
     [],

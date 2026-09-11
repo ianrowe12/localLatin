@@ -3,6 +3,7 @@ import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppProvider, useApp } from '../../contexts/AppContext'
+import { PredictionProvider } from '../../contexts/PredictionContext'
 import NoMatchCallout from './NoMatchCallout'
 import PredictionList from './PredictionList'
 
@@ -128,7 +129,9 @@ function renderList(topScores: number[]) {
   scores = topScores
   return render(
     <AppProvider>
-      <Harness />
+      <PredictionProvider>
+        <Harness />
+      </PredictionProvider>
     </AppProvider>,
   )
 }
@@ -281,7 +284,9 @@ describe('CTA staleness (reviewer navigates mid-request)', () => {
     scores = [0.2]
     render(
       <AppProvider>
-        <NavigableHarness />
+        <PredictionProvider>
+          <NavigableHarness />
+        </PredictionProvider>
       </AppProvider>,
     )
 

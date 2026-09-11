@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useApp } from '../../contexts/AppContext'
+import { usePredictionState } from '../../contexts/PredictionContext'
 import {
   useQueryDetail,
-  usePredictions,
   useCandidateDirFiles,
+  fileHasText,
+  type CandidateFile,
 } from '../../api/queries'
 import { TokenRefProvider } from '../connections/TokenRefRegistry'
 import ConnectionOverlay from '../connections/ConnectionOverlay'
@@ -32,54 +34,54 @@ export default function CenterArea() {
     setOverrideCandidateDir,
   } = useApp()
 
-  // Fetch query detail
+  // Fetch query detail. Its own render-time key guard means the text on screen
+  // is this query's text or nothing -- never the previous document's words
+  // beside the new document's ranking (issue #156).
   const queryDetail = useQueryDetail(activeQueryId)
 
-  // Fetch predictions
-  const predictions = usePredictions(activeQueryId, activeModel, activeVariant)
+  // The one shared ranking for the current query/model/variant. The provider
+  // owns the request; this view, the prediction list and the assessment panel
+  // read the same result, so they cannot disagree about what is on screen.
+  const predictions = usePredictionState()
 
   // Derive current prediction.
   //
-  // The key check is load-bearing, not defensive. Selecting a model updates
-  // activeModel during render; usePredictions only clears its data from an
-  // effect, one commit later. Without the guard, that in-between render pairs
-  // the OLD selection's rank-1 candidate with the NEW one and fires a
-  // multi-MB token-map fetch for a (candidate, model) combination the
-  // reviewer never selected -- which then paints as the "current" evidence
-  // (issue #73). PredictionResponse echoes both `model` and `variant` from
-  // the request exactly (web/routers/predictions.py resolves them or raises),
-  // so comparing them is an exact key check.
+  // The identity check that used to live here -- comparing the response's
+  // `model` and `variant` against the selection, because `usePredictions`
+  // cleared its data an effect too late -- now lives in the shared state, which
+  // refuses to expose old-key data from the first render after a change and
+  // validates the response's identity before exposing it at all. What remains
+  // here is the rank lookup.
   //
-  // Since issue #94 the model is the half a reviewer can actually move: there
-  // is one pipeline, so `variant` can no longer diverge. It is still compared
-  // because the field is still on the wire and the day a second pipeline is
-  // served again, this guard should already be right.
-  const currentPrediction = useMemo(() => {
-    if (!predictions.data?.predictions) return null
-    if (predictions.data.variant !== activeVariant) return null
-    if (predictions.data.model !== activeModel) return null
-    // Looked up BY RANK, not by array index. Reviewer directories are
-    // anchored at rank 11 regardless of how many model candidates came back,
-    // so the list can have a gap in it and index arithmetic would pair a rank
-    // with the wrong card.
-    return (
-      predictions.data.predictions.find((p) => p.rank === activePredictionRank) ??
-      null
-    )
-  }, [predictions.data, activePredictionRank, activeVariant, activeModel])
+  // Looked up BY RANK, not by array index. Reviewer directories are anchored at
+  // rank 11 regardless of how many model candidates came back, so the list can
+  // have a gap in it and index arithmetic would pair a rank with the wrong card.
+  const currentPrediction = predictions.getByRank(activePredictionRank)
 
-  // Derive candidate info — override wins over the normal prediction path
+  // Derive candidate info — override wins over the normal prediction path.
+  //
+  // `overrideCandidateDir` is already bound to the query it was chosen for
+  // (AppContext, issue #156): it reads null from the first render for any other
+  // document, so a gallery example cannot survive a navigation into the next
+  // document's evidence, its file request or its token map.
   const candidateDir = overrideCandidateDir ?? currentPrediction?.dir_name ?? null
 
   // For override-mode candidates, fetch the directory's files on demand.
   // (Regular predictions already carry candidate_files in their payload.)
   const overrideCandidateFiles = useCandidateDirFiles(overrideCandidateDir)
-  const candidateFile = useMemo(() => {
-    if (overrideCandidateDir) {
-      return overrideCandidateFiles.data?.[0] ?? null
-    }
-    return currentPrediction?.candidate_files?.[0] ?? null
+
+  // Every witness behind the panel, by whichever route it arrived.
+  const candidateWitnesses = useMemo<CandidateFile[]>(() => {
+    if (overrideCandidateDir) return overrideCandidateFiles.data ?? []
+    return currentPrediction?.candidate_files ?? []
   }, [overrideCandidateDir, overrideCandidateFiles.data, currentPrediction])
+
+  // The one witness DocumentPanel puts on screen.
+  const candidateFile = candidateWitnesses[0] ?? null
+
+  const candidateLoading = overrideCandidateDir
+    ? overrideCandidateFiles.loading
+    : predictions.isLoading
 
   // Candidate tokens: simple tokenization from candidate file text
   const candidateTokens = useMemo(() => {
@@ -95,6 +97,130 @@ export default function CenterArea() {
     }
     return undefined
   }, [candidateFile])
+
+  /**
+   * The boundary the candidate panel's animation is allowed to live inside.
+   *
+   * Everything that changes WHICH PAIR is under review: the document, the
+   * model, the pipeline, the request generation, and whether a gallery example
+   * is open. Not the rank, because moving between candidates of one settled
+   * ranking is the transition the crossfade exists for.
+   *
+   * This keys the `AnimatePresence` element itself, so a change here unmounts
+   * the presence owner and every panel it was holding, in the same commit and
+   * with no exit animation to sit through. Keying only the inner child cannot
+   * do that: a key change is what STARTS an exit, and the outgoing panel --
+   * with its old token map and its old highlights -- stays mounted for the
+   * length of it. Two gallery examples that share a directory are the case
+   * that proves the difference: their evidence identities differ only by
+   * query, both are non-null, and nothing in between is ever null, so there is
+   * no loading render to rescue the boundary.
+   */
+  const presenceBoundary = [
+    activeQueryId ?? 'no-query',
+    activeModel,
+    activeVariant,
+    `g${predictions.generation}`,
+    overrideCandidateDir ?? 'ranked',
+  ].join('|')
+
+  /**
+   * Identity of the evidence actually on screen, or null when there is none.
+   *
+   * Within one boundary this distinguishes one candidate from the next, and
+   * null means there is nothing to animate at all -- so the panel renders
+   * outside `AnimatePresence` entirely and cannot be retained by an exit.
+   *
+   * For a ranked candidate the identity comes from the provider and therefore
+   * carries the request generation. For a gallery inspection it carries the
+   * query, and it stays null until the directory's files have actually
+   * arrived, so a failed fetch animates nothing.
+   */
+  const evidenceIdentity = useMemo(() => {
+    if (activeQueryId === null) return null
+    if (overrideCandidateDir !== null) {
+      return overrideCandidateFiles.data === null
+        ? null
+        : `override|${activeQueryId}|${overrideCandidateDir}`
+    }
+    if (currentPrediction === null) return null
+    return predictions.identityOf(currentPrediction)
+  }, [
+    activeQueryId,
+    overrideCandidateDir,
+    overrideCandidateFiles.data,
+    currentPrediction,
+    predictions,
+  ])
+
+  // Whether the app has actually SEEN this candidate's files. A ranking carries
+  // them inline, so a prediction is proof; a gallery inspection has to fetch
+  // them, and a fetch can fail.
+  const candidateEvidenceLoaded = overrideCandidateDir
+    ? overrideCandidateFiles.data !== null
+    : currentPrediction !== null
+
+  /**
+   * Why the candidate pane has nothing in it, when there is a knowable reason.
+   *
+   * A ranking that failed, was excluded or came back empty leaves this panel
+   * blank, and a blank panel reads as a verdict on the document. It is not one.
+   *
+   * The blank-text branch asks about THE WITNESS ON SCREEN, not about the
+   * directory. `web/routers/predictions.py` fills `candidate_files` with
+   * `texts.get(fname, "")`, and the panel always shows the first entry, so a
+   * directory whose first witness is empty and whose second is readable used to
+   * render an unexplained blank pane while a whole-directory check said there
+   * was text. The two cases now get two different sentences, because they are
+   * two different facts.
+   *
+   * And a request that never arrived is a third fact again. Only files this app
+   * has actually read can support a claim about what a manuscript contains.
+   */
+  const candidateEvidenceNote = useMemo(() => {
+    if (overrideCandidateDir) {
+      // A failed fetch is not a blank manuscript. Saying "no readable text"
+      // here would report a transport failure as a fact about the source.
+      if (overrideCandidateFiles.error !== null) {
+        return `The files for this example candidate did not load (${overrideCandidateFiles.error}), so there is nothing to compare yet. That is a failed request, not an empty directory: leave the example and open it again to retry.`
+      }
+    } else {
+      // The phase notes are about the ranking, so a gallery inspection -- which
+      // carries its own candidate regardless of the ranking -- is exempt.
+      if (predictions.phase === 'error') {
+        return 'The ranking for this document did not load, so there is no candidate to compare against. See the prediction list for details.'
+      }
+      if (predictions.phase === 'excluded') {
+        return 'The retrieval run excluded this document for this model, so it has no candidates to compare against.'
+      }
+      if (predictions.phase === 'empty') {
+        return 'No candidates came back for this document, and no reason was recorded.'
+      }
+    }
+    // A gallery inspection can be just as blank, so this half is not exempt --
+    // but only once its files are in hand.
+    if (
+      candidateDir !== null &&
+      !candidateLoading &&
+      candidateEvidenceLoaded &&
+      !fileHasText(candidateFile)
+    ) {
+      if (candidateWitnesses.slice(1).some(fileHasText)) {
+        return `The file shown here (${candidateFile?.filename ?? 'the first in the directory'}) has no readable text in this deployment, so there is nothing to compare word by word. Other files in this directory do carry text.`
+      }
+      return 'This candidate directory has no readable text in this deployment, so there is nothing to compare word by word.'
+    }
+    return null
+  }, [
+    predictions.phase,
+    overrideCandidateDir,
+    overrideCandidateFiles.error,
+    candidateDir,
+    candidateLoading,
+    candidateEvidenceLoaded,
+    candidateFile,
+    candidateWitnesses,
+  ])
 
   // Word-match similarity for cross-panel highlighting
   const wordMatchMap = useMemo(() => {
@@ -235,6 +361,28 @@ export default function CenterArea() {
     setSplitPercent(newPercent)
   }, [])
 
+  // Built once and rendered from either branch below, so the animated and the
+  // plain path show the same panel rather than two drifting copies of it.
+  const candidatePanel = (
+    <DocumentPanel
+      side="candidate"
+      filename={candidateFile?.filename}
+      dirLabel={
+        // Reviewer directories show their human label; the opaque
+        // reviewer-dir-N id would tell the reviewer nothing.
+        overrideCandidateDir ??
+        currentPrediction?.label ??
+        currentPrediction?.dir_name
+      }
+      score={overrideCandidateDir ? undefined : currentPrediction?.score}
+      rank={overrideCandidateDir ? undefined : activePredictionRank}
+      tokens={candidateTokens}
+      tokenMap={effectiveTokenMap}
+      loading={candidateLoading}
+      scrollRef={candidateScrollRef}
+    />
+  )
+
   return (
     <TokenRefProvider>
       <div className="flex-1 flex flex-col h-full overflow-hidden">
@@ -278,7 +426,7 @@ export default function CenterArea() {
               // seeded, so it belongs on the query panel, not on a candidate.
               badge={
                 <AwaitingMatchBadge
-                  seededDirs={predictions.data?.seeded_dirs ?? []}
+                  seededDirs={predictions.seededDirs}
                 />
               }
             />
@@ -304,38 +452,42 @@ export default function CenterArea() {
                 </button>
               </div>
             )}
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={candidateDir ?? 'empty'}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.2 }}
-                className="h-full flex flex-col"
+            {/* Why the panel is empty, when it is empty for a knowable reason.
+                An unexplained blank pane reads as "the model found nothing",
+                and none of these states is that (issue #156). Which of them can
+                appear during a gallery inspection is decided where the note is
+                built, not here. */}
+            {candidateEvidenceNote && (
+              <div
+                role="status"
+                data-testid="candidate-evidence-note"
+                className="px-3 py-1.5 bg-stone-100 dark:bg-stone-800 border-b border-stone-200 dark:border-stone-700 text-xs text-stone-600 dark:text-stone-300 flex-shrink-0"
               >
-                <DocumentPanel
-                  side="candidate"
-                  filename={candidateFile?.filename}
-                  dirLabel={
-                    // Reviewer directories show their human label; the opaque
-                    // reviewer-dir-N id would tell the reviewer nothing.
-                    overrideCandidateDir ??
-                    currentPrediction?.label ??
-                    currentPrediction?.dir_name
-                  }
-                  score={overrideCandidateDir ? undefined : currentPrediction?.score}
-                  rank={overrideCandidateDir ? undefined : activePredictionRank}
-                  tokens={candidateTokens}
-                  tokenMap={effectiveTokenMap}
-                  loading={
-                    overrideCandidateDir
-                      ? overrideCandidateFiles.loading
-                      : predictions.loading
-                  }
-                  scrollRef={candidateScrollRef}
-                />
-              </motion.div>
-            </AnimatePresence>
+                {candidateEvidenceNote}
+              </div>
+            )}
+            {/* The animated wrapper is keyed on the pair boundary, so a new
+                document, model, pipeline or request replaces the presence owner
+                outright rather than asking it to animate its old panel away.
+                Inside one boundary the inner key still crossfades between
+                candidates of the same settled ranking, which is the only
+                transition that can never show evidence under a new identity. */}
+            {evidenceIdentity !== null ? (
+              <AnimatePresence key={presenceBoundary} mode="wait">
+                <motion.div
+                  key={evidenceIdentity}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="h-full flex flex-col"
+                >
+                  {candidatePanel}
+                </motion.div>
+              </AnimatePresence>
+            ) : (
+              <div className="h-full flex flex-col">{candidatePanel}</div>
+            )}
           </div>
 
           {/* SVG connection overlay */}
