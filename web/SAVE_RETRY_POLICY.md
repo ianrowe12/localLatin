@@ -111,6 +111,14 @@ second visit to the same document, another view, or an unmounted panel. And it
 is held when the reviewer has typed since the save, because navigating would
 hide unsent work.
 
+A 200 is not by itself a next document (issue #171). `apiFetch`'s generic is a
+type assertion, not a check, so a null body or an object with no usable
+`file_id` used to throw where nothing was catching, on a promise the caller
+discards: silent on screen and an unhandled rejection in the suite. The
+response is read at this boundary instead, anything unusable is reported
+through the same visible failed-move notice, and a `file_id` of `null` is kept
+as what the route means by it -- there is nothing left to review.
+
 ## Whose answer is it
 
 Every save, lookup and prefill carries the assessment *and the visit* it started

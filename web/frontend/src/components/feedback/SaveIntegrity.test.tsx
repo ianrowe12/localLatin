@@ -1040,6 +1040,63 @@ describe('an outcome outlives the controls that asked for it', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Expand sidebar' }))
   }
 
+  /** Put the panel away, and leave it away. */
+  async function collapseSidebar(): Promise<void> {
+    await userEvent.click(screen.getByRole('button', { name: 'Collapse sidebar' }))
+  }
+
+  async function expandSidebar(): Promise<void> {
+    await userEvent.click(screen.getByRole('button', { name: 'Expand sidebar' }))
+  }
+
+  it('shows a failure that settled while the sidebar was still collapsed', async () => {
+    // The other ordering: the answer arrives with nothing on screen at all, so
+    // there is no component whose own state could have carried it.
+    renderPanel({ sidebar: true })
+    await chooseFirstCandidate()
+    await userEvent.type(notesBox(), 'hand A throughout')
+    await userEvent.click(submitButton())
+    await waitFor(() => expect(postGates).toHaveLength(1))
+
+    await collapseSidebar()
+    await settlePost(0, { error: new TypeError('Failed to fetch') })
+    await expandSidebar()
+
+    const error = await screen.findByTestId('assessment-save-error')
+    expect(error.getAttribute('data-outcome')).toBe('uncertain')
+    const status = await screen.findByTestId('submit-button-status')
+    expect(status.parentElement?.getAttribute('data-op-state')).toBe('failed')
+    expect(storedDrafts()[draftKeyFor(QUERY_A)]).toMatchObject({ correctRank: 1 })
+    expect(notesBox().value).toBe('hand A throughout')
+  })
+
+  it('reads nothing, and acknowledges, for a success that settled with the sidebar shut', async () => {
+    // The reviewer put the panel away and never came back before the answer
+    // arrived, so no second visit exists for this to steer or clobber: the
+    // submitted revision is consumed exactly as it is with the sidebar open.
+    // What must NOT happen is the move -- a read belongs to the assessment
+    // visit that asked for it, and no panel did (issue #171).
+    renderPanel({ sidebar: true })
+    await chooseFirstCandidate()
+    await userEvent.click(submitButton())
+    await waitFor(() => expect(postGates).toHaveLength(1))
+
+    await collapseSidebar()
+    await settlePost(0)
+    await letTheTimerFire()
+    expect(nextGates).toHaveLength(0)
+    await expandSidebar()
+
+    expect(activeQueryId()).toBe(String(QUERY_A))
+    expect(storedDrafts()[draftKeyFor(QUERY_A)]).toBeUndefined()
+    // Not silent about it either: the acknowledgement is on screen, with the
+    // draft still recoverable by hand.
+    expect(document.body.textContent).toContain('Assessment saved to the review log')
+    expect(screen.queryByTestId('assessment-save-error')).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Put my draft back' }))
+    expect(feedbackApi?.draft.correctRank).toBe(1)
+  })
+
   it('shows a network failure that landed while the controls were gone', async () => {
     renderPanel({ sidebar: true })
     await chooseFirstCandidate()
