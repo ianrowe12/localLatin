@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ApiError, toApiErrorInfo } from './client'
+import { isCompleteReviewerDir } from './reviewerDirs'
 import {
   candidateHasText,
   classifyExclusion,
@@ -288,6 +289,157 @@ describe('validatePredictionResponse: seeded_dirs (issue #156)', () => {
       best_match_score: null,
       has_potential_match: false,
       model_slug: '',
+    })
+  })
+
+  /**
+   * Issue #161 handoff. The substitutes above are the right answer for a
+   * candidate in a ranking and are not evidence of anything for the permanent
+   * saved-directory record, which has to tell "the server said no members" from
+   * "the field was not on the wire". Both are `[]` by the time anything
+   * downstream sees them, so this validator names what it supplied rather than
+   * leaving a distinction nobody can recover.
+   */
+  describe('names the defaults it supplied (issue #161)', () => {
+    const defaultedFor = (over: Record<string, unknown>) => {
+      const row = dir()
+      for (const field of Object.keys(over)) delete (row as Record<string, unknown>)[field]
+      const result = seeded([row])
+      expect(result.ok).toBe(true)
+      if (!result.ok) return undefined
+      return result.value.seeded_dirs?.[0]?.defaulted_fields
+    }
+
+    // THE EXHAUSTIVE AUDIT (issue #161, finding 12).
+    //
+    // Every field a complete directory row carries, one row per field, with
+    // what this client does when the server omits exactly that one. Two
+    // substitutes were missed the first time round because their stand-in
+    // values are unremarkable: an absent score became `null` and an absent
+    // flag became `false`, which is what an ordinary scored-nothing row looks
+    // like. Naming only the suspicious-looking defaults is what let those two
+    // through, so the table below is stated for ALL of them and the test after
+    // it proves the table itself is complete -- add a field to the row, or a
+    // substitute to the validator, and something here fails.
+    //
+    // `rejected`  the validator refuses the response; nothing is substituted.
+    // `marked`    a substitute is supplied and named, so the durable boundary
+    //             declines the row.
+    // `unmarked`  a substitute is supplied and NOT named, which is only safe
+    //             because `isCompleteReviewerDir` never reads the field.
+    const AUDIT = [
+      { field: 'dir_id', verdict: 'rejected' },
+      { field: 'label', verdict: 'rejected' },
+      { field: 'status', verdict: 'rejected' },
+      { field: 'seed_query_id', verdict: 'rejected' },
+      { field: 'member_query_ids', verdict: 'marked' },
+      { field: 'created_at', verdict: 'marked' },
+      { field: 'created_by', verdict: 'marked' },
+      { field: 'model_slug', verdict: 'marked' },
+      { field: 'best_match_score', verdict: 'marked' },
+      { field: 'has_potential_match', verdict: 'marked' },
+      { field: 'variant', verdict: 'unmarked' },
+    ] as const
+
+    const withoutField = (field: string) => {
+      const row = dir()
+      delete (row as Record<string, unknown>)[field]
+      return row
+    }
+
+    it('covers every field the row actually carries', () => {
+      // The guard against this table going stale. A field added to a directory
+      // fails here until someone decides which column it belongs in.
+      expect(AUDIT.map((entry) => entry.field).sort()).toEqual(Object.keys(dir()).sort())
+    })
+
+    it.each(AUDIT.filter((entry) => entry.verdict === 'rejected'))(
+      'refuses the whole response when $field is absent',
+      ({ field }) => {
+        expect(seeded([withoutField(field)]).ok).toBe(false)
+      },
+    )
+
+    it.each(AUDIT.filter((entry) => entry.verdict === 'marked'))(
+      'names $field when that one field is absent, and the durable boundary declines it',
+      ({ field }) => {
+        expect(defaultedFor({ [field]: true })).toEqual([field])
+        const result = seeded([withoutField(field)])
+        expect(result.ok).toBe(true)
+        if (!result.ok) return
+        // The half that matters: naming it is only useful if the durable
+        // boundary acts on the name.
+        expect(isCompleteReviewerDir(result.value.seeded_dirs![0])).toBe(false)
+      },
+    )
+
+    it.each(AUDIT.filter((entry) => entry.verdict === 'unmarked'))(
+      'leaves $field unnamed, and the durable boundary does not read it',
+      ({ field }) => {
+        const result = seeded([withoutField(field)])
+        expect(result.ok).toBe(true)
+        if (!result.ok) return
+        expect(result.value.seeded_dirs![0]).not.toHaveProperty('defaulted_fields')
+        // Marking this one would make the ranking path refuse a row the
+        // directory endpoint itself accepts, for a value nothing durable reads.
+        expect(isCompleteReviewerDir(result.value.seeded_dirs![0])).toBe(true)
+      },
+    )
+
+    it('names every absent field, not just the first', () => {
+      expect(
+        defaultedFor({
+          member_query_ids: true,
+          created_at: true,
+          created_by: true,
+          best_match_score: true,
+          has_potential_match: true,
+        }),
+      ).toEqual([
+        'member_query_ids',
+        'created_at',
+        'created_by',
+        'best_match_score',
+        'has_potential_match',
+      ])
+    })
+
+    // The distinction that matters. This row is the one a pre-#160 partial
+    // write left behind: the server really holds a directory with no members,
+    // and says so. Reporting it as defaulted would make a stored fact
+    // indistinguishable from a missing field all over again.
+    // The distinction, three times over. Each of these is an ordinary thing
+    // for the server to say, and each has a substitute that is the same value.
+    // Reporting them as defaulted would make a stored fact indistinguishable
+    // from a missing field all over again -- in the other direction, and it
+    // would take a real historical record off the screen.
+    it.each([
+      ['an explicitly empty member list', { member_query_ids: [] }],
+      ['an explicit null score', { best_match_score: null }],
+      ['an explicit false match flag', { has_potential_match: false }],
+      [
+        'all three at once, which is a real pre-#160 partial row',
+        { member_query_ids: [], best_match_score: null, has_potential_match: false },
+      ],
+    ])('says nothing about %s', (_name, over) => {
+      const result = seeded([dir(over)])
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      const normalized = result.value.seeded_dirs![0]!
+      expect(normalized).not.toHaveProperty('defaulted_fields')
+      expect(normalized).toEqual(dir(over))
+      // Admissible: the server answered every one of these.
+      expect(isCompleteReviewerDir(normalized)).toBe(true)
+    })
+
+    // Absent entirely on a complete row, so the normalised directory stays the
+    // object the response carried -- see the first case in this describe block,
+    // which compares it to the fixture with toEqual.
+    it('adds no key at all when nothing was supplied', () => {
+      const result = seeded([dir()])
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(Object.keys(result.value.seeded_dirs![0]!)).not.toContain('defaulted_fields')
     })
   })
 })

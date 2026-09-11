@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppProvider, useApp } from '../../contexts/AppContext'
 import { PredictionProvider } from '../../contexts/PredictionContext'
 import NoMatchCallout from './NoMatchCallout'
+import { SavedDirectoryProvider } from '../../contexts/SavedDirectoryContext'
 import PredictionList from './PredictionList'
 
 const MODEL = 'google_mt5-base'
@@ -54,6 +55,22 @@ function installFetch(): void {
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.includes('/api/reviewer_dirs')) {
+        // The seed lookup (issue #161) shares this path with creation, so the
+        // two are separated by method: only a POST is a creation attempt, and
+        // only a POST is deferred by `deferReviewerDir`.
+        if (init?.method !== 'POST') {
+          return jsonResponse(
+            seededDirs.filter(
+              (dir) =>
+                (dir as { seed_query_id?: number }).seed_query_id ===
+                Number(
+                  new URL(url, 'http://test.local').searchParams.get(
+                    'seed_query_id',
+                  ),
+                ),
+            ),
+          )
+        }
         reviewerDirPosts.push({
           url,
           body: init?.body ? JSON.parse(String(init.body)) : null,
@@ -65,7 +82,17 @@ function installFetch(): void {
         }
         if (reviewerDirStatus === 201) {
           return jsonResponse(
-            { dir_id: 'rev-42', label: 'New directory 42', status: 'awaiting_match' },
+            {
+              dir_id: 'rev-42',
+              label: 'New directory 42',
+              status: 'awaiting_match',
+              seed_query_id: QUERY_ID,
+              member_query_ids: [QUERY_ID],
+              created_at: '2026-08-26 00:00:00',
+              created_by: 'Abigail',
+              best_match_score: null,
+              has_potential_match: false,
+            },
             201,
           )
         }
@@ -129,9 +156,11 @@ function renderList(topScores: number[]) {
   scores = topScores
   return render(
     <AppProvider>
-      <PredictionProvider>
-        <Harness />
-      </PredictionProvider>
+      <SavedDirectoryProvider accountKey="test-account">
+        <PredictionProvider>
+          <Harness />
+        </PredictionProvider>
+      </SavedDirectoryProvider>
     </AppProvider>,
   )
 }
@@ -284,9 +313,11 @@ describe('CTA staleness (reviewer navigates mid-request)', () => {
     scores = [0.2]
     render(
       <AppProvider>
-        <PredictionProvider>
-          <NavigableHarness />
-        </PredictionProvider>
+        <SavedDirectoryProvider accountKey="test-account">
+          <PredictionProvider>
+            <NavigableHarness />
+          </PredictionProvider>
+        </SavedDirectoryProvider>
       </AppProvider>,
     )
 
@@ -314,41 +345,50 @@ describe('CTA staleness (reviewer navigates mid-request)', () => {
     expect(screen.getByRole('button', { name: 'New directory / New file' })).toBeTruthy()
   })
 
-  it('drops a late result even when the component is reused, not remounted', async () => {
-    // Directly exercises the guard inside the component, independently of the
-    // `key` in PredictionList: here the same instance is handed a new query.
+  it('keeps a late result on its own query when the component is reused, not remounted', async () => {
+    // Directly exercises the component independently of the `key` in
+    // PredictionList: here the same instance is handed a new query. Since
+    // issue #161 the late 201 is not thrown away -- it is a permanent write, so
+    // it is recorded against query 11 -- but query 12 must show none of it.
     deferReviewerDir = true
     const user = userEvent.setup()
-    const { rerender } = render(
-      <NoMatchCallout
-        queryFileId={QUERY_ID}
-        topScore={0.2}
-        topK={10}
-        model={MODEL}
-        alreadySeeded={false}
-      />,
-    )
 
-    await user.click(screen.getByRole('button', { name: 'New directory / New file' }))
+    function Callout({ queryFileId }: { queryFileId: number }) {
+      return (
+        <SavedDirectoryProvider accountKey="test-account">
+          <NoMatchCallout
+            queryFileId={queryFileId}
+            topScore={0.2}
+            topK={10}
+            model={MODEL}
+            alreadySeeded={false}
+          />
+        </SavedDirectoryProvider>
+      )
+    }
+
+    const { rerender } = render(<Callout queryFileId={QUERY_ID} />)
+
+    await user.click(
+      await screen.findByRole('button', { name: 'New directory / New file' }),
+    )
     await user.click(screen.getByTestId('new-directory-submit'))
     await waitFor(() => {
       expect(reviewerDirPosts).toHaveLength(1)
     })
 
-    rerender(
-      <NoMatchCallout
-        queryFileId={NEXT_QUERY_ID}
-        topScore={0.3}
-        topK={10}
-        model={MODEL}
-        alreadySeeded={false}
-      />,
-    )
+    rerender(<Callout queryFileId={NEXT_QUERY_ID} />)
     await act(async () => {
       releaseReviewerDir()
     })
 
     expect(screen.queryByTestId('new-directory-created')).toBeNull()
-    expect(screen.getByRole('button', { name: 'New directory / New file' })).toBeTruthy()
+    expect(
+      await screen.findByRole('button', { name: 'New directory / New file' }),
+    ).toBeTruthy()
+
+    // ...and query 11's acknowledgement is waiting when the reviewer returns.
+    rerender(<Callout queryFileId={QUERY_ID} />)
+    expect(screen.getByTestId('new-directory-created')).toBeTruthy()
   })
 })

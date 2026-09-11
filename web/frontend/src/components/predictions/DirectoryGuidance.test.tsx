@@ -4,6 +4,8 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppProvider, useApp } from '../../contexts/AppContext'
 import { PredictionProvider } from '../../contexts/PredictionContext'
+import { SavedDirectoryProvider } from '../../contexts/SavedDirectoryContext'
+import SavedDirectoryObservations from '../../contexts/SavedDirectoryObservations'
 import PredictionList from './PredictionList'
 import { getReviewTourSteps, REVIEW_TOUR_STEPS } from '../onboarding/tourSteps'
 import { PROVENANCE_TERMS } from '../../utils/documentProvenance'
@@ -94,6 +96,20 @@ function installFetch(): void {
       if (init?.method === 'POST' && url.includes('/api/reviewer_dirs')) {
         return jsonResponse({ ...SEEDED_DIR }, 201)
       }
+      if (url.includes('/api/reviewer_dirs')) {
+        // The seed lookup (issue #161). It is a real endpoint, so the fixture
+        // answers it like one: the directories this query seeds, and an empty
+        // list when it seeds none. A body this stub cannot produce would be a
+        // failure, not an empty answer.
+        const seed = Number(
+          new URL(url, 'http://test.local').searchParams.get('seed_query_id'),
+        )
+        return jsonResponse(
+          (predictions.seeded_dirs as { seed_query_id: number }[]).filter(
+            (dir) => dir.seed_query_id === seed,
+          ),
+        )
+      }
       if (url.includes('/api/models')) return jsonResponse(modelsPayload())
       if (url.includes('/predictions')) {
         return jsonResponse({
@@ -121,9 +137,12 @@ function Harness() {
 function renderList() {
   return render(
     <AppProvider>
-      <PredictionProvider>
-        <Harness />
-      </PredictionProvider>
+      <SavedDirectoryProvider accountKey="test-account">
+        <PredictionProvider>
+          <SavedDirectoryObservations />
+          <Harness />
+        </PredictionProvider>
+      </SavedDirectoryProvider>
     </AppProvider>,
   )
 }

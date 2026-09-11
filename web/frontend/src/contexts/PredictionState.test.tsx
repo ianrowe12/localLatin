@@ -1,11 +1,12 @@
 import { useEffect } from 'react'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppProvider, useApp } from './AppContext'
 import { FeedbackProvider } from './FeedbackContext'
 import { PredictionProvider } from './PredictionContext'
 import { ReviewerProvider } from './ReviewerContext'
+import { SavedDirectoryProvider } from './SavedDirectoryContext'
 import { TokenProvider } from './TokenContext'
 import FeedbackPanel from '../components/feedback/FeedbackPanel'
 import CenterArea from '../components/layout/CenterArea'
@@ -85,6 +86,13 @@ type Answer = {
   seeded_dirs?: unknown[]
   httpStatus?: number
   delayMs?: number
+  /**
+   * Hold the response open until the test releases it. A millisecond delay
+   * races `userEvent`, which awaits its own microtasks and can outlast it on a
+   * loaded machine; a gate makes "the ranking is not available yet" a fact the
+   * test controls rather than a window it hopes to hit.
+   */
+  hold?: boolean
   /** Overrides the identity fields, to forge a response for another request. */
   identity?: Record<string, unknown>
 }
@@ -95,10 +103,29 @@ let queued: Record<string, Answer[]> = {}
 let predictionRequests: string[] = []
 let reviewerDirPosts: unknown[] = []
 let reviewerDirStatus = 201
+/** Resolves the currently held predictions response, if there is one. */
+let releaseHeld: (() => void) | null = null
 
 function answerFor(model: string): Answer {
   const next = queued[model]?.shift()
   return next ?? answers[model] ?? { predictions: [modelCard(1, 0.9)] }
+}
+
+/** The one row this suite's backend stores for QUERY_ID's seed. */
+function createdDirFixture() {
+  return {
+    dir_id: 'reviewer-dir-1',
+    label: 'Unattested homily',
+    status: 'awaiting_match',
+    seed_query_id: QUERY_ID,
+    member_query_ids: [QUERY_ID],
+    created_at: '2026-08-26 00:00:00',
+    created_by: 'Abigail',
+    model_slug: MODEL_A,
+    variant: 'sif_abtt',
+    best_match_score: 0.31,
+    has_potential_match: false,
+  }
 }
 
 function installFetch(): void {
@@ -115,21 +142,17 @@ function installFetch(): void {
         if (reviewerDirStatus !== 201) {
           return jsonResponse({ detail: 'Authentication required' }, reviewerDirStatus)
         }
+        return jsonResponse(createdDirFixture(), 201)
+      }
+
+      // The seed-filtered lookup behind the durable acknowledgement (issue
+      // #161). Before a successful create the seed has no directory; after one
+      // the same row the POST returned is what the database holds.
+      if (url.includes('/api/reviewer_dirs')) {
         return jsonResponse(
-          {
-            dir_id: 'reviewer-dir-1',
-            label: 'Unattested homily',
-            status: 'awaiting_match',
-            seed_query_id: QUERY_ID,
-            member_query_ids: [QUERY_ID],
-            created_at: '2026-08-26 00:00:00',
-            created_by: 'Abigail',
-            model_slug: MODEL_A,
-            variant: 'sif_abtt',
-            best_match_score: 0.31,
-            has_potential_match: false,
-          },
-          201,
+          reviewerDirPosts.length > 0 && reviewerDirStatus === 201
+            ? [createdDirFixture()]
+            : [],
         )
       }
 
@@ -156,6 +179,11 @@ function installFetch(): void {
         const model = params.get('model') ?? ''
         predictionRequests.push(url)
         const answer = answerFor(model)
+        if (answer.hold === true) {
+          await new Promise<void>((resolve) => {
+            releaseHeld = resolve
+          })
+        }
         await sleep(answer.delayMs ?? 0)
         if (answer.httpStatus && answer.httpStatus !== 200) {
           return jsonResponse(
@@ -208,14 +236,16 @@ function renderReview() {
     <AppProvider>
       <ReviewerProvider>
         <TokenProvider>
-          <PredictionProvider>
-            <FeedbackProvider>
-              <SelectQuery />
-              <PredictionList />
-              <CenterArea />
-              <FeedbackPanel />
-            </FeedbackProvider>
-          </PredictionProvider>
+          <SavedDirectoryProvider accountKey="test-account">
+            <PredictionProvider>
+              <FeedbackProvider>
+                <SelectQuery />
+                <PredictionList />
+                <CenterArea />
+                <FeedbackPanel />
+              </FeedbackProvider>
+            </PredictionProvider>
+          </SavedDirectoryProvider>
         </TokenProvider>
       </ReviewerProvider>
     </AppProvider>,
@@ -226,11 +256,13 @@ function renderReview() {
 function renderList() {
   return render(
     <AppProvider>
-      <PredictionProvider>
-        <SelectQuery />
-        <ModelSelector />
-        <PredictionList />
-      </PredictionProvider>
+      <SavedDirectoryProvider accountKey="test-account">
+        <PredictionProvider>
+          <SelectQuery />
+          <ModelSelector />
+          <PredictionList />
+        </PredictionProvider>
+      </SavedDirectoryProvider>
     </AppProvider>,
   )
 }
@@ -243,6 +275,7 @@ beforeEach(() => {
   answers = {}
   queued = {}
   reviewerDirStatus = 201
+  releaseHeld = null
   installFetch()
 })
 
@@ -270,17 +303,28 @@ describe('one shared ranking', () => {
     // `activeModel` changes during render; an effect-only guard clears the old
     // data one commit later, and that commit is a real paint.
     answers[MODEL_A] = { predictions: [modelCard(1, 0.9, 'LATA.DIR')] }
-    answers[MODEL_B] = { predictions: [modelCard(1, 0.9, 'MT5.DIR')], delayMs: 30 }
+    // Held rather than delayed: the assertion below is about the state between
+    // the selection and the new answer, and a timed response can settle inside
+    // `userEvent`'s own awaits, leaving the test to assert the spinner against
+    // a ranking that has already arrived.
+    answers[MODEL_B] = { predictions: [modelCard(1, 0.9, 'MT5.DIR')], hold: true }
     renderList()
 
     expect(await screen.findByTitle('LATA.DIR')).toBeTruthy()
     await selectModel(MODEL_B)
 
     // The instant the model changes there is no current ranking, so the old
-    // directory is gone rather than relabelled.
+    // directory is gone rather than relabelled. mT5 cannot have answered: its
+    // response is still held.
     expect(screen.queryByTitle('LATA.DIR')).toBeNull()
     expect(screen.getByTestId('predictions-loading')).toBeTruthy()
+
+    await act(async () => {
+      releaseHeld?.()
+      await Promise.resolve()
+    })
     expect(await screen.findByTitle('MT5.DIR')).toBeTruthy()
+    expect(screen.queryByTitle('LATA.DIR')).toBeNull()
   })
 
   it('drops a superseded response instead of letting it overwrite the current one', async () => {

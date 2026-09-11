@@ -3,7 +3,7 @@ import { DIRECTORY_STATUS_COPY } from '../../utils/reviewerDirectoryCopy'
 
 interface AwaitingMatchBadgeProps {
   /** Reviewer directories seeded by the document being shown. */
-  seededDirs: ReviewerDir[]
+  seededDirs: readonly ReviewerDir[]
 }
 
 /**

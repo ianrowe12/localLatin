@@ -33,6 +33,46 @@ export const DIRECTORY_CREATION_COPY = {
   submitting: 'Creating…',
   cancel: 'Cancel',
 
+  /**
+   * Cancel, once the request has gone (issue #161).
+   *
+   * Before the request there is genuinely something to cancel. Afterwards
+   * there is not: closing a form does not reach the server, and aborting the
+   * fetch would not either, since the write may already be committed. So the
+   * control changes its name rather than keeping a promise it cannot keep.
+   */
+  closePending: 'Close',
+  pendingNote:
+    'Saving. Closing this form does not cancel the save, and nothing in the app can remove a directory once the server has it.',
+
+  /** Reconciled with the server: the write certainly did not land. */
+  failedNotCreated:
+    'Nothing was created. Your name is kept, so you can try again.',
+  /**
+   * The request failed AND the follow-up check failed. Saying "not saved"
+   * here would be a guess, and acting on that guess is how a second permanent
+   * directory gets created for one document.
+   */
+  failedUnknown:
+    'The app could not confirm whether the directory was created. Check again before trying a different name.',
+
+  checking: 'Checking whether this document already has a directory…',
+  checkAgain: 'Check again',
+  /**
+   * The panel closed over a write whose outcome is not known yet. The reviewer
+   * is not offered a name field or a Create button here: both would act on an
+   * answer nobody has.
+   */
+  pendingClosed: 'Saving a new directory for this document…',
+  unknownClosed:
+    'A directory may have been created for this document. Until the app can check, it will not offer to create another.',
+  /**
+   * A failed lookup is not an empty lookup. Offering Create here would invite
+   * a duplicate the server will refuse.
+   */
+  unresolvedNote:
+    'The app could not check whether this document already has a directory. Creating one now could be refused as a duplicate.',
+
   savedHeading: 'Directory saved',
   /**
    * Deliberately conditional. A directory is scored from the model's q-q
@@ -44,6 +84,63 @@ export const DIRECTORY_CREATION_COPY = {
     'Saved permanently and seeded with this document. It can be offered as a candidate on other documents this model can score, not on every one.',
   savedIndependence: 'Submitting or skipping your assessment does not undo it.',
 } as const
+
+/**
+ * Attribution for a grouping this reviewer is being shown rather than one they
+ * just made (issue #161): recovered after a refused or lost create, or found on
+ * the server after a reload. `created_by` is often somebody else, and the label
+ * is always the stored one rather than anything this reviewer proposed.
+ */
+export function savedByNote(creator: string): string {
+  return `Created by ${creator}. The name shown is the one it was saved under.`
+}
+
+/** A second, older grouping for the same document, listed rather than hidden. */
+export function alsoGroupedNote(count: number): string {
+  return count === 1
+    ? 'This document is also recorded under another directory:'
+    : `This document is also recorded under ${count} other directories:`
+}
+
+/**
+ * A stored grouping that does not list the document seeding it as a member
+ * (issue #161).
+ *
+ * Before issue #160 made creation atomic, the directory row and its seed
+ * membership row were written on a shared connection, so an unrelated commit
+ * in between could make the directory permanent and leave the membership
+ * behind. Those rows still exist, the server still serves them, and nothing in
+ * this application can add the missing row or remove the directory.
+ *
+ * The acknowledgement therefore reports what is stored and stops. It does not
+ * fabricate the membership, does not hide the grouping, and does not let
+ * "seeded with this document" stand as a claim that the document is filed
+ * there -- membership is what a second witness would be counted in, and what
+ * `matched` is derived from.
+ */
+export const SEED_NOT_FILED =
+  'The stored record of this grouping does not list this document among its members. The app shows the record as it is rather than adding the missing entry, and no new directory can be started for this document while this one exists.'
+
+/** The same fact as a clause beside one of several groupings. */
+export const SEED_NOT_FILED_SHORT =
+  'The stored record does not list this document among its members.'
+
+/**
+ * A create that ended in a recovery.
+ *
+ * Deliberately neutral about whose write this row is. The app reaches this
+ * message whenever a POST failed and the seed-filtered lookup then found a
+ * directory, and those two facts are also exactly what a LOST RESPONSE looks
+ * like: the write landed, its 201 never arrived, and the row that comes back is
+ * the reviewer's own. Saying "nothing new was created and the name you proposed
+ * was not saved" is true for a refusal and false for a lost response, and this
+ * layer cannot tell them apart -- the message text of a 409 is not a contract,
+ * and a directory's timestamps are the server's clock, not the browser's. So
+ * the app reports what it can actually see: a directory exists for this
+ * document now, and the details shown are the stored ones.
+ */
+export const RECOVERED_AFTER_FAILURE =
+  'A directory for this document is on the server. The app could not confirm whether your attempt created it, so the details shown are the stored ones rather than what you proposed.'
 
 /**
  * What a low similarity does and does not establish.
