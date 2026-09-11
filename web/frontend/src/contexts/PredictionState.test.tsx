@@ -6,6 +6,7 @@ import { AppProvider, useApp } from './AppContext'
 import { FeedbackProvider } from './FeedbackContext'
 import { PredictionProvider } from './PredictionContext'
 import { ReviewerProvider } from './ReviewerContext'
+import { SavedDirectoryProvider } from './SavedDirectoryContext'
 import { TokenProvider } from './TokenContext'
 import FeedbackPanel from '../components/feedback/FeedbackPanel'
 import CenterArea from '../components/layout/CenterArea'
@@ -101,6 +102,23 @@ function answerFor(model: string): Answer {
   return next ?? answers[model] ?? { predictions: [modelCard(1, 0.9)] }
 }
 
+/** The one row this suite's backend stores for QUERY_ID's seed. */
+function createdDirFixture() {
+  return {
+    dir_id: 'reviewer-dir-1',
+    label: 'Unattested homily',
+    status: 'awaiting_match',
+    seed_query_id: QUERY_ID,
+    member_query_ids: [QUERY_ID],
+    created_at: '2026-08-26 00:00:00',
+    created_by: 'Abigail',
+    model_slug: MODEL_A,
+    variant: 'sif_abtt',
+    best_match_score: 0.31,
+    has_potential_match: false,
+  }
+}
+
 function installFetch(): void {
   predictionRequests = []
   reviewerDirPosts = []
@@ -115,21 +133,17 @@ function installFetch(): void {
         if (reviewerDirStatus !== 201) {
           return jsonResponse({ detail: 'Authentication required' }, reviewerDirStatus)
         }
+        return jsonResponse(createdDirFixture(), 201)
+      }
+
+      // The seed-filtered lookup behind the durable acknowledgement (issue
+      // #161). Before a successful create the seed has no directory; after one
+      // the same row the POST returned is what the database holds.
+      if (url.includes('/api/reviewer_dirs')) {
         return jsonResponse(
-          {
-            dir_id: 'reviewer-dir-1',
-            label: 'Unattested homily',
-            status: 'awaiting_match',
-            seed_query_id: QUERY_ID,
-            member_query_ids: [QUERY_ID],
-            created_at: '2026-08-26 00:00:00',
-            created_by: 'Abigail',
-            model_slug: MODEL_A,
-            variant: 'sif_abtt',
-            best_match_score: 0.31,
-            has_potential_match: false,
-          },
-          201,
+          reviewerDirPosts.length > 0 && reviewerDirStatus === 201
+            ? [createdDirFixture()]
+            : [],
         )
       }
 
@@ -208,14 +222,16 @@ function renderReview() {
     <AppProvider>
       <ReviewerProvider>
         <TokenProvider>
-          <PredictionProvider>
-            <FeedbackProvider>
-              <SelectQuery />
-              <PredictionList />
-              <CenterArea />
-              <FeedbackPanel />
-            </FeedbackProvider>
-          </PredictionProvider>
+          <SavedDirectoryProvider accountKey="test-account">
+            <PredictionProvider>
+              <FeedbackProvider>
+                <SelectQuery />
+                <PredictionList />
+                <CenterArea />
+                <FeedbackPanel />
+              </FeedbackProvider>
+            </PredictionProvider>
+          </SavedDirectoryProvider>
         </TokenProvider>
       </ReviewerProvider>
     </AppProvider>,
@@ -226,11 +242,13 @@ function renderReview() {
 function renderList() {
   return render(
     <AppProvider>
-      <PredictionProvider>
-        <SelectQuery />
-        <ModelSelector />
-        <PredictionList />
-      </PredictionProvider>
+      <SavedDirectoryProvider accountKey="test-account">
+        <PredictionProvider>
+          <SelectQuery />
+          <ModelSelector />
+          <PredictionList />
+        </PredictionProvider>
+      </SavedDirectoryProvider>
     </AppProvider>,
   )
 }

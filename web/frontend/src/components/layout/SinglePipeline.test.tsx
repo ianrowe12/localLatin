@@ -4,6 +4,7 @@ import { AppProvider } from '../../contexts/AppContext'
 import { FeedbackProvider } from '../../contexts/FeedbackContext'
 import { PredictionProvider } from '../../contexts/PredictionContext'
 import { ReviewerProvider } from '../../contexts/ReviewerContext'
+import { SavedDirectoryProvider } from '../../contexts/SavedDirectoryContext'
 import { getReviewTourSteps } from '../onboarding/tourSteps'
 import RightSidebar from './RightSidebar'
 
@@ -54,11 +55,13 @@ function renderSidebar() {
   return render(
     <ReviewerProvider>
       <AppProvider>
-        <PredictionProvider>
-          <FeedbackProvider>
-            <RightSidebar isOpen onToggle={() => {}} />
-          </FeedbackProvider>
-        </PredictionProvider>
+        <SavedDirectoryProvider accountKey="test-account">
+          <PredictionProvider>
+            <FeedbackProvider>
+              <RightSidebar isOpen onToggle={() => {}} />
+            </FeedbackProvider>
+          </PredictionProvider>
+        </SavedDirectoryProvider>
       </AppProvider>
     </ReviewerProvider>,
   )

@@ -16,13 +16,13 @@ interface NoMatchCalloutProps {
   model: string
   /** Seed filename, used to suggest a default label. */
   filename?: string
-  /** This document already seeds a directory, so creation is not on offer. */
-  alreadySeeded: boolean
   /**
-   * Told when creation succeeds, so a parent that outlives the prediction
-   * refetch can keep the acknowledgement on screen (issue #156).
+   * This document already seeds a directory, so creation is not on offer here.
+   * `PredictionList` reads that from the durable saved-directory record as well
+   * as from the response, and renders the acknowledgement itself (issue #161),
+   * so this callout never has to hold the outcome of a permanent write.
    */
-  onCreated?: (label: string) => void
+  alreadySeeded: boolean
 }
 
 /**
@@ -39,9 +39,9 @@ interface NoMatchCalloutProps {
  * that did not exist yet, including a "coming with the next update" branch that
  * this PR makes unreachable.
  *
- * Creation state (submitting, created, error) lives in `NewDirectoryCta`, and
- * `PredictionList` keys this component by query id so none of it survives a
- * navigation.
+ * Creation state lives in the durable saved-directory store keyed by seed query
+ * (issue #161), which is why this callout can be unmounted by a refetch without
+ * costing the reviewer the record of a write.
  */
 export default function NoMatchCallout({
   queryFileId,
@@ -50,7 +50,6 @@ export default function NoMatchCallout({
   model,
   filename,
   alreadySeeded,
-  onCreated,
 }: NoMatchCalloutProps) {
   return (
     <div
@@ -112,7 +111,6 @@ export default function NoMatchCallout({
           filename={filename}
           emphasised
           inline
-          onCreated={onCreated}
         />
       )}
     </div>

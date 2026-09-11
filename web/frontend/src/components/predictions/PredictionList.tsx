@@ -1,6 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useApp } from '../../contexts/AppContext'
 import { usePredictionState } from '../../contexts/PredictionContext'
+import {
+  useSavedDirectory,
+  useSavedDirectoryStore,
+} from '../../contexts/SavedDirectoryContext'
 import { useModels } from '../../api/models'
 import { useKeyboardShortcuts } from '../../utils/keyboard'
 import type { ApiErrorInfo } from '../../api/client'
@@ -91,6 +95,8 @@ export default function PredictionList() {
     setOverrideCandidateDir,
   } = useApp()
   const {
+    key,
+    generation,
     phase,
     error,
     exclusion,
@@ -136,34 +142,51 @@ export default function PredictionList() {
   )
 
   /**
-   * A directory this reviewer just created, held HERE rather than inside the
-   * CTA (issue #156).
+   * Whether this document already seeds a reviewer directory, and what is
+   * happening to any creation of one -- held in the durable store rather than in
+   * this component (issue #161).
    *
-   * Creating one broadcasts `REVIEWER_DIRS_UPDATED_EVENT`, which refetches the
-   * ranking, which used to replace this subtree with "Loading..." and take the
-   * "Directory created" confirmation down with it -- for a permanent,
-   * unrepeatable action. A refetch that then failed left no trace of the
-   * creation at all, inviting a second one. This component survives the
-   * refresh, so the acknowledgement now does too, wherever the CTA is mounted.
+   * Creating a directory broadcasts `REVIEWER_DIRS_UPDATED_EVENT`, which
+   * refetches the ranking, which replaces this subtree with `Loading...` and
+   * used to take the acknowledgement of a permanent, unrepeatable write down
+   * with it. Holding it one level up fixed the unmount but not the rest: a
+   * refetch that then FAILED still left no trace of the write, a reload lost it
+   * entirely, and a response whose outcome never arrived left a Create button in
+   * front of a directory that already existed.
    *
-   * Durable, query-level directory state is issue #161's. This only stops the
-   * existing in-session acknowledgement from being destroyed by a refetch.
+   * `SavedDirectoryStore` is keyed by seed query and lives above
+   * `PredictionProvider`, so the answer survives loading, errors, empty
+   * responses, model switches, navigation away and back, and a reload (it is
+   * re-established from the server, never from browser storage).
    */
-  const [createdDir, setCreatedDir] = useState<{
-    queryId: number
-    label: string
-  } | null>(null)
+  const savedDirectories = useSavedDirectoryStore()
+  const { identity, creation } = useSavedDirectory(activeQueryId)
+
+  // The phases in which the provider is speaking for the current key. `loading`
+  // and `error` are statements about a request, not about the database.
+  const settled = phase === 'ready' || phase === 'empty' || phase === 'excluded'
+
+  /**
+   * Positive `seeded_dirs` from the CURRENT request, folded into the store
+   * (issue #161, gate 2).
+   *
+   * Guarded by #156's own key and generation rather than by a second prediction
+   * cache: the evidence is only ingested from a settled response, and it is
+   * recorded against the query THAT RESPONSE speaks for, not against whatever
+   * is on screen by the time it lands. The store ignores empty lists and rows
+   * seeded by another query, so a stale, failed or empty ranking can never
+   * erase a saved identity, its historical groups or their membership.
+   */
+  const observedQueryId = settled && key !== null ? key.queryId : null
   useEffect(() => {
-    setCreatedDir(null)
-  }, [activeQueryId])
-  const createdLabel =
-    createdDir !== null && createdDir.queryId === activeQueryId
-      ? createdDir.label
-      : null
+    if (observedQueryId === null) return
+    savedDirectories.observeSeededDirs(observedQueryId, seededDirs)
+  }, [savedDirectories, observedQueryId, generation, seededDirs])
 
   // One directory per seed document, enforced by the backend with a 409. A
-  // creation made this session counts even before the refetch reports it.
-  const alreadySeeded = seededDirs.length > 0 || createdLabel !== null
+  // creation this reviewer made counts the moment the server confirms it, even
+  // if the refetch that would have reported it never succeeds.
+  const alreadySeeded = seededDirs.length > 0 || identity.status === 'saved'
 
   // The band of the *best model hit* decides the whole list's framing (issue
   // #94): that is the number a reviewer reads first, and the one that says
@@ -222,22 +245,40 @@ export default function PredictionList() {
     </button>
   )
 
-  // The CTA renders from exactly two places (inside the no-match callout, or at
-  // the foot of the list). The acknowledgement above outlives both.
+  // The CTA renders from exactly ONE of two places: inside the no-match
+  // callout, or at the foot of the list. Both read the same store record, so a
+  // second mount would be a second copy of one acknowledgement rather than a
+  // second decision -- hence the explicit exclusion below.
   //
-  // It waits for a settled ranking. Offering "start a new directory" while the
-  // request is still in flight, or after it failed, invites the reviewer to
-  // declare a new source on the strength of evidence nobody has seen -- and it
-  // is the wrong CTA in the first place if the ranking turns out to be a
-  // no-match, where the emphasised one inside the callout is the right one.
-  // Excluded and empty rankings still get it: the model said nothing about the
-  // document, and "this is a new source" is a judgement the reviewer can still
-  // reach on their own reading.
-  const settled = phase === 'ready' || phase === 'empty' || phase === 'excluded'
+  // The offer to create waits for a settled ranking. Offering "start a new
+  // directory" while the request is still in flight, or after it failed, invites
+  // the reviewer to declare a new source on the strength of evidence nobody has
+  // seen -- and it is the wrong CTA in the first place if the ranking turns out
+  // to be a no-match, where the emphasised one inside the callout is the right
+  // one. Excluded and empty rankings still get it: the model said nothing about
+  // the document, and "this is a new source" is a judgement the reviewer can
+  // still reach on their own reading.
+  //
+  // ANYTHING ALREADY KNOWN ABOUT THIS QUERY is shown in every phase, because
+  // none of it is a claim about the ranking: a confirmed save, a half-typed
+  // name, a write whose outcome is still open, and a lookup that could not be
+  // answered all outlive loading, errors and empty responses. That is the whole
+  // point of the durable record, and it is what stops a failed refresh from
+  // re-offering Create for a directory that already exists.
+  const hasDurableState =
+    identity.status === 'saved' ||
+    identity.status === 'unresolved' ||
+    creation.status !== 'idle'
+  const inlineCtaMounted =
+    settled && topBand === 'no_match' && activeQueryId !== null && !alreadySeeded
   const showFootCta =
     activeQueryId !== null &&
-    (createdLabel !== null ||
-      (settled && !alreadySeeded && topBand !== 'no_match'))
+    !inlineCtaMounted &&
+    (hasDurableState || (settled && !alreadySeeded && topBand !== 'no_match'))
+  // The saved acknowledgement is on screen, with its own status badge, group
+  // list and creator attribution. `saved` never coincides with the inline CTA,
+  // which only mounts when the document is not yet seeded.
+  const acknowledgementShown = showFootCta && identity.status === 'saved'
 
   return (
     <div data-tour="predictions" className="px-2 py-2">
@@ -245,7 +286,14 @@ export default function PredictionList() {
         <span className="text-xs font-semibold uppercase tracking-wider text-stone-400">
           Predicted Sources
         </span>
-        <AwaitingMatchBadge seededDirs={seededDirs} />
+        {/* Status is stated once. When the durable acknowledgement is on screen
+            it carries the badge itself, beside the directory it describes and
+            the person who created it, and that copy survives a failed refresh;
+            repeating the same chip in the header would be the same fact twice
+            in one narrow panel. */}
+        <AwaitingMatchBadge
+          seededDirs={acknowledgementShown ? [] : seededDirs}
+        />
       </div>
       <p className="font-ui text-xs text-stone-400 dark:text-stone-500 px-2 mb-2">
         Ranked by similarity
@@ -340,9 +388,6 @@ export default function PredictionList() {
               model={activeModel}
               filename={response?.filename}
               alreadySeeded={alreadySeeded}
-              onCreated={(label) =>
-                setCreatedDir({ queryId: activeQueryId, label })
-              }
             />
           )}
           {topBand === 'careful' && (
@@ -395,9 +440,10 @@ export default function PredictionList() {
 
       {/* Above the no-match band the CTA is a quiet escape hatch at the foot of
           the list; below it, NoMatchCallout has already offered it up top. It
-          also renders here, in every phase, once a directory has been created
-          this session -- that acknowledgement must not be a casualty of a
-          refetch. */}
+          also renders here, in every phase, once anything durable is known
+          about this query -- an acknowledgement, an open naming form, a write
+          whose outcome is still unknown, or a lookup that failed. None of that
+          may be a casualty of a refetch. */}
       {showFootCta && activeQueryId !== null && (
         <NewDirectoryCta
           key={activeQueryId}
@@ -405,8 +451,6 @@ export default function PredictionList() {
           model={activeModel}
           emphasised={false}
           filename={response?.filename}
-          createdLabel={createdLabel}
-          onCreated={(label) => setCreatedDir({ queryId: activeQueryId, label })}
         />
       )}
     </div>

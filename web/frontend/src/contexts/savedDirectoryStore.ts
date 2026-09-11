@@ -233,6 +233,34 @@ function mergeDirs(
 }
 
 /**
+ * Whether a merge actually told us anything new.
+ *
+ * The predictions response repeats a query's `seeded_dirs` on every settled
+ * request, so the same positive evidence is re-observed after each refresh and
+ * each model switch. Folding it in is correct; re-publishing an identical
+ * record afterwards is not, because every subscriber re-renders for it. Compared
+ * field by field rather than by reference, because `mergeDirs` always builds a
+ * new array.
+ */
+function sameDirs(a: readonly ReviewerDir[], b: readonly ReviewerDir[]): boolean {
+  if (a.length !== b.length) return false
+  return a.every((dir, index) => {
+    const other = b[index]
+    return (
+      dir.dir_id === other.dir_id &&
+      dir.label === other.label &&
+      dir.status === other.status &&
+      dir.created_by === other.created_by &&
+      dir.created_at === other.created_at &&
+      dir.seed_query_id === other.seed_query_id &&
+      dir.best_match_score === other.best_match_score &&
+      dir.member_query_ids.length === other.member_query_ids.length &&
+      dir.member_query_ids.every((id, i) => id === other.member_query_ids[i])
+    )
+  })
+}
+
+/**
  * `created` and `recovered` are first-hand facts about THIS reviewer's attempt,
  * so a later routine refresh does not overwrite them: the acknowledgement would
  * otherwise stop saying where the grouping came from halfway through a session.
@@ -710,16 +738,28 @@ export class SavedDirectoryStore {
       const merged = mergeDirs(known, dirs)
       const primary = merged[0]
       if (!primary) return current
+      const confirmation =
+        current.identity.status === 'saved'
+          ? mergeConfirmation(current.identity.confirmedBy, confirmedBy)
+          : confirmedBy
+      if (
+        current.identity.status === 'saved' &&
+        current.identity.confirmedBy === confirmation &&
+        current.identity.refreshing === false &&
+        current.identity.refreshError === null &&
+        sameDirs(current.identity.dirs, merged)
+      ) {
+        // Nothing new. Re-publishing the record here would re-render every
+        // subscriber for each repetition of the same `seeded_dirs`.
+        return current
+      }
       return {
         ...current,
         identity: {
           status: 'saved',
           dirs: merged,
           primary,
-          confirmedBy:
-            current.identity.status === 'saved'
-              ? mergeConfirmation(current.identity.confirmedBy, confirmedBy)
-              : confirmedBy,
+          confirmedBy: confirmation,
           refreshing: false,
           refreshError: null,
         },

@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -11,8 +12,30 @@ import {
   REVIEWER_DIRS_UPDATED_EVENT,
   type ReviewerDir,
 } from '../../api/reviewerDirs'
-import { usePredictions } from '../../api/queries'
+import { AppProvider, useApp } from '../../contexts/AppContext'
+import { PredictionProvider, usePredictionState } from '../../contexts/PredictionContext'
 import NewDirectoryCta from './NewDirectoryCta'
+
+/**
+ * Another query's ranking, read through the SHARED prediction state (issue
+ * #156) rather than through a second `usePredictions` cache of this suite's
+ * own. The point of these two probes is that a cache built before the write
+ * must not keep serving a ranking without the new directory in it, and testing
+ * that against a private cache would prove nothing about the one the app uses.
+ */
+function OtherQueryCandidates({ queryId, model }: { queryId: number; model: string }) {
+  const { setActiveQueryId, setActiveModel } = useApp()
+  useEffect(() => {
+    setActiveQueryId(queryId)
+    setActiveModel(model)
+  }, [queryId, model, setActiveQueryId, setActiveModel])
+  const { phase, predictions } = usePredictionState()
+  return (
+    <span data-testid="other-query-candidates">
+      {phase === 'loading' || phase === 'idle' ? 'loading' : String(predictions.length)}
+    </span>
+  )
+}
 
 /**
  * The seven invariants an independent review of this module found broken, kept
@@ -431,21 +454,16 @@ describe('finding 8: a recovery that arrives late still invalidates other caches
       }),
     )
 
-    function OtherQueryCandidates() {
-      const result = usePredictions(OTHER_QUERY, MODEL)
-      return (
-        <span data-testid="other-query-candidates">
-          {result.loading ? 'loading' : String(result.data?.predictions.length ?? 0)}
-        </span>
-      )
-    }
-
     try {
       render(
-        <SavedDirectoryProvider accountKey="reviewer-1">
-          <NewDirectoryCta queryId={QUERY_A} model={MODEL} emphasised />
-          <OtherQueryCandidates />
-        </SavedDirectoryProvider>,
+        <AppProvider>
+          <SavedDirectoryProvider accountKey="reviewer-1">
+            <PredictionProvider>
+              <NewDirectoryCta queryId={QUERY_A} model={MODEL} emphasised />
+              <OtherQueryCandidates queryId={OTHER_QUERY} model={MODEL} />
+            </PredictionProvider>
+          </SavedDirectoryProvider>
+        </AppProvider>,
       )
       // The other query is cached before anything is created, with no reviewer
       // candidate in it. This is the cache that must not be allowed to persist.
@@ -688,22 +706,17 @@ describe('finding 8: a recovery that arrives late still invalidates other caches
       }),
     )
 
-    function OtherQueryCandidates() {
-      const result = usePredictions(OTHER_QUERY, MODEL)
-      return (
-        <span data-testid="other-query-candidates">
-          {result.loading ? 'loading' : String(result.data?.predictions.length ?? 0)}
-        </span>
-      )
-    }
-
     try {
       render(
-        <SavedDirectoryProvider accountKey="reviewer-1">
-          <NewDirectoryCta queryId={QUERY_A} model={MODEL} emphasised />
-          <OtherQueryCandidates />
-          <Probe />
-        </SavedDirectoryProvider>,
+        <AppProvider>
+          <SavedDirectoryProvider accountKey="reviewer-1">
+            <PredictionProvider>
+              <NewDirectoryCta queryId={QUERY_A} model={MODEL} emphasised />
+              <OtherQueryCandidates queryId={OTHER_QUERY} model={MODEL} />
+              <Probe />
+            </PredictionProvider>
+          </SavedDirectoryProvider>
+        </AppProvider>,
       )
       await waitFor(() => {
         expect(screen.getByTestId('other-query-candidates').textContent).toBe('0')
