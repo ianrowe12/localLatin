@@ -102,6 +102,40 @@ export interface SaveAcknowledgement {
  */
 export type SaveOutcome = SaveAcknowledgement | { status: 'already_pending' }
 
+/**
+ * How the last save request for one assessment ended.
+ *
+ * Held by the provider rather than by the controls that started it, because the
+ * panel and its buttons unmount whenever the sidebar is collapsed or the view
+ * changes, and an outcome that lives only in an unmounted callback is an
+ * outcome nobody is told about. A reviewer who comes back to a pair of idle
+ * buttons, with no word of the request that was out, presses Submit again --
+ * into an append-only log, possibly on top of a row that was written after all
+ * (issue #158).
+ *
+ * Scoped to one assessment key, which carries the account, so it can never be
+ * shown against another reviewer's or another document's screen. Recording one
+ * is not retrying it: nothing here resends anything.
+ */
+export interface SettledSave {
+  key: string
+  /** The account that sent the request, from the key it was sent under. */
+  accountId: number | null
+  kind: SaveKind
+  queryId: number
+  /** The draft revision that was sent. */
+  revision: number
+  /**
+   * True when the visit that sent this had already ended when it settled: the
+   * reviewer had left the assessment, the view, or this panel. Such an outcome
+   * is a fact about its own operation and never the current screen's success.
+   */
+  visitEnded: boolean
+  outcome:
+    | { status: 'saved'; entry: FeedbackEntry }
+    | { status: 'failed'; error: unknown }
+}
+
 export interface FeedbackContextValue {
   drafts: Map<string, FeedbackDraft>
   /**
@@ -194,6 +228,27 @@ export interface FeedbackContextValue {
    */
   getSaveEpoch: (key: string) => number
 
+  /**
+   * How the last save request for the assessment on screen ended, if one has.
+   *
+   * Survives the controls that started it, so a returned panel can say that a
+   * save is uncertain before offering a retry, and can say that a save landed
+   * after the reviewer left rather than silently keeping a draft that is
+   * already in the log.
+   */
+  lastSaveOutcome: SettledSave | null
+  /** Forget that outcome for the assessment on screen. Sends nothing. */
+  dismissSaveOutcome: () => void
+  /**
+   * Tell the provider a review panel has taken the screen.
+   *
+   * A visit is what the reviewer is looking at, and they are looking at a
+   * panel: collapsing the sidebar and opening it again leaves the key and the
+   * view unchanged but replaces the screen, and a save sent by the panel that
+   * is gone must not clear the new one's draft or pose as its success.
+   */
+  enterAssessmentScreen: () => void
+
   /** The last save this session recorded, for a local acknowledgement. */
   lastSubmission: LastSubmission | null
   /**
@@ -278,6 +333,28 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
   const publishPending = useCallback(() => {
     setPendingOps(new Map(inFlightRef.current))
   }, [])
+  // How the last request for each assessment ended. Kept here for the same
+  // reason the lock is: the controls that started it may be gone by the time it
+  // settles, and an unreported outcome is how an uncertain save becomes a
+  // second one.
+  const [settled, setSettled] = useState<ReadonlyMap<string, SettledSave>>(
+    () => new Map(),
+  )
+  const recordSettled = useCallback((record: SettledSave) => {
+    setSettled((prev) => {
+      const next = new Map(prev)
+      next.set(record.key, record)
+      return next
+    })
+  }, [])
+  const forgetSettled = useCallback((key: string) => {
+    setSettled((prev) => {
+      if (!prev.has(key)) return prev
+      const next = new Map(prev)
+      next.delete(key)
+      return next
+    })
+  }, [])
   // Choices this provider dropped, kept until the reviewer acts: once the draft
   // is rewritten the reason is gone from the data, and silently discarding
   // somebody's answer is the failure this issue exists to prevent.
@@ -356,7 +433,11 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
    * only the visit id can tell a save made before they left from the screen
    * they are looking at now.
    */
-  const visitScope = `${draftKey ?? 'none'}@${currentView}`
+  const screenRef = useRef(0)
+  const scopeBase = `${draftKey ?? 'none'}@${currentView}`
+  const visitScope = `${scopeBase}#${screenRef.current}`
+  const scopeBaseRef = useRef(scopeBase)
+  scopeBaseRef.current = scopeBase
   const visitRef = useRef<AssessmentVisit & { scope: string }>({
     key: draftKey,
     id: 1,
@@ -371,6 +452,28 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
   }
   const visit = visitRef.current
   const getVisit = useCallback(() => visitRef.current, [])
+
+  const [, setScreenTick] = useState(0)
+  /**
+   * A review panel has taken the screen, so this is a new visit.
+   *
+   * Applied immediately rather than left for the next render: a receipt can
+   * arrive in the microtask after the panel mounts, and judging it against the
+   * visit it no longer belongs to is exactly the bug. The re-render that
+   * follows only publishes the new id to consumers.
+   */
+  const enterAssessmentScreen = useCallback(() => {
+    screenRef.current += 1
+    visitRef.current = {
+      key: visitRef.current.key,
+      id: visitRef.current.id + 1,
+      scope: `${scopeBaseRef.current}#${screenRef.current}`,
+    }
+    setScreenTick((tick) => tick + 1)
+  }, [])
+
+  const draftKeyRef = useRef(draftKey)
+  draftKeyRef.current = draftKey
 
   const hasNewerDraft = useCallback(
     (key: string, revision: number) => draftRevision(draftsRef.current.get(key)) > revision,
@@ -598,7 +701,20 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
       entry: FeedbackEntry,
     ): { applied: boolean; supersededByNewerDraft: boolean } => {
       const superseded = draftRevision(draftsRef.current.get(key)) > revision
-      if (visitRef.current.id !== visitId) {
+      const visitEnded = visitRef.current.id !== visitId
+      // Recorded either way: a row exists, and whichever panel is on screen
+      // for this assessment is entitled to know that before it offers to send
+      // another one.
+      recordSettled({
+        key,
+        accountId: owner,
+        kind,
+        queryId,
+        revision,
+        visitEnded,
+        outcome: { status: 'saved', entry },
+      })
+      if (visitEnded) {
         return { applied: false, supersededByNewerDraft: superseded }
       }
       saveEpochsRef.current.set(key, (saveEpochsRef.current.get(key) ?? 0) + 1)
@@ -623,7 +739,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
       window.dispatchEvent(new Event(FEEDBACK_UPDATED_EVENT))
       return { applied: true, supersededByNewerDraft: superseded }
     },
-    [],
+    [recordSettled],
   )
 
   /**
@@ -662,11 +778,30 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
       // receipt has to be checked against whoever actually sent the request.
       const owner = accountIdRef.current
       inFlightRef.current.set(key, kind)
+      // A new attempt replaces whatever the last one is remembered for: the
+      // reviewer is acting on it, and two outcomes for one assessment would
+      // leave them reading about the wrong request.
+      forgetSettled(key)
       publishPending()
 
       let entry: FeedbackEntry
       try {
         entry = await postFeedback(payload, owner)
+      } catch (error) {
+        // A failure is an outcome too, and the one that matters most: a lost or
+        // unreadable answer may still have appended a row. It is recorded
+        // against the assessment, not against the panel that asked, so the
+        // warning survives a collapsed sidebar.
+        recordSettled({
+          key,
+          accountId: owner,
+          kind,
+          queryId,
+          revision,
+          visitEnded: visitRef.current.id !== visitId,
+          outcome: { status: 'failed', error },
+        })
+        throw error
       } finally {
         inFlightRef.current.delete(key)
         publishPending()
@@ -694,7 +829,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
         visitEnded: !applied,
       }
     },
-    [publishPending, recordSubmission],
+    [forgetSettled, publishPending, recordSettled, recordSubmission],
   )
 
   const submitFeedback = useCallback(
@@ -787,6 +922,11 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
           supersededByNewerDraft: newerThanSaved,
         }
 
+  const dismissSaveOutcome = useCallback(() => {
+    if (draftKeyRef.current === null) return
+    forgetSettled(draftKeyRef.current)
+  }, [forgetSettled])
+
   const restoreSubmittedDraft = useCallback(() => {
     const saved = lastSavedRef.current
     if (saved === null) return
@@ -833,6 +973,11 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
     submitFeedback,
     skipFeedback,
     pendingSave: draftKey === null ? null : (pendingOps.get(draftKey) ?? null),
+    // Keyed by the assessment, which carries the account, so one reviewer's
+    // outcome can never surface on another's screen or another document's.
+    lastSaveOutcome: draftKey === null ? null : (settled.get(draftKey) ?? null),
+    dismissSaveOutcome,
+    enterAssessmentScreen,
     visit,
     getVisit,
     hasNewerDraft,

@@ -46,6 +46,15 @@ interface SubmitButtonProps {
    * send the same assessment again.
    */
   pending?: SubmitActionKind | null
+  /**
+   * How the owner says the last attempt for this assessment ended.
+   *
+   * Only a failure travels this way. These controls unmount with the sidebar,
+   * so a request that settled badly while they were gone has to be visible on
+   * the ones that replaced them; a success, by contrast, is announced by
+   * whoever owns the screen and is never re-congratulated here.
+   */
+  outcome?: { status: 'failed'; kind: SubmitActionKind } | null
 }
 
 interface Acknowledgement {
@@ -82,6 +91,7 @@ export default function SubmitButton({
   skipDisabled,
   operationKey,
   pending: externalPending = null,
+  outcome: externalOutcome = null,
 }: SubmitButtonProps) {
   const [localPending, setLocalPending] = useState<SubmitActionKind | null>(null)
   const [acknowledgement, setAcknowledgement] =
@@ -184,30 +194,31 @@ export default function SubmitButton({
     acknowledgement !== null &&
     acknowledgement.ok &&
     acknowledgement.kind === 'submit'
-  const failed = acknowledgement !== null && !acknowledgement.ok
+  // A remembered failure counts as this pair of controls' own: the reviewer is
+  // about to press one of them, and must not be shown an idle button for an
+  // attempt that did not land.
+  const failed =
+    (acknowledgement !== null && !acknowledgement.ok) ||
+    (acknowledgement === null && !busy && externalOutcome !== null)
 
   const statusText =
     pending !== null
       ? PENDING_TEXT[pending]
-      : acknowledgement === null
-        ? ''
-        : acknowledgement.ok
+      : acknowledgement !== null
+        ? acknowledgement.ok
           ? SUCCESS_TEXT[acknowledgement.kind]
           : FAILURE_TEXT[acknowledgement.kind]
+        : failed && externalOutcome !== null
+          ? FAILURE_TEXT[externalOutcome.kind]
+          : ''
 
-  const opState = busy
-    ? 'pending'
-    : acknowledgement === null
-      ? 'idle'
-      : acknowledgement.ok
-        ? 'acknowledged'
-        : 'failed'
+  const opState = busy ? 'pending' : failed ? 'failed' : acknowledgement === null ? 'idle' : 'acknowledged'
 
   return (
     <div
       data-tour="submit-skip"
       data-op-state={opState}
-      data-op-kind={pending ?? acknowledgement?.kind}
+      data-op-kind={pending ?? acknowledgement?.kind ?? externalOutcome?.kind}
       className="flex flex-wrap items-center gap-2"
     >
       <button

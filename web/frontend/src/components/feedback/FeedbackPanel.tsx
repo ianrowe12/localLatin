@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useApp } from '../../contexts/AppContext'
 import {
+  AssessmentNotSavableError,
   useFeedback,
   type SaveAcknowledgement,
   type SaveOutcome,
@@ -200,6 +201,9 @@ export default function FeedbackPanel() {
     getDraftRevision,
     getSaveEpoch,
     pendingSave,
+    lastSaveOutcome,
+    dismissSaveOutcome,
+    enterAssessmentScreen,
   } = useFeedback()
   const { reviewerName, clearReviewer } = useReviewer()
   // The candidates, their eligibility and the answer's validity all come from
@@ -220,7 +224,17 @@ export default function FeedbackPanel() {
   const [latest, setLatest] = useState<{ key: string; entry: FeedbackEntry } | null>(
     null,
   )
-  const [saveError, setSaveError] = useState<SaveFailure | null>(null)
+  /**
+   * A save this app refused before it sent anything.
+   *
+   * Only refusals live here. Once a request has left, how it ended belongs to
+   * the assessment rather than to this panel (`lastSaveOutcome`), because these
+   * controls unmount with the sidebar and an outcome nobody is shown is an
+   * outcome a reviewer acts on by saving again.
+   */
+  const [refusal, setRefusal] = useState<
+    { kind: 'submit' | 'skip'; failure: SaveFailure } | null
+  >(null)
   /**
    * What the last acknowledged save on this screen did, and what happened next.
    *
@@ -273,6 +287,14 @@ export default function FeedbackPanel() {
     }
   }, [clearAdvanceTimer])
 
+  // This panel is the screen the reviewer is looking at. Telling the provider
+  // so is what makes a collapsed-and-reopened sidebar a NEW visit: the save the
+  // old panel sent may still land, but it lands on a screen that is no longer
+  // its own, and it may not clear this draft or pose as this panel's success.
+  useEffect(() => {
+    enterAssessmentScreen()
+  }, [enterAssessmentScreen])
+
   const selectedRanks = useMemo(
     () => selectionReview.confirmed.map((selection) => selection.rank),
     [selectionReview.confirmed],
@@ -290,7 +312,7 @@ export default function FeedbackPanel() {
   // speaking over another (issue #171).
   useEffect(() => {
     setMultiSelectOverride(null)
-    setSaveError(null)
+    setRefusal(null)
     setSkipNeedsNote(false)
     setSaved(null)
     owedAdvanceRef.current = null
@@ -349,18 +371,25 @@ export default function FeedbackPanel() {
     seedDraftIfEmpty,
   ])
 
+  // Answering again is the reviewer acting on whatever the last attempt said,
+  // so the notice about it goes with the click.
+  const clearLastAttempt = useCallback(() => {
+    setRefusal(null)
+    dismissSaveOutcome()
+  }, [dismissSaveOutcome])
+
   const handleToggleCandidate = useCallback(
     (candidate: AssessmentCandidate) => {
-      setSaveError(null)
+      clearLastAttempt()
       toggleCandidate(candidate, multiSelect)
     },
-    [multiSelect, toggleCandidate],
+    [clearLastAttempt, multiSelect, toggleCandidate],
   )
 
   const handleToggleNone = useCallback(() => {
-    setSaveError(null)
+    clearLastAttempt()
     setNone(!(draft.correctRank === 0))
-  }, [draft.correctRank, setNone])
+  }, [clearLastAttempt, draft.correctRank, setNone])
 
   const handleMultiSelectToggle = useCallback(
     (checked: boolean) => {
@@ -509,17 +538,33 @@ export default function FeedbackPanel() {
     void advanceToNextActionable(ack)
   }, [advanceToNextActionable])
 
-  // Save failures keep the draft. What they are allowed to PROMISE differs:
-  // only a local refusal or a server rejection is known not to have written
-  // anything (see saveFailure.ts). Whose failure it is matters just as much:
-  // an assessment the reviewer has left cannot post its error onto the one in
-  // front of them.
+  /**
+   * What to do with a rejected save call.
+   *
+   * A request that was actually sent is already recorded against the
+   * assessment by the provider, and is read back below, so whichever panel is
+   * on screen reports it -- including one that replaced the panel that asked.
+   * Only a refusal made here, before anything left the browser, is this
+   * panel's to hold, and even that is dropped if the reviewer has moved on:
+   * an assessment they have left cannot post its complaint onto the one in
+   * front of them.
+   */
   const reportSaveFailure = useCallback(
-    (err: unknown, operation: { key: string; visitId: number }) => {
+    (
+      err: unknown,
+      kind: 'submit' | 'skip',
+      operation: { key: string; visitId: number },
+    ) => {
+      if (!(err instanceof AssessmentNotSavableError)) return
       if (!ownsScreen(operation)) return
-      setSaveError(classifySaveFailure(err, 'The assessment could not be saved.'))
+      // This attempt is the newer news about the assessment.
+      dismissSaveOutcome()
+      setRefusal({
+        kind,
+        failure: classifySaveFailure(err, 'The assessment could not be saved.'),
+      })
     },
-    [ownsScreen],
+    [dismissSaveOutcome, ownsScreen],
   )
 
   /**
@@ -535,13 +580,13 @@ export default function FeedbackPanel() {
     const started = getVisit()
     if (started.key === null) return
     const operation = { key: started.key, visitId: started.id }
-    setSaveError(null)
+    setRefusal(null)
     setSaved(null)
     let outcome: SaveOutcome
     try {
       outcome = await submitFeedback()
     } catch (err) {
-      reportSaveFailure(err, operation)
+      reportSaveFailure(err, 'submit', operation)
       return { ok: false }
     }
     if (outcome.status !== 'saved' || outcome.visitEnded) return
@@ -559,13 +604,13 @@ export default function FeedbackPanel() {
     const started = getVisit()
     if (started.key === null) return
     const operation = { key: started.key, visitId: started.id }
-    setSaveError(null)
+    setRefusal(null)
     setSaved(null)
     let outcome: SaveOutcome
     try {
       outcome = await skipFeedback()
     } catch (err) {
-      reportSaveFailure(err, operation)
+      reportSaveFailure(err, 'skip', operation)
       return { ok: false }
     }
     if (outcome.status !== 'saved' || outcome.visitEnded) return
@@ -594,6 +639,41 @@ export default function FeedbackPanel() {
       ? formatNoteAttribution(latest.entry)
       : null
   const noneNotice = noneCopy(evidence.noneBlock)
+  /**
+   * How the last request for this assessment ended, if the reviewer has not
+   * answered again since.
+   *
+   * A settled request outranks a local refusal: it is the later news, and it is
+   * the one that may have written a row.
+   */
+  const settledFailure =
+    lastSaveOutcome !== null && lastSaveOutcome.outcome.status === 'failed'
+      ? classifySaveFailure(
+          lastSaveOutcome.outcome.error,
+          'The assessment could not be saved.',
+        )
+      : null
+  const saveError = settledFailure ?? refusal?.failure ?? null
+  const failedKind =
+    settledFailure !== null
+      ? (lastSaveOutcome?.kind ?? 'submit')
+      : (refusal?.kind ?? 'submit')
+  /**
+   * A save that landed after the reviewer left the screen that sent it.
+   *
+   * It is a fact about that operation, never this screen's success: it moves
+   * nothing, clears nothing and offers nothing back. It is said out loud all
+   * the same, because the alternative is a reviewer looking at a box they
+   * believe is unsaved and pressing Submit again (issue #158).
+   */
+  const priorSave =
+    lastSaveOutcome !== null &&
+    lastSaveOutcome.outcome.status === 'saved' &&
+    lastSaveOutcome.visitEnded
+      ? lastSaveOutcome
+      : null
+  const priorSaveHasNewerWork =
+    priorSave !== null && hasNewerDraft(priorSave.key, priorSave.revision)
   // Ownership decides what is on screen, not just what was computed: a notice
   // left over from an assessment the reviewer has moved on from is never
   // rendered, whatever state still holds it (issue #171).
@@ -721,6 +801,31 @@ export default function FeedbackPanel() {
         </p>
       )}
 
+      {/* A save that finished after the screen that sent it had gone -- the
+          sidebar was collapsed, or the reviewer left and came back. The row
+          exists, so silence here would leave them looking at a box they think
+          is unsent, one press away from a duplicate. It still takes nothing
+          over: no clearing, no moving on, no offer to restore. */}
+      {priorSave !== null && (
+        <div
+          role="status"
+          data-testid="assessment-prior-save"
+          data-superseded={priorSaveHasNewerWork ? 'true' : 'false'}
+          className="rounded-lg border border-stone-300 dark:border-stone-600 px-2.5 py-2 flex flex-col gap-1"
+        >
+          <p className="font-ui text-xs leading-snug text-stone-700 dark:text-stone-200">
+            {priorSave.kind === 'skip'
+              ? 'Your skip for this document was recorded after you left this screen.'
+              : 'Your assessment of this document was recorded after you left this screen.'}
+          </p>
+          <p className="font-ui text-xs leading-snug text-stone-600 dark:text-stone-300">
+            {priorSaveHasNewerWork
+              ? 'Your newer edits to this document are still unsent.'
+              : 'What is in this box is the text that was sent, so nothing here needs saving again.'}
+          </p>
+        </div>
+      )}
+
       {/* An acknowledged write, and separately what happened to the move to
           the next document. A lookup that fails after a committed row is not a
           failed save: repeating the save would append a second human decision
@@ -803,7 +908,7 @@ export default function FeedbackPanel() {
               type="button"
               data-testid="assessment-refresh-ranking"
               onClick={() => {
-                setSaveError(null)
+                clearLastAttempt()
                 refresh()
               }}
               className="mt-2 rounded-md border border-stone-300 dark:border-stone-600 px-3 py-1 font-ui text-xs text-stone-600 dark:text-stone-300 hover:border-indigo-400 hover:text-indigo-600 transition-colors"
@@ -902,6 +1007,9 @@ export default function FeedbackPanel() {
         // unmount whenever the sidebar collapses or the view changes, so their
         // own state cannot be the record of a request that is still out.
         pending={pendingSave}
+        // A failure the assessment remembers, so controls that replaced the
+        // ones that asked still show what happened before inviting a retry.
+        outcome={saveError === null ? null : { status: 'failed', kind: failedKind }}
       />
     </div>
   )

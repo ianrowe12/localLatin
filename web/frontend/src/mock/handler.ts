@@ -11,6 +11,7 @@ import {
   type PredictionVariant,
 } from '../api/variants'
 import type { AuthUser } from '../api/auth'
+import type { FeedbackEntry, FeedbackPayload } from '../api/feedback'
 import { FALLBACK_BANDS } from '../utils/confidenceBands'
 import type { ReviewerDir } from '../api/reviewerDirs'
 import type { TokenMapResponse } from '../api/tokenMap'
@@ -475,6 +476,72 @@ function handleLatestFeedback(url: string): unknown {
   }
 }
 
+/**
+ * The row `POST /api/feedback` appends, as the real router answers it.
+ *
+ * The client accepts a save only against a receipt that IS the row it asked
+ * for -- note, ordered choices, canonical rank and the directory that rank
+ * held, all under the account that sent it (issue #158). A stub body is no
+ * longer proof of anything, so mock mode has to write the same row the backend
+ * would, or dev:mock cannot complete a save at all.
+ *
+ * Deliberately mirrors `web/routers/feedback.py`: the directory is resolved
+ * here from the candidates this mock serves, never copied from the request,
+ * and a skip or a none-of-these keeps neither rank nor directory.
+ */
+let mockFeedbackId = 9100
+
+function handleCreateFeedback(init?: RequestInit): { entry: FeedbackEntry } | { error: { message: string } } {
+  if (mockUser === null) return { error: { message: 'Not authenticated' } }
+  let payload: FeedbackPayload
+  try {
+    payload = JSON.parse(String(init?.body ?? '')) as FeedbackPayload
+  } catch {
+    return { error: { message: 'Malformed feedback payload' } }
+  }
+  const variant = payload.variant ?? DEFAULT_VARIANT
+  const outcome = payload.outcome ?? 'matched_rank'
+  const ranks =
+    Array.isArray(payload.selected_ranks) && payload.selected_ranks.length > 0
+      ? [...payload.selected_ranks]
+      : null
+  // The canonical choice is the first one made, and a deferral has none.
+  const correctRank =
+    outcome === 'skipped' ? null : (ranks?.[0] ?? payload.correct_rank ?? null)
+  let correctDir: string | null = null
+  if (outcome === 'matched_rank' && correctRank !== null) {
+    const served = handlePredictions(payload.query_id, payload.model_slug, variant)
+    const candidates =
+      served !== undefined && 'predictions' in served ? served.predictions : []
+    const match = candidates.find((candidate) => candidate.rank === correctRank)
+    if (match === undefined) {
+      return { error: { message: `Rank ${correctRank} has no candidate behind it` } }
+    }
+    correctDir = match.dir_name
+  }
+  mockFeedbackId += 1
+  return {
+    entry: {
+      id: mockFeedbackId,
+      query_id: payload.query_id,
+      timestamp: new Date().toISOString(),
+      // The API answers in slugs, whatever shape the request named the model in.
+      model_slug: payload.model_slug.replace(/\//g, '_'),
+      variant,
+      outcome,
+      correct_rank: correctRank,
+      correct_dir: correctDir,
+      selected_ranks: outcome === 'matched_rank' ? ranks : null,
+      // Stored verbatim: the note is the reviewer's prose, not a field to tidy.
+      notes: payload.notes,
+      reviewer: mockUser.display_name,
+      reviewer_account_id: mockUser.id,
+      reviewer_username: mockUser.username,
+      schema_version: 2,
+    },
+  }
+}
+
 function handleModels(): ModelInfo[] {
   return [
     {
@@ -599,7 +666,11 @@ export function installMockHandler(): void {
       return mockResponse(handleLatestFeedback(url))
     }
     if (url.includes('/api/feedback') && init?.method === 'POST') {
-      return mockResponse({ success: true })
+      const written = handleCreateFeedback(init)
+      if ('error' in written) {
+        return mockResponse(written, mockUser === null ? 401 : 422)
+      }
+      return mockResponse(written.entry, 201)
     }
 
     // Stats

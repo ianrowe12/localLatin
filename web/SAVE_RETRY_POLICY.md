@@ -64,6 +64,12 @@ query, merged across reviewers, and it can be stale, can belong to someone else,
 and can be answered out of order relative to a save. It seeds an empty form; it
 never confirms one.
 
+The dev mock is held to the same contract. `npm run dev:mock` answers
+`POST /api/feedback` with a full row built from the payload -- canonical rank,
+resolved directory, ordered choices, the note verbatim, the signed-in reviewer --
+because a stub that answers `{ success: true }` is refused by the client, so
+mock mode could not save at all.
+
 ## Why an explicit retry can still be wrong
 
 Even when the reviewer chooses to save again, the second row may differ from the
@@ -109,8 +115,9 @@ hide unsent work.
 
 Every save, lookup and prefill carries the assessment *and the visit* it started
 on. A visit ends when the reviewer leaves that assessment or leaves the review
-screen, so returning to the same document is a new visit even though the key is
-unchanged. A completion is checked against the current visit before it does
+screen, and also when the panel itself is unmounted and mounted again -- so
+returning to the same document, by any route, is a new visit even though the key
+is unchanged. A completion is checked against the current visit before it does
 anything at all -- before it cancels a timer, replaces a recovery, clears a
 draft or shows a notice -- so a save finishing on the document behind can never
 steer the one in front. The acknowledgement in the sidebar additionally checks
@@ -119,11 +126,24 @@ else's save or offered their draft.
 
 An operation in flight belongs to the assessment, not to the buttons: the
 provider holds it, keyed per assessment, so collapsing the sidebar and opening
-it again shows a save still in progress rather than an idle Submit. The prefill
-guard is keyed the same way, so a save on one document no longer suppresses a
-colleague's note on the next, and a prefill is refused if the box has been
-edited since the request went out -- including an edit typed and undone, which
-is a decision about the note, not an absence of one.
+it again shows a save still in progress rather than an idle Submit. Its outcome
+is held the same way. When a save settles, the receipt or the failure is
+recorded against the assessment, so an answer that arrives while the controls
+are unmounted is shown when they come back: a failure that landed with the
+sidebar collapsed still reports itself, with the draft intact, instead of
+leaving an idle Submit that invites an unwarned second append.
+
+Those two rules meet at a remount, and they resolve in opposite directions on
+purpose. The request is not cancelled -- it is the same assessment -- but the
+visit it began in is over, so a success it brings back does not clear the
+returned-to draft, does not move the reviewer on and does not raise the saved
+toast. The panel says the row was recorded after they left that screen, and
+whether what is in the box now is newer work that is still unsent.
+
+The prefill guard is keyed per assessment too, so a save on one document no
+longer suppresses a colleague's note on the next, and a prefill is refused if
+the box has been edited since the request went out -- including an edit typed
+and undone, which is a decision about the note, not an absence of one.
 
 Notices about unsent work are read from the box at the moment they are shown,
 never from a snapshot taken when the receipt arrived. A reviewer who keeps

@@ -1028,3 +1028,103 @@ describe('an answer changes only the assessment that asked for it', () => {
     expect(notesBox().value).toBe('written while the lookup was out')
   })
 })
+
+/**
+ * Collapsing the sidebar unmounts the panel and the buttons, so a save can
+ * settle with nothing on screen that asked for it. The answer still belongs to
+ * the assessment, and the reviewer still has to be told what it was.
+ */
+describe('an outcome outlives the controls that asked for it', () => {
+  async function remountControls(): Promise<void> {
+    await userEvent.click(screen.getByRole('button', { name: 'Collapse sidebar' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Expand sidebar' }))
+  }
+
+  it('shows a network failure that landed while the controls were gone', async () => {
+    renderPanel({ sidebar: true })
+    await chooseFirstCandidate()
+    await userEvent.type(notesBox(), 'hand A throughout')
+    await userEvent.click(submitButton())
+    await waitFor(() => expect(postGates).toHaveLength(1))
+
+    await remountControls()
+    await settlePost(0, { error: new TypeError('Failed to fetch') })
+
+    const error = await screen.findByTestId('assessment-save-error')
+    expect(error.getAttribute('data-outcome')).toBe('uncertain')
+    const status = await screen.findByTestId('submit-button-status')
+    expect(status.parentElement?.getAttribute('data-op-state')).toBe('failed')
+    expect(storedDrafts()[draftKeyFor(QUERY_A)]).toMatchObject({ correctRank: 1 })
+    expect(notesBox().value).toBe('hand A throughout')
+
+    // The retry is a real second request, made knowingly.
+    await waitFor(() => expect(submitButton().disabled).toBe(false))
+    await userEvent.click(submitButton())
+    await waitFor(() => expect(postPayloads).toHaveLength(2))
+  })
+
+  it('shows a rejected save that landed while the controls were gone', async () => {
+    renderPanel({ sidebar: true })
+    await chooseFirstCandidate()
+    await userEvent.click(submitButton())
+    await waitFor(() => expect(postGates).toHaveLength(1))
+
+    await remountControls()
+    await settlePost(0, {
+      status: 409,
+      body: {
+        error: {
+          code: 'CANDIDATE_IDENTITY_CHANGED',
+          message: 'Rank 1 now resolves to a different directory.',
+        },
+      },
+    })
+
+    const error = await screen.findByTestId('assessment-save-error')
+    expect(error.getAttribute('data-outcome')).toBe('rejected')
+    expect(storedDrafts()[draftKeyFor(QUERY_A)]).toMatchObject({ correctRank: 1 })
+    await letTheTimerFire()
+    expect(nextGates).toHaveLength(0)
+  })
+
+  it('does not clear or carry away the screen the reviewer came back to', async () => {
+    // The receipt is real and the row is committed, but the panel on screen is
+    // a new visit: it cannot lose its draft or be steered off the document by
+    // an answer to a question it did not ask.
+    renderPanel({ sidebar: true })
+    await chooseFirstCandidate()
+    await userEvent.click(submitButton())
+    await waitFor(() => expect(postGates).toHaveLength(1))
+
+    await remountControls()
+    await settlePost(0)
+    await letTheTimerFire()
+
+    expect(storedDrafts()[draftKeyFor(QUERY_A)]).toMatchObject({ correctRank: 1 })
+    expect(nextGates).toHaveLength(0)
+    expect(activeQueryId()).toBe(String(QUERY_A))
+    expect(screen.queryByTestId('assessment-saved-notice')).toBeNull()
+    expect(document.body.textContent).not.toContain('Assessment saved to the review log')
+
+    // What did happen is still reported, by the panel that is now on screen.
+    const notice = await screen.findByTestId('assessment-prior-save')
+    expect(notice.getAttribute('data-superseded')).toBe('false')
+    expect(notice.textContent).toContain('recorded after you left this screen')
+  })
+
+  it('calls work typed after the reviewer came back unsent', async () => {
+    renderPanel({ sidebar: true })
+    await chooseFirstCandidate()
+    await userEvent.click(submitButton())
+    await waitFor(() => expect(postGates).toHaveLength(1))
+
+    await remountControls()
+    await settlePost(0)
+    await userEvent.type(notesBox(), 'read again on return')
+
+    const notice = await screen.findByTestId('assessment-prior-save')
+    expect(notice.getAttribute('data-superseded')).toBe('true')
+    expect(screen.getByText('Your newer edits to this document are still unsent.')).toBeTruthy()
+    expect(notesBox().value).toBe('read again on return')
+  })
+})
