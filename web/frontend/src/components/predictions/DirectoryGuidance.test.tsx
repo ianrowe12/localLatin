@@ -295,6 +295,12 @@ describe('the tour says the same things', () => {
     const [step] = stepsFor('match-options')
     expect(step.description).toMatch(/needs no new directory/i)
     expect(step.description).toMatch(/not a claim that the CCL holds no match/i)
+    // #157's half of this step: None rejects the MODEL's candidates, and the
+    // pills are drawn from the ranking rather than from a top-ten assumption.
+    // Neither issue's sentence may be dropped to make room for the other's.
+    expect(step.description).toMatch(/reject the model\u2019s candidates/i)
+    expect(step.description).toMatch(/only the candidates this ranking actually offers/i)
+    expect(step.description).not.toMatch(/None of top N/i)
   })
 
   it('keeps uncertainty distinct from a definite non-match', () => {

@@ -45,9 +45,10 @@ and it is live: it opens a one-field naming form with the consequences stated ab
 button. Say those out loud, because they are what Abigail asked about. Creating is a permanent
 write on its own: the directory and its name are saved the moment the reviewer confirms, the app
 has no rename, no removal and no way to withdraw a document from a grouping, and submitting or
-skipping the assessment afterwards does not undo it. It is also a *separate* decision from
-"None of top 10": a reviewer can reject the ranked candidates with None and a note without
-creating anything, and can create a grouping without it settling the assessment.
+skipping the assessment afterwards does not undo it. It is also a *separate* decision from the
+None pill, which names the model candidates this ranking actually offers ("None of the 3 model
+candidates", and so on): a reviewer can reject those with None and a note without creating
+anything, and can create a grouping without it settling the assessment.
 
 Two things not to promise. A saved directory becomes a candidate on other documents *this model
 can score*, not on every other query: its own members never see it, an excluded query cannot be
