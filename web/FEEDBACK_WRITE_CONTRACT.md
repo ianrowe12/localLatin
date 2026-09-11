@@ -101,18 +101,21 @@ asked about. No candidates means no rank pills, no None pill and no Submit, and
 a ranking whose model candidates are none of them readable disables every pill
 with the reason on screen; Skip with a note stays available throughout.
 
-The client is deliberately stricter than `_candidate_is_usable` on one point.
-The server asks whether the *directory* holds any text; the client asks whether
-the *witness on screen* does. `CenterArea` renders `candidate_files[0]` and this
-build has no witness selector, so a directory whose first file is blank and
-whose second file carries the text is a directory the reviewer is shown nothing
-of. Such a candidate is left disabled, and None is disabled with it, because
-rejecting unreadable evidence is as much a claim as accepting it. The server
-would take either save; refusing it here costs a small number of answers and
-buys the guarantee that no recorded judgement was made on unseen text. When a
-witness selector lands (issue #163) the rule should relax to "any witness the
-reviewer can reach", not back to the directory-wide test. `web/tests/test_feedback_client_contract.py` posts the literal bodies
-below against this API.
+The witness selector from issue #163 exposes the delivered `candidate_files`
+for both model and reviewer candidates. The client now uses the same usable
+candidate rule as `_candidate_is_usable`: a directory identity, a finite score
+and nonblank text in at least one reachable witness. Names in `dir_files`,
+preview text and supporting-member metadata alone do not establish readable
+evidence.
+
+Eligibility depends on what the reviewer can reach, not which witness is
+currently displayed. Inspecting a blank witness does not withdraw an otherwise
+valid choice. Switching witnesses changes neither choice order, outcome nor
+notes, and submits nothing. Reachability does not prove that a reviewer read
+the text. None still requires every offered model candidate to be usable;
+reviewer extras neither grant nor remove that permission.
+`web/tests/test_feedback_client_contract.py` posts the literal bodies below
+against this API.
 
 Every save sends `correct_dir: null`. The client no longer claims to know the
 assignment, and the server resolves it from the rank.
