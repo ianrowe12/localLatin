@@ -322,12 +322,15 @@ export class SavedDirectoryStore {
   }
 
   /**
-   * Sign-out / account switch. Saved identity is a claim about "the directories
-   * this deployment's database holds, as visible to this account", so it must
-   * not survive into another account's session. Nothing here is persisted to
-   * browser storage for the same reason: a bare numeric query id from another
-   * deployment must never be able to assert that this query is saved. Reload
-   * recovery is the server's job, not localStorage's.
+   * Sign-out / account switch. Saved identity is a claim about what this
+   * deployment's database told ONE authenticated session, so it must not
+   * survive into another one. The rows themselves are global and may
+   * legitimately reappear; what may not carry over is the previous session's
+   * evidence for them, its unfinished writes and its unanswered lookups.
+   * Nothing here is persisted to browser storage for the same reason: a bare
+   * numeric query id from another deployment must never be able to assert that
+   * this query is saved. Reload recovery is the server's job, not
+   * localStorage's.
    *
    * `SavedDirectoryProvider` does not call this on an account change; it builds
    * a new store instead, so the old records are unreachable rather than emptied

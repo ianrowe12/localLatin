@@ -3,7 +3,6 @@ import { useApp } from '../../contexts/AppContext'
 import { usePredictionState } from '../../contexts/PredictionContext'
 import {
   useSavedDirectory,
-  useSavedDirectoryStore,
 } from '../../contexts/SavedDirectoryContext'
 import { useModels } from '../../api/models'
 import { useKeyboardShortcuts } from '../../utils/keyboard'
@@ -159,29 +158,17 @@ export default function PredictionList() {
    * responses, model switches, navigation away and back, and a reload (it is
    * re-established from the server, never from browser storage).
    */
-  const savedDirectories = useSavedDirectoryStore()
   const { identity, creation } = useSavedDirectory(activeQueryId)
 
   // The phases in which the provider is speaking for the current key. `loading`
   // and `error` are statements about a request, not about the database.
   const settled = phase === 'ready' || phase === 'empty' || phase === 'excluded'
 
-  /**
-   * Positive `seeded_dirs` from the CURRENT request, folded into the store
-   * (issue #161, gate 2).
-   *
-   * Guarded by #156's own key and generation rather than by a second prediction
-   * cache: the evidence is only ingested from a settled response, and it is
-   * recorded against the query THAT RESPONSE speaks for, not against whatever
-   * is on screen by the time it lands. The store ignores empty lists and rows
-   * seeded by another query, so a stale, failed or empty ranking can never
-   * erase a saved identity, its historical groups or their membership.
-   */
-  const observedQueryId = settled && key !== null ? key.queryId : null
-  useEffect(() => {
-    if (observedQueryId === null) return
-    savedDirectories.observeSeededDirs(observedQueryId, seededDirs)
-  }, [savedDirectories, observedQueryId, generation, seededDirs])
+  // What feeds that record is NOT read here. `SavedDirectoryObservations`, one
+  // level up, is the single admission point for `seeded_dirs`, because the
+  // question it has to answer -- is this response this account's own answer, or
+  // the previous session's snapshot? -- outlives this component and must not be
+  // asked once per surface that renders a directory.
 
   // One directory per seed document, enforced by the backend with a 409. A
   // creation this reviewer made counts the moment the server confirms it, even

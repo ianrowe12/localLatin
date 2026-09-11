@@ -26,17 +26,20 @@ import {
  *   component that created the directory.
  *
  * `accountKey` scopes the whole store to one signed-in account on one
- * deployment. Reviewer directories are named by numeric query id, so state left
- * over from another account — or another deployment's database — must not be
- * able to claim that this query is already saved. Pass the current account id
- * (for example `useReviewer().user?.id`) when mounting this provider.
+ * deployment. Reviewer directories are global -- the same rows are served to
+ * every reviewer, and they may legitimately reappear for the next account -- but
+ * this record holds what the database said to ONE authenticated session, along
+ * with that session's unfinished writes and unanswered lookups. Replaying it
+ * into another session would make evidence nobody re-established durable under
+ * a new name, so pass the current account id (for example
+ * `useReviewer().user?.id`) when mounting this provider.
  *
  * MOUNTING IT IS NOT OPTIONAL: the hooks throw without it rather than falling
  * back to a store of their own. A per-component fallback would type-check and
  * silently reinstate the bug this module exists to fix; a process-wide one
- * would leak one reviewer's state into the next session. Until App composition
- * mounts this provider (deferred to issue #156's handoff), any surface that
- * renders `NewDirectoryCta` has to wrap it.
+ * would leak one reviewer's state into the next session. `App` mounts it above
+ * `PredictionProvider`; any other surface that renders `NewDirectoryCta` has to
+ * wrap it too.
  */
 
 interface SavedDirectoryContextValue {
@@ -57,12 +60,14 @@ export function SavedDirectoryProvider({
 }) {
   // Scoped DURING RENDER, not in an effect. An effect runs after the children
   // have already painted, so a sign-out or a switch to another account would
-  // show the previous reviewer's acknowledgements for one frame -- and one
-  // frame is enough to tell somebody a document is already grouped when, for
-  // them, it may not be. A new account therefore gets a new store rather than
+  // show the previous session's acknowledgements for one frame, sourced from a
+  // session that is over. A new account therefore gets a new store rather than
   // a cleaned one: the old records are unreachable instead of merely emptied,
   // and a request still in flight from the old session resolves into a store
-  // nothing is subscribed to.
+  // nothing is subscribed to. What the new account can see, it re-establishes
+  // from its own lookup and its own ranking -- see
+  // `SavedDirectoryObservations`, which is what keeps the previous session's
+  // prediction snapshot out of this one.
   const scopedRef = useRef<{
     accountKey: string | number | null
     store: SavedDirectoryStore

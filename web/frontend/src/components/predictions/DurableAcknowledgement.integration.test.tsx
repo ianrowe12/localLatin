@@ -1,13 +1,15 @@
-import { useEffect } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { AccountScopedSavedDirectories } from '../../App'
 import App from '../../App'
 import { AppProvider, useApp } from '../../contexts/AppContext'
 import { FeedbackProvider } from '../../contexts/FeedbackContext'
 import { PredictionProvider } from '../../contexts/PredictionContext'
-import { ReviewerProvider } from '../../contexts/ReviewerContext'
+import { ReviewerProvider, useReviewer } from '../../contexts/ReviewerContext'
 import { SavedDirectoryProvider } from '../../contexts/SavedDirectoryContext'
+import SavedDirectoryObservations from '../../contexts/SavedDirectoryObservations'
 import { TokenProvider } from '../../contexts/TokenContext'
 import { REVIEWER_DIRS_UPDATED_EVENT } from '../../api/reviewerDirs'
 import FeedbackPanel from '../feedback/FeedbackPanel'
@@ -54,8 +56,24 @@ let dirGets: number
 let feedbackPosts: unknown[]
 let refreshEvents: number
 let releasePost: (() => void) | null
+/** Holds the next predictions GET open, so a response can land late. */
+let holdNextPrediction: boolean
+let releasePrediction: (() => void) | null
+/** Whose session `/api/auth/me` and `/api/auth/signin` answer for. */
+let signedInAccount: number
 /** What the database holds once the POST has landed, when it is not just the new row. */
 let storedAfterPost: StoredDir[] | null
+
+function accountFixture(id: number) {
+  return {
+    id,
+    username: id === 2 ? 'bob' : 'carol',
+    display_name: id === 2 ? 'Bob Bibliothecarius' : 'Carol Cantrix',
+    role: 'reviewer',
+    approval_status: 'approved',
+    must_change_password: false,
+  }
+}
 
 function dirFixture(overrides: Record<string, unknown> = {}) {
   return {
@@ -165,14 +183,10 @@ function installFetch(): void {
       }
 
       if (path === '/api/auth/me') {
-        return jsonResponse({
-          id: 2,
-          username: 'bob',
-          display_name: 'Bob Bibliothecarius',
-          role: 'reviewer',
-          approval_status: 'approved',
-          must_change_password: false,
-        })
+        return jsonResponse(accountFixture(signedInAccount))
+      }
+      if (path === '/api/auth/signin') {
+        return jsonResponse(accountFixture(signedInAccount))
       }
       if (path === '/api/queries/next') {
         return jsonResponse({ file_id: QUERY_A })
@@ -184,7 +198,15 @@ function installFetch(): void {
         predictionGets += 1
         const queryId = Number(path.split('/')[3])
         const model = new URL(url, 'http://localhost').searchParams.get('model') ?? ''
+        // Read BEFORE any hold, so a response held open carries the world as
+        // it stood when the request went out.
         const payload = payloadFor(queryId)
+        if (holdNextPrediction) {
+          holdNextPrediction = false
+          await new Promise<void>((resolve) => {
+            releasePrediction = resolve
+          })
+        }
         if (payload.httpStatus && payload.httpStatus !== 200) {
           return jsonResponse(
             { error: { code: 'internal_error', message: 'Ranking store unavailable' } },
@@ -267,6 +289,7 @@ function Review({
         <TokenProvider>
           <SavedDirectoryProvider accountKey={accountKey}>
             <PredictionProvider>
+              <SavedDirectoryObservations />
               <FeedbackProvider>
                 <Selection queryId={queryId} model={model} />
                 <PredictionList />
@@ -274,6 +297,68 @@ function Review({
               </FeedbackProvider>
             </PredictionProvider>
           </SavedDirectoryProvider>
+        </TokenProvider>
+      </ReviewerProvider>
+    </AppProvider>
+  )
+}
+
+/**
+ * The same tree, scoped by the REAL `AccountScopedSavedDirectories` reading the
+ * real `ReviewerContext`, with a control that signs a different reviewer in.
+ * An account transition here is what one actually is: a new user object from
+ * the auth endpoints, with the prediction provider, its cache and its settled
+ * ranking all still mounted underneath it.
+ */
+function SignInAsOtherAccount() {
+  const { signIn } = useReviewer()
+  return (
+    <button
+      type="button"
+      data-testid="switch-account"
+      onClick={() => {
+        signedInAccount = 3
+        void signIn({ username: 'carol', password: 'irrelevant' })
+      }}
+    >
+      switch account
+    </button>
+  )
+}
+
+/**
+ * App's own gate: nothing below the auth boundary renders until the session is
+ * known, so no document is selected and nothing is on screen to act on while
+ * the account is still resolving.
+ */
+function AuthGate({ children }: { children: ReactNode }) {
+  const { loading } = useReviewer()
+  return loading ? null : <>{children}</>
+}
+
+function ComposedReview({
+  queryId = QUERY_A,
+  model = MODEL_A,
+}: {
+  queryId?: number
+  model?: string
+}) {
+  return (
+    <AppProvider>
+      <ReviewerProvider>
+        <TokenProvider>
+          <AccountScopedSavedDirectories>
+            <PredictionProvider>
+              <SavedDirectoryObservations />
+              <FeedbackProvider>
+                <AuthGate>
+                  <Selection queryId={queryId} model={model} />
+                  <SignInAsOtherAccount />
+                  <PredictionList />
+                </AuthGate>
+              </FeedbackProvider>
+            </PredictionProvider>
+          </AccountScopedSavedDirectories>
         </TokenProvider>
       </ReviewerProvider>
     </AppProvider>
@@ -303,6 +388,9 @@ beforeEach(() => {
   feedbackPosts = []
   refreshEvents = 0
   releasePost = null
+  holdNextPrediction = false
+  releasePrediction = null
+  signedInAccount = 2
   storedAfterPost = null
   window.localStorage.clear()
   installFetch()
@@ -349,6 +437,20 @@ describe('the provider is mounted in the real application', () => {
     expect(saved.textContent).toContain('Unattested homily')
     expect(screen.queryByTestId('new-directory-cta')).toBeNull()
   })
+
+  it('records a grouping the App\'s own ranking reports', async () => {
+    // The observation bridge is part of App's composition, not of the list.
+    // `PredictionList` no longer ingests anything itself, so an acknowledgement
+    // appearing here from `seeded_dirs` alone is proof that the single
+    // admission point is mounted in the real tree.
+    predictionsFor[QUERY_A] = {
+      predictions: [modelCard(1, 0.72)],
+      seeded_dirs: [dirFixture()],
+    }
+    render(<App />)
+    const saved = await screen.findByTestId('new-directory-saved')
+    expect(saved.textContent).toContain('Unattested homily')
+  })
 })
 
 describe('the record is scoped to the signed-in account', () => {
@@ -364,6 +466,135 @@ describe('the record is scoped to the signed-in account', () => {
     // this document looks grouped to somebody it may not be grouped for.
     view.rerender(<Review accountKey={3} />)
     expect(screen.queryByTestId('new-directory-saved')).toBeNull()
+  })
+
+  it('does not feed the next account the previous session\'s ranking', async () => {
+    // The gap this closes. The saved store is replaced on an account change,
+    // but `PredictionProvider` is not: it sits above the auth gates, its key is
+    // query/model/variant with no account in it, and its settled response, its
+    // `seeded_dirs` and its cache all survive the switch. Folding those into
+    // "the current store" hands the new session the old one's snapshot.
+    const user = userEvent.setup()
+    predictionsFor[QUERY_A] = {
+      predictions: [modelCard(1, 0.72)],
+      seeded_dirs: [dirFixture()],
+    }
+    render(<ComposedReview />)
+    await screen.findByTestId('new-directory-saved')
+    const getsBefore = predictionGets
+
+    // The world moves on between the two answers. Nothing about this is
+    // account-private: it is simply a LATER answer, and the record is supposed
+    // to follow the latest one rather than the snapshot it was mounted over.
+    predictionsFor[QUERY_A] = { predictions: [modelCard(1, 0.72)] }
+
+    await user.click(screen.getByTestId('switch-account'))
+
+    // The new session asks for itself rather than reading what was on screen.
+    await waitFor(() => expect(predictionGets).toBeGreaterThan(getsBefore))
+    expect(await screen.findByTestId('new-directory-cta')).toBeTruthy()
+    expect(screen.queryByTestId('new-directory-saved')).toBeNull()
+    // Re-establishing provenance is not a directory write, so nothing is
+    // announced to the rest of the app.
+    expect(refreshEvents).toBe(0)
+    expect(posts).toHaveLength(0)
+
+    // And it settles: one refetch per account, not a loop.
+    const getsAfter = predictionGets
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(predictionGets).toBe(getsAfter)
+  })
+
+  it('lets the same global grouping reappear once this session has seen it', async () => {
+    // Reviewer directories are global. Withholding the previous session's
+    // snapshot is about provenance, not secrecy: the moment this account's own
+    // request answers, the same row, the same creator and the same history are
+    // shown again.
+    const user = userEvent.setup()
+    predictionsFor[QUERY_A] = {
+      predictions: [modelCard(1, 0.72)],
+      seeded_dirs: [dirFixture()],
+    }
+    render(<ComposedReview />)
+    await screen.findByTestId('new-directory-saved')
+
+    await user.click(screen.getByTestId('switch-account'))
+
+    const saved = await screen.findByTestId('new-directory-saved')
+    expect(saved.textContent).toContain('Unattested homily')
+    expect(screen.getByTestId('new-directory-attribution').textContent).toContain(
+      'Abigail',
+    )
+    expect(screen.queryByTestId('new-directory-cta')).toBeNull()
+  })
+
+  it('drops a ranking that was still in flight when the account changed', async () => {
+    // The late case. A request issued by the previous session answers after the
+    // switch; its `seeded_dirs` are that session's evidence and must not be
+    // recorded as this one's.
+    const user = userEvent.setup()
+    predictionsFor[QUERY_A] = { predictions: [modelCard(1, 0.72)] }
+    const view = render(<ComposedReview />)
+    await screen.findByTestId('new-directory-cta')
+
+    // A request goes out under the old account and is held open.
+    holdNextPrediction = true
+    predictionsFor[QUERY_A] = {
+      predictions: [modelCard(1, 0.72)],
+      seeded_dirs: [dirFixture()],
+    }
+    view.rerender(<ComposedReview model={MODEL_B} />)
+    await waitFor(() => expect(releasePrediction).not.toBeNull())
+
+    // The account changes while it is still unanswered, and the world it was
+    // describing is gone by the time it lands.
+    predictionsFor[QUERY_A] = { predictions: [modelCard(1, 0.72)] }
+    await user.click(screen.getByTestId('switch-account'))
+    await act(async () => {
+      releasePrediction?.()
+      await Promise.resolve()
+    })
+
+    expect(await screen.findByTestId('new-directory-cta')).toBeTruthy()
+    await waitFor(() => expect(screen.queryByTestId('predictions-loading')).toBeNull())
+    expect(screen.queryByTestId('new-directory-saved')).toBeNull()
+  })
+
+  it('does not turn the previous session\'s uncertainty into permission to create', async () => {
+    // Identity before the single owned event, across an account change. The old
+    // session's write may have landed; that uncertainty is its own, and the new
+    // session inherits neither the write nor an answer to it. Because it cannot
+    // establish anything for itself either, it must say so rather than offer a
+    // fresh Create for a document that may already be spoken for.
+    const user = userEvent.setup()
+    predictionsFor[QUERY_A] = { predictions: [modelCard(1, 0.72)] }
+    postBehaviour = 'lost'
+
+    render(<ComposedReview />)
+    await user.click(await screen.findByTestId('new-directory-cta'))
+    const field = await screen.findByLabelText('Name the new directory')
+    await user.type(field, 'Unattested homily')
+    // From here nothing can answer: the write is issued, its response is lost
+    // and the reconciling lookup fails.
+    dirLookupStatus = 503
+    await user.click(await screen.findByTestId('new-directory-submit'))
+
+    await screen.findByTestId('new-directory-check-again')
+    expect(posts).toHaveLength(1)
+    // Nothing was confirmed, so nothing was announced.
+    expect(refreshEvents).toBe(0)
+
+    // The account changes. The new session inherits neither the
+    // acknowledgement nor the write, and its own lookup still cannot answer.
+    await user.click(screen.getByTestId('switch-account'))
+
+    // So it says it does not know, instead of offering a fresh Create for a
+    // document that may already be spoken for.
+    expect(await screen.findByTestId('new-directory-unresolved')).toBeTruthy()
+    expect(screen.queryByTestId('new-directory-saved')).toBeNull()
+    expect(screen.queryByTestId('new-directory-form')).toBeNull()
+    expect(posts).toHaveLength(1)
+    expect(refreshEvents).toBe(0)
   })
 })
 
