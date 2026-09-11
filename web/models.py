@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any, Dict, List, Literal, Optional
+from typing import Annotated, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -342,86 +342,83 @@ class FeedbackCreate(BaseModel):
     # None means "the deployment's configured default", resolved in the router.
     variant: Optional[PredictionVariant] = None
     outcome: Optional[FeedbackOutcome] = None
-    correct_rank: Optional[int] = Field(None, ge=0, le=MAX_CANDIDATE_RANK)
+    correct_rank: Optional[int] = Field(None, strict=True, ge=0, le=MAX_CANDIDATE_RANK)
     correct_dir: Optional[str] = None
-    selected_ranks: Optional[List[int]] = None
+    selected_ranks: Optional[
+        List[Annotated[int, Field(strict=True, ge=1, le=MAX_CANDIDATE_RANK)]]
+    ] = Field(default=None, min_length=1)
+    expected_candidate_dirs: Optional[
+        Dict[Annotated[int, Field(ge=1, le=MAX_CANDIDATE_RANK)], str]
+    ] = Field(
+        default=None,
+        description=(
+            "Directory identity seen at every selected rank, keyed by rank. "
+            "If supplied, must cover exactly the selected ranks. On a usable "
+            "ranking, a changed or missing candidate returns 409 "
+            "CANDIDATE_IDENTITY_CHANGED. "
+            "Omission preserves older clients without this identity protection."
+        ),
+    )
     notes: str = ""
     reviewer: str = ""
 
-    @model_validator(mode="before")
-    @classmethod
-    def validate_outcome_contract(cls, data: Any) -> Any:
-        if not isinstance(data, dict):
-            return data
+    @model_validator(mode="after")
+    def validate_outcome_contract(self) -> FeedbackCreate:
+        if "outcome" in self.model_fields_set and self.outcome is None:
+            raise ValueError("outcome cannot be null on new feedback")
 
-        values = dict(data)
-        explicit_outcome = values.get("outcome") is not None
-        outcome = values.get("outcome")
-        rank = values.get("correct_rank")
-        correct_dir = values.get("correct_dir")
-        selected_ranks = values.get("selected_ranks")
-
-        if selected_ranks is not None:
-            if not isinstance(selected_ranks, list) or len(selected_ranks) == 0:
-                raise ValueError("selected_ranks must be a non-empty list")
-            rank_range = f"1 to {MAX_CANDIDATE_RANK}"
-            normalized_ranks = []
-            for selected_rank in selected_ranks:
-                if isinstance(selected_rank, bool):
-                    raise ValueError(
-                        f"selected_ranks must contain integers from {rank_range}"
-                    )
-                try:
-                    normalized_rank = int(selected_rank)
-                except (TypeError, ValueError) as exc:
-                    raise ValueError(
-                        f"selected_ranks must contain integers from {rank_range}"
-                    ) from exc
-                if not 1 <= normalized_rank <= MAX_CANDIDATE_RANK:
-                    raise ValueError(
-                        f"selected_ranks must contain integers from {rank_range}"
-                    )
-                normalized_ranks.append(normalized_rank)
-            if len(set(normalized_ranks)) != len(normalized_ranks):
+        if self.selected_ranks is not None:
+            if len(set(self.selected_ranks)) != len(self.selected_ranks):
                 raise ValueError("selected_ranks cannot contain duplicates")
-            if outcome not in (None, FeedbackOutcome.MATCHED_RANK.value):
+            if self.outcome not in (None, FeedbackOutcome.MATCHED_RANK):
                 raise ValueError("selected_ranks can only be used with matched_rank")
-            values["selected_ranks"] = normalized_ranks
-            outcome = FeedbackOutcome.MATCHED_RANK.value
-            values["correct_rank"] = normalized_ranks[0]
-            rank = normalized_ranks[0]
+            self.outcome = FeedbackOutcome.MATCHED_RANK
+            self.correct_rank = self.selected_ranks[0]
 
-        if outcome is None:
-            if rank is None:
-                outcome = FeedbackOutcome.LEGACY_UNRESOLVED.value
-            elif rank == 0:
-                outcome = FeedbackOutcome.NONE_OF_TOP_K.value
+        if self.outcome is None:
+            if self.correct_rank is None:
+                raise ValueError("Choose a rank, None, or a deliberate skipped outcome")
+            elif self.correct_rank == 0:
+                self.outcome = FeedbackOutcome.NONE_OF_TOP_K
             else:
-                outcome = FeedbackOutcome.MATCHED_RANK.value
+                self.outcome = FeedbackOutcome.MATCHED_RANK
 
-        if outcome == FeedbackOutcome.LEGACY_UNRESOLVED.value and explicit_outcome:
-            raise ValueError("legacy_unresolved cannot be created explicitly")
+        if self.outcome == FeedbackOutcome.LEGACY_UNRESOLVED:
+            raise ValueError("legacy_unresolved cannot be created on new feedback")
 
-        if outcome == FeedbackOutcome.MATCHED_RANK.value:
-            if rank is None or not 1 <= int(rank) <= MAX_CANDIDATE_RANK:
+        if self.outcome == FeedbackOutcome.MATCHED_RANK:
+            if self.correct_rank is None or self.correct_rank == 0:
                 raise ValueError(
                     f"matched_rank requires correct_rank from 1 to {MAX_CANDIDATE_RANK}"
                 )
-        elif outcome == FeedbackOutcome.NONE_OF_TOP_K.value:
-            if rank is not None and int(rank) != 0:
+        elif self.outcome == FeedbackOutcome.NONE_OF_TOP_K:
+            if self.correct_rank not in (None, 0):
                 raise ValueError("none_of_top_k requires correct_rank 0")
-            values["correct_rank"] = 0
-            values["correct_dir"] = None
-            values["selected_ranks"] = None
-        elif outcome == FeedbackOutcome.SKIPPED.value:
-            if rank is not None or correct_dir is not None:
+            self.correct_rank = 0
+            self.correct_dir = None
+            self.selected_ranks = None
+        elif self.outcome == FeedbackOutcome.SKIPPED:
+            if self.correct_rank is not None or self.correct_dir is not None:
                 raise ValueError("skipped cannot include correct_rank or correct_dir")
-            values["correct_rank"] = None
-            values["correct_dir"] = None
-            values["selected_ranks"] = None
+            self.notes = self.notes.strip()
+            if not self.notes:
+                raise ValueError("skipped requires a nonblank note")
+            self.selected_ranks = None
 
-        values["outcome"] = outcome
-        return values
+        if "expected_candidate_dirs" in self.model_fields_set:
+            if self.expected_candidate_dirs is None:
+                raise ValueError("expected_candidate_dirs cannot be null when supplied")
+            if self.outcome != FeedbackOutcome.MATCHED_RANK:
+                raise ValueError("expected_candidate_dirs requires matched_rank")
+            ranks = self.selected_ranks or [self.correct_rank]
+            if set(self.expected_candidate_dirs) != set(ranks):
+                raise ValueError(
+                    "expected_candidate_dirs must identify exactly every selected rank"
+                )
+            if any(not name.strip() for name in self.expected_candidate_dirs.values()):
+                raise ValueError("expected_candidate_dirs identities must be nonblank")
+
+        return self
 
 
 class FeedbackEntry(BaseModel):

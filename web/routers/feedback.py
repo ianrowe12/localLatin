@@ -1,20 +1,26 @@
 from __future__ import annotations
 
 import logging
+import math
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 from web.dependencies import get_current_user, get_db, get_store, require_pi_admin
 from web.exceptions import InvalidModelError, QueryNotFoundError, VariantUnavailableError
 from web.models import (
+    CandidateSource,
+    ErrorDetail,
+    ErrorResponse,
     FeedbackCreate,
     FeedbackEntry,
     FeedbackOutcome,
+    MAX_MODEL_RANK,
+    Prediction,
     PredictionVariant,
     UserPublic,
 )
-from web.routers.predictions import resolve_variant
+from web.routers.predictions import get_predictions, resolve_variant
 from web.services import reviewer_dirs as reviewer_dirs_svc
 from web.services.data_store import DataStore, normalize_slug
 from web.services.feedback_db import FeedbackDB
@@ -36,7 +42,7 @@ async def create_feedback(
     store: DataStore = Depends(get_store),
     db: FeedbackDB = Depends(get_db),
     current_user: UserPublic = Depends(get_current_user),
-) -> FeedbackEntry:
+) -> FeedbackEntry | JSONResponse:
     if body.query_id not in store.file_id_to_filename:
         raise QueryNotFoundError(body.query_id)
 
@@ -44,41 +50,79 @@ async def create_feedback(
     variant = resolve_variant(store, body.variant)
     await _check_model_variant(store, slug, variant)
 
-    # `correct_dir` is ALWAYS resolved server-side from the rank, never taken
-    # from the request body. Trusting the body let a client file a query into an
-    # arbitrary directory: posting {correct_rank: 1, correct_dir:
-    # "reviewer-dir-X"} appended query 900 to a reviewer directory it had never
-    # been offered, permanently changing the score that directory shows to all
-    # 2,238 queries, and a nonexistent id wrote an unreachable orphan row. A
-    # stale `correct_dir` left over from a previously rendered card produces the
-    # same corruption without any ill intent, and both tables are append-only
-    # with no removal route, so there is no way back.
-    #
-    # Resolving from the rank also *is* the rank validation: `_dir_for_rank`
-    # walks the candidate list actually served for this query, so a rank with no
-    # candidate behind it -- 47, or 11 when no reviewer directory is scorable
-    # here -- is rejected rather than persisted into the pilot's primary
-    # research output.
+    candidates: dict[int, Prediction] = {}
+    if body.outcome in (FeedbackOutcome.MATCHED_RANK, FeedbackOutcome.NONE_OF_TOP_K):
+        # Use one snapshot of the same candidates the predictions route serves.
+        # Reviewer ranks can move as memberships change, even during a save.
+        snapshot = await get_predictions(
+            file_id=body.query_id,
+            model=slug,
+            variant=PredictionVariant(variant),
+            top_k=MAX_MODEL_RANK,
+            store=store,
+            db=db,
+            current_user=current_user,
+        )
+        excluded = (snapshot.status or "").strip().startswith("excluded")
+        model_candidate_usability = [
+            _candidate_is_usable(candidate)
+            for candidate in snapshot.predictions
+            if candidate.source == CandidateSource.MODEL
+        ]
+        if excluded or not any(model_candidate_usability):
+            return _feedback_error(
+                422,
+                "RANKING_NOT_EVALUABLE",
+                "Evaluation requires a usable model ranking. "
+                "Keep a draft or deliberately skip with a note.",
+            )
+        if body.outcome == FeedbackOutcome.NONE_OF_TOP_K and not all(
+            model_candidate_usability
+        ):
+            return _feedback_error(
+                422,
+                "RANKING_NOT_EVALUABLE",
+                "None requires usable evidence for every offered model candidate. "
+                "Choose a readable candidate, keep a draft or deliberately skip with a note.",
+            )
+        candidates = {candidate.rank: candidate for candidate in snapshot.predictions}
+
+    # Client correct_dir is never an assignment authority.
     correct_dir = None
     if body.outcome == FeedbackOutcome.MATCHED_RANK:
-        # For multi-select submissions the first selected rank is the canonical
-        # legacy choice, while selected_ranks carries the full reviewer answer.
+        assert body.correct_rank is not None
         ranks = body.selected_ranks or [body.correct_rank]
-        resolved = [
-            await _dir_for_rank(store, db, slug, variant, body.query_id, rank)
-            for rank in ranks
-        ]
-        unknown = [rank for rank, dir_name in zip(ranks, resolved) if dir_name is None]
-        if unknown:
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    f"No candidate at rank {unknown[0]} for query {body.query_id} "
-                    f"under model '{slug}' (variant '{variant}')."
-                ),
-            )
-        correct_dir = resolved[0]
+        for rank in ranks:
+            candidate = candidates.get(rank)
+            if body.expected_candidate_dirs is not None and (
+                candidate is None
+                or candidate.dir_name != body.expected_candidate_dirs[rank]
+            ):
+                return _feedback_error(
+                    409,
+                    "CANDIDATE_IDENTITY_CHANGED",
+                    f"Candidate at rank {rank} has changed. "
+                    "Refresh the ranking and review your selections before saving.",
+                )
+            if candidate is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"No candidate at rank {rank} for query {body.query_id} "
+                        f"under model '{slug}' (variant '{variant}')."
+                    ),
+                )
+            if not _candidate_is_usable(candidate):
+                return _feedback_error(
+                    422,
+                    "CANDIDATE_NOT_EVALUABLE",
+                    f"Candidate at rank {rank} has no usable evidence. "
+                    "Choose another candidate or keep a draft.",
+                )
+        # Preserve selection order: only the first choice assigns membership.
+        correct_dir = candidates[ranks[0]].dir_name
 
+    assert body.outcome is not None
     row = await db.insert(
         query_id=body.query_id,
         model_slug=slug,
@@ -99,10 +143,8 @@ async def create_feedback(
     # must follow a server-resolved `correct_dir` and nothing else -- it is the
     # record of a human confirmation.
     #
-    # Append-only and idempotent: the feedback row above is untouched, and
-    # re-submitting the same answer adds nothing. Recording feedback is
-    # unconditional; membership is the extra consequence of confirming a
-    # reviewer directory.
+    # Membership insertion is idempotent for this resolved directory/query.
+    # Feedback is append-only, not idempotent: each accepted save adds a row.
     if correct_dir and reviewer_dirs_svc.is_reviewer_dir_id(correct_dir):
         try:
             await db.add_reviewer_dir_member(
@@ -112,7 +154,7 @@ async def create_feedback(
                 added_by_account_id=current_user.id,
             )
         except KeyError:
-            # Unreachable via _dir_for_rank, which only ever returns directories
+            # Unreachable via the snapshot, which only ever returns directories
             # read out of this same table. Logged rather than raised so a race
             # cannot lose an otherwise valid feedback row, which is already
             # committed above and is the more valuable record.
@@ -268,41 +310,16 @@ def _merge_shared_note_with_own_decision(
     return merged
 
 
-async def _dir_for_rank(
-    store: DataStore,
-    db: FeedbackDB,
-    model_slug: str,
-    variant: str,
-    query_id: int,
-    rank: int,
-) -> str | None:
-    """Directory name at `rank` in the list this query was shown, or None.
+def _candidate_is_usable(candidate: Prediction) -> bool:
+    return (
+        bool(candidate.dir_name.strip())
+        and math.isfinite(candidate.score)
+        and any(file.text.strip() for file in candidate.candidate_files or [])
+    )
 
-    Model candidates exactly as the retrieval CSV ranked them, then the
-    reviewer-created directories anchored at MAX_MODEL_RANK + 1 -- the same
-    ordering `get_predictions` builds, so a rank the client sends back always
-    resolves to the card the reviewer clicked, independently of `top_k`.
 
-    None means "no candidate at that rank", which the caller turns into a 422.
-    This is the only rank validation that can be trusted, since the candidate
-    count depends on the query, the model and how many reviewer directories are
-    currently scorable.
-    """
-    for row in store.predictions.get((model_slug, variant), []):
-        if row["file_id"] != query_id:
-            continue
-        for prediction in row["predictions"]:
-            if prediction["rank"] == rank:
-                return prediction["dir_name"]
-        break
-
-    records = await db.list_reviewer_dirs()
-    if not records:
-        return None
-    qq = await store.ensure_qq_async(model_slug)
-    for candidate in reviewer_dirs_svc.candidates_for_query(
-        store=store, records=records, qq=qq, query_id=query_id
-    ):
-        if candidate.rank == rank:
-            return candidate.dir_name
-    return None
+def _feedback_error(status: int, code: str, message: str) -> JSONResponse:
+    return JSONResponse(
+        status_code=status,
+        content=ErrorResponse(error=ErrorDetail(code=code, message=message)).model_dump(),
+    )

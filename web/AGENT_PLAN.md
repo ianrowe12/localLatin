@@ -102,7 +102,9 @@ web/frontend/src/
 ├── contexts/
 │   ├── AppContext.tsx     # theme, activeQueryId, activeModel, activePredictionRank
 │   ├── TokenContext.tsx   # viewMode, hoveredQueryTokenIdx, hoveredMatches, pinnedTokens
-│   └── FeedbackContext.tsx # drafts (localStorage), submitFeedback, undo
+│   ├── FeedbackContext.tsx # per-reviewer drafts (localStorage), submitFeedback, undo
+│   ├── feedbackDraft.ts    # draft shape, identity-bearing selections, storage keys
+│   └── assessmentEligibility.ts # what the ranking on screen lets a reviewer answer
 │
 ├── components/
 │   ├── layout/
@@ -165,7 +167,10 @@ web/frontend/src/
 
 1. **AppContext**: Theme (persisted to localStorage), active query/model/prediction rank. URL-friendly but no router.
 2. **TokenContext**: View mode (connections/heatmap/ig), hovered token index + matches, pinned tokens with color cycling from 8-color palette, IG data availability flag.
-3. **FeedbackContext**: Draft feedback per query (persisted to localStorage), submit + undo.
+3. **FeedbackContext**: Draft feedback per reviewer account, query, model and variant (persisted to
+   localStorage), submit + undo. Every control it exposes is derived from `assessmentEligibility.ts`
+   over the shared prediction state, so a draft choice remembers the directory it named and is sent
+   back as a save-time precondition (issue #157).
 
 ### SVG Connection Lines — Technical Design
 
