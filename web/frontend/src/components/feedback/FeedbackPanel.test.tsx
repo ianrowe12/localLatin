@@ -65,14 +65,23 @@ function installFetch(): void {
         // The appended row, which is the only receipt the client accepts
         // before it discards a draft (issue #158).
         const payload = JSON.parse(String(init.body)) as Record<string, unknown>
+        const ranks = Array.isArray(payload.selected_ranks)
+          ? (payload.selected_ranks as number[])
+          : null
+        const rank =
+          payload.outcome === 'skipped' ? null : (payload.correct_rank as number)
+        const dirs = (payload.expected_candidate_dirs ?? {}) as Record<string, string>
         return jsonResponse({
           ...NOTE_FROM_ALICE,
           id: 99,
           query_id: Number(payload.query_id),
           model_slug: String(payload.model_slug),
+          variant: payload.variant ?? 'sif_abtt',
           outcome: payload.outcome,
-          correct_rank:
-            typeof payload.correct_rank === 'number' ? payload.correct_rank : null,
+          correct_rank: rank,
+          correct_dir:
+            payload.outcome === 'matched_rank' ? (dirs[String(rank)] ?? null) : null,
+          selected_ranks: ranks !== null && ranks.length > 0 ? ranks : null,
           notes: String(payload.notes ?? ''),
           reviewer: 'Bob Bibliothecarius',
           reviewer_account_id: 2,

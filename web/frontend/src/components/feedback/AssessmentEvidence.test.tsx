@@ -94,16 +94,18 @@ function answerFor(model: string): Answer {
 /** The row `POST /api/feedback` returns for an accepted save. */
 function receiptFor(payload: Record<string, unknown>): FeedbackEntry {
   const ranks = payload.selected_ranks
+  const rank = payload.outcome === 'skipped' ? null : (payload.correct_rank as number)
+  const dirs = (payload.expected_candidate_dirs ?? {}) as Record<string, string>
   return {
     id: 900 + postAttempts,
     query_id: Number(payload.query_id),
     timestamp: '2026-09-10 12:00:00',
     model_slug: String(payload.model_slug),
-    variant: 'sif_abtt',
+    variant: (payload.variant ?? 'sif_abtt') as FeedbackEntry['variant'],
     outcome: payload.outcome as FeedbackEntry['outcome'],
-    correct_rank:
-      typeof payload.correct_rank === 'number' ? payload.correct_rank : null,
-    correct_dir: null,
+    correct_rank: rank,
+    correct_dir:
+      payload.outcome === 'matched_rank' ? (dirs[String(rank)] ?? null) : null,
     selected_ranks: Array.isArray(ranks) ? (ranks as number[]) : null,
     notes: String(payload.notes ?? ''),
     reviewer: account.display_name,

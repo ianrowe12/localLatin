@@ -197,7 +197,9 @@ export default function FeedbackPanel() {
     visit,
     getVisit,
     hasNewerDraft,
+    getDraftRevision,
     getSaveEpoch,
+    pendingSave,
   } = useFeedback()
   const { reviewerName, clearReviewer } = useReviewer()
   // The candidates, their eligibility and the answer's validity all come from
@@ -229,9 +231,16 @@ export default function FeedbackPanel() {
    */
   const [saved, setSaved] = useState<{
     visitId: number
+    key: string
+    /** The revision that was sent, so newer work is recognised at any moment. */
+    revision: number
     kind: 'submit' | 'skip'
-    supersededByNewerDraft: boolean
-    navigation: 'pending' | 'failed' | 'held' | 'done'
+    /**
+     * `superseded` is newer work seen at the moment the receipt arrived;
+     * `held` is newer work typed after it, in the pause before the move. Both
+     * stay put, and the two read differently to a reviewer.
+     */
+    navigation: 'pending' | 'superseded' | 'failed' | 'held' | 'done'
     navigationMessage: string | null
   } | null>(null)
 
@@ -294,19 +303,33 @@ export default function FeedbackPanel() {
   useEffect(() => {
     if (activeQueryId === null || !activeModel || accountId === null) return
     const key = makeDraftKey(activeQueryId, activeModel, activeVariant, accountId)
-    // A save that happens while this request is out makes its answer older than
-    // the draft map: applying it would put the just-saved text back in an empty
-    // box and present it as unsent (issue #158).
-    const epochAtRequest = getSaveEpoch()
+    // A save of THIS assessment while the request is out makes its answer older
+    // than the draft map: applying it would put the just-saved text back in an
+    // empty box and present it as unsent. A save of another assessment says
+    // nothing about this one, so it must not silence a colleague's shared note
+    // here (issue #158).
+    const epochAtRequest = getSaveEpoch(key)
+    // What the box held when this was asked for, so a deliberate deletion made
+    // since is not overwritten by an answer that predates it.
+    const revisionAtRequest = getDraftRevision(key)
     let cancelled = false
     fetchLatestFeedback(activeQueryId, activeModel, activeVariant)
       .then((entry) => {
-        if (cancelled || getSaveEpoch() !== epochAtRequest) return
+        if (cancelled || getSaveEpoch(key) !== epochAtRequest) return
+        // Attribution is not seeding: who last wrote about this document is
+        // still true even when the box may not be filled from it.
         setLatest(entry === null ? null : { key, entry })
         if (entry === null) return
         if (!isFeedbackDraftEmpty(draftsRef.current.get(key))) return
+        if (getDraftRevision(key) > revisionAtRequest) return
         const seededDraft = draftFromEntry(entry)
-        seedDraftIfEmpty(activeQueryId, activeModel, seededDraft, activeVariant)
+        seedDraftIfEmpty(
+          activeQueryId,
+          activeModel,
+          seededDraft,
+          activeVariant,
+          revisionAtRequest,
+        )
         setSeeded({ key, draft: seededDraft })
       })
       .catch(() => {
@@ -320,6 +343,7 @@ export default function FeedbackPanel() {
     activeQueryId,
     activeModel,
     activeVariant,
+    getDraftRevision,
     getSaveEpoch,
     makeDraftKey,
     seedDraftIfEmpty,
@@ -355,17 +379,24 @@ export default function FeedbackPanel() {
   )
 
   /**
-   * Whether this acknowledgement may still steer the screen.
+   * Whether an operation that started on this screen may still change it.
    *
    * Both halves matter. The key catches another reviewer, query, model or
    * variant; the visit id catches a return to the same assessment, where the
    * key matches again but the reviewer has come back deliberately and must not
-   * be thrown forward by a save they made before they left.
+   * be thrown forward by a save they made before they left. A view change
+   * counts too, because the provider scopes a visit to the review screen.
+   *
+   * Every handler that touches panel state -- success, failure, timers, owed
+   * navigation -- asks this FIRST. Checking only when a replacement timer
+   * eventually fires is too late: by then an old assessment's completion has
+   * already cancelled the current one's move or replaced its recovery.
    */
-  const stillOwnsScreen = useCallback(
-    (ack: SaveAcknowledgement): boolean => {
+  const ownsScreen = useCallback(
+    (operation: { key: string; visitId: number }): boolean => {
+      if (!mountedRef.current) return false
       const current = getVisit()
-      return current.key === ack.key && current.id === ack.visitId
+      return current.key === operation.key && current.id === operation.visitId
     },
     [getVisit],
   )
@@ -379,7 +410,7 @@ export default function FeedbackPanel() {
       // that visit still being the current one. The test is repeated after the
       // await because the reviewer can move, sign out or switch model while the
       // request is in flight (issue #171).
-      if (!mountedRef.current || !stillOwnsScreen(ack)) return
+      if (!ownsScreen(ack)) return
       // Typing after the save, or while the lookup is out, keeps the reviewer
       // where they are: the newer draft is unsent, and navigating would hide it.
       if (hasNewerDraft(ack.key, ack.revision)) {
@@ -399,7 +430,7 @@ export default function FeedbackPanel() {
       try {
         payload = await fetchNextQuery(ack.queryId)
       } catch (err) {
-        if (!mountedRef.current || !stillOwnsScreen(ack)) return
+        if (!ownsScreen(ack)) return
         const info = toApiErrorInfo(err, 'The next document could not be looked up.')
         setSaved((prev) =>
           prev === null || prev.visitId !== ack.visitId
@@ -408,7 +439,7 @@ export default function FeedbackPanel() {
         )
         return
       }
-      if (!mountedRef.current || !stillOwnsScreen(ack)) return
+      if (!ownsScreen(ack)) return
       if (hasNewerDraft(ack.key, ack.revision)) {
         setSaved((prev) =>
           prev === null || prev.visitId !== ack.visitId
@@ -437,19 +468,24 @@ export default function FeedbackPanel() {
       // `null` means there is nothing left to review, which is an answer.
       setActiveQueryId(fileId)
     },
-    [hasNewerDraft, setActiveQueryId, stillOwnsScreen],
+    [hasNewerDraft, ownsScreen, setActiveQueryId],
   )
 
   const acknowledgeSave = useCallback(
     (ack: SaveAcknowledgement) => {
+      // Ownership first, before anything is cancelled or replaced. A save made
+      // on query A that lands while B is on screen must not cancel B's timer,
+      // take away B's "find the next document" recovery, or claim B's success.
+      if (!ownsScreen(ack)) return
       owedAdvanceRef.current = ack
       clearAdvanceTimer()
       const held = ack.supersededByNewerDraft
       setSaved({
         visitId: ack.visitId,
+        key: ack.key,
+        revision: ack.revision,
         kind: ack.kind,
-        supersededByNewerDraft: ack.supersededByNewerDraft,
-        navigation: held ? 'held' : 'pending',
+        navigation: held ? 'superseded' : 'pending',
         navigationMessage: null,
       })
       if (held) return
@@ -458,7 +494,7 @@ export default function FeedbackPanel() {
         void advanceToNextActionable(ack)
       }, ADVANCE_DELAY_MS)
     },
-    [advanceToNextActionable, clearAdvanceTimer],
+    [advanceToNextActionable, clearAdvanceTimer, ownsScreen],
   )
 
   /**
@@ -475,33 +511,43 @@ export default function FeedbackPanel() {
 
   // Save failures keep the draft. What they are allowed to PROMISE differs:
   // only a local refusal or a server rejection is known not to have written
-  // anything (see saveFailure.ts).
-  const reportSaveFailure = useCallback((err: unknown) => {
-    setSaveError(classifySaveFailure(err, 'The assessment could not be saved.'))
-  }, [])
+  // anything (see saveFailure.ts). Whose failure it is matters just as much:
+  // an assessment the reviewer has left cannot post its error onto the one in
+  // front of them.
+  const reportSaveFailure = useCallback(
+    (err: unknown, operation: { key: string; visitId: number }) => {
+      if (!ownsScreen(operation)) return
+      setSaveError(classifySaveFailure(err, 'The assessment could not be saved.'))
+    },
+    [ownsScreen],
+  )
 
   /**
    * Submit, and report to the button what the SERVER said.
    *
-   * `{ ok: true }` means an acknowledged receipt for this request, nothing
-   * more; whether the screen then moves on is decided separately below.
-   * Returning nothing (an assessment already saving) is not an
+   * `{ ok: true }` means an acknowledged receipt for this request on the visit
+   * that made it, nothing more; whether the screen then moves on is decided
+   * separately below. Returning nothing (an assessment already saving, or a
+   * completion that belongs to an assessment the reviewer has left) is not an
    * acknowledgement, and a rejection is never dressed as one.
    */
   const handleSubmit = useCallback(async (): Promise<SubmitActionResult> => {
+    const started = getVisit()
+    if (started.key === null) return
+    const operation = { key: started.key, visitId: started.id }
     setSaveError(null)
     setSaved(null)
     let outcome: SaveOutcome
     try {
       outcome = await submitFeedback()
     } catch (err) {
-      reportSaveFailure(err)
+      reportSaveFailure(err, operation)
       return { ok: false }
     }
-    if (outcome.status !== 'saved') return
+    if (outcome.status !== 'saved' || outcome.visitEnded) return
     acknowledgeSave(outcome)
     return { ok: true }
-  }, [acknowledgeSave, reportSaveFailure, submitFeedback])
+  }, [acknowledgeSave, getVisit, reportSaveFailure, submitFeedback])
 
   const handleSkip = useCallback(async (): Promise<SubmitActionResult> => {
     if (!draft.notes.trim()) {
@@ -510,19 +556,22 @@ export default function FeedbackPanel() {
       setSkipNeedsNote(true)
       return
     }
+    const started = getVisit()
+    if (started.key === null) return
+    const operation = { key: started.key, visitId: started.id }
     setSaveError(null)
     setSaved(null)
     let outcome: SaveOutcome
     try {
       outcome = await skipFeedback()
     } catch (err) {
-      reportSaveFailure(err)
+      reportSaveFailure(err, operation)
       return { ok: false }
     }
-    if (outcome.status !== 'saved') return
+    if (outcome.status !== 'saved' || outcome.visitEnded) return
     acknowledgeSave(outcome)
     return { ok: true }
-  }, [acknowledgeSave, draft.notes, reportSaveFailure, skipFeedback])
+  }, [acknowledgeSave, draft.notes, getVisit, reportSaveFailure, skipFeedback])
 
   if (activeQueryId === null) {
     return (
@@ -555,6 +604,28 @@ export default function FeedbackPanel() {
       : savedNotice.kind === 'skip'
         ? 'Your skip was saved.'
         : 'Your assessment was saved.'
+  /**
+   * Whether the box currently holds work newer than the revision that was sent.
+   *
+   * Read now, not remembered from when the receipt arrived: a reviewer who
+   * types while the next-document lookup is out -- or after it has failed --
+   * has unsent work, and a notice written a second earlier would tell them
+   * nothing here needs saving (issue #158).
+   */
+  const savedHasNewerWork =
+    savedNotice !== null && hasNewerDraft(savedNotice.key, savedNotice.revision)
+  const savedNoticeText =
+    savedNotice === null
+      ? ''
+      : savedNotice.navigation === 'failed'
+        ? savedHasNewerWork
+          ? `${savedWhat} Moving to the next document failed. What was sent is recorded, and the newer draft in this box is still unsent.`
+          : `${savedWhat} Moving to the next document failed, so nothing here needs saving again.`
+        : !savedHasNewerWork
+          ? `${savedWhat} This stayed on the same document, and nothing here needs saving again.`
+          : savedNotice.navigation === 'held'
+            ? `${savedWhat} You have been editing since, so this stayed on the same document; your newer draft is unsent.`
+            : `${savedWhat} You edited this document while it was saving, so what was sent is recorded and the draft in the box is still unsent.`
 
   return (
     <div data-tour="feedback" className="flex-shrink-0 flex flex-col gap-3">
@@ -658,22 +729,19 @@ export default function FeedbackPanel() {
           somebody's unanswered document is a receipt for work nobody did
           (issue #171). */}
       {savedNotice !== null &&
-        (savedNotice.supersededByNewerDraft ||
+        (savedHasNewerWork ||
           savedNotice.navigation === 'failed' ||
-          savedNotice.navigation === 'held') && (
+          savedNotice.navigation === 'held' ||
+          savedNotice.navigation === 'superseded') && (
           <div
             role="status"
             data-testid="assessment-saved-notice"
             data-navigation={savedNotice.navigation}
-            data-superseded={savedNotice.supersededByNewerDraft ? 'true' : 'false'}
+            data-superseded={savedHasNewerWork ? 'true' : 'false'}
             className="rounded-lg border border-stone-300 dark:border-stone-600 px-2.5 py-2 flex flex-col gap-1"
           >
             <p className="font-ui text-xs leading-snug text-stone-700 dark:text-stone-200">
-              {savedNotice.supersededByNewerDraft
-                ? `${savedWhat} You edited this document while it was saving, so what was sent is recorded and the draft in the box is still unsent.`
-                : savedNotice.navigation === 'held'
-                  ? `${savedWhat} You have been editing since, so this stayed on the same document; your newer draft is unsent.`
-                  : `${savedWhat} Moving to the next document failed, so nothing here needs saving again.`}
+              {savedNoticeText}
             </p>
             {/* The save landed; the move to the next document did not. Said out
                 loud because the alternative is what this used to do -- leave
@@ -830,6 +898,10 @@ export default function FeedbackPanel() {
         // fresh pair of controls, with no acknowledgement carried over from the
         // save made before leaving.
         operationKey={`${draftKey ?? 'none'}#${visit.id}`}
+        // What the provider says is in flight for THIS assessment. The controls
+        // unmount whenever the sidebar collapses or the view changes, so their
+        // own state cannot be the record of a request that is still out.
+        pending={pendingSave}
       />
     </div>
   )

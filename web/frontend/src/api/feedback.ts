@@ -71,39 +71,146 @@ function isFeedbackOutcome(value: unknown): value is FeedbackOutcome {
   )
 }
 
+function isInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value)
+}
+
+function isNullableInteger(value: unknown): value is number | null {
+  return value === null || isInteger(value)
+}
+
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === 'string'
+}
+
+function isRankList(value: unknown): value is number[] | null {
+  if (value === null) return true
+  return Array.isArray(value) && value.length > 0 && value.every(isInteger)
+}
+
 /**
- * The saved row, if the answer really is one.
+ * The appended row, if the answer really is one.
  *
- * `POST /api/feedback` answers 201 with the appended `FeedbackEntry`. That row
- * is the only receipt this client ever gets, so it is checked rather than cast:
- * an answer from a proxy, a cached page, a rewritten route or a future server
- * that stops returning the row is not evidence that anything was written, and
- * discarding a reviewer's draft on the strength of it would destroy unsent work
- * for a save that may never have happened (issue #158).
+ * `POST /api/feedback` answers 201 with the whole `FeedbackEntry` it wrote.
+ * That row is the only receipt this client ever gets, so every field of the
+ * new-write shape is checked rather than cast: an answer from a proxy, a cached
+ * page, a rewritten route, a truncated body or a future server that stops
+ * returning the row is not evidence that anything was written, and discarding a
+ * reviewer's draft on the strength of it would destroy unsent work for a save
+ * that may never have happened (issue #158).
  *
- * Returns null for anything that is not a readable row.
+ * Deliberately stricter than the merged prefill view `GET /api/feedback/latest`
+ * serves, which may describe an old row assembled from two reviewers.
+ *
+ * Returns null for anything that is not a complete new-write row.
  */
 export function readFeedbackEntry(value: unknown): FeedbackEntry | null {
   if (typeof value !== 'object' || value === null) return null
   const record = value as Record<string, unknown>
-  if (typeof record.id !== 'number' || !Number.isInteger(record.id)) return null
-  if (typeof record.query_id !== 'number' || !Number.isInteger(record.query_id)) {
-    return null
-  }
+  if (!isInteger(record.id) || record.id <= 0) return null
+  if (!isInteger(record.query_id)) return null
+  if (typeof record.timestamp !== 'string' || record.timestamp === '') return null
   if (typeof record.model_slug !== 'string' || record.model_slug === '') return null
+  if (!isNullableString(record.variant)) return null
   if (!isFeedbackOutcome(record.outcome)) return null
+  if (!isNullableInteger(record.correct_rank)) return null
+  if (!isNullableString(record.correct_dir)) return null
+  if (!isRankList(record.selected_ranks)) return null
+  if (typeof record.notes !== 'string') return null
+  if (typeof record.reviewer !== 'string') return null
+  if (!isNullableInteger(record.reviewer_account_id)) return null
+  if (!isNullableString(record.reviewer_username)) return null
+  if (!isInteger(record.schema_version)) return null
   return record as unknown as FeedbackEntry
+}
+
+/**
+ * Which field of the returned row does not describe the request that was sent.
+ *
+ * Everything compared here is already in the existing request and response
+ * contract; none of it asks the server for a new protocol or lets the client
+ * assert who it is. `submittedBy` is the account this browser believed it was
+ * signed in as when the request left, NOT the account signed in when the answer
+ * came back, so a save that completes after a reviewer swap cannot be confirmed
+ * against the wrong owner.
+ *
+ * Normalization the backend legitimately applies is honoured rather than
+ * flagged: the model slug is compared in slug shape, and a `skipped` row is
+ * expected to carry no rank and no directory.
+ */
+function receiptMismatch(
+  entry: FeedbackEntry,
+  payload: FeedbackPayload,
+  submittedBy: number | null | undefined,
+): string | null {
+  if (entry.query_id !== payload.query_id) return 'query'
+  if (normalizeSlug(entry.model_slug) !== normalizeSlug(payload.model_slug)) {
+    return 'model'
+  }
+  if (payload.variant !== undefined && entry.variant !== payload.variant) {
+    return 'variant'
+  }
+  if (payload.outcome !== undefined && entry.outcome !== payload.outcome) {
+    return 'outcome'
+  }
+  if (
+    submittedBy !== undefined &&
+    submittedBy !== null &&
+    entry.reviewer_account_id !== submittedBy
+  ) {
+    return 'reviewer'
+  }
+  if (entry.notes !== payload.notes) return 'notes'
+
+  const sentRanks = payload.selected_ranks ?? null
+  const returnedRanks = entry.selected_ranks ?? null
+  if (sentRanks === null) {
+    if (returnedRanks !== null && returnedRanks.length > 0) return 'choices'
+  } else if (
+    returnedRanks === null ||
+    returnedRanks.length !== sentRanks.length ||
+    // Order is meaning: the first choice is the one the document is filed
+    // under, so a reordered list is a different assessment.
+    returnedRanks.some((rank, index) => rank !== sentRanks[index])
+  ) {
+    return 'choices'
+  }
+
+  // `skipped` carries no decision at all, which is also what feedback_db
+  // normalizes such a row to.
+  const expectedRank = payload.outcome === 'skipped' ? null : payload.correct_rank
+  if (entry.correct_rank !== expectedRank) return 'rank'
+
+  if (payload.outcome === 'matched_rank' || expectedRank !== null) {
+    const expectedDir =
+      payload.expected_candidate_dirs === undefined || expectedRank === null
+        ? undefined
+        : payload.expected_candidate_dirs[String(expectedRank)]
+    if (expectedRank === 0) {
+      if (entry.correct_dir !== null) return 'directory'
+    } else if (expectedDir !== undefined && entry.correct_dir !== expectedDir) {
+      return 'directory'
+    }
+  } else if (entry.correct_dir !== null) {
+    return 'directory'
+  }
+
+  return null
 }
 
 /**
  * Save an assessment and return the appended row.
  *
  * Rejects with an `ApiError` when the request fails, and also when a 2xx body
- * is not the row that was asked for. `kind: 'malformed'` is deliberate: the
- * request may well have been committed, so `classifySaveFailure` reads this as
- * uncertain, keeps the draft and warns instead of promising an empty log.
+ * is not the complete row that was asked for. `kind: 'malformed'` is
+ * deliberate: the request may well have been committed, so
+ * `classifySaveFailure` reads this as uncertain, keeps the whole draft and
+ * warns instead of promising an empty log or retrying.
  */
-export async function submitFeedback(payload: FeedbackPayload): Promise<FeedbackEntry> {
+export async function submitFeedback(
+  payload: FeedbackPayload,
+  submittedBy?: number | null,
+): Promise<FeedbackEntry> {
   const body = await apiFetch<unknown>('/api/feedback', {
     method: 'POST',
     body: JSON.stringify(payload),
@@ -117,17 +224,15 @@ export async function submitFeedback(payload: FeedbackPayload): Promise<Feedback
       message: 'The server did not return a readable record of this assessment.',
     })
   }
-  if (
-    entry.query_id !== payload.query_id ||
-    normalizeSlug(entry.model_slug) !== normalizeSlug(payload.model_slug) ||
-    (payload.outcome !== undefined && entry.outcome !== payload.outcome)
-  ) {
+  const mismatch = receiptMismatch(entry, payload, submittedBy)
+  if (mismatch !== null) {
     throw new ApiError({
       kind: 'malformed',
       status: null,
       code: 'FEEDBACK_RECEIPT_MISMATCHED',
       message:
-        'The server returned a record for a different assessment, so this save could not be confirmed.',
+        `The server returned a record whose ${mismatch} does not match this ` +
+        'assessment, so this save could not be confirmed.',
     })
   }
   return entry

@@ -35,11 +35,29 @@ uncertainty in front of them.
 
 ## What counts as proof of a write
 
-Only a readable `FeedbackEntry` body whose `query_id`, `model_slug` and `outcome`
-match the request just sent (`src/api/feedback.ts`). HTTP 200 is not proof: a
-proxy error page, a truncated body or an answer to somebody else's request all
-arrive with a status code, and treating one as a receipt deletes a draft nobody
-can show was saved.
+Only a readable `FeedbackEntry` body that is the row just asked for
+(`src/api/feedback.ts`). Every field a new write fills is checked for shape, and
+these are compared against the request:
+
+| Field | Must equal |
+| --- | --- |
+| `query_id`, `model_slug` | the assessment that was sent (slug compared normalised) |
+| `variant`, `outcome` | what was sent, when the request carried them |
+| `notes` | the note that was sent, exactly |
+| `selected_ranks` | the choices that were sent, in the order they were made |
+| `correct_rank` | the canonical choice, and `null` for a skip |
+| `correct_dir` | the directory `expected_candidate_dirs` gave for that rank, and `null` for a skip or none-of-these |
+| `reviewer_account_id` | the account that was signed in when the request went out |
+
+Anything else -- a missing field, a wrong type, a mismatch -- is an *uncertain*
+outcome: the draft stays, and the reviewer is told the save could not be
+confirmed. The directory and the choices matter as much as the ids because they
+are the assignment being recorded; a row that names another directory is a
+different decision, not a receipt for this one.
+
+HTTP 200 on its own is not proof: a proxy error page, a truncated body or an answer
+to somebody else's request all arrive with a status code, and treating one as a
+receipt deletes a draft nobody can show was saved.
 
 `GET /api/feedback/latest` is not proof either. It is the latest review for the
 query, merged across reviewers, and it can be stale, can belong to someone else,
@@ -83,8 +101,34 @@ acquires duplicates.
 
 The move is also abandoned, rather than retried, whenever the assessment it
 belongs to is no longer on screen: another query, model, variant or reviewer, a
-second visit to the same document, or an unmounted panel. And it is held when
-the reviewer has typed since the save, because navigating would hide unsent work.
+second visit to the same document, another view, or an unmounted panel. And it
+is held when the reviewer has typed since the save, because navigating would
+hide unsent work.
+
+## Whose answer is it
+
+Every save, lookup and prefill carries the assessment *and the visit* it started
+on. A visit ends when the reviewer leaves that assessment or leaves the review
+screen, so returning to the same document is a new visit even though the key is
+unchanged. A completion is checked against the current visit before it does
+anything at all -- before it cancels a timer, replaces a recovery, clears a
+draft or shows a notice -- so a save finishing on the document behind can never
+steer the one in front. The acknowledgement in the sidebar additionally checks
+the signed-in account, so a colleague who signs in next is never shown someone
+else's save or offered their draft.
+
+An operation in flight belongs to the assessment, not to the buttons: the
+provider holds it, keyed per assessment, so collapsing the sidebar and opening
+it again shows a save still in progress rather than an idle Submit. The prefill
+guard is keyed the same way, so a save on one document no longer suppresses a
+colleague's note on the next, and a prefill is refused if the box has been
+edited since the request went out -- including an edit typed and undone, which
+is a decision about the note, not an absence of one.
+
+Notices about unsent work are read from the box at the moment they are shown,
+never from a snapshot taken when the receipt arrived. A reviewer who keeps
+typing while the next-document lookup is out is told their newer draft is
+unsent, not that nothing here needs saving.
 
 ## Undo is local
 

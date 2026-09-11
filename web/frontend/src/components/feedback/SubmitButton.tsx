@@ -31,11 +31,21 @@ interface SubmitButtonProps {
   /**
    * Identifies the assessment these controls act on. When it changes, the
    * button forgets the previous assessment's pending run and its
-   * acknowledgement instead of showing either against the new one. The rest of
-   * issue #158 supplies it; the per-assessment lock that survives a remount
-   * belongs to the provider, not here.
+   * acknowledgement instead of showing either against the new one -- during the
+   * same render, so no committed frame ever shows the outgoing assessment's
+   * state against the incoming one.
    */
   operationKey?: string | number
+  /**
+   * An operation the owner knows is in flight for this assessment.
+   *
+   * These controls unmount whenever the sidebar collapses or the view changes,
+   * so their own state cannot be the record of a request that is still out.
+   * The provider holds that, keyed per assessment; this prop is how a freshly
+   * mounted pair of buttons learns it is still waiting rather than offering to
+   * send the same assessment again.
+   */
+  pending?: SubmitActionKind | null
 }
 
 interface Acknowledgement {
@@ -71,8 +81,9 @@ export default function SubmitButton({
   disabled,
   skipDisabled,
   operationKey,
+  pending: externalPending = null,
 }: SubmitButtonProps) {
-  const [pending, setPending] = useState<SubmitActionKind | null>(null)
+  const [localPending, setLocalPending] = useState<SubmitActionKind | null>(null)
   const [acknowledgement, setAcknowledgement] =
     useState<Acknowledgement | null>(null)
 
@@ -106,7 +117,7 @@ export default function SubmitButton({
   const finish = useCallback(
     (runId: number, result: Acknowledgement | null) => {
       if (!mountedRef.current || runId !== runIdRef.current) return
-      setPending(null)
+      setLocalPending(null)
       setAcknowledgement(result)
       if (result !== null && result.ok) {
         ackTimerRef.current = setTimeout(() => {
@@ -125,7 +136,7 @@ export default function SubmitButton({
       activeRunRef.current = runId
       clearAckTimer()
       setAcknowledgement(null)
-      setPending(kind)
+      setLocalPending(kind)
 
       let outcome: SubmitActionResult
       try {
@@ -148,17 +159,26 @@ export default function SubmitButton({
     [clearAckTimer, finish],
   )
 
-  const seenKeyRef = useRef(operationKey)
-  useEffect(() => {
-    if (seenKeyRef.current === operationKey) return
-    seenKeyRef.current = operationKey
+  // Reset DURING render, not in a passive effect. An effect runs after the
+  // browser has been shown a frame, so the outgoing assessment's pending state
+  // would be committed once against the incoming one -- exactly the moment a
+  // reviewer sees "Saving your assessment..." over a document nobody is saving.
+  const [seenKey, setSeenKey] = useState(operationKey)
+  if (seenKey !== operationKey) {
+    setSeenKey(operationKey)
+    setLocalPending(null)
+    setAcknowledgement(null)
     activeRunRef.current = null
     runIdRef.current += 1
-    clearAckTimer()
-    setPending(null)
-    setAcknowledgement(null)
-  }, [clearAckTimer, operationKey])
+    if (ackTimerRef.current !== null) {
+      clearTimeout(ackTimerRef.current)
+      ackTimerRef.current = null
+    }
+  }
 
+  // The owner's per-assessment record wins whenever it has one: it survives a
+  // remount, and the local run is only this pair of controls' view of it.
+  const pending = localPending ?? externalPending
   const busy = pending !== null
   const showCheck =
     acknowledgement !== null &&

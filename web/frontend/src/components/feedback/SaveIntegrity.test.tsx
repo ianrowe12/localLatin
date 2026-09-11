@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -87,18 +87,29 @@ let latestGates: Deferred<Response>[] = []
 let holdLatest = false
 let latestEntry: FeedbackEntry | null = null
 
-/** The row a real, accepted POST answers with. */
+/**
+ * The row a real, accepted POST answers with.
+ *
+ * Built from the payload the way the route does: the canonical rank is the
+ * first selection, its directory is resolved from the identities the reviewer
+ * saw, and a skip or a none-of-these keeps neither.
+ */
 function receiptFor(payload: Record<string, unknown>, overrides = {}): FeedbackEntry {
+  const ranks = Array.isArray(payload.selected_ranks)
+    ? (payload.selected_ranks as number[])
+    : null
+  const rank = payload.outcome === 'skipped' ? null : (payload.correct_rank as number)
+  const dirs = (payload.expected_candidate_dirs ?? {}) as Record<string, string>
   return {
     id: 900 + postPayloads.length,
     query_id: Number(payload.query_id),
     timestamp: '2026-09-10 12:00:00',
     model_slug: String(payload.model_slug),
-    variant: 'sif_abtt',
+    variant: (payload.variant ?? 'sif_abtt') as FeedbackEntry['variant'],
     outcome: payload.outcome as FeedbackEntry['outcome'],
-    correct_rank: typeof payload.correct_rank === 'number' ? payload.correct_rank : null,
-    correct_dir: null,
-    selected_ranks: null,
+    correct_rank: rank,
+    correct_dir: payload.outcome === 'matched_rank' ? (dirs[String(rank)] ?? null) : null,
+    selected_ranks: ranks !== null && ranks.length > 0 ? ranks : null,
     notes: String(payload.notes ?? ''),
     reviewer: account.display_name,
     reviewer_account_id: account.id,
@@ -242,6 +253,15 @@ function Harness({ queryId = QUERY_A }: { queryId?: number }) {
   return <div data-testid="active-query">{String(app.activeQueryId)}</div>
 }
 
+/**
+ * The sidebar as the app mounts it: collapsing it really does unmount the
+ * panel and its controls, which is the point of the remount tests.
+ */
+function SidebarHost() {
+  const [isOpen, setIsOpen] = useState(true)
+  return <RightSidebar isOpen={isOpen} onToggle={() => setIsOpen((open) => !open)} />
+}
+
 function renderPanel(options: { sidebar?: boolean } = {}) {
   return render(
     <AppProvider>
@@ -250,11 +270,7 @@ function renderPanel(options: { sidebar?: boolean } = {}) {
           <PredictionProvider>
             <FeedbackProvider>
               <Harness />
-              {options.sidebar === true ? (
-                <RightSidebar isOpen onToggle={() => {}} />
-              ) : (
-                <FeedbackPanel />
-              )}
+              {options.sidebar === true ? <SidebarHost /> : <FeedbackPanel />}
             </FeedbackProvider>
           </PredictionProvider>
         </TokenProvider>
@@ -765,5 +781,250 @@ describe('the acknowledgement toast promises only what it can do', () => {
     await settlePost()
 
     await screen.findByText('Skip saved to the review log')
+  })
+})
+
+/**
+ * The repairs asked for by the independent review of this branch.
+ *
+ * Three of them are about WHOSE answer it is. A save, a next-document lookup
+ * and a prefill all finish some time after they were asked for, by which point
+ * the reviewer may be on another document, in another view, or signed in as
+ * someone else. Each one therefore carries the assessment and the visit it
+ * started on, and may only change the screen it belongs to.
+ *
+ * The other three are about WHAT an answer proves: a receipt is proof only if
+ * it is the row that was asked for, a request in flight belongs to the
+ * assessment rather than to a set of buttons that unmount with the sidebar,
+ * and a notice about unsent work has to be read from the box as it is now.
+ */
+describe('an answer changes only the assessment that asked for it', () => {
+  it('refuses a receipt whose recorded directory is not the one on screen', async () => {
+    // The directory is the assignment. A row against another directory is a
+    // different decision from the one the reviewer made, however well formed.
+    renderPanel()
+    await chooseFirstCandidate()
+    await userEvent.click(submitButton())
+    await waitFor(() => expect(postGates).toHaveLength(1))
+
+    await settlePost(0, {
+      body: receiptFor(postPayloads[0], { correct_dir: 'somewhere-else' }),
+    })
+
+    const error = await screen.findByTestId('assessment-save-error')
+    expect(error.getAttribute('data-outcome')).toBe('uncertain')
+    expect(storedDrafts()[draftKeyFor(QUERY_A)]).toMatchObject({ correctRank: 1 })
+  })
+
+  it('refuses a receipt that drops a choice the reviewer made', async () => {
+    renderPanel()
+    await chooseFirstCandidate()
+    await userEvent.click(submitButton())
+    await waitFor(() => expect(postGates).toHaveLength(1))
+
+    await settlePost(0, {
+      body: receiptFor(postPayloads[0], { selected_ranks: null }),
+    })
+
+    const error = await screen.findByTestId('assessment-save-error')
+    expect(error.getAttribute('data-outcome')).toBe('uncertain')
+    expect(storedDrafts()[draftKeyFor(QUERY_A)]).toMatchObject({ correctRank: 1 })
+  })
+
+  it('refuses a receipt recorded against another reviewer', async () => {
+    renderPanel()
+    await chooseFirstCandidate()
+    await userEvent.click(submitButton())
+    await waitFor(() => expect(postGates).toHaveLength(1))
+
+    await settlePost(0, {
+      body: receiptFor(postPayloads[0], { reviewer_account_id: 404 }),
+    })
+
+    const error = await screen.findByTestId('assessment-save-error')
+    expect(error.getAttribute('data-outcome')).toBe('uncertain')
+    expect(storedDrafts()[draftKeyFor(QUERY_A)]).toMatchObject({ correctRank: 1 })
+  })
+
+  it('refuses a receipt whose note is not the note that was sent', async () => {
+    renderPanel()
+    await chooseFirstCandidate()
+    await userEvent.type(notesBox(), 'the hand changes here')
+    await userEvent.click(submitButton())
+    await waitFor(() => expect(postGates).toHaveLength(1))
+
+    await settlePost(0, {
+      body: receiptFor(postPayloads[0], { notes: 'the hand changes' }),
+    })
+
+    const error = await screen.findByTestId('assessment-save-error')
+    expect(error.getAttribute('data-outcome')).toBe('uncertain')
+    expect(notesBox().value).toBe('the hand changes here')
+  })
+
+  it('keeps the returned-to draft when the save lands after a round trip', async () => {
+    renderPanel()
+    await chooseFirstCandidate()
+    await userEvent.type(notesBox(), 'read again on return')
+    await userEvent.click(submitButton())
+    await waitFor(() => expect(postGates).toHaveLength(1))
+
+    act(() => appApi!.setActiveQueryId(QUERY_B))
+    await waitFor(() => expect(activeQueryId()).toBe(String(QUERY_B)))
+    act(() => appApi!.setActiveQueryId(QUERY_A))
+    await waitFor(() => expect(activeQueryId()).toBe(String(QUERY_A)))
+    await settlePost()
+
+    // This is a second visit to the same assessment. The old save may record
+    // its row, but it may not empty a box the reviewer has come back to.
+    expect(notesBox().value).toBe('read again on return')
+    expect(storedDrafts()[draftKeyFor(QUERY_A)]).toMatchObject({
+      notes: 'read again on return',
+    })
+    await letTheTimerFire()
+    expect(nextGates).toHaveLength(0)
+  })
+
+  it('does not let a finished save on another document steer this one', async () => {
+    renderPanel()
+    await chooseFirstCandidate()
+    await userEvent.click(submitButton())
+    await waitFor(() => expect(postGates).toHaveLength(1))
+
+    act(() => appApi!.setActiveQueryId(QUERY_B))
+    await waitFor(() => expect(activeQueryId()).toBe(String(QUERY_B)))
+    await chooseFirstCandidate()
+    await userEvent.click(submitButton())
+    await waitFor(() => expect(postGates).toHaveLength(2))
+
+    // B is acknowledged and counting down to its move; A then finishes late.
+    await settlePost(1)
+    await settlePost(0)
+    await waitFor(() => expect(nextGates).toHaveLength(1), { timeout: 2000 })
+
+    // One lookup, and it is B's: A's completion neither cancelled it nor added
+    // a second one.
+    await settleNext(0, { fileId: QUERY_C })
+    await waitFor(() => expect(activeQueryId()).toBe(String(QUERY_C)))
+  })
+
+  it('does not let a finished save on another document replace this recovery', async () => {
+    renderPanel()
+    await chooseFirstCandidate()
+    await userEvent.click(submitButton())
+    await waitFor(() => expect(postGates).toHaveLength(1))
+
+    act(() => appApi!.setActiveQueryId(QUERY_B))
+    await waitFor(() => expect(activeQueryId()).toBe(String(QUERY_B)))
+    await chooseFirstCandidate()
+    await userEvent.click(submitButton())
+    await waitFor(() => expect(postGates).toHaveLength(2))
+    await settlePost(1)
+    await waitFor(() => expect(nextGates).toHaveLength(1), { timeout: 2000 })
+    await settleNext(0, { status: 500 })
+    await screen.findByTestId('assessment-saved-notice')
+
+    // A's late success must not take away the retry that belongs to B.
+    await settlePost(0)
+    await letTheTimerFire()
+    const notice = screen.getByTestId('assessment-saved-notice')
+    expect(notice.getAttribute('data-navigation')).toBe('failed')
+    await userEvent.click(screen.getByTestId('assessment-retry-advance'))
+    await waitFor(() => expect(nextGates).toHaveLength(2))
+    expect(postPayloads).toHaveLength(2)
+  })
+
+  it('keeps a save in flight across a remount of the controls', async () => {
+    // Collapsing the sidebar unmounts the buttons. Their own state cannot be
+    // the record of a request that is still out, or the reviewer is invited to
+    // send the same assessment a second time.
+    renderPanel({ sidebar: true })
+    await chooseFirstCandidate()
+    await userEvent.click(submitButton())
+    await waitFor(() => expect(postGates).toHaveLength(1))
+
+    await userEvent.click(screen.getByRole('button', { name: 'Collapse sidebar' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Expand sidebar' }))
+
+    await waitFor(() => expect(submitButton().disabled).toBe(true))
+    expect(document.body.textContent).toContain('Saving your assessment')
+    await userEvent.click(submitButton())
+    expect(postPayloads).toHaveLength(1)
+  })
+
+  it('still offers a colleague note on the next document after a save', async () => {
+    // The seeding guard used to be one counter for the whole panel, so any
+    // save silenced the prefill everywhere. It is now per assessment.
+    renderPanel()
+    await chooseFirstCandidate()
+    await userEvent.click(submitButton())
+    await waitFor(() => expect(postGates).toHaveLength(1))
+    await settlePost()
+    await waitFor(() => expect(storedDrafts()[draftKeyFor(QUERY_A)]).toBeUndefined())
+
+    latestEntry = receiptFor(
+      {
+        query_id: QUERY_B,
+        model_slug: MODEL,
+        outcome: 'matched_rank',
+        notes: 'a colleague read this',
+      },
+      { reviewer: 'Alice Archivista', reviewer_account_id: 3, reviewer_username: 'alice' },
+    )
+    act(() => appApi!.setActiveQueryId(QUERY_B))
+
+    await waitFor(() => expect(notesBox().value).toBe('a colleague read this'))
+  })
+
+  it('does not prefill over an edit that was typed and undone', async () => {
+    holdLatest = true
+    renderPanel()
+    await screen.findByTestId('match-pill-1')
+    await waitFor(() => expect(latestGates.length).toBeGreaterThan(0))
+    await userEvent.type(notesBox(), 'x')
+    await userEvent.clear(notesBox())
+
+    await act(async () => {
+      latestGates[0].resolve(
+        jsonResponse(
+          receiptFor(
+            {
+              query_id: QUERY_A,
+              model_slug: MODEL,
+              outcome: 'matched_rank',
+              notes: 'older reading',
+            },
+            {
+              reviewer: 'Alice Archivista',
+              reviewer_account_id: 3,
+              reviewer_username: 'alice',
+            },
+          ),
+        ),
+      )
+      await Promise.resolve()
+    })
+
+    // An empty box the reviewer emptied is a decision, not an absence: the
+    // attribution still appears, but the older note is not poured back in.
+    expect(notesBox().value).toBe('')
+    expect((await screen.findByTestId('note-attribution')).textContent).toContain('alice')
+  })
+
+  it('says newer work is unsent when the lookup fails after more typing', async () => {
+    renderPanel()
+    await chooseFirstCandidate()
+    await userEvent.click(submitButton())
+    await waitFor(() => expect(postGates).toHaveLength(1))
+    await settlePost()
+    await waitFor(() => expect(nextGates).toHaveLength(1), { timeout: 2000 })
+    act(() => feedbackApi!.setNotes('written while the lookup was out'))
+    await settleNext(0, { status: 503 })
+
+    const notice = await screen.findByTestId('assessment-saved-notice')
+    expect(notice.getAttribute('data-navigation')).toBe('failed')
+    expect(notice.textContent).not.toContain('nothing here needs saving again')
+    expect(notice.textContent).toContain('unsent')
+    expect(notesBox().value).toBe('written while the lookup was out')
   })
 })
