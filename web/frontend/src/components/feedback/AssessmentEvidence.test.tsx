@@ -232,10 +232,13 @@ beforeEach(() => {
   installFetch()
 })
 
-// The panel advances to the next query on a 500ms timer after a save, so a
-// test can finish with that request still pending. Keeping the mock installed
-// until the file is done means such a straggler hits the fixture rather than
-// jsdom's real fetch, which would reject into nobody's catch block.
+// Ordinary global hygiene. This used to be load-bearing: the panel advanced to
+// the next query on a 500ms timer that nothing cancelled, so a file could end
+// with a read in flight, and the hope was that keeping the fixture installed
+// would catch it. It could not -- `afterAll` runs when the file ends, half a
+// second before the straggler, which is how CI run 34546423664 ended with an
+// unhandled ApiError. The panel now issues no read at all once it is unmounted
+// (see AssessmentAdvance.test.tsx), so nothing here depends on the timing.
 afterAll(() => {
   vi.unstubAllGlobals()
 })

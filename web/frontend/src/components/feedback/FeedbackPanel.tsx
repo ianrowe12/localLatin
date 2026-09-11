@@ -14,7 +14,8 @@ import {
   type SelectionIssue,
 } from '../../contexts/assessmentEligibility'
 import { useReviewer } from '../../contexts/ReviewerContext'
-import { fetchNextQuery } from '../../api/queries'
+import { fetchNextQuery, type NextQueryResponse } from '../../api/queries'
+import { toApiErrorInfo } from '../../api/client'
 import { usePredictionState } from '../../contexts/PredictionContext'
 import {
   classifySaveFailure,
@@ -184,10 +185,26 @@ export default function FeedbackPanel() {
     null,
   )
   const [saveError, setSaveError] = useState<SaveFailure | null>(null)
+  // Why the reviewer is still looking at the document they just answered. The
+  // save succeeded; only the read that moves them on did not.
+  const [advanceError, setAdvanceError] = useState<string | null>(null)
 
   // Always-current view of the draft map for use inside async callbacks.
   const draftsRef = useRef(drafts)
   draftsRef.current = drafts
+
+  // The advance runs from a 500ms timer that nothing cancels, so by the time it
+  // fires the panel may be gone and the reviewer may be reading something else
+  // entirely. Both are read here rather than closed over.
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
+  const activeQueryIdRef = useRef(activeQueryId)
+  activeQueryIdRef.current = activeQueryId
 
   const selectedRanks = useMemo(
     () => selectionReview.confirmed.map((selection) => selection.rank),
@@ -204,6 +221,7 @@ export default function FeedbackPanel() {
   useEffect(() => {
     setMultiSelectOverride(null)
     setSaveError(null)
+    setAdvanceError(null)
     setSkipNeedsNote(false)
   }, [activeQueryId, activeModel, activeVariant, accountId])
 
@@ -270,11 +288,36 @@ export default function FeedbackPanel() {
 
   const advanceToNextActionable = useCallback(
     async (after: number) => {
-      const next = await fetchNextQuery(after)
+      // Fires 500ms after a save, from a timer nothing cancels, and the caller
+      // discards this promise. So it must never reject and never complete on
+      // behalf of a panel that has been unmounted or a reviewer who has since
+      // opened a different document: the first left an ApiError with no catch
+      // block anywhere, the second would silently pull them off the document
+      // they chose. Both guards are re-checked after the await, because the
+      // reviewer can move while the request is in flight.
+      if (!mounted.current || activeQueryIdRef.current !== after) return
+      setAdvanceError(null)
+      let next: NextQueryResponse
+      try {
+        next = await fetchNextQuery(after)
+      } catch (err) {
+        if (!mounted.current) return
+        // Visible, and honest about what did and did not happen: the
+        // assessment is recorded, the move is what failed.
+        setAdvanceError(toApiErrorInfo(err, 'Could not reach the server.').message)
+        return
+      }
+      if (!mounted.current || activeQueryIdRef.current !== after) return
       setActiveQueryId(next.file_id)
     },
     [setActiveQueryId],
   )
+
+  /** Same read, asked for again by hand. It saves nothing and sends nothing. */
+  const retryAdvance = useCallback(() => {
+    if (activeQueryId === null) return
+    void advanceToNextActionable(activeQueryId)
+  }, [activeQueryId, advanceToNextActionable])
 
   // Save failures keep the draft. What they are allowed to PROMISE differs:
   // only a local refusal or a server rejection is known not to have written
@@ -471,6 +514,38 @@ export default function FeedbackPanel() {
               Reload the ranking
             </button>
           )}
+        </div>
+      )}
+
+      {/* The save landed; the move to the next document did not. Said out loud
+          because the alternative is what this used to do -- leave the reviewer
+          sitting on a document they had just answered with no word of why,
+          whose obvious next move is to answer it again into an append-only
+          log. Not framed as a save failure, and it makes no claim about the
+          next document, because neither would be true. */}
+      {advanceError !== null && (
+        <div
+          role="alert"
+          data-testid="assessment-advance-error"
+          className="rounded-lg border border-amber-400/60 bg-amber-50/70 dark:bg-amber-500/10 px-2.5 py-2"
+        >
+          <p className="font-ui text-xs leading-snug text-stone-700 dark:text-stone-200">
+            Your response was recorded. What failed was moving on to the next
+            document: {advanceError}
+          </p>
+          <p className="mt-1 font-ui text-xs leading-snug text-stone-600 dark:text-stone-300">
+            You are still on the document you just answered, and it does not
+            need answering again. Try the move again, or pick the next document
+            from the list yourself.
+          </p>
+          <button
+            type="button"
+            data-testid="assessment-advance-retry"
+            onClick={retryAdvance}
+            className="mt-2 rounded-md border border-stone-300 dark:border-stone-600 px-3 py-1 font-ui text-xs text-stone-600 dark:text-stone-300 hover:border-indigo-400 hover:text-indigo-600 transition-colors"
+          >
+            Try again
+          </button>
         </div>
       )}
 
