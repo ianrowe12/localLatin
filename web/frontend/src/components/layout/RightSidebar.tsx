@@ -13,11 +13,14 @@ interface RightSidebarProps {
 }
 
 export default function RightSidebar({ isOpen, onToggle }: RightSidebarProps) {
-  const { lastSubmittedKey, undoLastSubmit } = useFeedback()
+  const { lastSubmission, restoreSubmittedDraft, dismissLastSubmission } = useFeedback()
 
   const handleToastClose = useCallback(() => {
-    // Toast auto-dismisses; lastSubmittedKey will be cleared on next submit or undo
-  }, [])
+    // The acknowledgement is dismissed for real, so a stale offer to restore a
+    // draft cannot reappear against an assessment the reviewer has moved on
+    // from.
+    dismissLastSubmission()
+  }, [dismissLastSubmission])
 
   return (
     <motion.aside
@@ -86,12 +89,31 @@ export default function RightSidebar({ isOpen, onToggle }: RightSidebarProps) {
         {/* Collapsed: just the toggle button is shown above */}
       </div>
 
-      {/* Undo toast */}
+      {/* What was saved, and what this toast can and cannot take back. The
+          feedback log is append-only: "Undo" here only ever put the local
+          draft back in the box, and saying otherwise invites a reviewer to
+          believe a recorded decision has been withdrawn (issue #158). */}
       <AnimatePresence>
-        {lastSubmittedKey && (
+        {lastSubmission && (
           <Toast
-            message="Feedback submitted"
-            onUndo={undoLastSubmit}
+            message={
+              lastSubmission.kind === 'skip'
+                ? 'Skip saved to the review log'
+                : 'Assessment saved to the review log'
+            }
+            detail={
+              lastSubmission.supersededByNewerDraft
+                ? 'Your newer edits to this document are still unsent.'
+                : lastSubmission.canRestoreDraft
+                  ? 'The saved record stays in the log; this only puts your draft back.'
+                  : 'The log is append-only, so this cannot be taken back here.'
+            }
+            actionLabel={
+              lastSubmission.canRestoreDraft ? 'Put my draft back' : undefined
+            }
+            onAction={
+              lastSubmission.canRestoreDraft ? restoreSubmittedDraft : undefined
+            }
             onClose={handleToastClose}
           />
         )}

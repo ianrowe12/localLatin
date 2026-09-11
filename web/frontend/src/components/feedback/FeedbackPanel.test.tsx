@@ -59,8 +59,26 @@ function jsonResponse(body: unknown): Response {
 function installFetch(): void {
   vi.stubGlobal(
     'fetch',
-    vi.fn(async (input: RequestInfo | URL) => {
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
+      if (init?.method === 'POST' && url.includes('/api/feedback')) {
+        // The appended row, which is the only receipt the client accepts
+        // before it discards a draft (issue #158).
+        const payload = JSON.parse(String(init.body)) as Record<string, unknown>
+        return jsonResponse({
+          ...NOTE_FROM_ALICE,
+          id: 99,
+          query_id: Number(payload.query_id),
+          model_slug: String(payload.model_slug),
+          outcome: payload.outcome,
+          correct_rank:
+            typeof payload.correct_rank === 'number' ? payload.correct_rank : null,
+          notes: String(payload.notes ?? ''),
+          reviewer: 'Bob Bibliothecarius',
+          reviewer_account_id: 2,
+          reviewer_username: 'bob',
+        })
+      }
       if (url.includes('/api/auth/me')) {
         return jsonResponse({
           id: 2,

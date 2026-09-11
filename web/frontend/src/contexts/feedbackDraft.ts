@@ -33,6 +33,18 @@ export interface FeedbackDraft {
   /** The same choices with the directory each named when it was made. */
   selections?: DraftSelection[]
   notes: string
+  /**
+   * Which edit of this draft this is (issue #158).
+   *
+   * Monotonic per draft key and never reused, so a save that finishes late can
+   * tell "the draft I sent" from "what is in the box now". Content equality is
+   * not enough: a reviewer who types a word during the POST and deletes it
+   * again has still moved on from the submitted revision, and clearing the box
+   * under them (or navigating away) would throw away work they can see.
+   *
+   * Absent on drafts written before this existed; read `draftRevision()`.
+   */
+  revision?: number
 }
 
 export function emptyDraft(): FeedbackDraft {
@@ -53,11 +65,26 @@ export function seedDraftMapIfEmpty(
   drafts: Map<string, FeedbackDraft>,
   key: string,
   seed: FeedbackDraft,
+  revision?: number,
 ): Map<string, FeedbackDraft> {
   if (!isFeedbackDraftEmpty(drafts.get(key))) return drafts
   const next = new Map(drafts)
-  next.set(key, seed)
+  next.set(key, revision === undefined ? seed : { ...seed, revision })
   return next
+}
+
+/**
+ * Which edit of this draft it is, treating anything unreadable as the oldest.
+ *
+ * Zero means "no recorded revision": an empty slot, or a draft written before
+ * revisions existed. It is never equal to a revision this session issued, since
+ * those start at 1, so a stale save can never mistake one for its own.
+ */
+export function draftRevision(draft: FeedbackDraft | undefined): number {
+  const revision = draft?.revision
+  return typeof revision === 'number' && Number.isInteger(revision) && revision > 0
+    ? revision
+    : 0
 }
 
 /** True when the draft's answer is "none of the model candidates". */
@@ -201,6 +228,13 @@ export function sanitizeDraft(value: unknown): FeedbackDraft | null {
   const draft: FeedbackDraft = { correctRank, notes }
   if (selectedRanks && selectedRanks.length > 0) draft.selectedRanks = selectedRanks
   if (selections) draft.selections = selections
+  if (
+    typeof record.revision === 'number' &&
+    Number.isInteger(record.revision) &&
+    record.revision > 0
+  ) {
+    draft.revision = record.revision
+  }
   return draft
 }
 

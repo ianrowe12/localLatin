@@ -3,12 +3,23 @@ import { motion } from 'framer-motion'
 
 interface ToastProps {
   message: string
-  onUndo: () => void
+  /** A second line, for what the message must not be read as promising. */
+  detail?: string
+  /** Omitted when there is no honest action to offer. */
+  actionLabel?: string
+  onAction?: () => void
   duration?: number
   onClose: () => void
 }
 
-export default function Toast({ message, onUndo, duration = 5000, onClose }: ToastProps) {
+export default function Toast({
+  message,
+  detail,
+  actionLabel,
+  onAction,
+  duration = 5000,
+  onClose,
+}: ToastProps) {
   useEffect(() => {
     const timer = setTimeout(onClose, duration)
     return () => clearTimeout(timer)
@@ -26,15 +37,22 @@ export default function Toast({ message, onUndo, duration = 5000, onClose }: Toa
       role="status"
       aria-live="polite"
     >
-      <span className="text-sm">{message}</span>
-      <button
-        type="button"
-        onClick={onUndo}
-        className="text-accent-light hover:text-white font-medium text-sm underline
-                   transition-colors"
-      >
-        Undo
-      </button>
+      <span className="flex flex-col">
+        <span className="text-sm">{message}</span>
+        {detail !== undefined && (
+          <span className="text-xs text-stone-300">{detail}</span>
+        )}
+      </span>
+      {actionLabel !== undefined && onAction !== undefined && (
+        <button
+          type="button"
+          onClick={onAction}
+          className="text-accent-light hover:text-white font-medium text-sm underline
+                     transition-colors"
+        >
+          {actionLabel}
+        </button>
+      )}
     </motion.div>
   )
 }

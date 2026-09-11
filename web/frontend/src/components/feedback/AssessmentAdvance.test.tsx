@@ -63,6 +63,39 @@ function jsonResponse(body: unknown, status = 200): Response {
   })
 }
 
+/**
+ * The row an accepted POST answers with.
+ *
+ * A save is only acknowledged against a readable record of the assessment that
+ * was sent (issue #158), so the stub answers the way the real route does:
+ * canonical rank first, its directory resolved from the identities the reviewer
+ * saw, and the note and reviewer echoed verbatim. `{ success: true }` would now
+ * be an unconfirmable save, and no advance follows one of those.
+ */
+function receiptFor(payload: Record<string, unknown>): Record<string, unknown> {
+  const ranks = Array.isArray(payload.selected_ranks)
+    ? (payload.selected_ranks as number[])
+    : null
+  const rank = payload.outcome === 'skipped' ? null : (payload.correct_rank as number)
+  const dirs = (payload.expected_candidate_dirs ?? {}) as Record<string, string>
+  return {
+    id: 900 + posted.length,
+    query_id: payload.query_id,
+    timestamp: '2026-09-10 12:00:00',
+    model_slug: payload.model_slug,
+    variant: payload.variant ?? 'sif_abtt',
+    outcome: payload.outcome,
+    correct_rank: rank,
+    correct_dir: payload.outcome === 'matched_rank' ? (dirs[String(rank)] ?? null) : null,
+    selected_ranks: ranks !== null && ranks.length > 0 ? ranks : null,
+    notes: String(payload.notes ?? ''),
+    reviewer: 'Bob Bibliothecarius',
+    reviewer_account_id: 2,
+    reviewer_username: 'bob',
+    schema_version: 2,
+  }
+}
+
 function holdPost(): void {
   postGate = new Promise<void>((resolve) => {
     releasePost = resolve
@@ -118,8 +151,9 @@ function installFetch(): void {
         postAttempts += 1
         if (postGate) await postGate
         if (postFails) throw postFails
-        posted.push(JSON.parse(String(init.body)))
-        return jsonResponse({ success: true })
+        const payload = JSON.parse(String(init.body)) as Record<string, unknown>
+        posted.push(payload)
+        return jsonResponse(receiptFor(payload), 201)
       }
       if (url.pathname === '/api/auth/me') {
         return jsonResponse({
@@ -322,7 +356,9 @@ describe('the move to the next document is a read like any other', () => {
     await screen.findByTestId('assessment-advance-error', {}, { timeout: 3000 })
 
     nextQueryFails = null
-    await userEvent.click(screen.getByTestId('assessment-advance-retry'))
+    // Same control, under the name the panel's acknowledgement block gives it
+    // now that the failed move is reported inside the saved notice (issue #158).
+    await userEvent.click(screen.getByTestId('assessment-retry-advance'))
 
     await waitFor(() => expect(activeQuery()).toBe(String(NEXT_ID)), {
       timeout: 3000,

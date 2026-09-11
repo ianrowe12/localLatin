@@ -11,6 +11,7 @@ import {
 import {
   FEEDBACK_UPDATED_EVENT,
   submitFeedback as postFeedback,
+  type FeedbackEntry,
   type FeedbackPayload,
 } from '../api/feedback'
 import { DEFAULT_VARIANT, type PredictionVariant } from '../api/variants'
@@ -31,6 +32,7 @@ import {
 } from './assessmentEligibility'
 import {
   deserializeDrafts,
+  draftRevision,
   draftSelections,
   draftWithNone,
   draftWithSelections,
@@ -44,6 +46,54 @@ import {
 } from './feedbackDraft'
 
 export type { DraftSelection, FeedbackDraft } from './feedbackDraft'
+
+/** Which deliberate operation a save is. Never inferred from the draft. */
+export type SaveKind = 'submit' | 'skip'
+
+/**
+ * One visit to one assessment.
+ *
+ * `key` alone is not enough: leaving query A for B and coming back is a new
+ * visit to the same key, and a completion from the first visit must not be
+ * allowed to navigate, clear or acknowledge anything in the second (issue
+ * #158). `id` advances every time the assessment on screen changes and is never
+ * reused within a session.
+ */
+export interface AssessmentVisit {
+  key: string | null
+  id: number
+}
+
+/**
+ * A save the server acknowledged with a readable receipt for this request.
+ *
+ * It says nothing about navigation, which happens afterwards and can fail on
+ * its own. `supersededByNewerDraft` means the reviewer edited the assessment
+ * while the request was in flight: the submitted revision is saved, the newer
+ * draft is still unsent, and the caller must not describe what is on screen as
+ * saved.
+ */
+export interface SaveAcknowledgement {
+  status: 'saved'
+  kind: SaveKind
+  key: string
+  queryId: number
+  visitId: number
+  /** The draft revision that was sent. */
+  revision: number
+  entry: FeedbackEntry
+  supersededByNewerDraft: boolean
+}
+
+/**
+ * The result of asking for a save.
+ *
+ * `already_pending` is not a failure and not an acknowledgement: an operation
+ * for this assessment is already in flight, and this attempt did nothing. A
+ * failed save rejects instead, so `classifySaveFailure` can say what is known
+ * about whether anything was written.
+ */
+export type SaveOutcome = SaveAcknowledgement | { status: 'already_pending' }
 
 export interface FeedbackContextValue {
   drafts: Map<string, FeedbackDraft>
@@ -104,19 +154,64 @@ export interface FeedbackContextValue {
    * Save the current deliberate evaluation. Takes no candidates: the payload is
    * built from the ranking on screen, so no caller can supply its own.
    * Rejects, without any request, when the evidence does not support the draft.
+   *
+   * Resolves with the acknowledged receipt, or with `already_pending` when this
+   * assessment already has an operation in flight. Rejects with the save
+   * failure otherwise; nothing is retried here.
    */
-  submitFeedback: () => Promise<void>
+  submitFeedback: () => Promise<SaveOutcome>
   /** Save a deliberate, note-required deferral. Never inferred, never None. */
-  skipFeedback: () => Promise<void>
-  undoLastSubmit: () => void
-  lastSubmittedKey: string | null
+  skipFeedback: () => Promise<SaveOutcome>
+  /** The operation in flight for the assessment on screen, if any. */
+  pendingSave: SaveKind | null
+  /** This visit to this assessment, as of this render. */
+  visit: AssessmentVisit
+  /** This visit to this assessment. Read inside async callbacks, never stored. */
+  getVisit: () => AssessmentVisit
+  /** True when this key holds an edit newer than the given revision. */
+  hasNewerDraft: (key: string, revision: number) => boolean
+  /**
+   * How many saves this provider has recorded. A caller that started a request
+   * before a save and applies its answer afterwards can compare this and drop
+   * the answer rather than reseeding a draft the save just cleared.
+   */
+  getSaveEpoch: () => number
+
+  /** The last save this session recorded, for a local acknowledgement. */
+  lastSubmission: LastSubmission | null
+  /**
+   * Put the submitted draft back in the box.
+   *
+   * Local only: the feedback log is append-only, so nothing here removes the
+   * saved row or any reviewer-directory membership it created. Refuses when the
+   * key has newer unsent work, which restoring would overwrite.
+   */
+  restoreSubmittedDraft: () => void
+  /** Forget the acknowledgement without touching any draft. */
+  dismissLastSubmission: () => void
 }
 
 const FeedbackContext = createContext<FeedbackContextValue | null>(null)
 
 const STORAGE_KEY = 'locallatin-feedback-drafts'
 
-/** Refused locally, before any request. #158 owns in-flight save integrity. */
+/**
+ * What the acknowledgement toast is allowed to say and offer.
+ *
+ * `canRestoreDraft` is false once the reviewer has written something new under
+ * the same key: the saved row is unreachable from here either way, and putting
+ * the old text back would destroy the new.
+ */
+export interface LastSubmission {
+  key: string
+  kind: SaveKind
+  queryId: number
+  entry: FeedbackEntry
+  canRestoreDraft: boolean
+  supersededByNewerDraft: boolean
+}
+
+/** Refused locally, before any request. */
 export class AssessmentNotSavableError extends Error {
   constructor(message: string) {
     super(message)
@@ -142,8 +237,23 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
   const [drafts, setDrafts] = useState<Map<string, FeedbackDraft>>(() =>
     deserializeDrafts(localStorage.getItem(STORAGE_KEY)),
   )
-  const [lastSubmittedKey, setLastSubmittedKey] = useState<string | null>(null)
-  const lastSubmittedDraft = useRef<{ key: string; draft: FeedbackDraft } | null>(null)
+  const [lastSaved, setLastSaved] = useState<{
+    key: string
+    kind: SaveKind
+    queryId: number
+    entry: FeedbackEntry
+    draft: FeedbackDraft
+    revision: number
+    supersededByNewerDraft: boolean
+  } | null>(null)
+  // Which assessments have a request in flight, keyed the same way drafts are,
+  // so two different assessments can never block each other and the SAME one
+  // can never run twice. Held in the provider rather than in a control: the
+  // buttons, the keyboard and any direct context call all pass through here.
+  const inFlightRef = useRef(new Map<string, SaveKind>())
+  const [pendingKey, setPendingKey] = useState<{ key: string; kind: SaveKind } | null>(
+    null,
+  )
   // Choices this provider dropped, kept until the reviewer acts: once the draft
   // is rewritten the reason is gone from the data, and silently discarding
   // somebody's answer is the failure this issue exists to prevent.
@@ -156,10 +266,52 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(STORAGE_KEY, serializeDrafts(drafts))
   }, [drafts])
 
+  // The draft map as it is right now, for async callbacks that must not read a
+  // value captured when their request started.
+  const draftsRef = useRef(drafts)
+  draftsRef.current = drafts
+
+  /**
+   * Next revision number for a key.
+   *
+   * Kept outside the draft map on purpose: a saved draft is deleted, and if the
+   * counter went with it the reviewer's next keystroke would produce revision 1
+   * again -- lower than the revision just submitted, so the save's own timer
+   * would read the new text as "nothing newer" and navigate away from it.
+   */
+  const revisionsRef = useRef(new Map<string, number>())
+  const nextRevision = useCallback((key: string): number => {
+    const seen = Math.max(
+      revisionsRef.current.get(key) ?? 0,
+      draftRevision(draftsRef.current.get(key)),
+    )
+    const next = seen + 1
+    revisionsRef.current.set(key, next)
+    return next
+  }, [])
+
+  const saveEpochRef = useRef(0)
+  const getSaveEpoch = useCallback(() => saveEpochRef.current, [])
+
   const draftKey =
     activeQueryId === null || !activeModel || accountId === null
       ? null
       : makeDraftKey(activeQueryId, activeModel, activeVariant, accountId)
+
+  // Which visit to this assessment this is. Computed during render, not in an
+  // effect: a completion that lands between the key change and a passive effect
+  // would otherwise be judged against the visit it has already left.
+  const visitRef = useRef<AssessmentVisit>({ key: draftKey, id: 1 })
+  if (visitRef.current.key !== draftKey) {
+    visitRef.current = { key: draftKey, id: visitRef.current.id + 1 }
+  }
+  const visit = visitRef.current
+  const getVisit = useCallback(() => visitRef.current, [])
+
+  const hasNewerDraft = useCallback(
+    (key: string, revision: number) => draftRevision(draftsRef.current.get(key)) > revision,
+    [],
+  )
 
   const draft = (draftKey === null ? undefined : drafts.get(draftKey)) ?? emptyDraft()
 
@@ -217,11 +369,16 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
       const existing = prev.get(draftKey)
       if (!existing) return prev
       const next = new Map(prev)
-      next.set(draftKey, draftWithSelections(existing, selectionReview.selections))
+      // A reconciliation changes what the draft says, so it is a new revision
+      // too: a save that was sent before it must not clear the corrected draft.
+      next.set(draftKey, {
+        ...draftWithSelections(existing, selectionReview.selections),
+        revision: nextRevision(draftKey),
+      })
       return next
     })
     setDroppedIssues({ key: draftKey, issues: dropped })
-  }, [draftKey, selectionReview])
+  }, [draftKey, nextRevision, selectionReview])
 
   const issues = useMemo(() => {
     const remembered =
@@ -244,13 +401,19 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
   const writeDraft = useCallback(
     (update: (existing: FeedbackDraft) => FeedbackDraft) => {
       if (draftKey === null) return
+      // Every edit is a new revision, including one that restores earlier text:
+      // "the same words" is not "the same draft" to an in-flight save.
+      const revision = nextRevision(draftKey)
       setDrafts((prev) => {
         const next = new Map(prev)
-        next.set(draftKey, update(prev.get(draftKey) ?? emptyDraft()))
+        next.set(draftKey, {
+          ...update(prev.get(draftKey) ?? emptyDraft()),
+          revision,
+        })
         return next
       })
     },
-    [draftKey],
+    [draftKey, nextRevision],
   )
 
   const updateDraft = useCallback(
@@ -311,9 +474,10 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
       // A prefill that arrives after the reviewer has moved on belongs to a key
       // nobody is looking at; it must not resurface as a current answer.
       if (key !== draftKey) return
-      setDrafts((prev) => seedDraftMapIfEmpty(prev, key, seed))
+      const revision = nextRevision(key)
+      setDrafts((prev) => seedDraftMapIfEmpty(prev, key, seed, revision))
     },
-    [accountId, draftKey],
+    [accountId, draftKey, nextRevision],
   )
 
   // Everything the save paths read, always at its current value: a handler
@@ -335,88 +499,216 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
     readiness,
   }
 
-  const recordSubmission = useCallback((key: string, saved: FeedbackDraft) => {
-    lastSubmittedDraft.current = { key, draft: saved }
-    setLastSubmittedKey(key)
+  /**
+   * Record an acknowledged save.
+   *
+   * Clears exactly the revision that was sent. If the reviewer edited the
+   * assessment while the request was in flight, the newer draft stays in the
+   * box: the save is real, but it saved older text, and deleting the newer one
+   * would destroy work the reviewer can see and believes is unsent.
+   */
+  const recordSubmission = useCallback(
+    (
+      kind: SaveKind,
+      key: string,
+      queryId: number,
+      revision: number,
+      snapshot: FeedbackDraft,
+      entry: FeedbackEntry,
+    ): boolean => {
+      const superseded = draftRevision(draftsRef.current.get(key)) > revision
+      saveEpochRef.current += 1
+      setDrafts((prev) => {
+        // Re-checked against the authoritative map: this is the write that can
+        // destroy a reviewer's text, so it never trusts the mirror alone.
+        if (draftRevision(prev.get(key)) > revision) return prev
+        if (!prev.has(key)) return prev
+        const next = new Map(prev)
+        next.delete(key)
+        return next
+      })
+      setLastSaved({
+        key,
+        kind,
+        queryId,
+        entry,
+        draft: snapshot,
+        revision,
+        supersededByNewerDraft: superseded,
+      })
+      window.dispatchEvent(new Event(FEEDBACK_UPDATED_EVENT))
+      return superseded
+    },
+    [],
+  )
+
+  /**
+   * Run one save for one assessment, or decline because one is already running.
+   *
+   * The claim is synchronous and happens before the first `await`, so two
+   * clicks in the same tick, a click racing the keyboard, and a direct context
+   * call from anywhere else all see the same lock. It is a client-side guard
+   * against this app duplicating a request; it is not exactly-once delivery,
+   * which the API does not offer (see web/SAVE_RETRY_POLICY.md).
+   */
+  const runSave = useCallback(
+    async (
+      kind: SaveKind,
+      build: (current: CurrentAssessment) => {
+        payload: FeedbackPayload
+        snapshot: FeedbackDraft
+      },
+    ): Promise<SaveOutcome> => {
+      const current = currentRef.current
+      const key = current.key
+      const queryId = current.queryId
+      if (key === null || queryId === null) {
+        throw new AssessmentNotSavableError(
+          kind === 'submit'
+            ? 'There is no assessment on screen to save.'
+            : 'There is no assessment on screen to defer.',
+        )
+      }
+      if (inFlightRef.current.has(key)) return { status: 'already_pending' }
+
+      const { payload, snapshot } = build(current)
+      const revision = draftRevision(current.draft)
+      const visitId = visitRef.current.id
+      inFlightRef.current.set(key, kind)
+      setPendingKey({ key, kind })
+
+      let entry: FeedbackEntry
+      try {
+        entry = await postFeedback(payload)
+      } finally {
+        inFlightRef.current.delete(key)
+        setPendingKey((prev) => (prev !== null && prev.key === key ? null : prev))
+      }
+
+      const supersededByNewerDraft = recordSubmission(
+        kind,
+        key,
+        queryId,
+        revision,
+        snapshot,
+        entry,
+      )
+      return {
+        status: 'saved',
+        kind,
+        key,
+        queryId,
+        visitId,
+        revision,
+        entry,
+        supersededByNewerDraft,
+      }
+    },
+    [recordSubmission],
+  )
+
+  const submitFeedback = useCallback(
+    (): Promise<SaveOutcome> =>
+      runSave('submit', (current) => {
+        if (!current.readiness.canSubmit || current.readiness.outcome === null) {
+          throw new AssessmentNotSavableError(
+            'This assessment cannot be saved against the ranking on screen.',
+          )
+        }
+        const base = {
+          query_id: current.queryId as number,
+          model_slug: current.model,
+          variant: current.variant,
+          notes: current.draft.notes,
+          // Never an assignment authority server-side; the identity the
+          // reviewer saw travels in expected_candidate_dirs instead.
+          correct_dir: null,
+        }
+        const payload: FeedbackPayload =
+          current.readiness.outcome === 'none_of_top_k'
+            ? { ...base, outcome: 'none_of_top_k', correct_rank: 0 }
+            : {
+                ...base,
+                outcome: 'matched_rank',
+                correct_rank: current.readiness.selections[0].rank,
+                selected_ranks: current.readiness.selections.map(
+                  (selection) => selection.rank,
+                ),
+                expected_candidate_dirs: expectedCandidateDirs(
+                  current.readiness.selections,
+                ),
+              }
+        return { payload, snapshot: { ...current.draft } }
+      }),
+    [runSave],
+  )
+
+  const skipFeedback = useCallback(
+    (): Promise<SaveOutcome> =>
+      runSave('skip', (current) => {
+        const notes = current.draft.notes.trim()
+        if (!notes) {
+          throw new AssessmentNotSavableError(
+            'Add a note before skipping so the PI can follow up.',
+          )
+        }
+        return {
+          payload: {
+            query_id: current.queryId as number,
+            model_slug: current.model,
+            variant: current.variant,
+            outcome: 'skipped',
+            correct_rank: null,
+            correct_dir: null,
+            notes,
+          },
+          snapshot: { ...current.draft, notes },
+        }
+      }),
+    [runSave],
+  )
+
+  const canRestoreDraft =
+    lastSaved !== null &&
+    !lastSaved.supersededByNewerDraft &&
+    draftRevision(drafts.get(lastSaved.key)) <= lastSaved.revision
+
+  const lastSavedRef = useRef(lastSaved)
+  lastSavedRef.current = lastSaved
+
+  const lastSubmission: LastSubmission | null =
+    lastSaved === null
+      ? null
+      : {
+          key: lastSaved.key,
+          kind: lastSaved.kind,
+          queryId: lastSaved.queryId,
+          entry: lastSaved.entry,
+          canRestoreDraft,
+          supersededByNewerDraft: lastSaved.supersededByNewerDraft,
+        }
+
+  const restoreSubmittedDraft = useCallback(() => {
+    const saved = lastSavedRef.current
+    if (saved === null) return
+    // Newer unsent work outranks a restore: the saved row is in the log either
+    // way, and this button cannot take it back.
+    if (draftRevision(draftsRef.current.get(saved.key)) > saved.revision) {
+      setLastSaved(null)
+      return
+    }
+    const revision = nextRevision(saved.key)
     setDrafts((prev) => {
+      if (draftRevision(prev.get(saved.key)) > saved.revision) return prev
       const next = new Map(prev)
-      next.delete(key)
+      next.set(saved.key, { ...saved.draft, revision })
       return next
     })
-    window.dispatchEvent(new Event(FEEDBACK_UPDATED_EVENT))
-  }, [])
+    setLastSaved(null)
+  }, [nextRevision])
 
-  const submitFeedback = useCallback(async (): Promise<void> => {
-    const current = currentRef.current
-    if (current.key === null || current.queryId === null) {
-      throw new AssessmentNotSavableError('There is no assessment on screen to save.')
-    }
-    if (!current.readiness.canSubmit || current.readiness.outcome === null) {
-      throw new AssessmentNotSavableError(
-        'This assessment cannot be saved against the ranking on screen.',
-      )
-    }
-
-    const base = {
-      query_id: current.queryId,
-      model_slug: current.model,
-      variant: current.variant,
-      notes: current.draft.notes,
-      // Never an assignment authority server-side; the identity the reviewer
-      // saw travels in expected_candidate_dirs instead.
-      correct_dir: null,
-    }
-    const payload: FeedbackPayload =
-      current.readiness.outcome === 'none_of_top_k'
-        ? { ...base, outcome: 'none_of_top_k', correct_rank: 0 }
-        : {
-            ...base,
-            outcome: 'matched_rank',
-            correct_rank: current.readiness.selections[0].rank,
-            selected_ranks: current.readiness.selections.map(
-              (selection) => selection.rank,
-            ),
-            expected_candidate_dirs: expectedCandidateDirs(current.readiness.selections),
-          }
-
-    await postFeedback(payload)
-    recordSubmission(current.key, { ...current.draft })
-  }, [recordSubmission])
-
-  const skipFeedback = useCallback(async (): Promise<void> => {
-    const current = currentRef.current
-    if (current.key === null || current.queryId === null) {
-      throw new AssessmentNotSavableError('There is no assessment on screen to defer.')
-    }
-    const notes = current.draft.notes.trim()
-    if (!notes) {
-      throw new AssessmentNotSavableError(
-        'Add a note before skipping so the PI can follow up.',
-      )
-    }
-
-    await postFeedback({
-      query_id: current.queryId,
-      model_slug: current.model,
-      variant: current.variant,
-      outcome: 'skipped',
-      correct_rank: null,
-      correct_dir: null,
-      notes,
-    })
-    recordSubmission(current.key, { ...current.draft, notes })
-  }, [recordSubmission])
-
-  const undoLastSubmit = useCallback(() => {
-    if (!lastSubmittedDraft.current) return
-    const { key, draft: restored } = lastSubmittedDraft.current
-    setDrafts((prev) => {
-      const next = new Map(prev)
-      next.set(key, restored)
-      return next
-    })
-    lastSubmittedDraft.current = null
-    setLastSubmittedKey(null)
+  const dismissLastSubmission = useCallback(() => {
+    setLastSaved(null)
   }, [])
 
   const value: FeedbackContextValue = {
@@ -439,8 +731,15 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
     seedDraftIfEmpty,
     submitFeedback,
     skipFeedback,
-    undoLastSubmit,
-    lastSubmittedKey,
+    pendingSave:
+      pendingKey !== null && pendingKey.key === draftKey ? pendingKey.kind : null,
+    visit,
+    getVisit,
+    hasNewerDraft,
+    getSaveEpoch,
+    lastSubmission,
+    restoreSubmittedDraft,
+    dismissLastSubmission,
   }
 
   return <FeedbackContext.Provider value={value}>{children}</FeedbackContext.Provider>
