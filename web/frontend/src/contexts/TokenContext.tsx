@@ -3,6 +3,8 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react'
@@ -178,4 +180,70 @@ export function useTokens(): TokenContextValue {
     throw new Error('useTokens must be used within a TokenProvider')
   }
   return ctx
+}
+
+const NO_PINS: Map<number, PinEntry> = new Map()
+const NO_AUTO_HIGHLIGHTS: Set<number> = new Set()
+const NO_HOVER_MATCHES: HoverMatch[] = []
+
+/**
+ * Confine pins, auto-highlights and hover to one witness (issue #163).
+ *
+ * The store above is app-wide, and rightly so: the attribution method and the
+ * view mode are preferences a reviewer sets once. But a pin is a claim about
+ * a PAIR -- "query token 4 matches candidate token 9" -- and candidate token
+ * 9 is a different word the moment another member of the group is on screen.
+ * Remounting `TokenProvider` per witness would scope those claims correctly
+ * and throw away the preferences with them, so this gates instead.
+ *
+ * The gate is applied while rendering, not in an effect, because an effect
+ * runs a commit too late: the first paint after a witness change would carry
+ * the previous witness's marks, and that paint is one a reviewer reads. An
+ * effect then empties the underlying store, so nothing accumulates and
+ * returning to the first witness does not resurrect them.
+ *
+ * `ownerRef` holds the witness the marks BELONG to, and advances only in that
+ * effect -- never while rendering. Advancing it on request would lift the gate
+ * in the same render that asked for a new witness, while the old pins were
+ * still in the store, which is the stale frame this exists to prevent.
+ */
+export function WitnessTokenScope({
+  witness,
+  children,
+}: {
+  witness: string
+  children: ReactNode
+}) {
+  const outer = useTokens()
+  const ownerRef = useRef(witness)
+  const stale = ownerRef.current !== witness
+
+  const { clearAllPins, setHoveredQueryTokenIdx, setHoveredMatches } = outer
+  useEffect(() => {
+    if (ownerRef.current === witness) return
+    ownerRef.current = witness
+    clearAllPins()
+    // `clearAllPins` leaves hover alone, and hover is just as much about the
+    // pair: a pointer resting over a query token holds matches into candidate
+    // indices that no longer name the same words.
+    setHoveredQueryTokenIdx(null)
+    setHoveredMatches([])
+  }, [witness, clearAllPins, setHoveredQueryTokenIdx, setHoveredMatches])
+
+  // Only the five fields that describe a pair are gated. Everything else --
+  // the attribution method, the view mode, the writers themselves -- is a
+  // preference or a capability and passes straight through.
+  const value = useMemo<TokenContextValue>(
+    () => ({
+      ...outer,
+      pinnedTokens: stale ? NO_PINS : outer.pinnedTokens,
+      autoHighlightedTokens: stale ? NO_AUTO_HIGHLIGHTS : outer.autoHighlightedTokens,
+      hasAutoHighlights: stale ? false : outer.hasAutoHighlights,
+      hoveredQueryTokenIdx: stale ? null : outer.hoveredQueryTokenIdx,
+      hoveredMatches: stale ? NO_HOVER_MATCHES : outer.hoveredMatches,
+    }),
+    [outer, stale],
+  )
+
+  return <TokenContext.Provider value={value}>{children}</TokenContext.Provider>
 }

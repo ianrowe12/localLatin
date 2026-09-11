@@ -5,6 +5,7 @@ import {
   describeSoleWitness,
   describeUnopenableMembers,
   describeWitnessOption,
+  memberEvidenceVisible,
   type AttributionScope,
   type MemberEvidence,
 } from './memberEvidence'
@@ -65,12 +66,11 @@ export default function MemberEvidenceBar({
 
   // A labelled directory showing its only file, with nothing to warn about,
   // has nothing to say. Staying silent there keeps the strip meaningful.
-  const worthRendering =
-    evidence.scoreScope !== 'directory' ||
-    evidence.selectable ||
-    unopenableNote != null ||
-    attributionNote != null
-  if (!worthRendering) return null
+  // `memberEvidenceVisible` is the same predicate `CenterArea` asks before it
+  // leaves the score off the document header, so the number is never printed
+  // twice and never dropped from both places.
+  if (!memberEvidenceVisible(evidence, attribution, { lexicalHighlighting }))
+    return null
 
   const scoreCopy = describeScoreAttribution(evidence)
   const attention = scoreCopy.tone === 'attention'

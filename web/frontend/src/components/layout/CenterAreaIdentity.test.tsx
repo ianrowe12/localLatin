@@ -71,6 +71,22 @@ let galleryFailures: Record<string, number> = {}
  */
 let tokenMaps: Record<number, 'highlight' | 'pending'> = {}
 
+/**
+ * The witness an artifact for `dir` was built from, in the shape the backend
+ * actually serves: `data/canon_labelled/<dir>/<file>.txt` from the IG examples
+ * CSV, whose row is selected by candidate folder id. CenterArea compares it
+ * against the witness on screen before it paints the matrix (issue #163), so a
+ * placeholder path would exercise a pairing the API cannot produce.
+ */
+function artifactPathFor(dir: string | null): string {
+  if (dir === null) return ''
+  const ranked = Object.values(candidates)
+    .flat()
+    .find((candidate) => candidate.dir === dir)
+  const filename = (galleryDirs[dir] ?? ranked?.files ?? [])[0]?.filename
+  return filename === undefined ? '' : `data/canon_labelled/${dir}/${filename}`
+}
+
 function installFetch(): void {
   requested = []
   vi.stubGlobal(
@@ -103,7 +119,7 @@ function installFetch(): void {
           example_id: `ex-${queryId}`,
           query_file_id: queryId,
           candidate_dir: params.get('candidate_dir'),
-          candidate_path: 'x/c.txt',
+          candidate_path: artifactPathFor(params.get('candidate_dir')),
           query_tokens: [],
           candidate_tokens: [],
           similarity_matrix: [

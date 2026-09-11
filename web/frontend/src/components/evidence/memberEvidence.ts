@@ -577,3 +577,28 @@ export function describeAttributionScope(
   }
   return sentence
 }
+
+/**
+ * Does the bar have anything to say about this candidate?
+ *
+ * Exported because the mount has to know. `DocumentHeader` prints the same
+ * figure under a generic "Similarity" label, which for a group maximum is
+ * both a duplicate of the bar's number and a claim about the wrong thing --
+ * the header says the witness on screen scored it, the bar says the group
+ * did. `CenterArea` drops the header's copy exactly when the bar carries it,
+ * and one predicate is what keeps the two from drifting apart.
+ */
+export function memberEvidenceVisible(
+  evidence: MemberEvidence | null,
+  attribution: AttributionScope | null = null,
+  options: { lexicalHighlighting?: boolean } = {},
+): boolean {
+  if (!evidence) return false
+  return (
+    evidence.scoreScope !== 'directory' ||
+    evidence.selectable ||
+    describeUnopenableMembers(evidence) != null ||
+    (attribution != null &&
+      describeAttributionScope(attribution, options) != null)
+  )
+}

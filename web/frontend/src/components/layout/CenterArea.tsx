@@ -11,13 +11,22 @@ import {
 import { TokenRefProvider } from '../connections/TokenRefRegistry'
 import ConnectionOverlay from '../connections/ConnectionOverlay'
 import DocumentPanel from '../document/DocumentPanel'
+import MemberEvidenceBar from '../evidence/MemberEvidenceBar'
+import {
+  attributionAppliesToWitness,
+  displayedWitnessKey,
+  memberEvidenceKey,
+  memberEvidenceVisible,
+  resolveMemberEvidence,
+} from '../evidence/memberEvidence'
+import { useSelectedMember } from '../evidence/useSelectedMember'
 import { provenanceOf } from '../../utils/documentProvenance'
 import AwaitingMatchBadge from '../predictions/AwaitingMatchBadge'
 import DraggableDivider from './DraggableDivider'
 import { buildWordMatchMap } from '../../utils/wordSimilarity'
 import { useTokenMap, type TokenMapResponse, type TopMatch } from '../../api/tokenMap'
 import { toAttributionVariant } from '../../api/variants'
-import { useTokens } from '../../contexts/TokenContext'
+import { useTokens, WitnessTokenScope } from '../../contexts/TokenContext'
 import { METHODS } from '../common/AttributionMethodSelector'
 
 export default function CenterArea() {
@@ -106,8 +115,62 @@ export default function CenterArea() {
     return currentPrediction?.candidate_files ?? []
   }, [overrideCandidateDir, overrideCandidateFiles.data, currentPrediction])
 
-  // The one witness DocumentPanel puts on screen.
-  const candidateFile = candidateWitnesses[0] ?? null
+  /**
+   * Which member of the candidate group is on screen (issue #163).
+   *
+   * Scoped by `memberEvidenceKey`, which carries the document, model,
+   * pipeline, request generation, directory and provenance -- deliberately
+   * NOT the rank, because the same rank names a different directory after a
+   * refresh and a choice scoped to a rank would survive into a group that
+   * never contained that member.
+   *
+   * A gallery override has no prediction behind it, so it has no supporting
+   * member and no group maximum to attribute: it keeps the directory-file
+   * inspection path #156 gave it, and the key still changes on entering and
+   * leaving so a choice cannot cross the boundary.
+   */
+  const memberIdentity = useMemo(
+    () =>
+      memberEvidenceKey({
+        queryId: activeQueryId,
+        model: activeModel,
+        variant: activeVariant,
+        generation: predictions.generation,
+        dirName: candidateDir,
+        source:
+          overrideCandidateDir !== null ? undefined : currentPrediction?.source,
+      }),
+    [
+      activeQueryId,
+      activeModel,
+      activeVariant,
+      predictions.generation,
+      candidateDir,
+      overrideCandidateDir,
+      currentPrediction,
+    ],
+  )
+
+  const memberSelection = useSelectedMember(memberIdentity)
+
+  const memberEvidence = useMemo(
+    () =>
+      overrideCandidateDir !== null
+        ? null
+        : resolveMemberEvidence(currentPrediction, memberSelection.filename),
+    [overrideCandidateDir, currentPrediction, memberSelection.filename],
+  )
+
+  // The one witness DocumentPanel puts on screen. For a ranked candidate that
+  // is the reviewer's choice, defaulting to the witness the server designated
+  // as the number's support; the positional fallback is for the override path
+  // and for a group whose members could not be resolved at all.
+  const candidateFile: CandidateFile | null =
+    memberEvidence?.selected ?? candidateWitnesses[0] ?? null
+
+  // Where the displayed witness sits in the response's member order, so copy
+  // about "the other files" can exclude the right one.
+  const displayedPosition = memberEvidence?.selected?.position ?? 0
 
   const candidateLoading = overrideCandidateDir
     ? overrideCandidateFiles.loading
@@ -198,11 +261,13 @@ export default function CenterArea() {
    *
    * The blank-text branch asks about THE WITNESS ON SCREEN, not about the
    * directory. `web/routers/predictions.py` fills `candidate_files` with
-   * `texts.get(fname, "")`, and the panel always shows the first entry, so a
-   * directory whose first witness is empty and whose second is readable used to
+   * `texts.get(fname, "")`, and the panel shows one of them, so a directory
+   * whose displayed witness is empty and whose others are readable used to
    * render an unexplained blank pane while a whole-directory check said there
    * was text. The two cases now get two different sentences, because they are
-   * two different facts.
+   * two different facts. Since the reviewer can change which member is shown
+   * (issue #163), "the other files" means every position except the displayed
+   * one, not every position except the first.
    *
    * And a request that never arrived is a third fact again. Only files this app
    * has actually read can support a claim about what a manuscript contains.
@@ -235,7 +300,11 @@ export default function CenterArea() {
       candidateEvidenceLoaded &&
       !fileHasText(candidateFile)
     ) {
-      if (candidateWitnesses.slice(1).some(fileHasText)) {
+      if (
+        candidateWitnesses.some(
+          (file, position) => position !== displayedPosition && fileHasText(file),
+        )
+      ) {
         return `The file shown here (${candidateFile?.filename ?? 'the first in the directory'}) has no readable text in this deployment, so there is nothing to compare word by word. Other files in this directory do carry text.`
       }
       return 'This candidate directory has no readable text in this deployment, so there is nothing to compare word by word.'
@@ -250,6 +319,7 @@ export default function CenterArea() {
     candidateEvidenceLoaded,
     candidateFile,
     candidateWitnesses,
+    displayedPosition,
   ])
 
   // Word-match similarity for cross-panel highlighting
@@ -342,10 +412,46 @@ export default function CenterArea() {
   // states mean the same thing to the reader, so they share one message.
   const attributionMissing = tokenMapResult.error != null
 
+  /**
+   * Does the loaded artifact describe the witness actually on screen?
+   *
+   * `/api/token_map` is keyed by candidate DIRECTORY, so its matrix is about
+   * whichever file the artifact was built from -- `candidate_path` is the only
+   * field that says which. Painting it over another member would attribute one
+   * witness's model evidence to a different manuscript, which is precisely the
+   * confusion #163 exists to remove, and the answer does not change because
+   * the reviewer happened to pick a member the artifact does not cover.
+   */
+  const attributionScope = useMemo(
+    () =>
+      attributionAppliesToWitness({
+        candidatePath: tokenMapResult.data?.candidate_path ?? null,
+        dirName: candidateDir,
+        filename: candidateFile?.filename ?? null,
+        source:
+          overrideCandidateDir !== null ? undefined : currentPrediction?.source,
+      }),
+    [
+      tokenMapResult.data,
+      candidateDir,
+      candidateFile,
+      overrideCandidateDir,
+      currentPrediction,
+    ],
+  )
+
   const effectiveTokenMap = useMemo(() => {
     const data = tokenMapResult.data
     if (!data) return wordMatchMap
-    if (!selectedMatrix) return attributionUnavailable ? null : data
+    // Hoisted out of the `!selectedMatrix` branch it used to live in, which it
+    // already implies: `attributionUnavailable` is only ever true when the
+    // selected cell is missing.
+    if (attributionUnavailable) return null
+    // Word overlap is lexical and belongs to whatever text is on screen, so it
+    // stays. The artifact does not, and MemberEvidenceBar says which of the two
+    // the marks below are.
+    if (!attributionScope.applicable) return wordMatchMap
+    if (!selectedMatrix) return data
     const selected = selectedMatrix
 
     // Per-pair |max| over all cells; abs+normalize to [0,1].
@@ -380,7 +486,43 @@ export default function CenterArea() {
       top_matches: topMatches,
     }
     return swapped
-  }, [tokenMapResult.data, selectedMatrix, attributionUnavailable, wordMatchMap])
+  }, [
+    tokenMapResult.data,
+    selectedMatrix,
+    attributionUnavailable,
+    attributionScope,
+    wordMatchMap,
+  ])
+
+  // What the marks on screen actually are. Word overlap is returned by
+  // identity above, so this is an exact test rather than a reconstruction.
+  const lexicalHighlighting =
+    effectiveTokenMap !== null && effectiveTokenMap === wordMatchMap
+
+  // The scope note belongs beside the marks it qualifies, so it is withheld
+  // when the panels are shading nothing at all.
+  const shownAttributionScope = effectiveTokenMap !== null ? attributionScope : null
+
+  // The bar prints the number with a label that says what it covers. The
+  // document header prints the same figure as a bare "Similarity", which for a
+  // group maximum names the wrong thing as well as saying it twice.
+  const barCarriesScore = memberEvidenceVisible(
+    memberEvidence,
+    shownAttributionScope,
+    { lexicalHighlighting },
+  )
+
+  /**
+   * The pair that pins, auto-highlights and hover currently describe.
+   *
+   * A pin means "this query token matches that candidate token", and the
+   * candidate token is a different word as soon as another member is shown, so
+   * the witness -- not just the directory -- is part of the identity.
+   */
+  const witnessScope = displayedWitnessKey(
+    evidenceIdentity ?? presenceBoundary,
+    memberEvidence?.selected?.key ?? candidateFile?.filename ?? null,
+  )
 
   // Note: we deliberately do NOT auto-pin top-attribution tokens on pair entry.
   // Connection lines are drawn purely on hover (see useConnectionState). Token
@@ -392,26 +534,40 @@ export default function CenterArea() {
   }, [])
 
   // Built once and rendered from either branch below, so the animated and the
-  // plain path show the same panel rather than two drifting copies of it.
+  // plain path show the same panel rather than two drifting copies of it. The
+  // member strip travels WITH the panel: during a crossfade it must describe
+  // the witness beside it, not the one arriving.
   const candidatePanel = (
-    <DocumentPanel
-      side="candidate"
-      filename={candidateFile?.filename}
-      dirLabel={
-        // Reviewer directories show their human label; the opaque
-        // reviewer-dir-N id would tell the reviewer nothing.
-        overrideCandidateDir ??
-        currentPrediction?.label ??
-        currentPrediction?.dir_name
-      }
-      score={overrideCandidateDir ? undefined : currentPrediction?.score}
-      rank={overrideCandidateDir ? undefined : activePredictionRank}
-      provenance={candidateProvenance}
-      tokens={candidateTokens}
-      tokenMap={effectiveTokenMap}
-      loading={candidateLoading}
-      scrollRef={candidateScrollRef}
-    />
+    <>
+      <MemberEvidenceBar
+        evidence={memberEvidence}
+        onSelectWitness={memberSelection.select}
+        attribution={shownAttributionScope}
+        lexicalHighlighting={lexicalHighlighting}
+      />
+      <DocumentPanel
+        side="candidate"
+        filename={candidateFile?.filename}
+        dirLabel={
+          // Reviewer directories show their human label; the opaque
+          // reviewer-dir-N id would tell the reviewer nothing.
+          overrideCandidateDir ??
+          currentPrediction?.label ??
+          currentPrediction?.dir_name
+        }
+        score={
+          overrideCandidateDir || barCarriesScore
+            ? undefined
+            : currentPrediction?.score
+        }
+        rank={overrideCandidateDir ? undefined : activePredictionRank}
+        provenance={candidateProvenance}
+        tokens={candidateTokens}
+        tokenMap={effectiveTokenMap}
+        loading={candidateLoading}
+        scrollRef={candidateScrollRef}
+      />
+    </>
   )
 
   return (
@@ -440,95 +596,100 @@ export default function CenterArea() {
           ref={containerRef}
           className="relative flex-1 flex overflow-hidden"
         >
-          {/* Query panel */}
-          <div
-            data-tour="query-panel"
-            style={{ width: `${splitPercent}%` }}
-            className="h-full overflow-hidden flex flex-col"
-          >
-            <DocumentPanel
-              side="query"
-              filename={queryDetail.data?.filename}
-              tokens={queryDetail.data?.tokens}
-              tokenMap={effectiveTokenMap}
-              loading={queryDetail.loading}
-              scrollRef={queryScrollRef}
-              // The badge reports the fate of directories *this* document
-              // seeded, so it belongs on the query panel, not on a candidate.
-              badge={
-                <AwaitingMatchBadge
-                  seededDirs={predictions.seededDirs}
-                />
-              }
-            />
-          </div>
+          {/* Both panels and the connection overlay read pins, auto-highlights
+              and hover through this scope, so a member change empties them in
+              the same commit rather than one frame later (issue #163). */}
+          <WitnessTokenScope witness={witnessScope}>
+            {/* Query panel */}
+            <div
+              data-tour="query-panel"
+              style={{ width: `${splitPercent}%` }}
+              className="h-full overflow-hidden flex flex-col"
+            >
+              <DocumentPanel
+                side="query"
+                filename={queryDetail.data?.filename}
+                tokens={queryDetail.data?.tokens}
+                tokenMap={effectiveTokenMap}
+                loading={queryDetail.loading}
+                scrollRef={queryScrollRef}
+                // The badge reports the fate of directories *this* document
+                // seeded, so it belongs on the query panel, not on a candidate.
+                badge={
+                  <AwaitingMatchBadge
+                    seededDirs={predictions.seededDirs}
+                  />
+                }
+              />
+            </div>
 
-          <DraggableDivider onDrag={handleDrag} />
+            <DraggableDivider onDrag={handleDrag} />
 
-          {/* Candidate panel */}
-          <div
-            data-tour="candidate-panel"
-            style={{ width: `${100 - splitPercent}%` }}
-            className="h-full overflow-hidden flex flex-col"
-          >
-            {overrideCandidateDir && (
-              <div className="px-3 py-1.5 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-800/40 text-xs text-amber-800 dark:text-amber-200 flex items-center justify-between flex-shrink-0">
-                <span>Viewing example pair · candidate may be outside top-10</span>
-                <button
-                  type="button"
-                  onClick={() => setOverrideCandidateDir(null)}
-                  className="px-2 py-0.5 rounded hover:bg-amber-100 dark:hover:bg-amber-900/40 font-medium"
+            {/* Candidate panel */}
+            <div
+              data-tour="candidate-panel"
+              style={{ width: `${100 - splitPercent}%` }}
+              className="h-full overflow-hidden flex flex-col"
+            >
+              {overrideCandidateDir && (
+                <div className="px-3 py-1.5 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-800/40 text-xs text-amber-800 dark:text-amber-200 flex items-center justify-between flex-shrink-0">
+                  <span>Viewing example pair · candidate may be outside top-10</span>
+                  <button
+                    type="button"
+                    onClick={() => setOverrideCandidateDir(null)}
+                    className="px-2 py-0.5 rounded hover:bg-amber-100 dark:hover:bg-amber-900/40 font-medium"
+                  >
+                    Exit
+                  </button>
+                </div>
+              )}
+              {/* Why the panel is empty, when it is empty for a knowable reason.
+                  An unexplained blank pane reads as "the model found nothing",
+                  and none of these states is that (issue #156). Which of them can
+                  appear during a gallery inspection is decided where the note is
+                  built, not here. */}
+              {candidateEvidenceNote && (
+                <div
+                  role="status"
+                  data-testid="candidate-evidence-note"
+                  className="px-3 py-1.5 bg-stone-100 dark:bg-stone-800 border-b border-stone-200 dark:border-stone-700 text-xs text-stone-600 dark:text-stone-300 flex-shrink-0"
                 >
-                  Exit
-                </button>
-              </div>
-            )}
-            {/* Why the panel is empty, when it is empty for a knowable reason.
-                An unexplained blank pane reads as "the model found nothing",
-                and none of these states is that (issue #156). Which of them can
-                appear during a gallery inspection is decided where the note is
-                built, not here. */}
-            {candidateEvidenceNote && (
-              <div
-                role="status"
-                data-testid="candidate-evidence-note"
-                className="px-3 py-1.5 bg-stone-100 dark:bg-stone-800 border-b border-stone-200 dark:border-stone-700 text-xs text-stone-600 dark:text-stone-300 flex-shrink-0"
-              >
-                {candidateEvidenceNote}
-              </div>
-            )}
-            {/* The animated wrapper is keyed on the pair boundary, so a new
-                document, model, pipeline or request replaces the presence owner
-                outright rather than asking it to animate its old panel away.
-                Inside one boundary the inner key still crossfades between
-                candidates of the same settled ranking, which is the only
-                transition that can never show evidence under a new identity. */}
-            {evidenceIdentity !== null ? (
-              <AnimatePresence key={presenceBoundary} mode="wait">
-                <motion.div
-                  key={evidenceIdentity}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="h-full flex flex-col"
-                >
-                  {candidatePanel}
-                </motion.div>
-              </AnimatePresence>
-            ) : (
-              <div className="h-full flex flex-col">{candidatePanel}</div>
-            )}
-          </div>
+                  {candidateEvidenceNote}
+                </div>
+              )}
+              {/* The animated wrapper is keyed on the pair boundary, so a new
+                  document, model, pipeline or request replaces the presence owner
+                  outright rather than asking it to animate its old panel away.
+                  Inside one boundary the inner key still crossfades between
+                  candidates of the same settled ranking, which is the only
+                  transition that can never show evidence under a new identity. */}
+              {evidenceIdentity !== null ? (
+                <AnimatePresence key={presenceBoundary} mode="wait">
+                  <motion.div
+                    key={evidenceIdentity}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="h-full flex flex-col"
+                  >
+                    {candidatePanel}
+                  </motion.div>
+                </AnimatePresence>
+              ) : (
+                <div className="h-full flex flex-col">{candidatePanel}</div>
+              )}
+            </div>
 
-          {/* SVG connection overlay */}
-          {viewMode !== 'heatmap' && (
-            <ConnectionOverlay
-              containerRef={containerRef}
-              leftPanelRef={queryScrollRef}
-              rightPanelRef={candidateScrollRef}
-            />
-          )}
+            {/* SVG connection overlay */}
+            {viewMode !== 'heatmap' && (
+              <ConnectionOverlay
+                containerRef={containerRef}
+                leftPanelRef={queryScrollRef}
+                rightPanelRef={candidateScrollRef}
+              />
+            )}
+          </WitnessTokenScope>
         </div>
       </div>
     </TokenRefProvider>

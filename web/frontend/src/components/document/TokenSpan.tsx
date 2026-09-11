@@ -136,6 +136,16 @@ function TokenSpanInner({
 const TokenSpan = memo(TokenSpanInner, (prev, next) => {
   return (
     prev.token.index === next.token.index &&
+    // The WORD, not just its position. Until issue #163 the candidate panel
+    // showed one fixed file per pair, so a given index could only change text
+    // by way of a key change that remounted the whole panel and skipped this
+    // comparator entirely. A member selector breaks that: index 4 of the
+    // group's second witness is a different word from index 4 of its first,
+    // and comparing positions alone left the previous manuscript's words on
+    // screen under the new one's filename.
+    prev.token.text === next.token.text &&
+    // Drives the span's own colour classes, and travels with the text.
+    prev.token.category === next.token.category &&
     prev.side === next.side &&
     prev.isHovered === next.isHovered &&
     prev.isPinned === next.isPinned &&
