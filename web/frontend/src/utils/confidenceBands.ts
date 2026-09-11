@@ -9,12 +9,17 @@
  * built on top of them -- the band function, the copy and the styling. Anything
  * that needs to style, label or gate on confidence imports from here.
  *
- * The numbers are not merely presentational: the backend decides a reviewer
- * directory's status with the no-match band (issue #95), so a second copy in
+ * The numbers are not merely presentational: the backend applies the no-match
+ * floor to reviewer directories too (issue #95), so a second copy in
  * TypeScript would be a source of truth able to drift from the one the API
- * answers with. `GET /api/models` carries them as `confidence_bands` and
- * `bandsFrom` reads them. The literals below are the pre-flight fallback, for
- * the render before that response lands; keep them equal to web/bands.py.
+ * answers with. What it decides there is `has_potential_match` -- whether a
+ * neighbouring document counts as an unconfirmed lead. It does NOT decide a
+ * directory's status: `status_of` in web/services/reviewer_dirs.py returns
+ * `matched` only once a human has filed a second, distinct witness into the
+ * directory, so no score can flip that badge. `GET /api/models` carries the
+ * thresholds as `confidence_bands` and `bandsFrom` reads them. The literals
+ * below are the pre-flight fallback, for the render before that response
+ * lands; keep them equal to web/bands.py.
  *
  * Why 0.5 / 0.7: the learned per-model tau under sif_abtt sits at 0.34-0.43
  * (train-fit), so 0.5 is deliberately conservative. A score below it is not
@@ -86,7 +91,7 @@ export interface BandCopy {
 export const BAND_COPY: Record<ConfidenceBand, BandCopy> = {
   no_match: {
     label: 'Potentially no match',
-    note: 'Similarity is below the confidence floor. This fragment may belong to a text that is not in the corpus yet.',
+    note: 'Similarity is below the confidence floor, so the ranking below is probably noise rather than a shortlist.',
   },
   careful: {
     label: 'Review this match carefully',

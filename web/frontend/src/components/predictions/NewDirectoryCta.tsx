@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { createReviewerDir } from '../../api/reviewerDirs'
+import { DIRECTORY_CREATION_COPY } from '../../utils/reviewerDirectoryCopy'
+import DirectoryCreationGuidance from './DirectoryCreationGuidance'
+import DirectorySavedNotice from './DirectorySavedNotice'
 
 interface NewDirectoryCtaProps {
   queryId: number
@@ -47,6 +50,12 @@ interface NewDirectoryCtaProps {
  * directory's label is permanent from the moment it exists and a reviewer has
  * to get one chance at it. The field is pre-filled with the seed's filename, so
  * accepting the default is still just a second click.
+ *
+ * Every sentence the reviewer reads here lives in
+ * `utils/reviewerDirectoryCopy`, and the two blocks around the field are their
+ * own components (issue #162). Creation is a permanent write that is separate
+ * from the assessment, so the consequences have to be stated at the point of
+ * commitment -- and stated in the same words as the tour and the callout.
  */
 export default function NewDirectoryCta({
   queryId,
@@ -119,16 +128,8 @@ export default function NewDirectoryCta({
 
   if (shownCreated) {
     return (
-      <div
-        data-testid="new-directory-created"
-        className={`mt-2 ${pad} rounded-lg border border-indigo-300 dark:border-indigo-400/40 bg-indigo-50 dark:bg-indigo-500/10 px-3 py-2`}
-      >
-        <div className="text-xs font-semibold text-indigo-700 dark:text-indigo-300">
-          Directory created
-        </div>
-        <div className="font-ui text-xs text-stone-600 dark:text-stone-400 mt-0.5">
-          {shownCreated} — it is now a candidate for every other document.
-        </div>
+      <div className={`mt-2 ${pad}`}>
+        <DirectorySavedNotice label={shownCreated} />
       </div>
     )
   }
@@ -151,8 +152,16 @@ export default function NewDirectoryCta({
               : 'w-full rounded-lg border border-dashed border-stone-300 dark:border-stone-600 text-stone-600 dark:text-stone-400 hover:border-indigo-400 hover:text-indigo-600 text-xs font-ui px-3 py-2 transition-colors'
           }
         >
-          {emphasised ? 'New directory / New file' : 'Start a new directory'}
+          {emphasised
+            ? DIRECTORY_CREATION_COPY.openEmphasised
+            : DIRECTORY_CREATION_COPY.openQuiet}
         </button>
+        <p
+          data-testid="new-directory-caption"
+          className="font-ui text-[11px] leading-snug text-stone-600 dark:text-stone-300 mt-1"
+        >
+          {DIRECTORY_CREATION_COPY.buttonCaption}
+        </p>
       </div>
     )
   }
@@ -167,7 +176,7 @@ export default function NewDirectoryCta({
         className="block text-[11px] font-semibold uppercase tracking-wider text-stone-400 mb-1"
         htmlFor="reviewer-dir-label"
       >
-        Name the new directory
+        {DIRECTORY_CREATION_COPY.fieldLabel}
       </label>
       <input
         id="reviewer-dir-label"
@@ -188,6 +197,7 @@ export default function NewDirectoryCta({
           {error}
         </p>
       )}
+      <DirectoryCreationGuidance />
       <div className="flex gap-2 mt-2">
         <button
           type="submit"
@@ -195,7 +205,9 @@ export default function NewDirectoryCta({
           data-testid="new-directory-submit"
           className="flex-1 rounded-md bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-xs font-medium px-3 py-1.5"
         >
-          {submitting ? 'Creating…' : 'Create directory'}
+          {submitting
+            ? DIRECTORY_CREATION_COPY.submitting
+            : DIRECTORY_CREATION_COPY.submit}
         </button>
         <button
           type="button"
@@ -205,7 +217,7 @@ export default function NewDirectoryCta({
           }}
           className="rounded-md border border-stone-300 dark:border-stone-600 text-stone-600 dark:text-stone-400 text-xs px-3 py-1.5"
         >
-          Cancel
+          {DIRECTORY_CREATION_COPY.cancel}
         </button>
       </div>
     </form>

@@ -1,3 +1,5 @@
+import { PROVENANCE_TERMS } from '../../utils/documentProvenance'
+
 export interface TourStep {
   target: string
   title: string
@@ -54,15 +56,13 @@ export const REVIEW_TOUR_STEPS: TourStep[] = [
   {
     target: 'query-panel',
     title: 'Query Text',
-    description:
-      'This panel shows the unlabelled manuscript fragment. Hover over words to see matching words highlighted in the candidate panel on the right.',
+    description: `This panel is always the ${PROVENANCE_TERMS.query.toLowerCase()}: the fragment you are reviewing. Hover over words to see matching words highlighted in the candidate panel on the right.`,
     placement: 'right',
   },
   {
     target: 'candidate-panel',
     title: 'Candidate Match',
-    description:
-      'This panel shows the predicted matching canon text. Words that match the query will highlight when you hover over the query panel.',
+    description: `This panel shows the candidate you have selected, and its second line says which kind it is: a ${PROVENANCE_TERMS.labeled_reference.toLowerCase()} is a text the labelled corpus already groups, while a ${PROVENANCE_TERMS.reviewer_group.toLowerCase()} is one a colleague grouped provisionally rather than one the corpus attests. Words that match the query highlight when you hover over the query panel.`,
     placement: 'left',
   },
   {
@@ -76,7 +76,14 @@ export const REVIEW_TOUR_STEPS: TourStep[] = [
     target: 'predictions',
     title: 'Predicted Sources',
     description:
-      'The model\u2019s top candidate sources for this fragment, ranked by similarity. The banner above the list tells you how much to trust the top hit: red means the fragment may have no match in the corpus at all, amber means read the evidence carefully, and a plain note means it is a likely match to verify.',
+      'The model\u2019s top candidate sources for this fragment, ranked by similarity. The banner above the list tells you how much to trust the top hit: red means the model has no useful opinion here, amber means read the evidence carefully, and a plain note means it is a likely match to verify. A red banner is not evidence that the source is missing from the Carolingian Canon Law (CCL) collections, and you are not being asked to search the CCL by hand. Reviewer-created directories are listed after the model\u2019s ten and are marked as such.',
+    placement: 'left',
+  },
+  {
+    target: 'predictions',
+    title: 'Starting a New Directory',
+    description:
+      'Below the list you can start a provisional directory for this fragment. Creating one is a permanent write: the directory and its name are saved the moment you confirm, there is no rename or removal, and submitting or skipping afterwards does not undo it. Create one only when a new grouping is warranted, then name and confirm it. It is separate from your assessment, so you can reject the ranked candidates with the None option and a note without creating anything. A directory reads as matched only once a reviewer files a second, distinct document into it, never because a similarity crossed a threshold.',
     placement: 'left',
   },
   {
@@ -97,7 +104,7 @@ export const REVIEW_TOUR_STEPS: TourStep[] = [
     target: 'match-options',
     title: 'Record a Match',
     description:
-      'Mark which predicted source is correct, or reject the model\u2019s candidates with the \u201cNone\u201d option if none fit. Only the candidates this ranking actually offers are shown.',
+      'Mark which predicted source is correct, or reject the model\u2019s candidates with the \u201cNone\u201d option if none fit. Only the candidates this ranking actually offers are shown. None is an independent choice: it needs no new directory, and it is not a claim that the CCL holds no match for this fragment.',
     placement: 'left',
   },
   {
@@ -118,7 +125,7 @@ export const REVIEW_TOUR_STEPS: TourStep[] = [
     target: 'submit-skip',
     title: 'Submit or Skip',
     description:
-      'Submit your assessment to save it and move to the next fragment, or skip if you can\u2019t decide.',
+      'Submit your assessment to save it and move to the next fragment, or skip if you can\u2019t decide. Skipping with a note records uncertainty, which is not the same judgement as recording that none of the candidates fits. Neither one undoes a directory you have already created.',
     placement: 'left',
   },
 ]
@@ -128,6 +135,11 @@ export const REVIEW_TOUR_STEPS: TourStep[] = [
 // There is no post-processing step any more: the variant picker was removed
 // for every role in issue #94, and the tour must not point at a control that
 // is not on screen.
+// The directory step targets `predictions`, the list container, rather than the
+// creation button: that button is absent above the no-match band and absent
+// again once this document already seeds a directory, and TourOverlay skips a
+// step whose target it cannot find. The guidance has to be reachable in all
+// three states, so it hangs off the container that is always mounted.
 export function getReviewTourSteps(isPiAdmin: boolean): TourStep[] {
   return REVIEW_TOUR_STEPS.filter(
     (step) => isPiAdmin || step.target !== 'attribution-controls',

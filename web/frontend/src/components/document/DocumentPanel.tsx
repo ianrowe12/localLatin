@@ -5,6 +5,7 @@ import DocumentHeader from './DocumentHeader'
 import TokenSpan from './TokenSpan'
 import SkeletonLoader from '../common/SkeletonLoader'
 import EmptyState from '../empty/EmptyState'
+import type { DocumentProvenance } from '../../utils/documentProvenance'
 
 interface TokenLike {
   text: string
@@ -28,6 +29,14 @@ interface DocumentPanelProps {
   tokenMap?: TokenMapLike | null
   loading?: boolean
   scrollRef?: React.RefObject<HTMLDivElement>
+  /**
+   * Kind of text on the candidate side (issue #162), forwarded to
+   * DocumentHeader. Pass the current prediction's provenance -- see
+   * `provenanceOf` in utils/documentProvenance -- rather than inferring it from
+   * the label, the rank or the score. Ignored on the query side, which is
+   * always the query witness.
+   */
+  provenance?: DocumentProvenance
   /** Status pills for the document itself; forwarded to DocumentHeader. */
   badge?: React.ReactNode
 }
@@ -42,6 +51,7 @@ export default function DocumentPanel({
   tokenMap,
   loading,
   scrollRef,
+  provenance,
   badge,
 }: DocumentPanelProps) {
   const {
@@ -139,6 +149,7 @@ export default function DocumentPanel({
             score={score}
             rank={rank}
             side={side}
+            provenance={provenance}
             badge={badge}
           />
         )}
@@ -172,6 +183,7 @@ export default function DocumentPanel({
         score={score}
         rank={rank}
         side={side}
+        provenance={provenance}
         badge={badge}
       />
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4">

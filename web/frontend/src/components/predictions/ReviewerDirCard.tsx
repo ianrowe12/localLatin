@@ -1,5 +1,6 @@
 import { memo } from 'react'
 import type { Prediction } from '../../api/queries'
+import { PROVENANCE_TERMS } from '../../utils/documentProvenance'
 
 interface ReviewerDirCardProps {
   prediction: Prediction
@@ -11,14 +12,21 @@ interface ReviewerDirCardProps {
  * A candidate that came from a reviewer, not from the labelled corpus.
  *
  * Deliberately not a variant of PredictionCard. The two carry different kinds
- * of evidence -- a labelled directory is an edited, attested source, a reviewer
- * directory is one colleague's judgement -- and a reviewer scanning the list
- * has to be able to tell them apart without reading. So this card is visually
- * distinct at a glance: a dashed indigo frame instead of a solid rank circle,
- * the reviewer's label as the title with the opaque `reviewer-dir-N` id
- * demoted, and an explicit attribution line. The score itself is on the same
- * scale as the model's candidates (max cosine over member documents), so the
- * bar and the number are rendered the same way and stay comparable.
+ * of evidence -- a labelled directory is a grouping the corpus already asserts,
+ * a reviewer directory is one colleague's provisional judgement over documents
+ * that arrived unlabeled -- and a reviewer scanning the list has to be able to
+ * tell them apart without reading. (An earlier comment here called the labelled
+ * side "an edited, attested source". It is not: the corpus is hand copies,
+ * most of them never edited to modern standards, so the distinction is
+ * labelled-versus-unlabeled, not edited-versus-provisional.)
+ *
+ * So this card is visually distinct at a glance: a dashed indigo frame instead
+ * of a solid rank circle, the reviewer's label as the title with the opaque
+ * `reviewer-dir-N` id demoted, and an explicit attribution line naming who
+ * grouped it and out of how many originally unlabeled documents. The score
+ * itself is on the same scale as the model's candidates (max cosine over member
+ * documents), so the bar and the number are rendered the same way and stay
+ * comparable.
  */
 function ReviewerDirCardInner({ prediction, isActive, onClick }: ReviewerDirCardProps) {
   const title = prediction.label || prediction.dir_name
@@ -51,7 +59,10 @@ function ReviewerDirCardInner({ prediction, isActive, onClick }: ReviewerDirCard
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-indigo-600 dark:text-indigo-300 whitespace-nowrap">
+            <span
+              className="text-[10px] font-semibold uppercase tracking-wider text-indigo-600 dark:text-indigo-300 whitespace-nowrap"
+              title={`Provisional grouping of originally unlabeled documents. ${PROVENANCE_TERMS.reviewer_group} on the right-hand panel.`}
+            >
               Reviewer directory
             </span>
           </div>
@@ -78,7 +89,9 @@ function ReviewerDirCardInner({ prediction, isActive, onClick }: ReviewerDirCard
           <div className="font-ui text-[11px] text-stone-400 dark:text-stone-500 mt-0.5 truncate">
             {prediction.created_by ? `Created by ${prediction.created_by}` : 'Reviewer-created'}
             {' · '}
-            {memberCount === 1 ? '1 document' : `${memberCount} documents`}
+            {memberCount === 1
+              ? '1 originally unlabeled document'
+              : `${memberCount} originally unlabeled documents`}
           </div>
         </div>
       </div>

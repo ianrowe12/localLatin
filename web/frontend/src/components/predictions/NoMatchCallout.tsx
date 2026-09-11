@@ -1,4 +1,8 @@
 import { BAND_COPY } from '../../utils/confidenceBands'
+import {
+  alreadySeededNote,
+  NO_MATCH_GUIDANCE,
+} from '../../utils/reviewerDirectoryCopy'
 import NewDirectoryCta from './NewDirectoryCta'
 
 interface NoMatchCalloutProps {
@@ -87,15 +91,19 @@ export default function NoMatchCallout({
         )}
       </p>
 
+      <p
+        data-testid="no-match-caveat"
+        className="mt-1 font-ui text-xs leading-snug text-stone-600 dark:text-stone-300"
+      >
+        {NO_MATCH_GUIDANCE}
+      </p>
+
       {alreadySeeded ? (
         <p
           data-testid="no-match-already-seeded"
           className="mt-2 font-ui text-xs italic text-stone-600 dark:text-stone-300"
         >
-          You already started a directory from this document. Record your
-          assessment as &ldquo;None of the {topK} model{' '}
-          {topK === 1 ? 'candidate' : 'candidates'}&rdquo; if none of the ranked
-          candidates fits.
+          {alreadySeededNote(topK)}
         </p>
       ) : (
         <NewDirectoryCta

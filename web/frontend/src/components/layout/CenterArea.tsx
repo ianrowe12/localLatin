@@ -11,6 +11,7 @@ import {
 import { TokenRefProvider } from '../connections/TokenRefRegistry'
 import ConnectionOverlay from '../connections/ConnectionOverlay'
 import DocumentPanel from '../document/DocumentPanel'
+import { provenanceOf } from '../../utils/documentProvenance'
 import AwaitingMatchBadge from '../predictions/AwaitingMatchBadge'
 import DraggableDivider from './DraggableDivider'
 import { buildWordMatchMap } from '../../utils/wordSimilarity'
@@ -65,6 +66,35 @@ export default function CenterArea() {
   // document, so a gallery example cannot survive a navigation into the next
   // document's evidence, its file request or its token map.
   const candidateDir = overrideCandidateDir ?? currentPrediction?.dir_name ?? null
+
+  /**
+   * What kind of witness is in the candidate panel (issue #162).
+   *
+   * Derived by the SAME override-wins rule as `candidateDir` above, so the
+   * caption can never describe one document while the panel shows another. In
+   * override mode the ranked prediction is not consulted at all: a gallery
+   * example carries its own identity, and a rank the reviewer happens to have
+   * selected underneath it is about a different directory entirely.
+   *
+   * For a ranked candidate the answer is the server's `source`, and
+   * `currentPrediction` is null until the shared state exposes a result for the
+   * current query, model, pipeline and generation -- so a stale ranking cannot
+   * caption the panel either. An override has no prediction behind it, so
+   * `provenanceOf` falls back to the backend's own `reviewer-dir-` partition,
+   * the same test its candidate-files route resolves the directory by.
+   */
+  const candidateProvenance = useMemo(
+    () =>
+      provenanceOf(
+        overrideCandidateDir !== null
+          ? { dirName: overrideCandidateDir }
+          : {
+              source: currentPrediction?.source,
+              dirName: currentPrediction?.dir_name,
+            },
+      ),
+    [overrideCandidateDir, currentPrediction],
+  )
 
   // For override-mode candidates, fetch the directory's files on demand.
   // (Regular predictions already carry candidate_files in their payload.)
@@ -376,6 +406,7 @@ export default function CenterArea() {
       }
       score={overrideCandidateDir ? undefined : currentPrediction?.score}
       rank={overrideCandidateDir ? undefined : activePredictionRank}
+      provenance={candidateProvenance}
       tokens={candidateTokens}
       tokenMap={effectiveTokenMap}
       loading={candidateLoading}

@@ -32,7 +32,7 @@ code (`web/frontend/src/utils/confidenceBands.ts`):
 
 | Displayed similarity | What the reviewer sees | What it means |
 |---|---|---|
-| below 0.50 | red **Potentially no match**, with **New directory / New file** as the default top option | the ranking below is probably noise; this fragment may belong to a text the corpus does not have |
+| below 0.50 | red **Potentially no match**, with **New directory / New file** as the default top option | the ranking below is probably noise; the model has no useful opinion here, which is not proof that the source is missing from the CCL |
 | 0.50 to 0.70 | amber **Review this match carefully** | genuinely uncertain: read the evidence before accepting or rejecting |
 | 0.70 and above | plain **Likely match - verify** | the ordinary case: verify and record |
 
@@ -41,11 +41,30 @@ SIF+ABTT sits at 0.34 to 0.43 on the training fit, so the red band starts well a
 model itself would stop calling something a match.
 
 The **New directory / New file** button is the entry point to the reviewer-created-directory loop,
-and it is live: it opens a one-field naming form, and creating the directory makes it a scored
-candidate on every other query from this point on. Say that the badge on the seed reads
-"Awaiting future match" until a reviewer actually files a second document into it -- similarity
-alone never flips it, deliberately, so the green state means a human judgement and not an
-embedding-space coincidence.
+and it is live: it opens a one-field naming form with the consequences stated above the Create
+button. Say those out loud, because they are what Abigail asked about. Creating is a permanent
+write on its own: the directory and its name are saved the moment the reviewer confirms, the app
+has no rename, no removal and no way to withdraw a document from a grouping, and submitting or
+skipping the assessment afterwards does not undo it. It is also a *separate* decision from the
+None pill, which names the model candidates this ranking actually offers ("None of the 3 model
+candidates", and so on): a reviewer can reject those with None and a note without creating
+anything, and can create a grouping without it settling the assessment.
+
+Two things not to promise. A saved directory becomes a candidate on other documents *this model
+can score*, not on every other query: its own members never see it, an excluded query cannot be
+scored at all, and only the closest few reviewer directories reach any one list. And a score under
+0.50 says the model has no useful opinion; it is not evidence that the source is missing from the
+CCL, and a general evaluator is not being asked to go and search the CCL by hand.
+
+Say that the badge on the seed reads "Awaiting future match" until a reviewer actually files a
+second, distinct document into it -- similarity alone never flips it, deliberately, so the green
+state means a human judgement and not an embedding-space coincidence.
+
+The two document panels name what they hold, under the filename. The left is always the query
+witness. On the right, "Labeled-reference witness" is a text the labelled corpus already groups,
+and "Reviewer group member (originally unlabeled)" is a document that arrived unlabeled and that a
+reviewer grouped. Neither caption claims a historical source identity, and the corpus side is hand
+copies rather than modern editions.
 
 ## 3. Query A: what the correction buys (LaTa)
 
@@ -181,7 +200,7 @@ earlier session may point at a rank that has moved.
 | Symptom | Cause | Say |
 |---|---|---|
 | Prediction list empty for a model | that model's predictions CSV missing on host | "one data file did not sync, the other models work" |
-| New-directory CTA refuses with "already started a directory" | this document already seeds one | expected, one directory per document |
+| New-directory CTA replaced by "this document already seeds a provisional directory" | this document already seeds one, possibly from another reviewer | expected, one directory per document |
 | Reviewer directories never appear as candidates | q-q matrices missing from the data release | "one data file did not sync"; re-deploy with a newer `DATA_RELEASE_TAG` |
 | Attribution toggle absent off the demo set | no IG artifact for this pair | expected, see section 6 |
 | Attribution toggle absent *on* a demo pair | data release predates issue #53 | re-run the deploy with the newer `DATA_RELEASE_TAG` |
