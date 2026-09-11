@@ -403,6 +403,23 @@ function noteValue(): string {
   ).value
 }
 
+/** Submit, whose enabled state is issue #157's verdict on the whole draft. */
+function submitButton(): HTMLElement {
+  return screen.getByRole('button', { name: /Submit/ })
+}
+
+/**
+ * Which choice the document is filed under, read from the sentence issue #157
+ * actually shows the reviewer. Asserting the rank that must NOT be canonical is
+ * the point: with choices in rank order, a draft that had been re-sorted would
+ * be indistinguishable from one that was preserved.
+ */
+function expectCanonicalChoice(rank: number, notRank = rank === 1 ? 2 : 1): void {
+  const note = screen.getByTestId('canonical-choice-note').textContent ?? ''
+  expect(note).toContain(`first choice, #${rank},`)
+  expect(note).not.toContain(`first choice, #${notRank},`)
+}
+
 async function createDirectory(
   user: ReturnType<typeof userEvent.setup>,
   label = 'Unattested homily',
@@ -639,10 +656,13 @@ describe('the record is scoped to the signed-in account', () => {
     // `seeded_dirs` is raw response data. Reading it directly for "is this
     // document already grouped?" bypasses every check the record makes on the
     // way in: whose session the response belongs to, and which query actually
-    // seeded each row. Here the response carries a directory seeded by a
-    // DIFFERENT document -- which is what the backend sends when the query is a
-    // member rather than the seed -- and the raw read both suppressed this
-    // document's Create button and badged it with somebody else's grouping.
+    // seeded each row. The current backend does filter this list by
+    // `seed_query_id == file_id` (`web/routers/predictions.py`), so this
+    // foreign-seed row is a MALFORMED response rather than one the API emits
+    // today -- which is the point. The raw read trusted the field instead of
+    // checking it, so anything that ever put a foreign row there, a backend
+    // change or a stale cache, silently suppressed this document's Create
+    // button and badged it with somebody else's grouping.
     predictionsFor[QUERY_A] = {
       predictions: [modelCard(1, 0.72)],
       seeded_dirs: [dirFixture({ seed_query_id: QUERY_B, member_query_ids: [QUERY_B] })],
@@ -958,16 +978,21 @@ describe('the assessment is not touched by any of this', () => {
     render(<Review withFeedback />)
 
     await user.click(await screen.findByLabelText('Select multiple'))
-    // Order is the answer: #2 first makes #2 the canonical filing.
+    // Order is the answer, and it is deliberately NOT rank order: the reviewer
+    // picked #2 first, so #2 is the canonical filing. Ascending choices would
+    // agree with an accidental sort and prove nothing, which is why every
+    // assertion below also states which rank must NOT be canonical.
     await user.click(screen.getByRole('button', { name: 'Match prediction #2' }))
     await user.click(screen.getByRole('button', { name: 'Match prediction #1' }))
     await user.type(
       screen.getByPlaceholderText('Add notes for this query...'),
       'Shares the Hincmar incipit',
     )
-    expect(screen.getByTestId('canonical-choice-note').textContent).toContain(
-      'first choice, #2',
-    )
+    expectCanonicalChoice(2)
+    // A deliberate, currently valid answer -- issue #157 only enables Submit
+    // for one, so this is the precondition that there is an outcome here to
+    // preserve, asserted without recording it.
+    expect(submitButton().getAttribute('disabled')).toBeNull()
 
     await createDirectory(user)
 
@@ -990,12 +1015,14 @@ describe('the assessment is not touched by any of this', () => {
     expect(screen.getByTestId('match-pill-2').getAttribute('aria-pressed')).toBe('true')
     expect(screen.getByTestId('match-pill-1').getAttribute('aria-pressed')).toBe('true')
     // Still theirs, still in their order, still with their reasoning, and the
-    // directory acknowledgement is on screen beside it.
-    expect(screen.getByTestId('canonical-choice-note').textContent).toContain(
-      'first choice, #2',
-    )
+    // directory acknowledgement is on screen beside it. Canonical is #2 and not
+    // #1: a refresh that quietly re-sorted the answer into rank order would
+    // change which directory the document is filed under.
+    expectCanonicalChoice(2)
     expect(noteValue()).toBe('Shares the Hincmar incipit')
     expect(screen.queryByTestId('assessment-notice')).toBeNull()
+    // The outcome survived as an outcome: still submittable, still unsaved.
+    expect(submitButton().getAttribute('disabled')).toBeNull()
     await screen.findByTestId('new-directory-saved')
 
     // Nothing was saved and nothing advanced: creating a directory is not an
@@ -1013,10 +1040,12 @@ describe('the assessment is not touched by any of this', () => {
     const user = userEvent.setup()
     const before = [
       readableCard(1, 0.72),
+      readableCard(2, 0.6),
       reviewerCard('reviewer-dir-early', 0.66, 'Early grouping'),
     ]
     const after = [
       readableCard(1, 0.72),
+      readableCard(2, 0.6),
       reviewerCard('reviewer-dir-other', 0.64, 'Another grouping'),
     ]
     predictionsFor[QUERY_A] = { predictions: before }
@@ -1024,17 +1053,26 @@ describe('the assessment is not touched by any of this', () => {
     render(<Review withFeedback />)
 
     await user.click(await screen.findByLabelText('Select multiple'))
+    // Three choices, with the one about to be invalidated in the MIDDLE of a
+    // non-ascending order. Removing it therefore has to splice it out and leave
+    // [#2, #1] as it was; both re-sorting the remainder and collapsing to the
+    // first surviving rank would read as #1 and be caught.
     await user.click(
-      await screen.findByRole('button', { name: 'Match prediction #1' }),
+      await screen.findByRole('button', { name: 'Match prediction #2' }),
     )
     await user.click(screen.getByRole('button', { name: 'Match reviewer directory #11' }))
+    await user.click(screen.getByRole('button', { name: 'Match prediction #1' }))
     await user.type(
       screen.getByPlaceholderText('Add notes for this query...'),
       'Second witness looks like the same scribe',
     )
-    // Both are genuinely chosen before anything happens to the ranking.
+    // All three are genuinely chosen, in that order, before anything happens to
+    // the ranking, and the draft is a valid answer.
     expect(screen.getByTestId('match-pill-1').getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByTestId('match-pill-2').getAttribute('aria-pressed')).toBe('true')
     expect(screen.getByTestId('match-pill-11').getAttribute('aria-pressed')).toBe('true')
+    expectCanonicalChoice(2)
+    expect(submitButton().getAttribute('disabled')).toBeNull()
 
     await createDirectory(user, 'Unattested homily')
 
@@ -1049,10 +1087,16 @@ describe('the assessment is not touched by any of this', () => {
     expect(notice.textContent).toContain('Rank #11 now holds reviewer-dir-other')
     expect(notice.textContent).toContain('removed rather than moved')
 
-    // Only that one. The valid choice, its canonical position and the note are
-    // all still the reviewer's.
+    // Only that one. The valid choices keep their identity AND their order:
+    // canonical is still #2, the choice the reviewer made first, not the lowest
+    // surviving rank and not whatever the new ranking puts first.
     expect(screen.getByTestId('match-pill-1').getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByTestId('match-pill-2').getAttribute('aria-pressed')).toBe('true')
+    expectCanonicalChoice(2)
     expect(noteValue()).toBe('Second witness looks like the same scribe')
+    // What is left is still a deliberate valid answer, so dropping the invalid
+    // choice narrowed the draft rather than invalidating the whole of it.
+    expect(submitButton().getAttribute('disabled')).toBeNull()
     expect(feedbackPosts).toHaveLength(0)
     await screen.findByTestId('new-directory-saved')
   })
