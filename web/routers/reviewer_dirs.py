@@ -33,7 +33,12 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from web.dependencies import get_current_user, get_db, get_store
-from web.exceptions import InvalidModelError, QueryNotFoundError
+from web.exceptions import (
+    InvalidModelError,
+    QueryNotFoundError,
+    ReviewerDirLimitError,
+    ReviewerDirSeedExistsError,
+)
 from web.models import (
     CandidateFile,
     ReviewerDir,
@@ -80,18 +85,15 @@ async def create_reviewer_dir(
     variant = resolve_variant(store, body.variant)
     qq = await store.ensure_qq_async(slug)
 
-    # One directory per seed document. A second create on the same query is a
-    # double-click or a stale form, not a second discovery -- and since nothing
-    # can remove a directory, the duplicate would be a permanent extra card on
-    # every query in the corpus. The reviewer gets the existing one back.
+    # Preserve duplicate-before-guard validation for historical excluded seeds.
+    # This is only a preflight; storage rechecks under SQLite write ownership.
     existing = await db.get_reviewer_dir_by_seed(query_id)
     if existing is not None:
         raise HTTPException(
             status_code=409,
-            detail=(
-                f"Query {query_id} already seeds reviewer directory "
-                f"'{existing['dir_id']}' ({existing['label']})."
-            ),
+            detail=ReviewerDirSeedExistsError(
+                query_id, existing["dir_id"], existing["label"]
+            ).message,
         )
 
     # A query the degenerate-file guard excluded is unscorable in both
@@ -108,29 +110,24 @@ async def create_reviewer_dir(
             ),
         )
 
-    created_count = await db.count_reviewer_dirs_by_account(current_user.id)
-    if created_count >= svc.MAX_REVIEWER_DIRS_PER_ACCOUNT:
-        raise HTTPException(
-            status_code=429,
-            detail=(
-                f"You have created {created_count} reviewer directories, the "
-                f"maximum is {svc.MAX_REVIEWER_DIRS_PER_ACCOUNT}. Ask a PI/admin "
-                "if you genuinely need more."
-            ),
-        )
-
     label = (body.label or "").strip()
     if not label:
         label = svc.default_label(store.file_id_to_filename[query_id])
 
-    record = await db.create_reviewer_dir(
-        label=label,
-        seed_query_id=query_id,
-        model_slug=slug,
-        variant=variant,
-        created_by=current_user.display_name,
-        created_by_account_id=current_user.id,
-    )
+    try:
+        record = await db.create_reviewer_dir(
+            label=label,
+            seed_query_id=query_id,
+            model_slug=slug,
+            variant=variant,
+            created_by=current_user.display_name,
+            created_by_account_id=current_user.id,
+            max_per_account=svc.MAX_REVIEWER_DIRS_PER_ACCOUNT,
+        )
+    except ReviewerDirSeedExistsError as exc:
+        raise HTTPException(status_code=409, detail=exc.message) from exc
+    except ReviewerDirLimitError as exc:
+        raise HTTPException(status_code=429, detail=exc.message) from exc
     full = await db.get_reviewer_dir(record["dir_id"])
     assert full is not None
     # Always 'awaiting_match' here by construction: the directory has exactly

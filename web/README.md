@@ -111,6 +111,40 @@ artifacts generated before those arrays existed. `query_sif_weights` /
 | GET | `/api/stats` | Dashboard statistics |
 | GET | `/api/models` | Available model metadata |
 
+### Reviewer directory creation and recovery
+
+Approved, signed-in reviewers can create a group with
+`POST /api/reviewer_dirs {query_file_id, label?}`. Creation immediately saves
+the directory and its seed membership, independently of feedback submission.
+It returns 201, rejects an existing seed with 409, and rejects an account at
+`MAX_REVIEWER_DIRS_PER_ACCOUNT` with 429. A duplicate takes precedence over the
+account cap. Model, variant, query and guard-exclusion validation are unchanged.
+
+`FeedbackDB.create_reviewer_dir` opens a dedicated SQLite connection and takes
+write ownership with `BEGIN IMMEDIATE` before checking the seed and account
+count. It inserts both rows and commits on that connection. SQLite serializes
+competing creators even across accounts, connections or application processes.
+Auth/session and feedback commits use the shared connection and cannot commit
+or roll back this transaction. The creation connection closes on failure or
+cancellation, rolling back uncommitted changes. A cancellation or lost response
+during commit does not establish whether the group saved.
+
+Recover saved identity with `GET /api/reviewer_dirs?seed_query_id=N`, not by
+automatically repeating the POST. This existing endpoint returns every group
+for that seed in insertion order, oldest database `id` first. The 409 detail
+also names the oldest group; its response shape has not changed. A failed GET
+is an unresolved outcome, not evidence that no group exists.
+
+Historical duplicate seeds are preserved. The seed index remains non-unique:
+adding a unique index would fail on existing duplicates, and deleting, merging
+or relabeling groups to make it succeed would erase reviewer assertions.
+Migration does not change any directory, membership or feedback row for this
+safeguard. Every historical group stays visible, with its original members,
+and counts toward its creator's cap. The serialized storage operation rejects
+any additional group for an existing seed, including already-duplicate seeds,
+without disabling protection for unused seeds. There is no automatic cleanup,
+rename or removal workflow.
+
 ## Subtree Workflow (for research repo maintainers)
 
 ```bash
