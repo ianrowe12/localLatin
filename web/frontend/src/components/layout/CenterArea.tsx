@@ -349,15 +349,60 @@ export default function CenterArea() {
     attributionVariant,
   )
 
-  // Keep the AttributionMethodSelector's available list in sync with whatever
-  // pair is currently loaded. Also clear any leftover pins from a previous
-  // session/pair so each new pair starts with hover-only behavior (no sticky
-  // lines from stale pinnedTokens state).
-  const availableMethodsKey = tokenMapResult.data?.example_id
+  /**
+   * Does the loaded artifact describe the witness actually on screen?
+   *
+   * `/api/token_map` is keyed by candidate DIRECTORY, so its matrix is about
+   * whichever file the artifact was built from -- `candidate_path` is the only
+   * field that says which. Painting it over another member would attribute one
+   * witness's model evidence to a different manuscript, which is precisely the
+   * confusion #163 exists to remove, and the answer does not change because
+   * the reviewer happened to pick a member the artifact does not cover.
+   *
+   * This is asked FIRST, before anything is derived from the payload, because
+   * everything downstream is a claim about the pair on screen: which methods
+   * that pair offers, which matrix it selects, and whether the method the
+   * reviewer asked for is missing FOR IT. Deriving those from the directory's
+   * artifact and filtering afterwards leaks a sibling's metadata into controls
+   * and notices that sit outside this panel, where no later gate can reach it.
+   */
+  const attributionScope = useMemo(
+    () =>
+      attributionAppliesToWitness({
+        candidatePath: tokenMapResult.data?.candidate_path ?? null,
+        dirName: candidateDir,
+        filename: candidateFile?.filename ?? null,
+        source:
+          overrideCandidateDir !== null ? undefined : currentPrediction?.source,
+      }),
+    [
+      tokenMapResult.data,
+      candidateDir,
+      candidateFile,
+      overrideCandidateDir,
+      currentPrediction,
+    ],
+  )
+
+  /**
+   * The artifact, where it is evidence about the witness on screen.
+   *
+   * The raw result stays exactly as the hook cached it, so returning to the
+   * member it describes costs no request. This is the single place the two are
+   * told apart, and every derivation below reads THIS.
+   */
+  const witnessArtifact = attributionScope.applicable ? tokenMapResult.data : null
+
+  // Keep the AttributionMethodSelector's available list in sync with the pair
+  // on screen. The selector is a sibling in the sidebar, not a descendant of
+  // this panel's witness scope, so an artifact for another member must never
+  // reach it: it would offer enabled model-attribution methods above a
+  // comparison that is showing none. Also clear any leftover pins so each new
+  // pair starts with hover-only behavior (no sticky lines from stale state).
   useEffect(() => {
-    setAvailableMethods(tokenMapResult.data?.available_methods ?? [])
+    setAvailableMethods(witnessArtifact?.available_methods ?? [])
     clearAllPins()
-  }, [availableMethodsKey, tokenMapResult.data, setAvailableMethods, clearAllPins])
+  }, [witnessArtifact, setAvailableMethods, clearAllPins])
 
   // When an attribution method is selected and a matching matrix is present
   // in the token-map payload, swap similarity_matrix and recompute top_matches
@@ -369,10 +414,10 @@ export default function CenterArea() {
   // so we take |value| and divide by the matrix max to put every method on a
   // common [0,1] scale. DocumentPanel's existing thresholding expects this.
   const selectedMatrix = useMemo(() => {
-    const data = tokenMapResult.data
+    const data = witnessArtifact
     if (!data || !selectedMethod || !data.pair_matrices) return undefined
     return data.pair_matrices[selectedMethod]?.[attributionVariant]
-  }, [tokenMapResult.data, selectedMethod, attributionVariant])
+  }, [witnessArtifact, selectedMethod, attributionVariant])
 
   // The payload's own `similarity_matrix` is plain cosine over the raw hidden
   // states: identical for every attribution method and every post-processing
@@ -396,10 +441,14 @@ export default function CenterArea() {
   // empty means the artifact predates attribution, and for those the cosine
   // map is the honest whole story, so they keep the old behaviour.
   const artifactHasAttribution =
-    (tokenMapResult.data?.available_methods?.length ?? 0) > 0
+    (witnessArtifact?.available_methods?.length ?? 0) > 0
 
+  // "This pair offers the method you asked for, and it is missing." A sibling
+  // witness's artifact cannot say that: asked of the directory's artifact
+  // instead of this witness's, a missing OT cell for another member suppressed
+  // the word overlap that IS honest evidence for the member on screen.
   const attributionUnavailable =
-    tokenMapResult.data != null &&
+    witnessArtifact != null &&
     artifactHasAttribution &&
     selectedMethod != null &&
     selectedMatrix === undefined
@@ -412,45 +461,18 @@ export default function CenterArea() {
   // states mean the same thing to the reader, so they share one message.
   const attributionMissing = tokenMapResult.error != null
 
-  /**
-   * Does the loaded artifact describe the witness actually on screen?
-   *
-   * `/api/token_map` is keyed by candidate DIRECTORY, so its matrix is about
-   * whichever file the artifact was built from -- `candidate_path` is the only
-   * field that says which. Painting it over another member would attribute one
-   * witness's model evidence to a different manuscript, which is precisely the
-   * confusion #163 exists to remove, and the answer does not change because
-   * the reviewer happened to pick a member the artifact does not cover.
-   */
-  const attributionScope = useMemo(
-    () =>
-      attributionAppliesToWitness({
-        candidatePath: tokenMapResult.data?.candidate_path ?? null,
-        dirName: candidateDir,
-        filename: candidateFile?.filename ?? null,
-        source:
-          overrideCandidateDir !== null ? undefined : currentPrediction?.source,
-      }),
-    [
-      tokenMapResult.data,
-      candidateDir,
-      candidateFile,
-      overrideCandidateDir,
-      currentPrediction,
-    ],
-  )
-
   const effectiveTokenMap = useMemo(() => {
     const data = tokenMapResult.data
     if (!data) return wordMatchMap
+    // Word overlap is lexical and belongs to whatever text is on screen, so it
+    // stays; the artifact does not. Asked before the missing-cell test, not
+    // after, because "no OT matrix for this pair" is a statement about a pair
+    // this artifact does not describe.
+    if (!attributionScope.applicable) return wordMatchMap
     // Hoisted out of the `!selectedMatrix` branch it used to live in, which it
     // already implies: `attributionUnavailable` is only ever true when the
     // selected cell is missing.
     if (attributionUnavailable) return null
-    // Word overlap is lexical and belongs to whatever text is on screen, so it
-    // stays. The artifact does not, and MemberEvidenceBar says which of the two
-    // the marks below are.
-    if (!attributionScope.applicable) return wordMatchMap
     if (!selectedMatrix) return data
     const selected = selectedMatrix
 
@@ -687,6 +709,7 @@ export default function CenterArea() {
                 containerRef={containerRef}
                 leftPanelRef={queryScrollRef}
                 rightPanelRef={candidateScrollRef}
+                evidenceKey={witnessScope}
               />
             )}
           </WitnessTokenScope>

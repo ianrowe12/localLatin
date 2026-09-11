@@ -108,7 +108,11 @@ export default function DocumentPanel({
     return scores
   }, [side, tokens, tokenMap])
 
-  // Handlers for query tokens
+  // Handlers for query tokens. One function per panel, taking the token index,
+  // so `TokenSpan` can compare them: a per-token arrow would be a new value on
+  // every render and force the memo to ignore it, which is how a hover kept
+  // reporting the previous witness's matches. The identity changes exactly
+  // when `tokenMap` does, which is exactly when the behaviour changes.
   const handleQueryMouseEnter = useCallback(
     (idx: number) => {
       if (side === 'query') {
@@ -265,12 +269,8 @@ export default function DocumentPanel({
                 highlightScore={highlightScore}
                 colorPalette={side === 'query' ? 'blue' : 'orange'}
                 spanRef={tokenRefs.registerRef(tokenRefId)}
-                onMouseEnter={
-                  side === 'query' ? () => handleQueryMouseEnter(idx) : undefined
-                }
-                onMouseLeave={
-                  side === 'query' ? handleQueryMouseLeave : undefined
-                }
+                onMouseEnter={side === 'query' ? handleQueryMouseEnter : undefined}
+                onMouseLeave={side === 'query' ? handleQueryMouseLeave : undefined}
               />
             )
           })}
