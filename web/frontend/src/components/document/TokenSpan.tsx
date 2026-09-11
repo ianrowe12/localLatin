@@ -12,9 +12,19 @@ interface TokenSpanProps {
   highlightScore?: number
   colorPalette?: 'blue' | 'orange'
   spanRef?: (el: HTMLSpanElement | null) => void
-  onMouseEnter?: () => void
-  onMouseLeave?: () => void
-  onClick?: () => void
+  /**
+   * Called with this token's index, rather than through a closure the caller
+   * built around it.
+   *
+   * The distinction is what keeps a memoised span honest. A per-token arrow is
+   * a fresh function on every render, so a comparator either ignores it -- and
+   * keeps whichever evidence the previous render captured -- or never matches
+   * and makes the memo useless. Taking the index lets the caller pass ONE
+   * function whose identity changes exactly when its behaviour does.
+   */
+  onMouseEnter?: (index: number) => void
+  onMouseLeave?: (index: number) => void
+  onClick?: (index: number) => void
 }
 
 function categoryClasses(category: string): string {
@@ -113,18 +123,18 @@ function TokenSpanInner({
       style={bgStyle}
       tabIndex={interactive ? 0 : undefined}
       aria-label={interactive ? accessibleLabel : undefined}
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
-      onFocus={onMouseEnter}
-      onBlur={onMouseLeave}
+      onMouseEnter={onMouseEnter && (() => onMouseEnter(token.index))}
+      onMouseLeave={onMouseLeave && (() => onMouseLeave(token.index))}
+      onFocus={onMouseEnter && (() => onMouseEnter(token.index))}
+      onBlur={onMouseLeave && (() => onMouseLeave(token.index))}
       onKeyDown={(event) => {
         if (!onClick) return
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault()
-          onClick()
+          onClick(token.index)
         }
       }}
-      onClick={onClick}
+      onClick={onClick && (() => onClick(token.index))}
       data-token-idx={token.index}
       data-side={side}
     >
@@ -136,6 +146,16 @@ function TokenSpanInner({
 const TokenSpan = memo(TokenSpanInner, (prev, next) => {
   return (
     prev.token.index === next.token.index &&
+    // The WORD, not just its position. Until issue #163 the candidate panel
+    // showed one fixed file per pair, so a given index could only change text
+    // by way of a key change that remounted the whole panel and skipped this
+    // comparator entirely. A member selector breaks that: index 4 of the
+    // group's second witness is a different word from index 4 of its first,
+    // and comparing positions alone left the previous manuscript's words on
+    // screen under the new one's filename.
+    prev.token.text === next.token.text &&
+    // Drives the span's own colour classes, and travels with the text.
+    prev.token.category === next.token.category &&
     prev.side === next.side &&
     prev.isHovered === next.isHovered &&
     prev.isPinned === next.isPinned &&
@@ -143,7 +163,20 @@ const TokenSpan = memo(TokenSpanInner, (prev, next) => {
     prev.isAutoHighlighted === next.isAutoHighlighted &&
     prev.highlightScore === next.highlightScore &&
     prev.colorPalette === next.colorPalette &&
-    prev.spanRef === next.spanRef
+    prev.spanRef === next.spanRef &&
+    // What the span DOES, not only what it looks like. A hover handler carries
+    // the evidence it will write -- the token map it was built from -- so two
+    // renders can agree on every visible prop and still disagree about which
+    // witness the next hover reports. Skipping the update there left a live
+    // handler holding the previous member's matches, and a fresh hover or
+    // keyboard focus wrote them back into the current member's state.
+    //
+    // Comparable because these arrive as ONE function per panel rather than a
+    // per-token arrow: the identity changes exactly when the map behind it
+    // does, so this both catches the stale case and keeps the memo working.
+    prev.onMouseEnter === next.onMouseEnter &&
+    prev.onMouseLeave === next.onMouseLeave &&
+    prev.onClick === next.onClick
   )
 })
 

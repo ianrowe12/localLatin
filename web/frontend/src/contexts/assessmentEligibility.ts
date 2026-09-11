@@ -1,6 +1,5 @@
 import {
   candidateHasText,
-  fileHasText,
   modelCandidates,
   type CandidateSource,
   type Prediction,
@@ -11,37 +10,40 @@ import { draftIsNone, draftSelections, type DraftSelection, type FeedbackDraft }
 /**
  * Why a candidate can or cannot be judged from this screen.
  *
- * - `readable`: the witness on screen carries words.
- * - `hidden_witness`: the witness on screen is blank, and the text this
- *   directory does have is in a file this build cannot open.
- * - `no_text`: nothing in the directory is readable in this deployment.
+ * - `readable`: a witness the reviewer can reach carries words.
+ * - `no_text`: nothing this response delivered for the directory is readable
+ *   in this deployment.
  * - `unidentified`: no directory name or no finite score, so there is nothing
  *   coherent to assign the document to.
  */
-export type CandidateEvidence =
-  | 'readable'
-  | 'hidden_witness'
-  | 'no_text'
-  | 'unidentified'
+export type CandidateEvidence = 'readable' | 'no_text' | 'unidentified'
 
 /**
- * A candidate as the assessment controls see it (issue #157).
+ * A candidate as the assessment controls see it (issues #157, #163).
  *
  * `usable` asks whether the reviewer can actually read this candidate HERE: a
- * directory identity, a finite score, and readable words in the ONE witness
- * `CenterArea` puts on screen (`candidate_files[0]`, via `fileHasText`).
+ * directory identity, a finite score, and readable words in a witness this
+ * screen can reach.
  *
- * That is deliberately stricter than the server's
- * `web/routers/feedback.py::_candidate_is_usable`, which accepts a directory
- * with a readable file anywhere in it. The server rule is right for a client
- * that can inspect the other witnesses; this build has no witness selector, so
- * a directory whose first file is blank offers the reviewer nothing to read,
- * and enabling its pill would invite an assessment of evidence the screen never
- * showed. Being stricter is safe in one direction only, and this is that
- * direction: everything this client offers, the server also accepts.
+ * That last clause used to mean `candidate_files[0]` alone, because the panel
+ * showed the first witness and offered no way to any other. Being stricter
+ * than the server's `web/routers/feedback.py::_candidate_is_usable`, which
+ * accepts a directory with a readable file anywhere in it, was then the safe
+ * direction: everything this client offered, the server also accepted.
  *
- * When #163 or a later change makes the other witnesses inspectable, this is
- * the line to relax, together with the `hidden_witness` copy that explains it.
+ * Issue #163 mounts a witness selector in `CenterArea` for BOTH model and
+ * reviewer candidates, so every witness the response delivered is one control
+ * away and a readable second file is no longer evidence nobody can see. The
+ * two rules are identical again -- identity, a finite score, and
+ * `candidateHasText`, which is the same `any(file.text.strip() ...)` the
+ * server applies -- so no readable candidate is refused here and no offered
+ * save is refused there.
+ *
+ * The question is REACHABILITY, never which witness is currently displayed.
+ * Opening a blank member of a directory that also has a readable one does not
+ * withdraw the assessment: the evidence did not change, only the view did, and
+ * a choice that came and went with a selection would make the selector an
+ * editor of answers.
  */
 export interface AssessmentCandidate {
   rank: number
@@ -88,18 +90,16 @@ export interface AssessmentEvidence {
 /**
  * What this screen can tell the reviewer about a candidate.
  *
- * The witness question (`fileHasText` on the first file) decides whether the
- * candidate can be chosen. The directory question (`candidateHasText`) is kept
- * only to tell an inaccessible reading apart from a missing one, so the copy
- * can say which it is instead of accusing a deployment of an empty directory.
+ * One question, asked of every witness the response delivered, because the
+ * selector reaches all of them: are there readable words anywhere the reviewer
+ * can open? `candidateHasText` already is that question, so the rule is the
+ * API's own helper rather than a second copy of it living here.
  */
 export function candidateEvidence(prediction: Prediction): CandidateEvidence {
   if (prediction.dir_name.trim().length === 0 || !Number.isFinite(prediction.score)) {
     return 'unidentified'
   }
-  const witnesses = prediction.candidate_files ?? []
-  if (fileHasText(witnesses[0])) return 'readable'
-  return candidateHasText(prediction) ? 'hidden_witness' : 'no_text'
+  return candidateHasText(prediction) ? 'readable' : 'no_text'
 }
 
 /** Whether this candidate can be judged from the evidence on screen. */
@@ -161,11 +161,10 @@ export function assessmentEvidence(input: {
     usableModel.length,
   )
   // None is a judgement about every model candidate on offer. If one of them
-  // cannot be read HERE, the reviewer cannot have rejected it: either its text
-  // is missing (which the server also refuses, RANKING_NOT_EVALUABLE) or it
-  // sits in a witness this build cannot open, which the server would accept
-  // from a client that could show it. Reviewer directories are not model
-  // evidence and neither supply nor withdraw it.
+  // cannot be read HERE, the reviewer cannot have rejected it: its text is
+  // missing in this deployment, which the server also refuses
+  // (RANKING_NOT_EVALUABLE). Reviewer directories are not model evidence and
+  // neither supply nor withdraw it.
   const noneBlock: NoneBlock | null =
     evidenceBlock !== null
       ? evidenceBlock
@@ -195,7 +194,10 @@ export type SelectionIssue =
       kind: 'unreadable'
       rank: number
       dirName: string
-      /** Which kind of unreadable, so the copy states the actual fact. */
+      /**
+       * Which kind of unreadable, so the copy states the fact rather than
+       * inferring it again from the prediction.
+       */
       evidence: CandidateEvidence
     }
 

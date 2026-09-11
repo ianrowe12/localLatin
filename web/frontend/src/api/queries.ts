@@ -56,6 +56,37 @@ export interface CandidateFile {
  */
 export type CandidateSource = 'model' | 'reviewer'
 
+/**
+ * `Prediction.supporting_member` from `web/models.py` (issue #163).
+ *
+ * A reviewer directory's score is the MAXIMUM over its member witnesses
+ * (`web/services/qq_matrix.py`), so the number is earned by one member while
+ * the panel renders `candidate_files[0]`. This names the member the backend
+ * credits it to.
+ *
+ * `query_id` identifies the SUPPORTING MEMBER, not the query under review
+ * (that stays `PredictionResponse.file_id`). `score` is `Prediction.score`
+ * exactly: the current query's group maximum, never `ReviewerDir.
+ * best_match_score` and never a per-member score for any other member.
+ * `filename` is null when the winning member has no filename metadata; the
+ * winner is still that member, so nothing may substitute a readable one.
+ *
+ * It is a DESIGNATION, not a uniqueness claim. `score_with_support` resolves
+ * equal maxima by the smallest member query id, and a tied payload is
+ * byte-identical to a strictly-won one, so nothing on the wire says whether
+ * another member reached the same number.
+ *
+ * Declared here, beside the rest of the wire, because this file is where the
+ * normaliser has to keep it. `components/evidence/memberEvidence.ts` re-exports
+ * it rather than describing the same payload twice, and nothing in this
+ * direction imports a component.
+ */
+export interface SupportingMember {
+  query_id: number
+  filename: string | null
+  score: number
+}
+
 export interface Prediction {
   rank: number
   dir_name: string
@@ -68,6 +99,11 @@ export interface Prediction {
   label?: string | null
   created_by?: string | null
   seed_query_id?: number | null
+  /**
+   * Which member witness the score is credited to, or null when the response
+   * names none. Absent on any artifact served before issue #163.
+   */
+  supporting_member?: SupportingMember | null
 }
 
 export interface PredictionResponse {
@@ -453,6 +489,54 @@ function validateCandidateFiles(value: unknown): CandidateFile[] | null | false 
 }
 
 /**
+ * `Prediction.supporting_member`, checked rather than cast (issue #163).
+ *
+ * The member evidence bar makes claims about the number the reviewer is
+ * judging -- which witness earned it, and which one is open below it -- so a
+ * support object this build cannot read is not a cosmetic loss.
+ *
+ * Malformed support therefore fails the whole response, exactly as a malformed
+ * `candidate_files` or `seeded_dirs` entry does. Nulling it instead would show
+ * the group maximum with no attribution at all, which is the app's honest
+ * wording for "the server named nobody" -- so a build mismatch would be
+ * presented to a reviewer as a fact about the retrieval run. Both sides of the
+ * wire ship together (web/ is a subtree), so an unreadable shape means the
+ * halves disagree, not that a valid response arrived.
+ *
+ * Absent and null stay legal: every artifact served before #163, and every
+ * response for a directory whose maximum cannot be attributed, carries no
+ * support. Nothing here invents one, and no field is defaulted into existence:
+ * a partial object is malformed rather than completed from the candidate.
+ *
+ * Returns the normalised member, null when none was named, or false when one
+ * was supplied in a shape this build cannot read.
+ */
+function validateSupportingMember(value: unknown): SupportingMember | null | false {
+  if (value === null || value === undefined) return null
+  if (!isRecord(value)) return false
+  // The backend's own type: an int naming the member, never a float or a
+  // stringified id, and never the query under review by default.
+  if (typeof value.query_id !== 'number' || !Number.isInteger(value.query_id)) {
+    return false
+  }
+  // Same finiteness rule as the candidate's own score, which this copies.
+  if (typeof value.score !== 'number' || !Number.isFinite(value.score)) {
+    return false
+  }
+  const filename = value.filename
+  if (filename !== undefined && filename !== null && typeof filename !== 'string') {
+    return false
+  }
+  return {
+    query_id: value.query_id,
+    // Absent and null are the same fact: the winning member has no filename
+    // metadata. It is still the winner.
+    filename: typeof filename === 'string' ? filename : null,
+    score: value.score,
+  }
+}
+
+/**
  * One seeded reviewer directory, checked rather than cast.
  *
  * `seeded_dirs` used to be waved through as `ReviewerDir[]` once the container
@@ -634,6 +718,10 @@ export function validatePredictionResponse(
     if (candidateFiles === false) {
       return { ok: false, reason: 'candidate_files is malformed' }
     }
+    const supportingMember = validateSupportingMember(entry.supporting_member)
+    if (supportingMember === false) {
+      return { ok: false, reason: 'supporting_member is malformed' }
+    }
     predictions.push({
       rank,
       dir_name: entry.dir_name,
@@ -647,6 +735,9 @@ export function validatePredictionResponse(
       created_by: typeof entry.created_by === 'string' ? entry.created_by : null,
       seed_query_id:
         typeof entry.seed_query_id === 'number' ? entry.seed_query_id : null,
+      // Carried, not derived. This normaliser builds a NEW candidate, so an
+      // additive backend field reaches no consumer unless it is copied here.
+      supporting_member: supportingMember,
     })
   }
 

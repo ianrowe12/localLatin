@@ -163,6 +163,19 @@ export function usePredictionState(): PredictionContextValue {
 }
 
 /**
+ * The same shared state, for a reader that must work without this provider.
+ *
+ * This is NOT a second source of rankings: it reads the one provider above, or
+ * reports that there is none. The live evidence stamp (issue #163) needs the
+ * authoritative key, generation and phase from inside `useTokens`, which is
+ * also called by components mounted alone in their own tests. Those callers get
+ * null and are not gated, rather than throwing.
+ */
+export function useOptionalPredictionState(): PredictionContextValue | null {
+  return useContext(PredictionContext)
+}
+
+/**
  * Whether a key still names what is on screen.
  *
  * For consumers holding a key captured earlier (an in-flight save, a pending

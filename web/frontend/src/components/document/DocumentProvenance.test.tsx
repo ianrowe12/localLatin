@@ -33,6 +33,7 @@ function renderPanel(
             side="candidate"
             filename="CSAR.347.17.txt"
             tokens={TOKENS}
+            evidenceOwner="provenance-fixture"
             {...props}
           />
         </TokenRefProvider>

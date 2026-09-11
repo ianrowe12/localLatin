@@ -48,7 +48,7 @@ const READY = (predictions: Prediction[]) =>
   assessmentEvidence({ phase: 'ready', predictions, hasReviewerAccount: true })
 
 describe('candidateIsUsable', () => {
-  it('requires identity, a finite score and readable words on screen', () => {
+  it('requires identity, a finite score and readable words somewhere reachable', () => {
     expect(candidateIsUsable(model(1))).toBe(true)
     expect(candidateIsUsable(model(1, { dir_name: '  ' }))).toBe(false)
     expect(candidateIsUsable(model(1, { score: Number.NaN }))).toBe(false)
@@ -61,25 +61,66 @@ describe('candidateIsUsable', () => {
     ).toBe(false)
   })
 
-  it('asks about the witness this build shows, not the whole directory', () => {
-    // CenterArea renders candidate_files[0] and there is no witness selector,
-    // so a readable second file is text the reviewer is never shown. The
-    // server would accept the save; this client must not offer it, because
-    // offering it invites a judgement of evidence that never reached the
-    // screen. Stricter than the server, in the one safe direction.
-    const hidden = model(1, {
+  it('asks whether any reachable witness carries text, not just the first', () => {
+    // CenterArea mounts a witness selector for both model and reviewer
+    // candidates (issue #163), so a readable second file is one control away,
+    // not text nobody is shown. Refusing this directory would now block a real
+    // answer about evidence the reviewer can actually read.
+    const blankFirst = model(1, {
       candidate_files: [
         { filename: 'blank.txt', text: '' },
         { filename: 'readable.txt', text: 'incipit' },
       ],
     })
-    expect(candidateIsUsable(hidden)).toBe(false)
-    expect(candidateEvidence(hidden)).toBe('hidden_witness')
-    // Told apart from a directory with nothing readable at all, so the copy
-    // can state which fact it is.
+    expect(candidateIsUsable(blankFirst)).toBe(true)
+    expect(candidateEvidence(blankFirst)).toBe('readable')
+    // Every witness blank is still nothing to judge, whichever one is open.
+    expect(
+      candidateEvidence(
+        model(1, {
+          candidate_files: [
+            { filename: 'blank.txt', text: '' },
+            { filename: 'also-blank.txt', text: '   ' },
+          ],
+        }),
+      ),
+    ).toBe('no_text')
     expect(candidateEvidence(model(1, { candidate_files: [] }))).toBe('no_text')
     expect(candidateEvidence(model(1))).toBe('readable')
     expect(candidateEvidence(model(1, { dir_name: ' ' }))).toBe('unidentified')
+  })
+
+  it('ignores member metadata: only delivered words make a candidate usable', () => {
+    // A preview, a directory listing and a named supporting member all
+    // describe text; none of them IS text the reviewer can open. Enabling a
+    // pill from any of them would solicit a judgement of words never shown.
+    const blank = { filename: 'blank.txt', text: '' }
+    expect(
+      candidateIsUsable(
+        model(1, { candidate_files: [blank], preview_text: 'incipit sermo lupi' }),
+      ),
+    ).toBe(false)
+    expect(
+      candidateIsUsable(
+        model(1, { candidate_files: [blank], dir_files: ['blank.txt', 'unsent.txt'] }),
+      ),
+    ).toBe(false)
+    expect(
+      candidateIsUsable(
+        reviewer(11, {
+          candidate_files: [blank],
+          supporting_member: { query_id: 4, filename: 'unsent.txt', score: 0.8 },
+        }),
+      ),
+    ).toBe(false)
+    expect(
+      candidateIsUsable(
+        reviewer(11, {
+          candidate_files: [blank],
+          supporting_member: { query_id: 4, filename: null, score: 0.8 },
+        }),
+      ),
+    ).toBe(false)
   })
 
   it('scores low candidates as usable: confidence is not eligibility', () => {
@@ -214,8 +255,11 @@ describe('reviewSelections', () => {
     })
   })
 
-  it('reports a choice whose text moved out of view as its own fact', () => {
-    const hidden = READY([
+  it('keeps a choice whose readable witness is not the one on screen', () => {
+    // The reviewer chose this directory on the evidence it delivered. Which
+    // witness happens to be open is a view state, not a fact about the answer,
+    // so a blank first file no longer costs them a confirmed choice.
+    const reachable = READY([
       model(1, {
         candidate_files: [
           { filename: 'blank.txt', text: '' },
@@ -226,13 +270,11 @@ describe('reviewSelections', () => {
     ])
     const review = reviewSelections(
       [{ rank: 1, dirName: 'candidate-1', source: 'model' }],
-      hidden,
+      reachable,
     )
-    expect(review.confirmed).toEqual([])
-    expect(review.issues[0]).toMatchObject({
-      kind: 'unreadable',
-      evidence: 'hidden_witness',
-    })
+    expect(review.confirmed).toHaveLength(1)
+    expect(review.issues).toEqual([])
+    expect(review.changed).toBe(false)
   })
 
   it('treats a source change at the same rank as a different candidate', () => {

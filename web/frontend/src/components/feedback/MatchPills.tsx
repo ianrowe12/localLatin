@@ -12,10 +12,7 @@ export function unreadableCandidateReason(
   if (evidence === 'unidentified') {
     return 'This candidate arrived without a usable directory name or score, so there is nothing to assign the document to.'
   }
-  if (evidence === 'hidden_witness') {
-    return `The file shown for ${candidate.dirName} has no readable text in this deployment. Other files in that directory do carry text, but this view cannot open them, so there is nothing here to judge it by.`
-  }
-  return `${candidate.dirName} has no readable text in this deployment, so it cannot be chosen.`
+  return `No witness of ${candidate.dirName} that this response delivered carries readable text, so there is nothing here to judge it by.`
 }
 
 interface MatchPillsProps {

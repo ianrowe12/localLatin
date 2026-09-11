@@ -74,6 +74,18 @@ class ReviewerDirStatus(StrEnum):
     MATCHED = "matched"
 
 
+class SupportingMember(BaseModel):
+    """Witness responsible for a reviewer candidate's max similarity.
+
+    Equal maxima choose the smallest query id. A missing filename means the
+    witness's metadata is unavailable, not that another member supports it.
+    """
+
+    query_id: int
+    filename: Optional[str] = None
+    score: float
+
+
 class Prediction(BaseModel):
     rank: int
     dir_name: str
@@ -86,6 +98,7 @@ class Prediction(BaseModel):
     label: Optional[str] = None
     created_by: Optional[str] = None
     seed_query_id: Optional[int] = None
+    supporting_member: Optional[SupportingMember] = None
 
 
 class ReviewerDirCreate(BaseModel):

@@ -1,9 +1,41 @@
-import type { ReviewerDir } from '../../api/reviewerDirs'
-import { DIRECTORY_STATUS_COPY } from '../../utils/reviewerDirectoryCopy'
+import { listsItsSeedAsMember, type ReviewerDir } from '../../api/reviewerDirs'
+import {
+  DIRECTORY_STATUS_COPY,
+  SEED_NOT_FILED_SHORT,
+} from '../../utils/reviewerDirectoryCopy'
 
 interface AwaitingMatchBadgeProps {
-  /** Reviewer directories seeded by the document being shown. */
+  /**
+   * Reviewer directories seeded by the document being shown, as the durable
+   * saved-directory record holds them (issue #161). Empty whenever this app has
+   * not established any: a loading, failed or unadmitted answer is not a
+   * statement that the document seeded nothing.
+   */
   seededDirs: readonly ReviewerDir[]
+}
+
+/**
+ * One directory's hover text, including whether the stored record actually
+ * files this document in it.
+ *
+ * A row whose `member_query_ids` omits its own seed is a preserved partial
+ * write from before issue #160 made creation atomic. The grouping is real and
+ * permanent; the membership row never landed and nothing here can add it. So
+ * the title reports the status the server derived AND says the document is not
+ * among the members, rather than letting "the directory this document seeded"
+ * be read as "the directory this document is filed in".
+ */
+function directoryTitle(dir: ReviewerDir): string {
+  const status =
+    dir.status === 'matched'
+      ? DIRECTORY_STATUS_COPY.matchedTitle(dir.label)
+      : dir.has_potential_match
+        ? DIRECTORY_STATUS_COPY.leadTitle(
+            dir.label,
+            dir.best_match_score?.toFixed(2) ?? 'unknown',
+          )
+        : DIRECTORY_STATUS_COPY.awaitingTitle(dir.label)
+  return listsItsSeedAsMember(dir) ? status : `${status}. ${SEED_NOT_FILED_SHORT}`
 }
 
 /**
@@ -20,6 +52,14 @@ interface AwaitingMatchBadgeProps {
  *
  * Nothing renders when the document seeded no directories, so the header is
  * unchanged for the overwhelming majority of queries.
+ *
+ * SOURCE (issue #161). The caller passes the durable saved-directory record,
+ * not `PredictionResponse.seeded_dirs`. The two differ exactly where it
+ * matters: the ranking is a request that loads, fails and is re-issued per
+ * model, so reading it made a permanent fact blink out under a failed refresh
+ * and reappear under the next model, and it carried rows this app had not
+ * admitted for this account. The durable record holds what the database told
+ * THIS session, so the badge says the same thing throughout.
  */
 export default function AwaitingMatchBadge({ seededDirs }: AwaitingMatchBadgeProps) {
   if (seededDirs.length === 0) return null
@@ -31,16 +71,13 @@ export default function AwaitingMatchBadge({ seededDirs }: AwaitingMatchBadgePro
   // against this directory, but no reviewer has confirmed it. Deliberately not
   // the same visual as a confirmed match.
   const leads = awaiting.filter((dir) => dir.has_potential_match)
-  const awaitingTitle = awaiting
-    .map((dir) =>
-      dir.has_potential_match
-        ? DIRECTORY_STATUS_COPY.leadTitle(
-            dir.label,
-            dir.best_match_score?.toFixed(2) ?? 'unknown',
-          )
-        : DIRECTORY_STATUS_COPY.awaitingTitle(dir.label),
-    )
-    .join('; ')
+  const awaitingTitle = awaiting.map(directoryTitle).join('; ')
+  // Marked per bucket, because the claim being qualified is the one that bucket
+  // makes. A green "matched" beside an amber "awaiting" are two separate
+  // statements and only the ones resting on an unrecorded membership are
+  // marked.
+  const awaitingUnfiled = awaiting.some((dir) => !listsItsSeedAsMember(dir))
+  const matchedUnfiled = matched.some((dir) => !listsItsSeedAsMember(dir))
 
   return (
     <span className="flex items-center gap-1.5">
@@ -53,18 +90,18 @@ export default function AwaitingMatchBadge({ seededDirs }: AwaitingMatchBadgePro
           {DIRECTORY_STATUS_COPY.awaiting}
           {awaiting.length > 1 ? ` (${awaiting.length})` : ''}
           {leads.length > 0 ? ' · lead' : ''}
+          {awaitingUnfiled ? DIRECTORY_STATUS_COPY.notFiled : ''}
         </span>
       )}
       {matched.length > 0 && (
         <span
           data-testid="matched-dir-badge"
-          title={matched
-            .map((dir) => DIRECTORY_STATUS_COPY.matchedTitle(dir.label))
-            .join('; ')}
+          title={matched.map(directoryTitle).join('; ')}
           className="bg-emerald-100 dark:bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 text-xs px-2 py-0.5 rounded-full whitespace-nowrap font-ui"
         >
           {DIRECTORY_STATUS_COPY.matched}
           {matched.length > 1 ? ` (${matched.length})` : ''}
+          {matchedUnfiled ? DIRECTORY_STATUS_COPY.notFiled : ''}
         </span>
       )}
     </span>

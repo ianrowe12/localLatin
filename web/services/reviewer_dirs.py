@@ -54,9 +54,10 @@ from web.models import (
     Prediction,
     ReviewerDir,
     ReviewerDirStatus,
+    SupportingMember,
 )
 from web.services.data_store import DataStore
-from web.services.qq_matrix import QQMatrix
+from web.services.qq_matrix import QQMatrix, QQScore
 
 #: Prefix of every reviewer directory id. Disjoint from every labelled
 #: directory name in the corpus, so `correct_dir` and the candidate-files route
@@ -234,17 +235,17 @@ def candidates_for_query(
     if qq is None:
         return []
 
-    scored: list[tuple[float, dict]] = []
+    scored: list[tuple[QQScore, dict]] = []
     for record in records:
         members = [int(m) for m in record.get("member_query_ids", [])]
         if int(query_id) in members:
             continue
-        score = qq.score(int(query_id), members)
+        score = qq.score_with_support(int(query_id), members)
         if score is None:
             continue
         scored.append((score, record))
 
-    scored.sort(key=lambda item: (-item[0], item[1]["dir_id"]))
+    scored.sort(key=lambda item: (-item[0].score, item[1]["dir_id"]))
     scored = scored[:MAX_REVIEWER_CANDIDATES]
 
     first_rank = MAX_MODEL_RANK + 1
@@ -255,18 +256,33 @@ def candidates_for_query(
 
 
 def _to_prediction(
-    store: DataStore, record: dict, score: float, rank: int
+    store: DataStore, record: dict, score: QQScore, rank: int
 ) -> Prediction:
     files = member_files(store, record)
+    support = (
+        SupportingMember(
+            query_id=score.supporting_query_id,
+            filename=store.file_id_to_filename.get(score.supporting_query_id),
+            score=score.score,
+        )
+        if score.supporting_query_id is not None
+        else None
+    )
+    preview = (
+        store.unlabelled_texts.get(support.query_id, "")[:200]
+        if support is not None and support.filename is not None
+        else ""
+    )
     return Prediction(
         rank=rank,
         dir_name=record["dir_id"],
-        score=score,
+        score=score.score,
         dir_files=[f.filename for f in files],
-        preview_text=files[0].text[:200] if files else "",
+        preview_text=preview,
         candidate_files=files,
         source=CandidateSource.REVIEWER,
         label=record["label"],
         created_by=str(record["created_by"] or ""),
         seed_query_id=int(record["seed_query_id"]),
+        supporting_member=support,
     )

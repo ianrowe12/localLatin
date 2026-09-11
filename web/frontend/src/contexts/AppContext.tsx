@@ -173,3 +173,15 @@ export function useApp(): AppContextValue {
   }
   return ctx
 }
+
+/**
+ * The same value, for a reader that must work without this provider.
+ *
+ * Used by the live evidence stamp (issue #163), which is consulted from
+ * `useTokens` -- a hook that legitimately runs in isolated component tests
+ * mounted under `TokenProvider` alone. Those callers get null and are not
+ * gated, rather than throwing.
+ */
+export function useOptionalApp(): AppContextValue | null {
+  return useContext(AppContext)
+}
