@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppProvider, useApp } from '../../contexts/AppContext'
-import { usePredictions } from '../../api/queries'
+import {
+  PredictionProvider,
+  usePredictionState,
+} from '../../contexts/PredictionContext'
 import { REVIEWER_DIRS_UPDATED_EVENT } from '../../api/reviewerDirs'
 import ModelSelector from '../predictions/ModelSelector'
 import MemberEvidenceBar from './MemberEvidenceBar'
@@ -39,6 +42,13 @@ interface GroupFixture {
   /** Members the directory has but this response cannot open. */
   closedMembers?: string[]
   supporting: { query_id: number; filename: string | null; score: number } | null
+  /**
+   * Serialised in place of `supporting`, for the two shapes a well-formed
+   * fixture cannot express: `'absent'` omits the key entirely, as every
+   * artifact served before issue #163 does, and `{ value }` sends whatever it
+   * holds, for payloads this build should refuse to read.
+   */
+  rawSupporting?: 'absent' | { value: unknown }
   score?: number
 }
 
@@ -54,9 +64,9 @@ function defaultGroup(): GroupFixture {
   }
 }
 
-function groupPayload(group: GroupFixture) {
+function groupPayload(group: GroupFixture): Record<string, unknown> {
   const openable = group.members.map((m) => m.filename)
-  return {
+  const payload: Record<string, unknown> = {
     rank: REVIEWER_RANK,
     dir_name: group.dirName,
     score: group.score ?? GROUP_MAX,
@@ -69,8 +79,13 @@ function groupPayload(group: GroupFixture) {
     label: group.label,
     created_by: 'Abigail',
     seed_query_id: 2,
-    supporting_member: group.supporting,
   }
+  if (group.rawSupporting === 'absent') return payload
+  payload.supporting_member =
+    group.rawSupporting !== undefined
+      ? group.rawSupporting.value
+      : group.supporting
+  return payload
 }
 
 function modelCard(rank: number, score: number) {
@@ -162,43 +177,34 @@ function installFetch(): void {
 }
 
 /**
- * What CenterArea will do once #156 publishes the shared prediction state:
- * take the authoritative current result, scope the member choice to its
- * identity, and render the bar beside the witness it selected.
+ * What CenterArea will do once it is handed over: take the authoritative
+ * current result from the shared prediction state, scope the member choice to
+ * its identity, and render the bar beside the witness it selected.
  *
- * `generation` stands in for that state's request generation. The rest is the
- * real hook over the real fetch path, so the payload these tests assert on is
- * the one the backend serialises.
+ * The request key, generation and candidate all come from `usePredictionState`,
+ * the released #156 contract, rather than from a second `usePredictions` call
+ * and a locally supplied counter. That is deliberate: the candidate asserted on
+ * below has been through `validatePredictionResponse`, so these cases prove the
+ * backend's `supporting_member` survives runtime validation into the provider
+ * rather than proving anything about a fixture this file built.
+ *
+ * `getByRank` is the provider's own lookup. The old identity comparisons
+ * against `data.model` / `data.file_id` are gone because the provider never
+ * exposes a response for another key: its render-time guard reports `loading`
+ * for a selection whose request has not settled.
  */
-function EvidenceHarness({ generation }: { generation: number }) {
-  const { activeQueryId, activeModel, activeVariant, activePredictionRank } =
-    useApp()
-  const predictions = usePredictions(activeQueryId, activeModel, activeVariant)
+function EvidenceHarness() {
+  const { activePredictionRank } = useApp()
+  const state = usePredictionState()
 
-  const current = useMemo(() => {
-    const data = predictions.data
-    if (!data?.predictions) return null
-    if (data.model !== activeModel) return null
-    if (data.variant !== activeVariant) return null
-    if (data.file_id !== activeQueryId) return null
-    return (
-      data.predictions.find((p) => p.rank === activePredictionRank) ?? null
-    )
-  }, [
-    predictions.data,
-    activeModel,
-    activeVariant,
-    activeQueryId,
-    activePredictionRank,
-  ])
-
-  const candidate = current as MemberEvidenceCandidate | null
+  const candidate: MemberEvidenceCandidate | null =
+    state.getByRank(activePredictionRank)
 
   const identityKey = memberEvidenceKey({
-    queryId: activeQueryId,
-    model: activeModel,
-    variant: activeVariant,
-    generation,
+    queryId: state.key?.queryId ?? null,
+    model: state.key?.model ?? '',
+    variant: state.key?.variant ?? '',
+    generation: state.generation,
     dirName: candidate?.dir_name ?? null,
     source: candidate?.source,
   })
@@ -230,13 +236,20 @@ function EvidenceHarness({ generation }: { generation: number }) {
       <div data-testid="witness-name">{evidence?.selected?.filename ?? ''}</div>
       <div data-testid="witness-text">{evidence?.selected?.text ?? ''}</div>
       <div data-testid="candidate-dir">{candidate?.dir_name ?? ''}</div>
+      {/* What the normaliser actually handed the provider, not a re-derivation. */}
+      <div data-testid="candidate-support">
+        {candidate ? JSON.stringify(candidate.supporting_member ?? null) : ''}
+      </div>
+      <div data-testid="candidate-score">
+        {candidate ? String(candidate.score) : ''}
+      </div>
     </>
   )
 }
 
 function Harness() {
   const { setActiveQueryId, setActiveModel, setActivePredictionRank } = useApp()
-  const [generation, setGeneration] = useState(0)
+  const { refresh, generation, phase } = usePredictionState()
 
   useEffect(() => {
     setActiveQueryId(QUERY_ID)
@@ -250,31 +263,25 @@ function Harness() {
       <button type="button" onClick={() => setActiveQueryId(OTHER_QUERY_ID)}>
         Go to other query
       </button>
-      <button
-        type="button"
-        onClick={() => {
-          // A directory write invalidates every query's candidates, which is
-          // exactly the refresh that can put a different directory behind the
-          // same rank.
-          setGeneration((g) => g + 1)
-          window.dispatchEvent(new CustomEvent(REVIEWER_DIRS_UPDATED_EVENT))
-        }}
-      >
+      <button type="button" onClick={refresh}>
         Refresh predictions
       </button>
       <button
         type="button"
         onClick={() => {
-          // The harder half of the same case: the server's answer changes
-          // while nothing on the client does. The only thing that moves is
-          // the directory inside the payload, and it moves in the very render
-          // that carries the new data.
+          // The other way the same refresh arrives: a directory write
+          // invalidates every query's candidates, and the shared state
+          // subscribes to that event itself. The server's answer changes while
+          // nothing on the client does, so the only thing that moves is the
+          // directory inside the payload -- in the very render that carries it.
           window.dispatchEvent(new CustomEvent(REVIEWER_DIRS_UPDATED_EVENT))
         }}
       >
         Refresh from server
       </button>
-      <EvidenceHarness generation={generation} />
+      <div data-testid="prediction-generation">{generation}</div>
+      <div data-testid="prediction-phase">{phase}</div>
+      <EvidenceHarness />
     </>
   )
 }
@@ -282,7 +289,9 @@ function Harness() {
 function renderHarness() {
   return render(
     <AppProvider>
-      <Harness />
+      <PredictionProvider>
+        <Harness />
+      </PredictionProvider>
     </AppProvider>,
   )
 }
@@ -626,6 +635,100 @@ describe('member evidence over the real prediction fetch (issue #163)', () => {
     expect(
       screen.getByTestId('member-evidence-model-attribution').textContent,
     ).toContain('No model attribution exists for a reviewer-group witness')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The evidence metadata's trip through runtime validation into the provider
+// ---------------------------------------------------------------------------
+
+const supportJson = () =>
+  screen.getByTestId('candidate-support').textContent ?? ''
+const candidateScore = () =>
+  screen.getByTestId('candidate-score').textContent ?? ''
+const predictionPhase = () =>
+  screen.getByTestId('prediction-phase').textContent ?? ''
+
+describe('supporting_member through the shared prediction state (issue #163)', () => {
+  it('hands the provider the witness the backend designated, unaltered', async () => {
+    renderHarness()
+    await waitFor(() => expect(witnessName()).toBe('query-0.txt'))
+
+    // `validatePredictionResponse` builds a NEW candidate rather than passing
+    // the payload through, so this is the assertion that the additive field is
+    // copied: without it the reviewer gets a group maximum and no attribution.
+    expect(JSON.parse(supportJson())).toEqual({
+      query_id: 0,
+      filename: 'query-0.txt',
+      score: GROUP_MAX,
+    })
+    // The number the designation speaks for is the candidate's own, untouched.
+    expect(candidateScore()).toBe(String(GROUP_MAX))
+    expect(predictionPhase()).toBe('ready')
+  })
+
+  it('keeps a response served before the field existed fully readable', async () => {
+    groups[`${MODEL_A}:${QUERY_ID}`] = {
+      ...defaultGroup(),
+      rawSupporting: 'absent',
+    }
+    renderHarness()
+
+    // No key on the wire at all. The ranking is ordinary; only the attribution
+    // is missing, and it says so instead of crediting the first file.
+    await waitFor(() => expect(witnessName()).toBe('query-2.txt'))
+    expect(predictionPhase()).toBe('ready')
+    expect(supportJson()).toBe('null')
+    expect(candidateScore()).toBe(String(GROUP_MAX))
+    expect(attributionText()).toContain(
+      'This response does not identify which witness produced it.',
+    )
+  })
+
+  it('reads an explicit null as a named absence, not a dropped field', async () => {
+    groups[`${MODEL_A}:${QUERY_ID}`] = { ...defaultGroup(), supporting: null }
+    renderHarness()
+
+    await waitFor(() => expect(witnessName()).toBe('query-2.txt'))
+    expect(predictionPhase()).toBe('ready')
+    expect(supportJson()).toBe('null')
+  })
+
+  it('keeps a designation whose member has no filename metadata', async () => {
+    groups[`${MODEL_A}:${QUERY_ID}`] = {
+      ...defaultGroup(),
+      supporting: { query_id: 0, filename: null, score: GROUP_MAX },
+    }
+    renderHarness()
+
+    // The member without a name is still the winner: nothing may promote the
+    // readable seed into its place.
+    await waitFor(() => expect(predictionPhase()).toBe('ready'))
+    expect(JSON.parse(supportJson())).toEqual({
+      query_id: 0,
+      filename: null,
+      score: GROUP_MAX,
+    })
+    expect(attributionText()).toContain(
+      'Produced by member query 0, which this response does not name.',
+    )
+  })
+
+  it('refuses a ranking whose designation it cannot read, inventing nothing', async () => {
+    groups[`${MODEL_A}:${QUERY_ID}`] = {
+      ...defaultGroup(),
+      // A member named without the score it won. Completing it from the
+      // candidate would manufacture the one fact the object exists to carry.
+      rawSupporting: { value: { query_id: 0, filename: 'query-0.txt' } },
+    }
+    renderHarness()
+
+    await waitFor(() => expect(predictionPhase()).toBe('error'))
+    // Not a ranking with one odd field: no candidate, no witness, no number.
+    expect(supportJson()).toBe('')
+    expect(candidateScore()).toBe('')
+    expect(witnessName()).toBe('')
+    expect(screen.queryByTestId('member-evidence')).toBeNull()
   })
 })
 

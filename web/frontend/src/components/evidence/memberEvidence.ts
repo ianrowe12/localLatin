@@ -1,4 +1,8 @@
-import type { CandidateFile, CandidateSource } from '../../api/queries'
+import type {
+  CandidateFile,
+  CandidateSource,
+  SupportingMember,
+} from '../../api/queries'
 
 /**
  * The witness behind a directory candidate's number (issue #163).
@@ -20,33 +24,27 @@ import type { CandidateFile, CandidateSource } from '../../api/queries'
 // ---------------------------------------------------------------------------
 
 /**
- * `Prediction.supporting_member` from the backend half of #163.
+ * `Prediction.supporting_member`, re-exported from the wire types.
  *
- * `query_id` identifies the SUPPORTING MEMBER, not the query under review
- * (that stays `PredictionResponse.file_id`). `score` is `Prediction.score`
- * exactly: the current query's group maximum, never `ReviewerDir.
- * best_match_score` and never a per-member score for any other member.
- * `filename` is null when the winning member has no filename metadata; the
- * winner is still that member, so nothing here may substitute a readable one.
+ * It used to be declared here because `api/queries.ts` had not yet been handed
+ * over and this module refused to wait for it. Now that the normaliser carries
+ * the field, one definition describes it, and the full account of what the
+ * backend means by it lives beside the rest of the payload.
  *
- * It is a DESIGNATION, not a uniqueness claim. `score_with_support` resolves
- * equal maxima by the smallest member query id, and a tied payload is
- * byte-identical to a strictly-won one, so nothing on the wire says whether
- * another member reached the same number. No copy in this module may deny it.
+ * The two facts this module's copy depends on, kept here so they cannot drift:
+ * `query_id` names the supporting MEMBER, not the query under review, and the
+ * designation is not a uniqueness claim -- equal maxima are resolved by the
+ * smallest member query id and are indistinguishable on the wire from a
+ * strictly-won maximum. No copy in this module may deny that.
  */
-export interface SupportingMember {
-  query_id: number
-  filename: string | null
-  score: number
-}
+export type { SupportingMember }
 
 /**
  * The part of a prediction this module reads.
  *
- * Structurally a superset of `Prediction` plus the additive
- * `supporting_member`, which cannot be declared on the shared `Prediction`
- * interface until #156 hands over `api/queries.ts`. A real `Prediction` is
- * assignable to this type, so no consumer has to wait for that handoff.
+ * Structurally a superset of `Prediction`, rather than that type itself, so the
+ * bar can be handed a candidate-shaped object without owning the request.
+ * A real `Prediction` is assignable to it.
  */
 export interface MemberEvidenceCandidate {
   dir_name: string
