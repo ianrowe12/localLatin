@@ -3,6 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppProvider, useApp } from '../../contexts/AppContext'
+import { PredictionProvider } from '../../contexts/PredictionContext'
 import PredictionList from './PredictionList'
 import { getReviewTourSteps, REVIEW_TOUR_STEPS } from '../onboarding/tourSteps'
 import { PROVENANCE_TERMS } from '../../utils/documentProvenance'
@@ -120,7 +121,9 @@ function Harness() {
 function renderList() {
   return render(
     <AppProvider>
-      <Harness />
+      <PredictionProvider>
+        <Harness />
+      </PredictionProvider>
     </AppProvider>,
   )
 }

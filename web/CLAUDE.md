@@ -160,9 +160,10 @@ The webapp reads these from `data_root`:
   `DocumentPanel`/`DocumentHeader` caption the panel from it. `provenanceOf` prefers the
   prediction's `source`, falls back to the backend's `reviewer-dir-` prefix rule for an
   off-list candidate, and otherwise stays `unknown`: an unidentified candidate must never be
-  captioned as a labelled reference. **`CenterArea` does not pass the prop yet** — that one
-  hunk waits on issue #156's current-candidate identity, so the right panel currently reads
-  the neutral "Candidate witness".
+  captioned as a labelled reference. `CenterArea` derives the prop by the same override-wins
+  rule as `candidateDir`, so a gallery example is captioned from its own directory and never
+  from the rank selected underneath it, and a ranked candidate is captioned only from a
+  prediction the shared state (issue #156) has already accepted as current.
 - Default model: `DEFAULT_MODEL_SLUG` in `src/api/models.ts` (`google_mt5-base`, displayed
   as "mT5-base" by `services/data_store.py`), with a fallback to the first served model.
 - Token classification duplicated in `src/utils/tokens.ts` (matches `services/text_tokenizer.py`)
