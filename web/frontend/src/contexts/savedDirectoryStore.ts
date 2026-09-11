@@ -453,7 +453,9 @@ export class SavedDirectoryStore {
    * record: promoting them here writes a blank creator and a blank timestamp
    * into the durable identity, where the blank timestamp sorts first and
    * silently renames which group the document is filed under, and `[]` reads as
-   * "no human has filed a second witness" for a group where one has.
+   * "no human has filed a second witness" for a group where one has. It names
+   * what it supplied, so this boundary can tell a substituted `[]` from a
+   * stored one -- a distinction no amount of inspecting the value can recover.
    *
    * So the same completeness contract the lookup and the 201 body are held to
    * is applied here, and a list that fails it is NOT evidence in either

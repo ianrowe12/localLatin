@@ -103,6 +103,29 @@ export function alsoGroupedNote(count: number): string {
 }
 
 /**
+ * A stored grouping that does not list the document seeding it as a member
+ * (issue #161).
+ *
+ * Before issue #160 made creation atomic, the directory row and its seed
+ * membership row were written on a shared connection, so an unrelated commit
+ * in between could make the directory permanent and leave the membership
+ * behind. Those rows still exist, the server still serves them, and nothing in
+ * this application can add the missing row or remove the directory.
+ *
+ * The acknowledgement therefore reports what is stored and stops. It does not
+ * fabricate the membership, does not hide the grouping, and does not let
+ * "seeded with this document" stand as a claim that the document is filed
+ * there -- membership is what a second witness would be counted in, and what
+ * `matched` is derived from.
+ */
+export const SEED_NOT_FILED =
+  'The stored record of this grouping does not list this document among its members. The app shows the record as it is rather than adding the missing entry, and no new directory can be started for this document while this one exists.'
+
+/** The same fact as a clause beside one of several groupings. */
+export const SEED_NOT_FILED_SHORT =
+  'The stored record does not list this document among its members.'
+
+/**
  * A create that ended in a recovery.
  *
  * Deliberately neutral about whose write this row is. The app reaches this

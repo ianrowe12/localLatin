@@ -290,6 +290,62 @@ describe('validatePredictionResponse: seeded_dirs (issue #156)', () => {
       model_slug: '',
     })
   })
+
+  /**
+   * Issue #161 handoff. The substitutes above are the right answer for a
+   * candidate in a ranking and are not evidence of anything for the permanent
+   * saved-directory record, which has to tell "the server said no members" from
+   * "the field was not on the wire". Both are `[]` by the time anything
+   * downstream sees them, so this validator names what it supplied rather than
+   * leaving a distinction nobody can recover.
+   */
+  describe('names the defaults it supplied (issue #161)', () => {
+    const defaultedFor = (over: Record<string, unknown>) => {
+      const row = dir()
+      for (const field of Object.keys(over)) delete (row as Record<string, unknown>)[field]
+      const result = seeded([row])
+      expect(result.ok).toBe(true)
+      if (!result.ok) return undefined
+      return result.value.seeded_dirs?.[0]?.defaulted_fields
+    }
+
+    it.each([
+      ['member_query_ids'],
+      ['created_at'],
+      ['created_by'],
+      ['model_slug'],
+    ])('names %s when that one field is absent', (field) => {
+      expect(defaultedFor({ [field]: true })).toEqual([field])
+    })
+
+    it('names every absent field, not just the first', () => {
+      expect(
+        defaultedFor({ member_query_ids: true, created_at: true, created_by: true }),
+      ).toEqual(['member_query_ids', 'created_at', 'created_by'])
+    })
+
+    // The distinction that matters. This row is the one a pre-#160 partial
+    // write left behind: the server really holds a directory with no members,
+    // and says so. Reporting it as defaulted would make a stored fact
+    // indistinguishable from a missing field all over again.
+    it('says nothing about an explicitly empty member list', () => {
+      const result = seeded([dir({ member_query_ids: [] })])
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.value.seeded_dirs?.[0]).not.toHaveProperty('defaulted_fields')
+      expect(result.value.seeded_dirs?.[0]?.member_query_ids).toEqual([])
+    })
+
+    // Absent entirely on a complete row, so the normalised directory stays the
+    // object the response carried -- see the first case in this describe block,
+    // which compares it to the fixture with toEqual.
+    it('adds no key at all when nothing was supplied', () => {
+      const result = seeded([dir()])
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(Object.keys(result.value.seeded_dirs![0]!)).not.toContain('defaulted_fields')
+    })
+  })
 })
 
 describe('classifyExclusion (issue #156)', () => {

@@ -41,7 +41,38 @@ export interface ReviewerDir {
   // best_match_score crosses the no-match band: the model sees something
   // related that nobody has confirmed yet.
   has_potential_match: boolean
+  /**
+   * CLIENT-SIDE PROVENANCE, never a wire field (issue #161).
+   *
+   * A directory can reach this app two ways. A directory response is parsed
+   * from raw JSON here, so every value in it is something the server said. A
+   * directory inside a ranking is parsed by the shared prediction validator
+   * (issue #156), which tolerates an older backend omitting
+   * `member_query_ids`, `created_at`, `created_by` or `model_slug` and fills in
+   * `[]` and `''` on its behalf. Those substitutes are type-valid and therefore
+   * invisible: `[]` from a server that said "no members" and `[]` from a field
+   * that was never on the wire are the same value.
+   *
+   * That distinction matters exactly once, at the durable boundary, where the
+   * difference is between a stored fact and a guess. So the normalizer names
+   * the fields it supplied itself, and `isCompleteReviewerDir` declines the
+   * row rather than the whole distinction being lost. Present only when
+   * something really was defaulted, so a complete row is byte-identical to the
+   * response it came from.
+   */
+  defaulted_fields?: readonly ReviewerDirOptionalField[]
 }
+
+/**
+ * The fields `web/models.py` gives defaults, and which an older backend may
+ * therefore omit. Named here because both the normalizer that substitutes them
+ * and the boundary that refuses the substitutes need the same list.
+ */
+export type ReviewerDirOptionalField =
+  | 'member_query_ids'
+  | 'created_at'
+  | 'created_by'
+  | 'model_slug'
 
 export interface CreateReviewerDirPayload {
   query_file_id: number
@@ -86,7 +117,18 @@ export async function createReviewerDir(
   // acknowledgement a reviewer reads. An unreadable 201 is treated as a failed
   // write, which sends the caller to the seed-filtered lookup and recovers the
   // real row instead of displaying a half-built one.
-  const created = assertReviewerDir(body, payload.query_file_id)
+  //
+  // This is the ONE place the atomic-creation guarantee applies. Issue #160
+  // made creation insert the directory and its seed membership in a single
+  // dedicated transaction, so a directory this request just created reports
+  // its own seed as a member. A 201 that does not is the half-write #160
+  // fixed, and the right answer is to treat the write as unconfirmed and
+  // reconcile it against the database -- not to acknowledge a row whose
+  // membership nobody can vouch for. The same demand must NOT be made of rows
+  // that are merely being read back: see `isCompleteReviewerDir`.
+  const created = assertReviewerDir(body, payload.query_file_id, {
+    requireSeedMembership: true,
+  })
   if (options.notify !== false) notifyReviewerDirsUpdated()
   return created
 }
@@ -177,7 +219,11 @@ const DIR_STATUSES: readonly string[] = ['awaiting_match', 'matched']
  * response that cannot be read is treated as a failed write and reconciled
  * against the database, which recovers the row rather than inventing one.
  */
-export function assertReviewerDir(entry: unknown, seedQueryId?: number): ReviewerDir {
+export function assertReviewerDir(
+  entry: unknown,
+  seedQueryId?: number,
+  options: { requireSeedMembership?: boolean } = {},
+): ReviewerDir {
   // Seed identity is checked FIRST, so a row for another document is reported
   // as that rather than as a generic unreadable one. The two faults want
   // different diagnostics: one names a server that answered about the wrong
@@ -198,6 +244,14 @@ export function assertReviewerDir(entry: unknown, seedQueryId?: number): Reviewe
       `A reviewer directory could not be read: the server answered for document ${seedQueryId} with a record seeded by ${entry.seed_query_id}.`,
     )
   }
+  if (
+    options.requireSeedMembership &&
+    !entry.member_query_ids.includes(entry.seed_query_id)
+  ) {
+    throw new Error(
+      'The new directory could not be confirmed: the server reported it without the document that seeds it.',
+    )
+  }
   return entry
 }
 
@@ -212,32 +266,45 @@ export function assertReviewerDir(entry: unknown, seedQueryId?: number): Reviewe
  * cannot throw at a reviewer mid-render and must simply decline to treat a
  * half-row as proof.
  *
- * Sharing this predicate is what keeps those two answers the same. The shared
- * prediction validator (issue #156) has a deliberately more permissive contract
- * for the same rows: it tolerates a missing `member_query_ids`, `created_at` or
- * `created_by` and substitutes `[]` and `''` so an older backend still renders
- * a candidate. That is correct for a candidate in a ranking and wrong for a
- * permanent identity, because those substitutes are indistinguishable from a
- * server that really said "no members, no creator" -- which would silently
- * downgrade a matched grouping, blank its attribution and reorder which of
- * several groups is named as primary. So the durable boundary re-asks the
- * stricter question here rather than either weakening #156's contract for every
- * other consumer of a ranking or keeping a second copy of this one.
+ * Sharing this predicate is what keeps those two answers the same.
+ *
+ * WHAT THIS ASKS is whether every field the acknowledgement consumes was
+ * really said by the server. It deliberately does NOT ask whether the
+ * directory looks like one today's backend would create. Those are different
+ * questions, and conflating them rejected real data: before issue #160,
+ * creation wrote the directory and its seed membership on a connection shared
+ * with everything else the request touched, so an unrelated commit in between
+ * -- the session's `last_seen_at`, for one -- could make the directory
+ * permanent while the membership insert was still to come. A cancelled or
+ * failed creation after that point left a directory with no members at all,
+ * and nothing in this application can remove it. The current server preserves
+ * those rows, serves them on both the seed-filtered list and the ranking, and
+ * refuses a second directory for the same seed with a 409. A client that calls
+ * them unreadable hides a grouping that demonstrably exists and cannot offer
+ * any way to move past it. The atomic guarantee is asserted where it is
+ * actually promised: on the 201 of a write this client just issued.
  */
 export function isCompleteReviewerDir(entry: unknown): entry is ReviewerDir {
   const dir = entry as ReviewerDir | null
   return (
     dir !== null &&
     typeof dir === 'object' &&
+    !(dir.defaulted_fields && dir.defaulted_fields.length > 0) &&
+    // Nothing here was filled in on the server's behalf. `[]` and `''` are
+    // legitimate stored values AND are what a permissive parser writes where a
+    // field was missing, so the two are indistinguishable by inspection: an
+    // empty member list is a real historical record, and a substituted one is
+    // a guess that would silently downgrade a matched grouping. The shared
+    // prediction validator (issue #156) names what it supplied instead of
+    // leaving this boundary to tell them apart, which it cannot.
     typeof dir.dir_id === 'string' &&
     dir.dir_id.length > 0 &&
     typeof dir.label === 'string' &&
     typeof dir.seed_query_id === 'number' &&
-    // Non-EMPTY, not merely present. `''` is what a permissive parser puts
-    // where a missing creator or timestamp was, and it is indistinguishable
-    // from a server that really said "created by nobody, at no time". The
-    // acknowledgement renders both of these at the reviewer, and the timestamp
-    // also orders the groups, so a blank is not a value here.
+    // Non-EMPTY, not merely present. The acknowledgement renders both of these
+    // at the reviewer -- a blank creator reads as "Created by ." -- and the
+    // timestamp also orders the groups, deciding which of several is named as
+    // the one this document is filed under.
     typeof dir.created_at === 'string' &&
     dir.created_at.length > 0 &&
     typeof dir.created_by === 'string' &&
@@ -245,15 +312,22 @@ export function isCompleteReviewerDir(entry: unknown): entry is ReviewerDir {
     DIR_STATUSES.includes(dir.status) &&
     Array.isArray(dir.member_query_ids) &&
     dir.member_query_ids.every((id) => typeof id === 'number') &&
-    // A directory always contains the document that seeded it: the backend
-    // inserts that membership row in the same transaction as the directory
-    // itself (`web/services/feedback_db.py`). So an empty or seed-less member
-    // list is not a directory with no members -- there is no such thing -- it
-    // is a record this client cannot read. This is also what distinguishes a
-    // genuinely single-member group, which stays `awaiting_match`, from a
-    // substituted `[]`, which would downgrade a matched one.
-    dir.member_query_ids.includes(dir.seed_query_id) &&
     (dir.best_match_score === null || typeof dir.best_match_score === 'number') &&
     typeof dir.has_potential_match === 'boolean'
   )
+}
+
+/**
+ * Does the server's record of this directory list the document that seeds it?
+ *
+ * Normally yes, and since issue #160 always yes for anything newly created.
+ * Where it is false the row is a preserved partial write (see above): the
+ * grouping is stored and permanent, but the membership row that would make
+ * this document a member of it never landed and nothing can add it now. The
+ * acknowledgement says so rather than quietly implying the document is filed
+ * there, because membership is what `matched` is derived from and what a
+ * reviewer would reasonably read "seeded with this document" to mean.
+ */
+export function listsItsSeedAsMember(dir: ReviewerDir): boolean {
+  return dir.member_query_ids.includes(dir.seed_query_id)
 }

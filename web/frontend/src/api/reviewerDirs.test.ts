@@ -1,5 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fetchReviewerDirs, type ReviewerDir } from './reviewerDirs'
+import {
+  createReviewerDir,
+  fetchReviewerDirs,
+  listsItsSeedAsMember,
+  REVIEWER_DIRS_UPDATED_EVENT,
+  type ReviewerDir,
+} from './reviewerDirs'
+import {
+  HISTORICAL_SEED_QUERY_ID,
+  HISTORICAL_SEEDLESS_DIR,
+} from '../test/fixtures/historicalReviewerDir'
 
 /**
  * Issue #161: what `GET /api/reviewer_dirs` is allowed to mean.
@@ -88,5 +98,108 @@ describe('fetchReviewerDirs', () => {
     await expect(
       fetchReviewerDirs({ seedQueryId: QUERY_ID }),
     ).rejects.toBeInstanceOf(Error)
+  })
+})
+
+/**
+ * Review finding 11: what the server preserves, this client has to be able to
+ * read.
+ *
+ * Before issue #160, creation wrote the directory row and its seed membership
+ * row on a connection shared with the rest of the request, so an unrelated
+ * commit in between could make the directory permanent and leave the membership
+ * behind. The rows that resulted are served by the current API and refuse a
+ * second create for the same seed, and nothing in this application can repair
+ * or remove them. Requiring the membership of every row that comes back turned
+ * a grouping a reviewer demonstrably has into an unreadable record with no way
+ * forward: no acknowledgement, no Create (the server would 409 it), and a
+ * re-check that could only fail the same way.
+ */
+describe('preserved directories with no seed membership', () => {
+  it('reads back the exact row the current server serves for one', async () => {
+    stubBody([HISTORICAL_SEEDLESS_DIR])
+    const dirs = await fetchReviewerDirs({ seedQueryId: HISTORICAL_SEED_QUERY_ID })
+    // Unchanged, in particular the empty member list: the client reports the
+    // stored record rather than adding the membership row the server lost.
+    expect(dirs).toEqual([HISTORICAL_SEEDLESS_DIR])
+    expect(dirs[0]?.member_query_ids).toEqual([])
+    expect(listsItsSeedAsMember(dirs[0]!)).toBe(false)
+  })
+
+  it('does not let one of them make a complete sibling unreadable', async () => {
+    // Rows are validated one by one and a single failure rejects the whole
+    // list, so treating the historical row as broken hid every grouping this
+    // document has, not only the partial one.
+    const sibling = dirFixture({
+      dir_id: 'reviewer-dir-complete',
+      status: 'matched',
+      member_query_ids: [QUERY_ID, 9],
+    })
+    stubBody([HISTORICAL_SEEDLESS_DIR, sibling])
+    const dirs = await fetchReviewerDirs({ seedQueryId: QUERY_ID })
+    expect(dirs.map((dir) => dir.dir_id)).toEqual([
+      'reviewer-dir-f12cec1516c0',
+      'reviewer-dir-complete',
+    ])
+  })
+
+  it('still refuses a row whose fields were never on the wire', async () => {
+    // The other half of the distinction. `[]` is a legitimate stored value and
+    // also what a permissive parser writes for a field that was absent, so
+    // relaxing the membership demand must not become "accept every default".
+    // A response body is raw JSON, so absence is visible here.
+    const { member_query_ids: _members, ...noMembers } = dirFixture()
+    stubBody([noMembers])
+    await expect(fetchReviewerDirs({ seedQueryId: QUERY_ID })).rejects.toThrow(
+      /incomplete record/,
+    )
+  })
+})
+
+describe('createReviewerDir', () => {
+  function stubCreated(body: unknown, status = 201): void {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify(body), {
+            status,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+      ),
+    )
+  }
+
+  it('accepts a 201 that reports the document it was created for', async () => {
+    stubCreated(dirFixture())
+    const dir = await createReviewerDir({ query_file_id: QUERY_ID })
+    expect(dir.dir_id).toBe('reviewer-dir-1')
+  })
+
+  /**
+   * The atomic guarantee, asserted at the ONE place it is actually promised.
+   *
+   * Issue #160 made creation write the directory and its seed membership in a
+   * single dedicated transaction, so a directory this client just created
+   * reports its own seed as a member. A 201 that does not is the half-write
+   * #160 fixed, happening now: the right answer is to treat the write as
+   * unconfirmed and reconcile it against the database, not to acknowledge a row
+   * whose membership nobody can vouch for. Read-back paths are held to no such
+   * standard, because they legitimately return rows written before that fix.
+   */
+  it('refuses a 201 that omits the document it was created for', async () => {
+    stubCreated({ ...dirFixture(), member_query_ids: [] })
+    await expect(createReviewerDir({ query_file_id: QUERY_ID })).rejects.toThrow(
+      /without the document that seeds it/,
+    )
+  })
+
+  it('does not broadcast a refresh for a 201 it could not confirm', async () => {
+    const seen = vi.fn()
+    window.addEventListener(REVIEWER_DIRS_UPDATED_EVENT, seen)
+    stubCreated({ ...dirFixture(), member_query_ids: [] })
+    await expect(createReviewerDir({ query_file_id: QUERY_ID })).rejects.toThrow()
+    window.removeEventListener(REVIEWER_DIRS_UPDATED_EVENT, seen)
+    expect(seen).not.toHaveBeenCalled()
   })
 })

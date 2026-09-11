@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { apiFetch, toApiErrorInfo, type ApiErrorInfo } from './client'
 import { FEEDBACK_UPDATED_EVENT } from './feedback'
-import { REVIEWER_DIRS_UPDATED_EVENT, type ReviewerDir } from './reviewerDirs'
+import { REVIEWER_DIRS_UPDATED_EVENT, type ReviewerDir, type ReviewerDirOptionalField } from './reviewerDirs'
 import { DEFAULT_VARIANT, type PredictionVariant } from './variants'
 
 // ---------------------------------------------------------------------------
@@ -470,6 +470,10 @@ function validateCandidateFiles(value: unknown): CandidateFile[] | null | false 
  * to be taught what it means.
  *
  * Returns the normalised directory, or a reason string naming the entry.
+ *
+ * Where it fills in a default it says so (`defaulted_fields`, issue #161): the
+ * durable saved-directory record cannot act on a value this function invented,
+ * and once substituted there is no way to recognise one.
  */
 function validateReviewerDir(value: unknown, index: number): ReviewerDir | string {
   const at = `seeded_dirs[${index}]`
@@ -514,6 +518,19 @@ function validateReviewerDir(value: unknown, index: number): ReviewerDir | strin
   if (value.variant !== undefined && value.variant !== null && typeof value.variant !== 'string') {
     return `${at}.variant is not a string`
   }
+  // Issue #161 handoff. Everything below this line that reads `?? []` or
+  // `: ''` is this validator answering on the server's behalf, which is the
+  // right call for a candidate in a ranking and is not evidence of anything
+  // for a permanent identity. The substitutes are type-valid and so cannot be
+  // recognised later -- `[]` here and `[]` from a server that really has no
+  // membership rows are the same value -- so the ones actually used are named
+  // rather than left to be guessed at. Named ONLY when non-empty, so a
+  // complete row stays exactly the object the response carried.
+  const defaulted: ReviewerDirOptionalField[] = []
+  if (members === undefined) defaulted.push('member_query_ids')
+  if (typeof value.created_at !== 'string') defaulted.push('created_at')
+  if (typeof value.created_by !== 'string') defaulted.push('created_by')
+  if (typeof value.model_slug !== 'string') defaulted.push('model_slug')
   return {
     dir_id: value.dir_id,
     label: value.label,
@@ -526,6 +543,7 @@ function validateReviewerDir(value: unknown, index: number): ReviewerDir | strin
     variant: (value.variant as ReviewerDir['variant'] | undefined) ?? null,
     best_match_score: typeof score === 'number' ? score : null,
     has_potential_match: potential === true,
+    ...(defaulted.length > 0 ? { defaulted_fields: defaulted } : {}),
   }
 }
 

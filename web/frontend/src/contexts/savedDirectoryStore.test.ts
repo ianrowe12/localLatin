@@ -30,9 +30,10 @@ function dirFixture(overrides: Partial<ReviewerDir> = {}): ReviewerDir {
     has_potential_match: false,
     ...overrides,
   } as ReviewerDir
-  // A directory always contains the document that seeded it -- the backend
-  // writes both rows in one transaction -- so moving the seed moves the
-  // membership with it unless a case is deliberately setting both.
+  // A directory usually contains the document that seeded it -- since issue
+  // #160 creation writes both rows in one transaction -- so moving the seed
+  // moves the membership with it unless a case is deliberately setting both.
+  // Deliberately NOT an invariant: see the preserved-partial-write cases.
   if (overrides.seed_query_id !== undefined && overrides.member_query_ids === undefined) {
     return { ...base, member_query_ids: [overrides.seed_query_id] }
   }
@@ -610,5 +611,98 @@ describe('known groupings are append-only', () => {
     ])
     // How this reviewer got here does not change because a refresh landed.
     expect(identity.confirmedBy).toBe('recovered')
+  })
+})
+
+describe('a stored empty member list is not a missing field', () => {
+  /**
+   * Review finding 11 and review finding 10 are the two halves of one
+   * distinction, and both have to hold at the same time.
+   *
+   * A preserved pre-#160 partial write really does have no members, and the
+   * server says so. A row that reached the shared prediction validator without
+   * a `member_query_ids` field also arrives as `[]`, because that validator
+   * supplies the default `web/models.py` declares. By the time either reaches
+   * this store the VALUE is identical, so the only thing that can separate them
+   * is the validator saying which one it invented.
+   */
+  const stored = (overrides: Partial<ReviewerDir> = {}) =>
+    dirFixture({ member_query_ids: [], ...overrides })
+
+  it('records a directory the server reports with no members', () => {
+    const store = new SavedDirectoryStore()
+    store.observeSeededDirs(QUERY_A, [stored()])
+
+    const identity = store.getRecord(QUERY_A).identity
+    if (identity.status !== 'saved') throw new Error('expected saved')
+    // Recorded as it stands. Nothing here adds the seed to the member list: the
+    // membership row does not exist and this client cannot create it.
+    expect(identity.primary.member_query_ids).toEqual([])
+    expect(identity.primary.created_by).toBe('Abigail')
+  })
+
+  it.each([
+    ['member_query_ids' as const],
+    ['created_at' as const],
+    ['created_by' as const],
+    ['model_slug' as const],
+  ])('refuses one whose %s the validator supplied', (field) => {
+    const store = new SavedDirectoryStore()
+    store.observeSeededDirs(QUERY_A, [stored({ defaulted_fields: [field] })])
+
+    // Not evidence in either direction: no identity, and the question is still
+    // open for the lookup to answer.
+    expect(store.getRecord(QUERY_A).identity.status).toBe('unknown')
+  })
+
+  it('refuses the whole list when one row was filled in for the server', () => {
+    const store = new SavedDirectoryStore()
+    store.observeSeededDirs(QUERY_A, [
+      stored(),
+      dirFixture({ dir_id: 'reviewer-dir-2', defaulted_fields: ['created_by'] }),
+    ])
+
+    expect(store.getRecord(QUERY_A).identity.status).toBe('unknown')
+  })
+
+  it('does not let a supplied default settle or announce an unknown write', async () => {
+    const events = vi.fn()
+    window.addEventListener(REVIEWER_DIRS_UPDATED_EVENT, events)
+    installFetch({
+      post: () => jsonResponse({ detail: 'gateway' }, 502),
+      get: () => jsonResponse({ detail: 'gateway' }, 502),
+    })
+    const store = new SavedDirectoryStore()
+    const result = await store.createDirectory(QUERY_A, { label: 'My wording' })
+    expect(result.outcome).toBe('unresolved')
+
+    store.observeSeededDirs(QUERY_A, [stored({ defaulted_fields: ['member_query_ids'] })])
+    window.removeEventListener(REVIEWER_DIRS_UPDATED_EVENT, events)
+
+    const record = store.getRecord(QUERY_A)
+    expect(record.creation.status).toBe('failed')
+    if (record.creation.status !== 'failed') throw new Error('expected failed')
+    expect(record.creation.outcome).toBe('unknown')
+    expect(record.creation.proposedLabel).toBe('My wording')
+    expect(events).not.toHaveBeenCalled()
+  })
+
+  it('lets the real stored row settle and announce that same write', async () => {
+    const events = vi.fn()
+    window.addEventListener(REVIEWER_DIRS_UPDATED_EVENT, events)
+    installFetch({
+      post: () => jsonResponse({ detail: 'gateway' }, 502),
+      get: () => jsonResponse({ detail: 'gateway' }, 502),
+    })
+    const store = new SavedDirectoryStore()
+    await store.createDirectory(QUERY_A, { label: 'My wording' })
+
+    store.observeSeededDirs(QUERY_A, [stored()])
+    window.removeEventListener(REVIEWER_DIRS_UPDATED_EVENT, events)
+
+    expect(store.getRecord(QUERY_A).identity.status).toBe('saved')
+    expect(store.getRecord(QUERY_A).creation.status).toBe('idle')
+    // Identity first, then exactly one refresh for the write this store owns.
+    expect(events).toHaveBeenCalledTimes(1)
   })
 })

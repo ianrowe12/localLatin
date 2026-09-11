@@ -3,11 +3,14 @@ import {
   useSavedDirectoryStore,
 } from '../../contexts/SavedDirectoryContext'
 import { isWriteUnsettled } from '../../contexts/savedDirectoryStore'
+import { listsItsSeedAsMember } from '../../api/reviewerDirs'
 import {
   alsoGroupedNote,
   DIRECTORY_CREATION_COPY,
   RECOVERED_AFTER_FAILURE,
   savedByNote,
+  SEED_NOT_FILED,
+  SEED_NOT_FILED_SHORT,
 } from '../../utils/reviewerDirectoryCopy'
 import AwaitingMatchBadge from './AwaitingMatchBadge'
 import DirectoryCreationGuidance from './DirectoryCreationGuidance'
@@ -99,6 +102,19 @@ export default function NewDirectoryCta({
         data-testid="new-directory-saved"
       >
         <DirectorySavedNotice label={primary.label} />
+        {!listsItsSeedAsMember(primary) && (
+          // A preserved partial write from before issue #160. The grouping is
+          // real and permanent; the membership row that would make this
+          // document one of its members is not there and cannot be added. Said
+          // plainly rather than papered over, because the notice above reads as
+          // though the document is inside the grouping.
+          <p
+            data-testid="new-directory-membership-gap"
+            className="font-ui text-xs leading-snug text-stone-600 dark:text-stone-400 mt-1"
+          >
+            {SEED_NOT_FILED}
+          </p>
+        )}
         {/*
           Status belongs beside the acknowledgement, not only in the header the
           predictions response feeds: `matched` means a human filed a second
@@ -138,6 +154,7 @@ export default function NewDirectoryCta({
               {others.map((dir) => (
                 <li key={dir.dir_id}>
                   {dir.label} — {savedByNote(dir.created_by)}
+                  {!listsItsSeedAsMember(dir) && ` ${SEED_NOT_FILED_SHORT}`}
                 </li>
               ))}
             </ul>

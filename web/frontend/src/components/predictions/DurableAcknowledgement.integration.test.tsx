@@ -11,7 +11,11 @@ import { ReviewerProvider, useReviewer } from '../../contexts/ReviewerContext'
 import { SavedDirectoryProvider } from '../../contexts/SavedDirectoryContext'
 import SavedDirectoryObservations from '../../contexts/SavedDirectoryObservations'
 import { TokenProvider } from '../../contexts/TokenContext'
-import { REVIEWER_DIRS_UPDATED_EVENT } from '../../api/reviewerDirs'
+import { REVIEWER_DIRS_UPDATED_EVENT, type ReviewerDir } from '../../api/reviewerDirs'
+import {
+  HISTORICAL_CONFLICT_DETAIL,
+  HISTORICAL_SEEDLESS_DIR,
+} from '../../test/fixtures/historicalReviewerDir'
 import FeedbackPanel from '../feedback/FeedbackPanel'
 import PredictionList from './PredictionList'
 
@@ -43,13 +47,16 @@ interface PredictionPayload {
   malformed?: boolean
 }
 
-type StoredDir = ReturnType<typeof dirFixture>
+// Either a row this harness builds or a real captured one: the database
+// genuinely holds both shapes, and the preserved pre-#160 rows are the point of
+// the finding-11 cases below.
+type StoredDir = ReturnType<typeof dirFixture> | ReviewerDir
 
 let predictionsFor: Record<number, PredictionPayload>
 let queuedPredictions: Record<number, PredictionPayload[]>
 let storedDirs: StoredDir[]
 let dirLookupStatus: number
-let postBehaviour: 'created' | 'lost' | 'refused'
+let postBehaviour: 'created' | 'lost' | 'refused' | 'conflict'
 let posts: { query_file_id: number; label?: string }[]
 let predictionGets: number
 let dirGets: number
@@ -182,6 +189,16 @@ function installFetch(): void {
         }
         if (postBehaviour === 'refused') {
           return jsonResponse({ detail: 'Authentication required' }, 401)
+        }
+        if (postBehaviour === 'conflict') {
+          // The server's own refusal: this seed already has a directory, so
+          // nothing is written and the row named in the message is already
+          // there. `storedAfterPost` is what the reconciling read then finds.
+          storedDirs = storedAfterPost ?? storedDirs
+          return jsonResponse(
+            { detail: HISTORICAL_CONFLICT_DETAIL },
+            409,
+          )
         }
         const created = dirFixture({
           seed_query_id: body.query_file_id,
@@ -1250,5 +1267,142 @@ describe('the assessment is not touched by any of this', () => {
     expect(submitButton().getAttribute('disabled')).toBeNull()
     expect(feedbackPosts).toHaveLength(0)
     await screen.findByTestId('new-directory-saved')
+  })
+})
+
+/**
+ * Review finding 11, through the real application.
+ *
+ * `HISTORICAL_SEEDLESS_DIR` is not invented: an independent reviewer produced
+ * it by executing the pre-#160 creation method against a disposable database,
+ * letting an ordinary authenticated request commit the shared connection
+ * between its two INSERTs, and then failing the creation. The current server
+ * preserves that row, serves it on both endpoints and refuses a second
+ * directory for the same seed. Nothing can repair or remove it.
+ *
+ * So the client has to read it. The alternative -- calling it unreadable -- is
+ * a dead end for the reviewer: no acknowledgement of a grouping that exists, no
+ * Create (409), and a re-check that can only fail the same way.
+ */
+describe('a directory the server preserved without its seed membership', () => {
+  const seedless = { ...HISTORICAL_SEEDLESS_DIR }
+  const completeSibling = dirFixture({
+    dir_id: 'reviewer-dir-complete',
+    label: 'Complete historical grouping',
+    created_at: '2026-09-12 00:00:00',
+    created_by: 'Another reviewer',
+    status: 'matched',
+    member_query_ids: [QUERY_A, 9],
+  })
+
+  it('acknowledges it on a cold reload without inventing the missing membership', async () => {
+    storedDirs = [seedless]
+    predictionsFor[QUERY_A] = { predictions: [modelCard(1, 0.72)], seeded_dirs: [seedless] }
+    render(<App />)
+    await screen.findByTestId('match-pill-1')
+
+    const saved = await screen.findByTestId('new-directory-saved')
+    expect(saved.textContent).toContain(seedless.label)
+    expect(saved.textContent).toContain(seedless.created_by)
+    // Said, not papered over. The grouping is stored and the document is not
+    // recorded in it, and the reviewer is told both rather than the notice
+    // being left to imply the second.
+    expect(within(saved).getByTestId('new-directory-membership-gap')).toBeTruthy()
+    // No Create: the server would refuse it with a 409, and offering it would
+    // invite a reviewer to try.
+    expect(screen.queryByTestId('new-directory-cta')).toBeNull()
+    expect(posts).toEqual([])
+    expect(refreshEvents).toBe(0)
+  })
+
+  it('does not hide a complete sibling behind the partial one', async () => {
+    // The list is validated as a whole and rejected as a whole, so treating the
+    // preserved row as unreadable hid every grouping this document has.
+    storedDirs = [seedless, completeSibling]
+    predictionsFor[QUERY_A] = {
+      predictions: [modelCard(1, 0.72)],
+      seeded_dirs: [seedless, completeSibling],
+    }
+    render(<App />)
+    await screen.findByTestId('match-pill-1')
+
+    const saved = await screen.findByTestId('new-directory-saved')
+    expect(saved.textContent).toContain(seedless.label)
+    expect(saved.textContent).toContain(completeSibling.label)
+    expect(saved.textContent).toContain('Another reviewer')
+    // The sibling's status reaches the reviewer through the acknowledgement,
+    // which is the one place that does not depend on a prediction refresh.
+    expect(within(saved).getByTestId('matched-dir-badge')).toBeTruthy()
+    // The caveat attaches to the row it is true of, and only that one.
+    const gaps = within(saved).getAllByText(/does not list this document among its members/)
+    expect(gaps).toHaveLength(1)
+  })
+
+  it('recovers structured identity from a 409 that names it', async () => {
+    // The sequence a reviewer actually hits on one of these documents: the
+    // lookup finds nothing yet (a stale cache, another tab, a slow replica),
+    // they create, the server refuses because the preserved row already seeds
+    // this query, and the reconciling read returns that row.
+    const user = userEvent.setup()
+    postBehaviour = 'conflict'
+    storedAfterPost = [seedless]
+    predictionsFor[QUERY_A] = { predictions: [modelCard(1, 0.72)] }
+    render(<App />)
+    await createDirectory(user)
+
+    const saved = await screen.findByTestId('new-directory-saved')
+    expect(saved.textContent).toContain(seedless.label)
+    expect(saved.textContent).toContain(seedless.created_by)
+    expect(within(saved).getByTestId('new-directory-membership-gap')).toBeTruthy()
+    // Neutral about whose write it was, because this layer cannot tell a
+    // refusal from a lost response.
+    expect(within(saved).getByTestId('new-directory-recovered')).toBeTruthy()
+    expect(posts).toHaveLength(1)
+    // One refresh, for the one write this session owns.
+    expect(refreshEvents).toBe(1)
+  })
+
+  it('still refuses a row the ranking validator filled in for the server', async () => {
+    // The half of the distinction that must NOT move. This row reaches the
+    // record through the real shared validator with `member_query_ids` absent
+    // rather than empty, which normalises to the same `[]` the preserved row
+    // carries. Accepting it because the preserved row is acceptable would
+    // reopen finding 10 by the back door.
+    const { member_query_ids: _absent, ...noMembers } = dirFixture()
+    dirLookupStatus = 503
+    predictionsFor[QUERY_A] = {
+      predictions: [modelCard(1, 0.72)],
+      seeded_dirs: [noMembers],
+    }
+    render(<App />)
+    await screen.findByTestId('match-pill-1')
+
+    expect(screen.queryByTestId('new-directory-saved')).toBeNull()
+    expect(screen.getByTestId('new-directory-unresolved')).toBeTruthy()
+    expect(screen.getByTestId('new-directory-recheck')).toBeTruthy()
+  })
+
+  it('reads the same row back when the lookup recovers', async () => {
+    // The way out of the state above: the field was missing from the ranking,
+    // not from the database, and the authoritative read settles it.
+    dirLookupStatus = 503
+    const { member_query_ids: _absent, ...noMembers } = dirFixture()
+    predictionsFor[QUERY_A] = {
+      predictions: [modelCard(1, 0.72)],
+      seeded_dirs: [noMembers],
+    }
+    const user = userEvent.setup()
+    render(<App />)
+    await screen.findByTestId('new-directory-recheck')
+
+    dirLookupStatus = 200
+    storedDirs = [seedless]
+    await user.click(screen.getByTestId('new-directory-recheck'))
+
+    const saved = await screen.findByTestId('new-directory-saved')
+    expect(saved.textContent).toContain(seedless.label)
+    expect(posts).toEqual([])
+    // A read, not a write of ours: nothing to announce.
+    expect(refreshEvents).toBe(0)
   })
 })
