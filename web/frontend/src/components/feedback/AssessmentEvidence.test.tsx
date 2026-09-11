@@ -6,6 +6,7 @@ import { AppProvider, useApp } from '../../contexts/AppContext'
 import { FeedbackProvider } from '../../contexts/FeedbackContext'
 import { PredictionProvider } from '../../contexts/PredictionContext'
 import { ReviewerProvider } from '../../contexts/ReviewerContext'
+import { SavedDirectoryProvider } from '../../contexts/SavedDirectoryContext'
 import { TokenProvider } from '../../contexts/TokenContext'
 import FeedbackPanel from './FeedbackPanel'
 import CenterArea from '../layout/CenterArea'
@@ -181,16 +182,20 @@ function renderPanel(
     <AppProvider>
       <ReviewerProvider>
         <TokenProvider>
-          <PredictionProvider>
-            <FeedbackProvider>
-              <SelectQuery model={options.model} />
-              {options.withList === true && <PredictionList />}
-              {/* The evidence pane itself, so a test can ask what is actually
-                  legible on screen rather than trusting the payload. */}
-              {options.withCenter === true && <CenterArea />}
-              <FeedbackPanel />
-            </FeedbackProvider>
-          </PredictionProvider>
+          {/* The list reads the durable directory record (issue #161), which
+              has no fallback store: mounting it is how App composes them. */}
+          <SavedDirectoryProvider accountKey="assessment-evidence">
+            <PredictionProvider>
+              <FeedbackProvider>
+                <SelectQuery model={options.model} />
+                {options.withList === true && <PredictionList />}
+                {/* The evidence pane itself, so a test can ask what is actually
+                    legible on screen rather than trusting the payload. */}
+                {options.withCenter === true && <CenterArea />}
+                <FeedbackPanel />
+              </FeedbackProvider>
+            </PredictionProvider>
+          </SavedDirectoryProvider>
         </TokenProvider>
       </ReviewerProvider>
     </AppProvider>,

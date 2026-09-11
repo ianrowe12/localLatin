@@ -8,6 +8,7 @@ import { useModels } from '../../api/models'
 import { useKeyboardShortcuts } from '../../utils/keyboard'
 import type { ApiErrorInfo } from '../../api/client'
 import type { ExclusionReason } from '../../api/queries'
+import type { ReviewerDir } from '../../api/reviewerDirs'
 import {
   BAND_COPY,
   BAND_STYLES,
@@ -19,6 +20,9 @@ import NewDirectoryCta from './NewDirectoryCta'
 import NoMatchCallout from './NoMatchCallout'
 import PredictionCard from './PredictionCard'
 import ReviewerDirCard from './ReviewerDirCard'
+
+/** Stable empty list, so an unknown record does not remount the badge. */
+const EMPTY_DIRS: readonly ReviewerDir[] = []
 
 /**
  * What the reviewer is told when the request failed.
@@ -104,7 +108,6 @@ export default function PredictionList() {
     predictions: allPredictions,
     modelPredictions,
     reviewerPredictions,
-    seededDirs,
     refresh,
   } = usePredictionState()
 
@@ -164,16 +167,30 @@ export default function PredictionList() {
   // and `error` are statements about a request, not about the database.
   const settled = phase === 'ready' || phase === 'empty' || phase === 'excluded'
 
-  // What feeds that record is NOT read here. `SavedDirectoryObservations`, one
-  // level up, is the single admission point for `seeded_dirs`, because the
-  // question it has to answer -- is this response this account's own answer, or
-  // the previous session's snapshot? -- outlives this component and must not be
-  // asked once per surface that renders a directory.
+  /**
+   * Directory status comes from the record, and ONLY from the record.
+   *
+   * `seeded_dirs` is deliberately not read here. It is raw response data, and
+   * the response may be the previous session's: `PredictionProvider` sits above
+   * the auth gates and its key carries no account, so a settled ranking, its
+   * `seeded_dirs` and its cache all survive a sign-out.
+   * `SavedDirectoryObservations` is the one place that decides whether a
+   * response is this session's own answer, and reading past it here would
+   * reinstate exactly what that admission exists to stop -- for one painted
+   * frame, which is one frame of telling a reviewer that a document is already
+   * grouped on somebody else's evidence.
+   *
+   * It costs nothing: admission records the same rows a render later, and until
+   * it does, "not yet known" is the honest answer rather than a claim borrowed
+   * from a request nobody has vouched for. Nor is this a second admission rule.
+   * The store is the single authority and this reads its answer.
+   */
+  const savedDirs = identity.status === 'saved' ? identity.dirs : EMPTY_DIRS
 
   // One directory per seed document, enforced by the backend with a 409. A
   // creation this reviewer made counts the moment the server confirms it, even
   // if the refetch that would have reported it never succeeds.
-  const alreadySeeded = seededDirs.length > 0 || identity.status === 'saved'
+  const alreadySeeded = identity.status === 'saved'
 
   // The band of the *best model hit* decides the whole list's framing (issue
   // #94): that is the number a reviewer reads first, and the one that says
@@ -278,9 +295,7 @@ export default function PredictionList() {
             the person who created it, and that copy survives a failed refresh;
             repeating the same chip in the header would be the same fact twice
             in one narrow panel. */}
-        <AwaitingMatchBadge
-          seededDirs={acknowledgementShown ? [] : seededDirs}
-        />
+        <AwaitingMatchBadge seededDirs={acknowledgementShown ? EMPTY_DIRS : savedDirs} />
       </div>
       <p className="font-ui text-xs text-stone-400 dark:text-stone-500 px-2 mb-2">
         Ranked by similarity

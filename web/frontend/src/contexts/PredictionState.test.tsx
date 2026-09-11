@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppProvider, useApp } from './AppContext'
@@ -86,6 +86,13 @@ type Answer = {
   seeded_dirs?: unknown[]
   httpStatus?: number
   delayMs?: number
+  /**
+   * Hold the response open until the test releases it. A millisecond delay
+   * races `userEvent`, which awaits its own microtasks and can outlast it on a
+   * loaded machine; a gate makes "the ranking is not available yet" a fact the
+   * test controls rather than a window it hopes to hit.
+   */
+  hold?: boolean
   /** Overrides the identity fields, to forge a response for another request. */
   identity?: Record<string, unknown>
 }
@@ -96,6 +103,8 @@ let queued: Record<string, Answer[]> = {}
 let predictionRequests: string[] = []
 let reviewerDirPosts: unknown[] = []
 let reviewerDirStatus = 201
+/** Resolves the currently held predictions response, if there is one. */
+let releaseHeld: (() => void) | null = null
 
 function answerFor(model: string): Answer {
   const next = queued[model]?.shift()
@@ -170,6 +179,11 @@ function installFetch(): void {
         const model = params.get('model') ?? ''
         predictionRequests.push(url)
         const answer = answerFor(model)
+        if (answer.hold === true) {
+          await new Promise<void>((resolve) => {
+            releaseHeld = resolve
+          })
+        }
         await sleep(answer.delayMs ?? 0)
         if (answer.httpStatus && answer.httpStatus !== 200) {
           return jsonResponse(
@@ -261,6 +275,7 @@ beforeEach(() => {
   answers = {}
   queued = {}
   reviewerDirStatus = 201
+  releaseHeld = null
   installFetch()
 })
 
@@ -288,17 +303,28 @@ describe('one shared ranking', () => {
     // `activeModel` changes during render; an effect-only guard clears the old
     // data one commit later, and that commit is a real paint.
     answers[MODEL_A] = { predictions: [modelCard(1, 0.9, 'LATA.DIR')] }
-    answers[MODEL_B] = { predictions: [modelCard(1, 0.9, 'MT5.DIR')], delayMs: 30 }
+    // Held rather than delayed: the assertion below is about the state between
+    // the selection and the new answer, and a timed response can settle inside
+    // `userEvent`'s own awaits, leaving the test to assert the spinner against
+    // a ranking that has already arrived.
+    answers[MODEL_B] = { predictions: [modelCard(1, 0.9, 'MT5.DIR')], hold: true }
     renderList()
 
     expect(await screen.findByTitle('LATA.DIR')).toBeTruthy()
     await selectModel(MODEL_B)
 
     // The instant the model changes there is no current ranking, so the old
-    // directory is gone rather than relabelled.
+    // directory is gone rather than relabelled. mT5 cannot have answered: its
+    // response is still held.
     expect(screen.queryByTitle('LATA.DIR')).toBeNull()
     expect(screen.getByTestId('predictions-loading')).toBeTruthy()
+
+    await act(async () => {
+      releaseHeld?.()
+      await Promise.resolve()
+    })
     expect(await screen.findByTitle('MT5.DIR')).toBeTruthy()
+    expect(screen.queryByTitle('LATA.DIR')).toBeNull()
   })
 
   it('drops a superseded response instead of letting it overwrite the current one', async () => {

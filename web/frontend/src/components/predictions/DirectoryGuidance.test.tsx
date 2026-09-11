@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppProvider, useApp } from '../../contexts/AppContext'
 import { PredictionProvider } from '../../contexts/PredictionContext'
 import { SavedDirectoryProvider } from '../../contexts/SavedDirectoryContext'
+import SavedDirectoryObservations from '../../contexts/SavedDirectoryObservations'
 import PredictionList from './PredictionList'
 import { getReviewTourSteps, REVIEW_TOUR_STEPS } from '../onboarding/tourSteps'
 import { PROVENANCE_TERMS } from '../../utils/documentProvenance'
@@ -138,6 +139,7 @@ function renderList() {
     <AppProvider>
       <SavedDirectoryProvider accountKey="test-account">
         <PredictionProvider>
+          <SavedDirectoryObservations />
           <Harness />
         </PredictionProvider>
       </SavedDirectoryProvider>

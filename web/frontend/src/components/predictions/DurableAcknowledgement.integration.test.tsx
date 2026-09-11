@@ -118,6 +118,37 @@ function modelCard(rank: number, score: number) {
   }
 }
 
+/**
+ * A candidate a reviewer can actually judge: issue #157 reads the witness on
+ * screen (`candidate_files[0]`), so a card without one is offered struck
+ * through and cannot be chosen.
+ */
+function readableCard(rank: number, score: number, dirName = `dir-${rank}`) {
+  return {
+    rank,
+    dir_name: dirName,
+    score,
+    dir_files: [`${dirName}-a.txt`],
+    preview_text: 'incipit sermo',
+    candidate_files: [{ filename: `${dirName}-a.txt`, text: 'incipit sermo' }],
+    source: 'model',
+  }
+}
+
+/** A reviewer directory, anchored at rank 11 the way the API anchors them. */
+function reviewerCard(dirName: string, score: number, label: string) {
+  return {
+    rank: 11,
+    dir_name: dirName,
+    score,
+    dir_files: [`${dirName}-a.txt`],
+    preview_text: 'incipit sermo',
+    candidate_files: [{ filename: `${dirName}-a.txt`, text: 'incipit sermo' }],
+    source: 'reviewer',
+    label,
+  }
+}
+
 function jsonResponse(body: unknown, status = 200): Response {
   return {
     ok: status >= 200 && status < 300,
@@ -365,6 +396,13 @@ function ComposedReview({
   )
 }
 
+/** The note box, read as a control rather than as state. */
+function noteValue(): string {
+  return (
+    screen.getByPlaceholderText('Add notes for this query...') as HTMLTextAreaElement
+  ).value
+}
+
 async function createDirectory(
   user: ReturnType<typeof userEvent.setup>,
   label = 'Unattested homily',
@@ -595,6 +633,28 @@ describe('the record is scoped to the signed-in account', () => {
     expect(screen.queryByTestId('new-directory-form')).toBeNull()
     expect(posts).toHaveLength(1)
     expect(refreshEvents).toBe(0)
+  })
+
+  it('states directory status only from the record, never from raw seeded_dirs', async () => {
+    // `seeded_dirs` is raw response data. Reading it directly for "is this
+    // document already grouped?" bypasses every check the record makes on the
+    // way in: whose session the response belongs to, and which query actually
+    // seeded each row. Here the response carries a directory seeded by a
+    // DIFFERENT document -- which is what the backend sends when the query is a
+    // member rather than the seed -- and the raw read both suppressed this
+    // document's Create button and badged it with somebody else's grouping.
+    predictionsFor[QUERY_A] = {
+      predictions: [modelCard(1, 0.72)],
+      seeded_dirs: [dirFixture({ seed_query_id: QUERY_B, member_query_ids: [QUERY_B] })],
+    }
+    render(<Review />)
+
+    // The record keeps directories under the query that seeded them, so this
+    // document is offered its own, and is not badged for a grouping it did not
+    // seed.
+    expect(await screen.findByTestId('new-directory-cta')).toBeTruthy()
+    expect(screen.queryByTestId('awaiting-match-badge')).toBeNull()
+    expect(screen.queryByTestId('new-directory-saved')).toBeNull()
   })
 })
 
@@ -854,11 +914,11 @@ describe('every recovery path reaches the same acknowledgement', () => {
 })
 
 describe('the assessment is not touched by any of this', () => {
-  it('submits no feedback, selects no rank and keeps the note draft', async () => {
+  it('submits no feedback, presses no control and keeps the note draft', async () => {
     const user = userEvent.setup()
-    predictionsFor[QUERY_A] = { predictions: [modelCard(1, 0.72)] }
+    predictionsFor[QUERY_A] = { predictions: [readableCard(1, 0.72)] }
     queuedPredictions[QUERY_A] = [
-      { predictions: [modelCard(1, 0.72)] },
+      { predictions: [readableCard(1, 0.72)] },
       { httpStatus: 503 },
     ]
     postBehaviour = 'lost'
@@ -866,24 +926,134 @@ describe('the assessment is not touched by any of this', () => {
 
     const notes = await screen.findByPlaceholderText('Add notes for this query...')
     await user.type(notes, 'Possibly Hincmar')
+    // The controls exist and are untouched before any of this starts.
+    expect(
+      screen.getByRole('button', { name: 'Match prediction #1' }).getAttribute('aria-pressed'),
+    ).toBe('false')
 
     await createDirectory(user)
     await screen.findByTestId('new-directory-saved')
 
     // The creation, the lost response, the recovery and the failed refetch it
-    // triggered are all over, and the assessment is exactly where it was.
+    // triggered are all over, and nothing was answered on the reviewer's behalf.
     expect(feedbackPosts).toHaveLength(0)
-    expect(
-      (screen.getByPlaceholderText('Add notes for this query...') as HTMLTextAreaElement)
-        .value,
-    ).toBe('Possibly Hincmar')
-    expect(
-      screen
-        .getByRole('button', { name: 'Match prediction #1' })
-        .getAttribute('aria-pressed'),
-    ).toBe('false')
-    expect(
-      screen.getByRole('button', { name: /None of top/ }).getAttribute('aria-pressed'),
-    ).toBe('false')
+    expect(noteValue()).toBe('Possibly Hincmar')
+    expect(screen.queryByTestId('canonical-choice-note')).toBeNull()
+  })
+
+  it('keeps an existing ordered answer and note across the refresh it causes', async () => {
+    // The combined case. A reviewer has already answered -- two ranks, in an
+    // order that decides which directory the document is filed under, plus
+    // prose -- and only THEN creates a directory. The creation broadcasts a
+    // refresh, which goes loading, fails, and finally returns the SAME ranking.
+    // None of that is evidence about their answer, so all of it survives.
+    const user = userEvent.setup()
+    const ranking = [readableCard(1, 0.72), readableCard(2, 0.6)]
+    predictionsFor[QUERY_A] = { predictions: ranking }
+    queuedPredictions[QUERY_A] = [
+      { predictions: ranking },
+      { httpStatus: 503 },
+      { predictions: ranking },
+    ]
+    render(<Review withFeedback />)
+
+    await user.click(await screen.findByLabelText('Select multiple'))
+    // Order is the answer: #2 first makes #2 the canonical filing.
+    await user.click(screen.getByRole('button', { name: 'Match prediction #2' }))
+    await user.click(screen.getByRole('button', { name: 'Match prediction #1' }))
+    await user.type(
+      screen.getByPlaceholderText('Add notes for this query...'),
+      'Shares the Hincmar incipit',
+    )
+    expect(screen.getByTestId('canonical-choice-note').textContent).toContain(
+      'first choice, #2',
+    )
+
+    await createDirectory(user)
+
+    // Loading and failure are statements about a request, not about the
+    // answer. Issue #157 draws no pills without a ranking -- inventing them is
+    // what let Submit post against a ranking nobody had seen -- so what matters
+    // here is that the draft is not RECONCILED against the absence: nothing is
+    // reported as dropped, and the panel says the evidence is unavailable
+    // rather than that the choices were wrong.
+    await screen.findByTestId('predictions-error')
+    expect(screen.getByTestId('assessment-unavailable')).toBeTruthy()
+    expect(screen.queryByTestId('assessment-notice')).toBeNull()
+    expect(noteValue()).toBe('Shares the Hincmar incipit')
+
+    // The ranking comes back unchanged.
+    await user.click(screen.getByTestId('predictions-retry'))
+    await waitFor(() =>
+      expect(screen.getByTestId('match-pill-1').getAttribute('disabled')).toBeNull(),
+    )
+    expect(screen.getByTestId('match-pill-2').getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByTestId('match-pill-1').getAttribute('aria-pressed')).toBe('true')
+    // Still theirs, still in their order, still with their reasoning, and the
+    // directory acknowledgement is on screen beside it.
+    expect(screen.getByTestId('canonical-choice-note').textContent).toContain(
+      'first choice, #2',
+    )
+    expect(noteValue()).toBe('Shares the Hincmar incipit')
+    expect(screen.queryByTestId('assessment-notice')).toBeNull()
+    await screen.findByTestId('new-directory-saved')
+
+    // Nothing was saved and nothing advanced: creating a directory is not an
+    // assessment, and a refresh is not a submission.
+    expect(feedbackPosts).toHaveLength(0)
+    expect(screen.getByTestId('match-pill-1')).toBeTruthy()
+  })
+
+  it('drops only the choice a reassignment invalidated, and says why', async () => {
+    // The companion case, and the reason rank 11 needs one: reviewer
+    // directories are anchored there and `web/services/reviewer_dirs.py` skips
+    // the ones the query already belongs to, so the directory behind rank 11
+    // genuinely changes between responses. Per issue #157 that choice is
+    // removed rather than silently re-pointed at whatever now sits there.
+    const user = userEvent.setup()
+    const before = [
+      readableCard(1, 0.72),
+      reviewerCard('reviewer-dir-early', 0.66, 'Early grouping'),
+    ]
+    const after = [
+      readableCard(1, 0.72),
+      reviewerCard('reviewer-dir-other', 0.64, 'Another grouping'),
+    ]
+    predictionsFor[QUERY_A] = { predictions: before }
+    queuedPredictions[QUERY_A] = [{ predictions: before }, { predictions: after }]
+    render(<Review withFeedback />)
+
+    await user.click(await screen.findByLabelText('Select multiple'))
+    await user.click(
+      await screen.findByRole('button', { name: 'Match prediction #1' }),
+    )
+    await user.click(screen.getByRole('button', { name: 'Match reviewer directory #11' }))
+    await user.type(
+      screen.getByPlaceholderText('Add notes for this query...'),
+      'Second witness looks like the same scribe',
+    )
+    // Both are genuinely chosen before anything happens to the ranking.
+    expect(screen.getByTestId('match-pill-1').getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByTestId('match-pill-11').getAttribute('aria-pressed')).toBe('true')
+
+    await createDirectory(user, 'Unattested homily')
+
+    // The refresh the creation caused returns a ranking in which rank 11 holds
+    // a different directory.
+    await waitFor(() =>
+      expect(screen.getByTestId('match-pill-11').getAttribute('aria-pressed')).toBe(
+        'false',
+      ),
+    )
+    const notice = screen.getByTestId('assessment-notice')
+    expect(notice.textContent).toContain('Rank #11 now holds reviewer-dir-other')
+    expect(notice.textContent).toContain('removed rather than moved')
+
+    // Only that one. The valid choice, its canonical position and the note are
+    // all still the reviewer's.
+    expect(screen.getByTestId('match-pill-1').getAttribute('aria-pressed')).toBe('true')
+    expect(noteValue()).toBe('Second witness looks like the same scribe')
+    expect(feedbackPosts).toHaveLength(0)
+    await screen.findByTestId('new-directory-saved')
   })
 })
