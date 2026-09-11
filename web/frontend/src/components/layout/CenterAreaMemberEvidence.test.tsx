@@ -21,10 +21,10 @@ import CenterArea from './CenterArea'
  * half of the change is which state follows the selection and which does not.
  *
  * What is deliberately NOT here: assessment eligibility and the feedback copy
- * that quotes it. `assessmentEligibility.ts` reaches for `candidate_files[0]`
- * independently of this panel, so mounting a selector does not move it, and the
- * selector-aware version of that rule is owned elsewhere. One test below pins
- * the boundary rather than crossing it.
+ * that quotes it. Those are one lane over, exercised against the real panel in
+ * `components/feedback/AssessmentEvidence.test.tsx`, where the pills and
+ * Submit are actually mounted. Two tests below pin the boundary rather than
+ * crossing it: viewing a member moves no rank and posts nothing.
  */
 
 /** The deployment's preferred model, which ModelSelector opens on. */

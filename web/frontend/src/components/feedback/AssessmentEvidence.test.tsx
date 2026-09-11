@@ -416,22 +416,22 @@ describe('the pills are the ranking', () => {
     expect(posted[0]).toMatchObject({ outcome: 'skipped' })
   })
 
-  it('refuses a candidate whose only readable witness is off screen', async () => {
+  it('offers a candidate whose readable witness is one selection away', async () => {
     // Mounted with the real evidence pane, because the claim under test is
     // about what a reviewer can read, not about what the payload contains.
-    // The server would accept this directory (it has one readable file), but
-    // this build shows candidate_files[0] and has no witness selector, so the
-    // readable file is text nobody is ever shown. Enabling the pill would
-    // solicit a judgement of evidence that never reached the screen; enabling
-    // None would let it be rejected the same way. Both stay shut until a
-    // witness selector exists (issue #163).
+    // Before issue #163 this directory was refused: the panel showed
+    // candidate_files[0] and nothing reached the second file, so a readable
+    // second witness was text nobody was ever shown. The selector reaches it,
+    // so refusing it would now block a real answer about evidence on screen --
+    // and the server accepts exactly this shape (`_candidate_is_usable` asks
+    // `any(file.text.strip() ...)`).
     answers[MODEL] = {
       predictions: [
         {
           ...modelCard(1),
           candidate_files: [
             { filename: 'blank.txt', text: '' },
-            { filename: 'hidden-witness.txt', text: 'incipit sermo lupi' },
+            { filename: 'second-witness.txt', text: 'incipit sermo lupi' },
           ],
         },
       ],
@@ -440,38 +440,118 @@ describe('the pills are the ranking', () => {
 
     await screen.findByTestId('match-pill-1')
 
-    // The hidden witness is nowhere on screen: not its text, not its name.
-    expect(document.body.textContent).not.toContain('incipit sermo lupi')
-    expect(document.body.textContent).not.toContain('hidden-witness.txt')
-
-    // So neither answer about it is offered.
-    expect(pill(1).disabled).toBe(true)
-    expect(nonePill().disabled).toBe(true)
-    expect(submitButton().disabled).toBe(true)
-    await userEvent.click(pill(1))
-    expect(pill(1).getAttribute('aria-pressed')).toBe('false')
-    expect(localStorage.getItem(DRAFT_STORAGE_KEY)).toBe('[]')
-
-    // The #156 note still explains the blank pane honestly, including that
-    // other files in the directory do carry text.
+    // It still opens on the first witness and still explains the blank pane,
+    // rather than silently swapping in the readable file.
     const note = await screen.findByTestId('candidate-evidence-note')
     expect(note.textContent).toContain('blank.txt')
     expect(note.textContent).toContain('no readable text')
 
-    // Inspection is untouched: the rank is still selectable for reading, and
-    // it still shows the blank first witness rather than silently swapping in
-    // the readable one.
-    await userEvent.click(screen.getByRole('button', { name: /Prediction rank 1:/ }))
-    expect((await screen.findByTestId('candidate-evidence-note')).textContent).toContain(
-      'blank.txt',
+    // The pill is already live: eligibility is about what the reviewer can
+    // reach, not about which witness happens to be open.
+    expect(pill(1).disabled).toBe(false)
+    expect(nonePill().disabled).toBe(false)
+    expect(screen.queryByTestId('assessment-unavailable')).toBeNull()
+
+    // And the evidence really is reachable: the other witness is named in the
+    // selector, and choosing it puts its words on screen.
+    const selector = await screen.findByTestId('member-selector')
+    expect(selector.textContent).toContain('second-witness.txt')
+    await userEvent.selectOptions(selector, 'second-witness.txt')
+    await screen.findByText('incipit')
+
+    // So the answer can be recorded, against the directory the reviewer saw.
+    await userEvent.click(pill(1))
+    await userEvent.click(submitButton())
+    await waitFor(() => expect(posted).toHaveLength(1))
+    expect(posted[0]).toMatchObject({
+      outcome: 'matched_rank',
+      correct_rank: 1,
+      expected_candidate_dirs: { '1': 'candidate-1' },
+    })
+  })
+
+  it('refuses a candidate whose every reachable witness is blank', async () => {
+    // Metadata is not evidence. A preview, a longer directory listing and a
+    // named supporting member all describe text; none of them is text this
+    // screen can open, so none of them may enable an answer.
+    answers[MODEL] = {
+      predictions: [
+        {
+          ...modelCard(1),
+          preview_text: 'incipit sermo lupi',
+          dir_files: ['blank.txt', 'also-blank.txt', 'never-delivered.txt'],
+          candidate_files: [
+            { filename: 'blank.txt', text: '' },
+            { filename: 'also-blank.txt', text: '   ' },
+          ],
+        },
+        {
+          ...reviewerCard(11, 'reviewer-dir-a'),
+          candidate_files: [{ filename: 'q-a.txt', text: '' }],
+          supporting_member: { query_id: 4, filename: 'q-b.txt', score: 0.8 },
+        },
+      ],
+    }
+    renderPanel({ withCenter: true, withList: true })
+
+    await screen.findByTestId('match-pill-1')
+    expect(pill(1).disabled).toBe(true)
+    expect(pill(11).disabled).toBe(true)
+    expect(nonePill().disabled).toBe(true)
+    expect(screen.getByTestId('assessment-unavailable').textContent).toContain(
+      'No readable candidate evidence',
     )
+    expect(submitButton().disabled).toBe(true)
+    // Nothing on screen carries the words the preview advertised.
     expect(document.body.textContent).not.toContain('incipit sermo lupi')
 
+    await userEvent.click(pill(1))
+    expect(pill(1).getAttribute('aria-pressed')).toBe('false')
+    expect(localStorage.getItem(DRAFT_STORAGE_KEY)).toBe('[]')
+
     // Skip with a note remains the way to report it.
-    await userEvent.type(notesBox(), 'only the second file has text')
+    await userEvent.type(notesBox(), 'no witness of this directory has text')
     await userEvent.click(skipButton())
     await waitFor(() => expect(posted).toHaveLength(1))
     expect(posted[0]).toMatchObject({ outcome: 'skipped' })
+  })
+
+  it('reaches a reviewer directory through its supporting witness', async () => {
+    // A reviewer group opens on the member the backend credits the score to,
+    // which may be neither the first nor the only readable one. The same
+    // reachability rule has to hold there, or a provisional directory becomes
+    // unanswerable for the shape it is most likely to arrive in.
+    answers[MODEL] = {
+      predictions: [
+        modelCard(1),
+        {
+          ...reviewerCard(11, 'reviewer-dir-a'),
+          dir_files: ['q-a.txt', 'q-b.txt'],
+          candidate_files: [
+            { filename: 'q-a.txt', text: '' },
+            { filename: 'q-b.txt', text: 'sermo alter' },
+          ],
+          supporting_member: { query_id: 4, filename: 'q-b.txt', score: 0.8 },
+        },
+      ],
+    }
+    renderPanel({ withCenter: true, withList: true })
+
+    await screen.findByTestId('match-pill-11')
+    expect(pill(11).disabled).toBe(false)
+
+    await userEvent.click(
+      screen.getByRole('button', { name: /Reviewer directory .*rank 11/ }),
+    )
+    await screen.findByText('sermo')
+    await userEvent.click(pill(11))
+    await userEvent.click(submitButton())
+    await waitFor(() => expect(posted).toHaveLength(1))
+    expect(posted[0]).toMatchObject({
+      outcome: 'matched_rank',
+      correct_rank: 11,
+      expected_candidate_dirs: { '11': 'reviewer-dir-a' },
+    })
   })
 
   it('records an explicit None without any candidate identity', async () => {
@@ -857,5 +937,89 @@ describe('looking is not answering', () => {
     expect(nonePill().getAttribute('aria-pressed')).toBe('false')
     expect(submitButton().disabled).toBe(true)
     expect(localStorage.getItem(DRAFT_STORAGE_KEY)).toBe('[]')
+  })
+
+  it('keeps a confirmed choice when a blank member is put on screen', async () => {
+    // The reachable-evidence rule is about the directory, not about the view.
+    // A reviewer who opens the blank member of a directory that also has a
+    // readable one has withdrawn nothing, and a choice that came and went with
+    // a selection would make the witness selector an editor of answers.
+    answers[MODEL] = {
+      predictions: [
+        {
+          ...modelCard(1),
+          dir_files: ['readable.txt', 'blank.txt'],
+          candidate_files: [
+            { filename: 'readable.txt', text: 'incipit sermo lupi' },
+            { filename: 'blank.txt', text: '' },
+          ],
+        },
+        modelCard(2),
+      ],
+    }
+    renderPanel({ withCenter: true, withList: true })
+
+    await screen.findByTestId('match-pill-1')
+    await userEvent.click(pill(1))
+    expect(pill(1).getAttribute('aria-pressed')).toBe('true')
+
+    await userEvent.selectOptions(
+      await screen.findByTestId('member-selector'),
+      'blank.txt',
+    )
+    // The pane really did change to the blank witness.
+    expect((await screen.findByTestId('candidate-evidence-note')).textContent).toContain(
+      'blank.txt',
+    )
+
+    expect(pill(1).getAttribute('aria-pressed')).toBe('true')
+    expect(pill(1).disabled).toBe(false)
+    expect(nonePill().disabled).toBe(false)
+    expect(screen.queryByTestId('assessment-notice')).toBeNull()
+    expect(screen.queryByTestId('assessment-unavailable')).toBeNull()
+    expect(submitButton().disabled).toBe(false)
+  })
+
+  it('posts nothing and rewrites no draft when the witness changes', async () => {
+    answers[MODEL] = {
+      predictions: [
+        {
+          ...modelCard(1),
+          dir_files: ['readable.txt', 'blank.txt'],
+          candidate_files: [
+            { filename: 'readable.txt', text: 'incipit sermo lupi' },
+            { filename: 'blank.txt', text: '' },
+          ],
+        },
+        modelCard(2),
+      ],
+    }
+    renderPanel({ withCenter: true, withList: true })
+
+    await screen.findByTestId('match-pill-1')
+    await userEvent.click(screen.getByLabelText('Select multiple'))
+    await userEvent.click(pill(2))
+    await userEvent.click(pill(1))
+    await userEvent.type(notesBox(), 'second witness is the closer one')
+    const draftBefore = JSON.stringify(storedDrafts())
+    const canonicalBefore = screen.getByTestId('canonical-choice-note').textContent
+    // The comparison below is only worth making if the draft holds the answer.
+    expect(draftBefore).toContain('"rank":2')
+    expect(draftBefore).toContain('"rank":1')
+
+    await userEvent.selectOptions(
+      await screen.findByTestId('member-selector'),
+      'blank.txt',
+    )
+    await screen.findByTestId('candidate-evidence-note')
+
+    // Nothing was sent: a selection is a way of looking, not an answer.
+    expect(posted).toEqual([])
+    expect(postAttempts).toBe(0)
+    // The note survives verbatim, and the choice order -- which decides which
+    // directory the server makes canonical -- is untouched.
+    expect(notesBox().value).toBe('second witness is the closer one')
+    expect(screen.getByTestId('canonical-choice-note').textContent).toBe(canonicalBefore)
+    expect(JSON.stringify(storedDrafts())).toBe(draftBefore)
   })
 })

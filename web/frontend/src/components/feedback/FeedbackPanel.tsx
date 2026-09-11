@@ -122,7 +122,7 @@ function evidenceCopy(block: EvidenceBlock): { title: string; detail: string } {
 function noneCopy(block: NoneBlock | null): string | null {
   if (block === null) return null
   if (block === 'partial_model_evidence') {
-    return 'Some model candidates cannot be read on this screen: their text is missing in this deployment, or it sits in a file this view cannot open. Rejecting all of them would claim you had read words you were never shown, so "None" is unavailable; a readable candidate can still be chosen, and a note plus Skip records the problem.'
+    return 'Some model candidates cannot be read on this screen: their text is missing in this deployment, in every witness the response delivered. Rejecting all of them would claim you had read words you were never shown, so "None" is unavailable; a readable candidate can still be chosen, and a note plus Skip records the problem.'
   }
   return null
 }
@@ -186,9 +186,6 @@ function issueCopy(issue: SelectionIssue): string {
     return `Rank #${issue.rank} now holds ${issue.nowDirName}, not ${issue.dirName}, so that choice was removed rather than moved to a different directory.`
   }
   if (issue.kind === 'unreadable') {
-    if (issue.evidence === 'hidden_witness') {
-      return `Rank #${issue.rank} (${issue.dirName}) shows a file with no readable text here. Its other files do carry text, but this view cannot open them, so that choice cannot be submitted from this screen.`
-    }
     return `Rank #${issue.rank} (${issue.dirName}) has no readable text in this deployment, so it cannot be submitted as an answer.`
   }
   return `Rank #${issue.rank} was restored from an earlier draft with no directory recorded. Select it again to confirm the directory now shown there.`
