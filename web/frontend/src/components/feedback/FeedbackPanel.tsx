@@ -14,8 +14,9 @@ import {
   type SelectionIssue,
 } from '../../contexts/assessmentEligibility'
 import { useReviewer } from '../../contexts/ReviewerContext'
-import { fetchNextQuery, type NextQueryResponse } from '../../api/queries'
+import { fetchNextQuery } from '../../api/queries'
 import { toApiErrorInfo } from '../../api/client'
+import type { PredictionVariant } from '../../api/variants'
 import { usePredictionState } from '../../contexts/PredictionContext'
 import {
   classifySaveFailure,
@@ -126,6 +127,55 @@ function noneCopy(block: NoneBlock | null): string | null {
   return null
 }
 
+/**
+ * One visit to one assessment: a document, under a model, a pipeline and an
+ * account, entered once.
+ *
+ * The post-save read that moves the reviewer on is asked for by a particular
+ * assessment and is only ever an answer to that one. Matching the four
+ * identifying fields is not enough on its own: leaving a document and coming
+ * back to it is a new visit with a new saved answer behind it, and a read left
+ * over from the first would otherwise be accepted as an answer to the second.
+ * `serial` is what separates them -- it moves whenever any of the four change,
+ * so returning never resurrects the visit that was left.
+ */
+interface AssessmentVisit {
+  serial: number
+  queryId: number | null
+  model: string
+  variant: PredictionVariant
+  accountId: number | null
+}
+
+function sameVisit(a: AssessmentVisit, b: AssessmentVisit): boolean {
+  return (
+    a.serial === b.serial &&
+    a.queryId === b.queryId &&
+    a.model === b.model &&
+    a.variant === b.variant &&
+    a.accountId === b.accountId
+  )
+}
+
+/**
+ * The `file_id` a next-document response actually carries, or `undefined` when
+ * it carries nothing this app can use.
+ *
+ * `apiFetch<NextQueryResponse>` is a TypeScript assertion, not a runtime check.
+ * A 200 whose body is `null`, or an object with no `file_id`, resolves happily
+ * and fails only when something dereferences it -- which, on a promise the
+ * caller discards, is an unhandled rejection outside any catch block. A
+ * `file_id` of `null` is a real answer from the real route meaning there is
+ * nothing left to review, and is kept as exactly that.
+ */
+function readNextQueryId(payload: unknown): number | null | undefined {
+  if (typeof payload !== 'object' || payload === null) return undefined
+  const fileId = (payload as Record<string, unknown>).file_id
+  if (fileId === null) return null
+  if (typeof fileId === 'number' && Number.isInteger(fileId)) return fileId
+  return undefined
+}
+
 function issueCopy(issue: SelectionIssue): string {
   if (issue.kind === 'vanished') {
     return `Rank #${issue.rank}${
@@ -185,17 +235,35 @@ export default function FeedbackPanel() {
     null,
   )
   const [saveError, setSaveError] = useState<SaveFailure | null>(null)
-  // Why the reviewer is still looking at the document they just answered. The
-  // save succeeded; only the read that moves them on did not.
-  const [advanceError, setAdvanceError] = useState<string | null>(null)
+  // Why the reviewer is still looking at the document they just answered, and
+  // which visit that sentence is about. A message with no owner is a message
+  // that can be shown over somebody else's work.
+  const [advanceError, setAdvanceError] = useState<{
+    visit: AssessmentVisit
+    message: string
+  } | null>(null)
+  // Bumped by the reset effect below, which already runs on exactly the four
+  // changes that end a visit.
+  const [visitSerial, setVisitSerial] = useState(0)
 
   // Always-current view of the draft map for use inside async callbacks.
   const draftsRef = useRef(drafts)
   draftsRef.current = drafts
 
+  const visit = useMemo<AssessmentVisit>(
+    () => ({
+      serial: visitSerial,
+      queryId: activeQueryId,
+      model: activeModel,
+      variant: activeVariant,
+      accountId,
+    }),
+    [accountId, activeModel, activeQueryId, activeVariant, visitSerial],
+  )
   // The advance runs from a 500ms timer that nothing cancels, so by the time it
-  // fires the panel may be gone and the reviewer may be reading something else
-  // entirely. Both are read here rather than closed over.
+  // fires -- and again by the time it answers -- the panel may be gone and the
+  // reviewer may be assessing something else entirely. Both are read at the
+  // moment of the check rather than closed over.
   const mounted = useRef(true)
   useEffect(() => {
     mounted.current = true
@@ -203,8 +271,12 @@ export default function FeedbackPanel() {
       mounted.current = false
     }
   }, [])
-  const activeQueryIdRef = useRef(activeQueryId)
-  activeQueryIdRef.current = activeQueryId
+  const visitRef = useRef(visit)
+  visitRef.current = visit
+  const ownsCurrentAssessment = useCallback(
+    (owner: AssessmentVisit) => mounted.current && sameVisit(owner, visitRef.current),
+    [],
+  )
 
   const selectedRanks = useMemo(
     () => selectionReview.confirmed.map((selection) => selection.rank),
@@ -217,12 +289,15 @@ export default function FeedbackPanel() {
   const multiSelect = multiSelectOverride ?? selectionReview.selections.length > 1
 
   // Multi-select is off by default for a new assessment; a variant switch swaps
-  // in a different draft, so it resets there too.
+  // in a different draft, so it resets there too. The serial bump makes the
+  // same four changes end the visit any in-flight advance belongs to; it is
+  // bookkeeping for that ownership test, NOT the test itself, which every user
+  // of a visit performs for itself.
   useEffect(() => {
     setMultiSelectOverride(null)
     setSaveError(null)
-    setAdvanceError(null)
     setSkipNeedsNote(false)
+    setVisitSerial((serial) => serial + 1)
   }, [activeQueryId, activeModel, activeVariant, accountId])
 
   // Seed notes/selection from the last submitted feedback for this query --
@@ -287,37 +362,58 @@ export default function FeedbackPanel() {
   )
 
   const advanceToNextActionable = useCallback(
-    async (after: number) => {
-      // Fires 500ms after a save, from a timer nothing cancels, and the caller
-      // discards this promise. So it must never reject and never complete on
-      // behalf of a panel that has been unmounted or a reviewer who has since
-      // opened a different document: the first left an ApiError with no catch
-      // block anywhere, the second would silently pull them off the document
-      // they chose. Both guards are re-checked after the await, because the
-      // reviewer can move while the request is in flight.
-      if (!mounted.current || activeQueryIdRef.current !== after) return
+    async (owner: AssessmentVisit) => {
+      // Runs 500ms after a save, from a timer nothing cancels, on a promise the
+      // caller discards. So it must never reject, and it must never act on
+      // behalf of an assessment that is no longer the one in front of the
+      // reviewer: `owner` is the visit that asked for this read, and every step
+      // below is conditional on that visit still being the current one. The
+      // test is repeated after the await because the reviewer can move, sign
+      // out or switch model while the request is in flight.
+      if (!ownsCurrentAssessment(owner) || owner.queryId === null) return
       setAdvanceError(null)
-      let next: NextQueryResponse
+
+      let payload: unknown
       try {
-        next = await fetchNextQuery(after)
+        payload = await fetchNextQuery(owner.queryId)
       } catch (err) {
-        if (!mounted.current) return
+        if (!ownsCurrentAssessment(owner)) return
         // Visible, and honest about what did and did not happen: the
         // assessment is recorded, the move is what failed.
-        setAdvanceError(toApiErrorInfo(err, 'Could not reach the server.').message)
+        setAdvanceError({
+          visit: owner,
+          message: toApiErrorInfo(err, 'Could not reach the server.').message,
+        })
         return
       }
-      if (!mounted.current || activeQueryIdRef.current !== after) return
-      setActiveQueryId(next.file_id)
+
+      if (!ownsCurrentAssessment(owner)) return
+      const fileId = readNextQueryId(payload)
+      if (fileId === undefined) {
+        // A 200 this app cannot read is a failed move, not an empty queue and
+        // not a document. Same channel as any other failed read.
+        setAdvanceError({
+          visit: owner,
+          message: 'The server sent a response this app could not read.',
+        })
+        return
+      }
+      // `null` means there is nothing left to review, which is an answer.
+      setActiveQueryId(fileId)
     },
-    [setActiveQueryId],
+    [ownsCurrentAssessment, setActiveQueryId],
   )
 
-  /** Same read, asked for again by hand. It saves nothing and sends nothing. */
+  /**
+   * The same read, asked for again by hand. It sends nothing and saves nothing,
+   * and it continues from the assessment the notice is about rather than from
+   * whatever happens to be on screen -- which, because the notice only renders
+   * for the current visit, are the same thing.
+   */
   const retryAdvance = useCallback(() => {
-    if (activeQueryId === null) return
-    void advanceToNextActionable(activeQueryId)
-  }, [activeQueryId, advanceToNextActionable])
+    if (advanceError === null) return
+    void advanceToNextActionable(advanceError.visit)
+  }, [advanceError, advanceToNextActionable])
 
   // Save failures keep the draft. What they are allowed to PROMISE differs:
   // only a local refusal or a server rejection is known not to have written
@@ -329,6 +425,10 @@ export default function FeedbackPanel() {
   const handleSubmit = useCallback(async () => {
     if (activeQueryId === null) return
     setSaveError(null)
+    // The assessment this save is for, named before the save leaves, so the
+    // read that follows answers to it and not to wherever the reviewer has
+    // got to by the time it runs.
+    const owner = visit
     try {
       await submitFeedback()
     } catch (err) {
@@ -336,9 +436,9 @@ export default function FeedbackPanel() {
       return
     }
     setTimeout(() => {
-      void advanceToNextActionable(activeQueryId)
+      void advanceToNextActionable(owner)
     }, 500)
-  }, [activeQueryId, advanceToNextActionable, reportSaveFailure, submitFeedback])
+  }, [activeQueryId, advanceToNextActionable, reportSaveFailure, submitFeedback, visit])
 
   const handleSkip = useCallback(async () => {
     if (activeQueryId === null) return
@@ -347,6 +447,7 @@ export default function FeedbackPanel() {
       return
     }
     setSaveError(null)
+    const owner = visit
     try {
       await skipFeedback()
     } catch (err) {
@@ -354,7 +455,7 @@ export default function FeedbackPanel() {
       return
     }
     setTimeout(() => {
-      void advanceToNextActionable(activeQueryId)
+      void advanceToNextActionable(owner)
     }, 500)
   }, [
     activeQueryId,
@@ -362,6 +463,7 @@ export default function FeedbackPanel() {
     draft.notes,
     reportSaveFailure,
     skipFeedback,
+    visit,
   ])
 
   if (activeQueryId === null) {
@@ -385,6 +487,13 @@ export default function FeedbackPanel() {
       ? formatNoteAttribution(latest.entry)
       : null
   const noneNotice = noneCopy(evidence.noneBlock)
+  // Ownership decides what is on screen, not just what was computed: a notice
+  // left over from an assessment the reviewer has moved on from is never
+  // rendered, whatever state still holds it.
+  const advanceMessage =
+    advanceError !== null && sameVisit(advanceError.visit, visit)
+      ? advanceError.message
+      : null
 
   return (
     <div data-tour="feedback" className="flex-shrink-0 flex flex-col gap-3">
@@ -521,9 +630,12 @@ export default function FeedbackPanel() {
           because the alternative is what this used to do -- leave the reviewer
           sitting on a document they had just answered with no word of why,
           whose obvious next move is to answer it again into an append-only
-          log. Not framed as a save failure, and it makes no claim about the
-          next document, because neither would be true. */}
-      {advanceError !== null && (
+          log. Rendered only for the assessment it is about (see
+          `advanceMessage`): "your response was recorded" over somebody's
+          unanswered document is a receipt for work nobody did. Not framed as a
+          save failure, and it makes no claim about the next document, because
+          neither would be true. */}
+      {advanceMessage !== null && (
         <div
           role="alert"
           data-testid="assessment-advance-error"
@@ -531,7 +643,7 @@ export default function FeedbackPanel() {
         >
           <p className="font-ui text-xs leading-snug text-stone-700 dark:text-stone-200">
             Your response was recorded. What failed was moving on to the next
-            document: {advanceError}
+            document: {advanceMessage}
           </p>
           <p className="mt-1 font-ui text-xs leading-snug text-stone-600 dark:text-stone-300">
             You are still on the document you just answered, and it does not
