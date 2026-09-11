@@ -30,8 +30,27 @@ function installFetch(): void {
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (init?.method === 'POST' && init.body && url.includes('/api/feedback')) {
-        posted.push(JSON.parse(String(init.body)))
-        return jsonResponse({ success: true })
+        const payload = JSON.parse(String(init.body)) as Record<string, unknown>
+        posted.push(payload)
+        // The appended row: a save is only acknowledged against a receipt for
+        // this request (issue #158).
+        return jsonResponse({
+          id: 11,
+          query_id: Number(payload.query_id),
+          timestamp: '2026-09-10 12:00:00',
+          model_slug: String(payload.model_slug),
+          variant: payload.variant ?? DEFAULT_VARIANT,
+          outcome: payload.outcome,
+          correct_rank:
+            typeof payload.correct_rank === 'number' ? payload.correct_rank : null,
+          correct_dir: null,
+          selected_ranks: null,
+          notes: String(payload.notes ?? ''),
+          reviewer: 'Bob Bibliothecarius',
+          reviewer_account_id: ACCOUNT_ID,
+          reviewer_username: 'bob',
+          schema_version: 2,
+        })
       }
       if (url.includes('/api/auth/me')) {
         return jsonResponse({

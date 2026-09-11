@@ -72,9 +72,15 @@ let answers: Record<string, Answer> = {}
 let queued: Record<string, Answer[]> = {}
 let predictionRequests = 0
 let posted: Record<string, unknown>[] = []
+/**
+ * A successful POST answers with the appended row, which is what the client
+ * checks before it discards a draft (issue #158). `RECEIPT` asks the fixture to
+ * echo the real shape; a test that wants a bad answer sets a body instead.
+ */
+const RECEIPT = '__receipt__'
 let postResult: { status: number; body: unknown } = {
-  status: 200,
-  body: { success: true },
+  status: 201,
+  body: RECEIPT,
 }
 /** Set to make the POST reject the way a dropped connection does. */
 let postFails: Error | null = null
@@ -84,6 +90,30 @@ let latestEntry: FeedbackEntry | null = null
 
 function answerFor(model: string): Answer {
   return queued[model]?.shift() ?? answers[model] ?? { predictions: [modelCard(1)] }
+}
+
+/** The row `POST /api/feedback` returns for an accepted save. */
+function receiptFor(payload: Record<string, unknown>): FeedbackEntry {
+  const ranks = payload.selected_ranks
+  const rank = payload.outcome === 'skipped' ? null : (payload.correct_rank as number)
+  const dirs = (payload.expected_candidate_dirs ?? {}) as Record<string, string>
+  return {
+    id: 900 + postAttempts,
+    query_id: Number(payload.query_id),
+    timestamp: '2026-09-10 12:00:00',
+    model_slug: String(payload.model_slug),
+    variant: (payload.variant ?? 'sif_abtt') as FeedbackEntry['variant'],
+    outcome: payload.outcome as FeedbackEntry['outcome'],
+    correct_rank: rank,
+    correct_dir:
+      payload.outcome === 'matched_rank' ? (dirs[String(rank)] ?? null) : null,
+    selected_ranks: Array.isArray(ranks) ? (ranks as number[]) : null,
+    notes: String(payload.notes ?? ''),
+    reviewer: account.display_name,
+    reviewer_account_id: account.id,
+    reviewer_username: account.username,
+    schema_version: 2,
+  }
 }
 
 function installFetch(): void {
@@ -101,8 +131,12 @@ function installFetch(): void {
         // A network failure is not an HTTP status: fetch rejects, and the body
         // may well have reached the server first.
         if (postFails) throw postFails
-        posted.push(JSON.parse(String(init.body)))
-        return jsonResponse(postResult.body, postResult.status)
+        const payload = JSON.parse(String(init.body)) as Record<string, unknown>
+        posted.push(payload)
+        return jsonResponse(
+          postResult.body === RECEIPT ? receiptFor(payload) : postResult.body,
+          postResult.status,
+        )
       }
       if (url.includes('/api/auth/me')) {
         return jsonResponse({
@@ -232,7 +266,7 @@ beforeEach(() => {
   queued = {}
   latestEntry = null
   account = { id: 2, username: 'bob', display_name: 'Bob Bibliothecarius' }
-  postResult = { status: 200, body: { success: true } }
+  postResult = { status: 201, body: RECEIPT }
   postFails = null
   installFetch()
 })
@@ -626,12 +660,15 @@ describe('a draft remembers what was chosen, not where it sat', () => {
     expect(submitButton().disabled).toBe(true)
     // The note survives; only the choice that lost its meaning is gone.
     expect(notesBox().value).toBe('matches the homily')
-    await waitFor(() =>
-      expect(storedDrafts()[draftKeyFor(2)]).toEqual({
-        correctRank: null,
-        notes: 'matches the homily',
-      }),
-    )
+    await waitFor(() => {
+      const stored = storedDrafts()[draftKeyFor(2)] as Record<string, unknown>
+      expect(stored).toMatchObject({ correctRank: null, notes: 'matches the homily' })
+      expect(stored.selections).toBeUndefined()
+      expect(stored.selectedRanks).toBeUndefined()
+      // A reconciliation rewrites the draft, so it is a newer revision: a save
+      // sent before it must not clear the corrected draft (issue #158).
+      expect(stored.revision).toBe(1)
+    })
   })
 
   it('drops a choice whose rank is no longer offered at all', async () => {
@@ -848,7 +885,7 @@ describe('save failures', () => {
     await waitFor(() => expect(pill(11).getAttribute('aria-pressed')).toBe('true'))
     expect(screen.queryByTestId('assessment-notice')).toBeNull()
 
-    postResult = { status: 200, body: { success: true } }
+    postResult = { status: 201, body: RECEIPT }
     await userEvent.click(submitButton())
     await waitFor(() => expect(posted).toHaveLength(2))
     expect(posted[1]).toMatchObject({

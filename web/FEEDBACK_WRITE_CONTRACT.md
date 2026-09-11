@@ -155,3 +155,9 @@ exists. In that case the reviewer is asked to check the last review for the
 document before saving again, the draft is kept, and nothing retries
 automatically, because a silent retry into an append-only log is the duplicate
 that copy is warning about.
+
+A save is also awaited before anything is claimed about it: the draft is cleared
+only against a receipt for that request, the buttons hold one operation per
+assessment, and the move to the next document is a separate operation whose
+failure is never reported as a lost assessment. What the client may and may not
+repeat is set out in [SAVE_RETRY_POLICY.md](SAVE_RETRY_POLICY.md).
