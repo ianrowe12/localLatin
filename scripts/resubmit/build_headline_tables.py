@@ -22,9 +22,10 @@ columns.
 from __future__ import annotations
 
 import argparse
+import json
 import math
 from pathlib import Path
-from typing import List, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 import pandas as pd
 
@@ -84,6 +85,15 @@ def parse_args() -> argparse.Namespace:
         default=(
             "runs/active/resubmit/results/finetune/"
             "finetune_lata_ceiling_comparison.csv"
+        ),
+    )
+    p.add_argument(
+        "--finetune_run_info",
+        default="runs/active/resubmit/finetune/run_info.json",
+        help=(
+            "run_info.json written by the fine-tuning run; its caption_facts "
+            "give the pair and dev-carve counts the reference caption quotes. "
+            "If the file is absent the caption states the carve without numbers."
         ),
     )
     p.add_argument("--out_dir", default="overleaf_drafts/tables")
@@ -288,20 +298,52 @@ def render_table(
     return "\n".join(lines) + "\n"
 
 
-def reference_caption(comparison: str) -> str:
+def load_finetune_facts(path: str) -> Optional[dict]:
+    """The ``caption_facts`` block of the fine-tuning run's ``run_info.json``.
+
+    Returns None when the file is absent so the caption can still be built,
+    without the numbers, from the comparison CSV alone.
+    """
+    p = Path(path)
+    if not p.exists():
+        return None
+    return json.loads(p.read_text()).get("caption_facts")
+
+
+def finetune_pairs_clause(facts: Optional[dict]) -> str:
+    """How many pairs the fine-tuned row was trained on, read from the run.
+
+    The caption used to say "the 565 positive train pairs", which is the number
+    available; the run trains on what is left after the directory-level dev
+    carve (issue #185, review item 6). Quoting the run's own counts keeps the
+    caption from drifting when the carve or the split changes.
+    """
+    if not facts:
+        return "the positive train pairs left by a directory-level dev carve"
+    return (
+        f"{facts['n_fit_pairs']} of the {facts['n_all_train_pairs']} positive "
+        f"train pairs (a {facts['n_dev_dirs']}-directory dev carve takes the rest)"
+    )
+
+
+def reference_caption(comparison: str, facts: Optional[dict] = None) -> str:
     """The sentences that explain the reference block.
 
-    The first says what the rows are. ``comparison`` is one sentence, derived
-    from the cells by the caller, that states how the reference rows sit
-    against the model rows, so a re-run cannot ship new numbers under old
-    prose. The last sentence is the framing constraint from issues #119 and
-    #176: no caption may imply that the embeddings beat surface matching on
-    this corpus, and the fine-tuning ceiling is a finding, not a bar cleared.
+    The first says what the rows are, with the fine-tuning pair count taken
+    from the run (``facts``) and a pointer to the appendix that gives both
+    setups. ``comparison`` is one sentence, derived from the cells by the
+    caller, that states how the reference rows sit against the model rows, so
+    a re-run cannot ship new numbers under old prose. The last sentence is the
+    framing constraint from issues #119 and #176: no caption may imply that
+    the embeddings beat surface matching on this corpus, and the fine-tuning
+    ceiling is a finding at this training budget, not a bar cleared.
     """
     return (
         " Below the rule, reference systems on the same split with the same "
-        "evaluation code: LaTa fine-tuned contrastively on the 565 positive "
-        "train pairs, and three lexical baselines fitted on train files. "
+        "evaluation code: LaTa fine-tuned contrastively on "
+        + finetune_pairs_clause(facts)
+        + ", a ceiling at this training budget, and three lexical baselines "
+        "fitted on train files (both setups: Appendix~\\ref{app:reference_systems}). "
         + comparison
         + " Surface overlap is the practitioner's operating point on this "
         "corpus, and the embedding rows diagnose representation geometry "
@@ -391,7 +433,10 @@ def task_b_comparison(
 
 
 def task_a_caption(
-    best: pd.DataFrame, lexical: pd.DataFrame, finetune: pd.DataFrame
+    best: pd.DataFrame,
+    lexical: pd.DataFrame,
+    finetune: pd.DataFrame,
+    facts: Optional[dict] = None,
 ) -> str:
     base = best[best["_method"] == "baseline"]["aucroc"]
     abtt = best[best["_method"] == "abtt_optimal"]["aucroc"]
@@ -405,7 +450,7 @@ def task_a_caption(
         "Figure~\\ref{fig:gap}. Per-layer "
         "grids: Appendix Tables~\\ref{tab:taskA_main}, \\ref{tab:taskA_appendix}, "
         "and~\\ref{tab:taskA_appendix_sif}."
-        + reference_caption(task_a_comparison(best, lexical, finetune))
+        + reference_caption(task_a_comparison(best, lexical, finetune), facts)
     )
 
 
@@ -414,6 +459,7 @@ def task_b_caption(
     best: pd.DataFrame,
     lexical: pd.DataFrame,
     finetune: pd.DataFrame,
+    facts: Optional[dict] = None,
 ) -> str:
     row = results.iloc[0]
     prior = 100.0 * float(row["n_existing"]) / float(row["n_test"])
@@ -429,7 +475,7 @@ def task_b_caption(
         "together. Per-layer grids: Appendix "
         "Tables~\\ref{tab:taskB_routing_main}, \\ref{tab:taskB_routing_appendix}, "
         "and~\\ref{tab:taskB_routing_appendix_sif}."
-        + reference_caption(task_b_comparison(best, lexical, finetune))
+        + reference_caption(task_b_comparison(best, lexical, finetune), facts)
     )
 
 
@@ -438,6 +484,7 @@ def main() -> None:
     results = pd.read_csv(args.results_csv)
     lexical = pd.read_csv(args.lexical_csv)
     finetune = pd.read_csv(args.finetune_csv)
+    facts = load_finetune_facts(args.finetune_run_info)
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -450,7 +497,7 @@ def main() -> None:
         right_col="gap",
         fmt=".3f",
         scale=1.0,
-        caption=task_a_caption(best_a, lexical, finetune),
+        caption=task_a_caption(best_a, lexical, finetune, facts),
         label="tab:taskA_headline",
         reference_lines=reference_rows(
             lexical,
