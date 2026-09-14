@@ -295,8 +295,7 @@ disagreement; it now prints a range.
 **One sentence, and it weakens a claim.** `rho_LOO` 6/6 becomes 5/6.
 
 Changed, in `overleaf_drafts/acl_latex.tex` (hand-written prose only; every
-`.tex` table and figure comes from its generator). All five sentences are
-re-applied on top of the wording that #182 and #186 merged, not on the wording
+`.tex` table and figure comes from its generator). All five sentences are re-applied on top of the wording that #182 and #186 merged, not on the wording
 that preceded them:
 
 * **Section 5.4, the headline attribution sentence.** Was "improves rank
@@ -306,12 +305,9 @@ that preceded them:
   standard errors of zero". Now five of six by 10.3 to 22.5 paired standard
   errors, the sixth a tie at 1.5, tau agreeing in the same five, and deletion
   faithfulness four of six with one of the two remaining cells a tie.
-* **Section 5.4, the sentence introducing the table**, which now records that
-  the pairs are drawn from the same benchmark test split as every retrieval
-  result above.
 * **The abstract**, which said ABTT "improves leave-one-out rank faithfulness
   in every LaTa, PhilTa, and mT5-base model-method cell". That sentence was
-  false against the regenerated Table 6.
+  false against the regenerated attribution table (Table 4).
 * **The Introduction contributions list**, which said ABTT "improves
   leave-one-out rank faithfulness" without qualification.
 * **The Discussion**, which said "only the leave-one-out rank gain is stable
