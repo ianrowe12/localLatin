@@ -154,6 +154,25 @@ layer unless a re-run beats it by more than 0.005 on the selection metric
 (`scripts/resubmit/deployed_unlabelled_layers.json`); the paper's tables keep the
 plain argmax. Section 5 of `benchmark_v1_rerun_diff.md` has the numbers.
 
+## Five-seed table selection rule
+
+`tables/taskB_topk.tex` (from `scripts/resubmit/visualize_taskb_mseed.py`) and the bold rows of
+`tables/taskB_ranking_appendix_mseed.tex` (from `scripts/resubmit/build_per_layer_tables.py`) both
+report the five-seed Task B run in `runs/active/resubmit/taskb_mseed/aggregated_results.csv`,
+and since issue #175 they share one rule, implemented once in
+`scripts/resubmit/taskb_mseed_selection.py`: for each model, `sif_abtt_optimal` at the layer with
+the highest training-set directory accuracy at rank 1 in the single-seed run
+(`runs/active/resubmit/results/phase_resubmit_results.csv`), which is the SIF+ABTT subscript in
+`tables/taskB_headline.tex` (LaTa 12, PhilTa 1, mT5-base 2, LaBSE 11, Qwen3-0.6B 5, KaLM-mini 1;
+ties go to the lowest layer). The five-seed CSV has no train metric of its own, so the single-seed
+CSV is a second required input to `visualize_taskb_mseed.py` (`--layer_select_csv`, wired in
+`slurm/resubmit/benchmark_v1_taskb_mseed.sbatch`). Before #175 the top-K table took the argmax of
+the five-seed test mean over every method and layer, which landed on `sif_abtt_fixed` for LaTa
+(90.0) and KaLM-mini (89.5), while the per-layer table bolded the test argmax within
+`sif_abtt_optimal` (89.6 and 89.3); neither was the headline layer. Under the shared rule the
+five-seed SIF+ABTT top-1 cells are 88.9 / 89.8 / 89.3 / 90.6 / 89.3 / 89.3, a 1.7-point spread.
+`tests/test_taskb_mseed_selection.py` fails if either generator drifts back to a test-set rule.
+
 ## Freeze rule
 
 1. Benchmark v1 is the 1,705 labelled files and 840 directories whose digest is above,

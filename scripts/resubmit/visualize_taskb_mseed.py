@@ -4,6 +4,12 @@ Reads aggregated_results.csv from run_taskb_mseed.py and produces:
   1. LaTeX table + PNG/PDF with mean +/- std for Top-K accuracy
   2. Grouped bar chart comparing models at K=1,2,3,5
   3. Breakdown of existing vs new vs overall assignment accuracy
+
+Which (method, layer) each model reports is fixed by ``taskb_mseed_selection``:
+``sif_abtt_optimal`` at the train-selected layer of the single-seed run, the
+same rule ``build_per_layer_tables.py`` uses to bold rows in the per-layer
+five-seed table (issue #175). The single-seed results CSV is therefore a second
+required input.
 """
 from __future__ import annotations
 
@@ -16,6 +22,13 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+
+from taskb_mseed_selection import (
+    MSEED_METHOD,
+    SELECTION_RULE_CAPTION,
+    select_mseed_rows,
+    train_selected_layers,
+)
 
 
 SHORT = {
@@ -34,6 +47,16 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Visualize M-seed Task B results.")
     parser.add_argument("--agg_csv", required=True, help="aggregated_results.csv from run_taskb_mseed.py")
     parser.add_argument("--out_dir", required=True, help="Output directory for figures.")
+    parser.add_argument(
+        "--layer_select_csv",
+        default="runs/active/resubmit/results/phase_resubmit_results.csv",
+        help="Single-seed per-layer results CSV; its train_dir_acc_at_1 picks the reported layer.",
+    )
+    parser.add_argument(
+        "--method",
+        default=MSEED_METHOD,
+        help="Five-seed method reported for every model (shared with build_per_layer_tables.py).",
+    )
     parser.add_argument("--repr_name", default="hidden", help="Representation to select.")
     parser.add_argument("--top_k", type=int, default=5, help="Max K for top-K reporting.")
     parser.add_argument(
@@ -50,16 +73,21 @@ def save(fig: plt.Figure, out_dir: Path, stem: str) -> None:
     plt.close(fig)
 
 
-def select_best_configs(agg_df: pd.DataFrame, repr_name: str) -> pd.DataFrame:
-    """For each model, pick the config with highest dir_acc_at_1_mean."""
-    rows = []
-    for model in MODEL_ORDER:
-        sub = agg_df[(agg_df["model"] == model) & (agg_df["repr"] == repr_name)]
-        if sub.empty:
-            continue
-        best_idx = sub["dir_acc_at_1_mean"].idxmax()
-        rows.append(sub.loc[best_idx])
-    return pd.DataFrame(rows).reset_index(drop=True)
+def select_train_layer_configs(
+    agg_df: pd.DataFrame,
+    results_df: pd.DataFrame,
+    repr_name: str,
+    method: str = MSEED_METHOD,
+) -> pd.DataFrame:
+    """One five-seed row per model: ``method`` at the train-selected layer.
+
+    The layer comes from ``results_df`` (single-seed run, argmax of
+    ``train_dir_acc_at_1``), never from the five-seed test means, so the row
+    reported here is the row bolded in ``tab:taskB_ranking_appendix_mseed``.
+    """
+    models = [m for m in MODEL_ORDER if (agg_df["model"] == m).any()]
+    layers = train_selected_layers(results_df, models, method=method, repr_name=repr_name)
+    return select_mseed_rows(agg_df, layers, method=method, repr_name=repr_name)
 
 
 def write_latex_table(best_df: pd.DataFrame, out_dir: Path, ks: list[int]) -> None:
@@ -109,11 +137,12 @@ PAPER_MODEL_ORDER = [
 ]
 
 TASKB_TOPK_CAPTION = (
-    "Cumulative top-$K$ accuracy for Task B, as mean $\\pm$ standard deviation "
-    "over five query/reference reseedings at a fixed v2 split, using the best "
-    "per-model SIF+ABTT configuration. Each cell is the percentage of test "
-    "queries whose labelled directory appears within the top $K$ options. "
-    "Per-layer top-$k$ rankings: Appendix "
+    "Cumulative top-$K$ accuracy for Task B under SIF+ABTT, as mean $\\pm$ standard "
+    "deviation over five query/reference reseedings at a fixed v2 split. "
+    + SELECTION_RULE_CAPTION
+    + " Each row is the bold row of Table~\\ref{tab:taskB_ranking_appendix_mseed}. "
+    "Each cell is the percentage of test queries whose labelled directory appears "
+    "within the top $K$ options. Per-layer top-$k$ rankings: Appendix "
     "Tables~\\ref{tab:taskB_ranking_main}, \\ref{tab:taskB_ranking_appendix}, "
     "and~\\ref{tab:taskB_ranking_appendix_mseed}."
 )
@@ -283,13 +312,14 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     agg_df = pd.read_csv(args.agg_csv)
-    best_df = select_best_configs(agg_df, args.repr_name)
+    results_df = pd.read_csv(args.layer_select_csv)
+    best_df = select_train_layer_configs(agg_df, results_df, args.repr_name, args.method)
 
     if best_df.empty:
         raise SystemExit("No rows matched the requested representation.")
 
     best_df.to_csv(out_dir / "taskb_mseed_selected_configs.csv", index=False)
-    print(f"Selected best configs for {len(best_df)} models")
+    print(f"Selected train-layer {args.method} configs for {len(best_df)} models")
 
     available_ks = [k for k in range(1, args.top_k + 1) if f"dir_acc_at_{k}_mean" in agg_df.columns]
     ks = [k for k in [1, 2, 3, 5] if k in available_ks]
