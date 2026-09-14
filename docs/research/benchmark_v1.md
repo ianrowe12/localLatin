@@ -173,6 +173,34 @@ the five-seed test mean over every method and layer, which landed on `sif_abtt_f
 five-seed SIF+ABTT top-1 cells are 88.9 / 89.8 / 89.3 / 90.6 / 89.3 / 89.3, a 1.7-point spread.
 `tests/test_taskb_mseed_selection.py` fails if either generator drifts back to a test-set rule.
 
+## Appendix selection rule (issue #184)
+
+Three appendix artefacts still selected layers on the test split after #175, against the
+paper's train-only protocol. Since #184 all three go through `train_selected_layers`:
+
+* `scripts/resubmit/build_per_layer_tables.py` bolds, per model and table method, the layer
+  with the highest `train_aucroc` in the Task A tables (the ABTT or SIF+ABTT subscript of
+  `tables/taskA_headline.tex`) and the highest `train_dir_acc_at_1` in the Task B tables (the
+  subscript of `tables/taskB_headline.tex`); the audit CSVs under
+  `runs/active/resubmit/results/perlayer_tables/` carry a `train_selected` column. Before #184
+  the bold row was the test argmax, which put LaTa at layer 1 in `tab:taskB_routing_main`
+  while Table 3 reports layer 8.
+* `scripts/resubmit/build_lasttok_comparison_table.py` defaults to `abtt_optimal` at the argmax
+  of `train_dir_acc_at_1` per (model, pooling) and refuses any `--select_on` column that is not
+  a `train_` metric. Qwen3-8B, not a paper model, is dropped; mT5-base was never part of the
+  last-token run. Caveat: the two CSVs under `runs/active/resubmit/results/lasttok/` date from
+  2026-04-18, before the label correction, so their train metrics differ from
+  `phase_resubmit_results.csv` by one train file; the train rule picks the same layers on both.
+* `slurm/resubmit/benchmark_v1_cluster_viz.sbatch` (and `visualize_clusters_2d.py`) derives the
+  t-SNE/UMAP layers from `phase_resubmit_results.csv` with the same rule (`abtt_optimal`,
+  `train_dir_acc_at_1`: LaTa 8, PhilTa 1, mT5-base 1, LaBSE 11, Qwen3-0.6B 5, KaLM-mini 3)
+  instead of `taskA_per_model_summary.csv`, the test argmax across methods (LaTa layer 1 via
+  `sif_abtt_fixed`). The figures highlight the six largest directories, which is what the
+  captions say; the silhouette CSVs in `runs/active/resubmit/cluster_viz/` are computed on the
+  1,160 winnable witnesses in the projected coordinates.
+
+`tests/test_appendix_train_selection.py` fails if any of the three drifts back to a test rule.
+
 ## Freeze rule
 
 1. Benchmark v1 is the 1,705 labelled files and 840 directories whose digest is above,

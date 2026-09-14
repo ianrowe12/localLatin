@@ -8,14 +8,14 @@
 \cmidrule(lr){3-8}
 \textbf{Model} & \textbf{Layer} & \makecell{Existing\\(base)} & \makecell{Existing\\(ABTT)} & \makecell{New\\(base)} & \makecell{New\\(ABTT)} & \makecell{Overall\\(base)} & \makecell{Overall\\(ABTT)} \\
 \midrule
-LaTa & \textbf{1} & \textbf{0.630} & \textbf{0.910} & \textbf{0.916} & \textbf{0.907} & \textbf{0.738} & \textbf{0.909} \\
+LaTa & 1 & 0.630 & 0.910 & 0.916 & 0.907 & 0.738 & 0.909 \\
  & 2 & 0.153 & 0.905 & 0.913 & 0.892 & 0.439 & 0.900 \\
  & 3 & 0.256 & 0.882 & 0.842 & 0.950 & 0.477 & 0.908 \\
  & 4 & 0.389 & 0.893 & 0.718 & 0.920 & 0.513 & 0.903 \\
  & 5 & 0.374 & 0.892 & 0.715 & 0.913 & 0.502 & 0.900 \\
  & 6 & 0.378 & 0.884 & 0.712 & 0.913 & 0.503 & 0.895 \\
  & 7 & 0.372 & 0.875 & 0.715 & 0.916 & 0.501 & 0.890 \\
- & 8 & 0.379 & 0.884 & 0.706 & 0.885 & 0.502 & 0.885 \\
+ & \textbf{8} & \textbf{0.379} & \textbf{0.884} & \textbf{0.706} & \textbf{0.885} & \textbf{0.502} & \textbf{0.885} \\
  & 9 & 0.366 & 0.886 & 0.724 & 0.873 & 0.501 & 0.881 \\
  & 10 & 0.344 & 0.873 & 0.752 & 0.882 & 0.498 & 0.876 \\
  & 11 & 0.310 & 0.867 & 0.786 & 0.901 & 0.490 & 0.880 \\
@@ -48,6 +48,6 @@ mT5-base & \textbf{1} & \textbf{0.135} & \textbf{0.877} & \textbf{0.981} & \text
  & 12 & 0.198 & 0.834 & 0.926 & 0.799 & 0.472 & 0.821 \\
 \bottomrule
 \end{tabular}
-\caption{Per-layer Task~B autonomous routing accuracy for the three T5 encoders. \texttt{baseline} is mean pooling without correction; \texttt{abtt\_optimal} applies ABTT (no SIF weighting) with $D$ tuned per layer on the train split. For every test file we compute $s_i = \max_{j \neq i} \cos(e_i, e_j)$ against the rest of the test set and compare to the learned threshold $\tau$ (fit on train via $F_1$-optimal cut on same-directory vs.\ different-directory pairs). The decision is binary first (existing if $s_i \geq \tau$, else new); only files predicted existing are then routed to their top-1 neighbour's directory. We report \textbf{existing accuracy} (restricted to files whose true partner is in the test set), \textbf{new accuracy} (files that should be flagged as novel), and \textbf{overall assignment accuracy}. Rows in bold mark the best layer per model, selected by ABTT overall assignment accuracy.}
+\caption{Per-layer Task~B autonomous routing accuracy for the three T5 encoders. \texttt{baseline} is mean pooling without correction; \texttt{abtt\_optimal} applies ABTT (no SIF weighting) with $D$ tuned per layer on the train split. For every test file we compute $s_i = \max_{j \neq i} \cos(e_i, e_j)$ against the rest of the test set and compare to the learned threshold $\tau$ (fit on train via $F_1$-optimal cut on same-directory vs.\ different-directory pairs). The decision is binary first (existing if $s_i \geq \tau$, else new); only files predicted existing are then routed to their top-1 neighbour's directory. We report \textbf{existing accuracy} (restricted to files whose true partner is in the test set), \textbf{new accuracy} (files that should be flagged as novel), and \textbf{overall assignment accuracy}. Rows in bold mark the layer chosen on the train split, the layer with the highest training-set directory accuracy at rank~1 under ABTT; it is the ABTT subscript in Table~\ref{tab:taskB_headline}, and not always the layer with the highest test score in this table.}
 \label{tab:taskB_routing_main}
 \end{table*}
