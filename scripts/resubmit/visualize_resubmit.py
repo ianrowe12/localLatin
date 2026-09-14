@@ -265,7 +265,8 @@ def compute_collapsed_layer(
 
     ``last`` is the deepest layer with a baseline row. The collapsed layer is the
     baseline layer with the *highest training-set* AUROC in the 30-70% depth
-    band, which reads backwards until you see the profile: on the T5 encoders
+    band (layers 4 to 8 of a 12-layer encoder; the paper's fig:density caption
+    quotes this window and must keep agreeing with it), which reads backwards until you see the profile: on the T5 encoders
     every layer in that band sits near chance, so taking the strongest of them
     makes the before-and-after panels a conservative illustration rather than a
     best-case one. Selection is on ``train_aucroc`` rather than the test column
@@ -352,7 +353,7 @@ def plot_density_2x2(
     out_dir: Path,
     results: pd.DataFrame | None = None,
 ) -> None:
-    """PhilTa-style 2x2: rows = {Last layer, Collapsed layer}, cols = {Baseline, ABTT}.
+    """PhilTa-style 2x2: rows = {Last layer, Collapsed retrieval layer}, cols = {Baseline, ABTT}.
     Uses pure `abtt_optimal` distributions (mean-pooled + ABTT), not SIF+ABTT.
     """
     slug = feature_model.replace("/", "_")
@@ -364,9 +365,9 @@ def plot_density_2x2(
 
     conds = [
         ("baseline_last", f"Baseline · Last layer (L{last_layer})"),
-        ("baseline_middle", f"Baseline · Collapsed layer (L{collapsed_layer})"),
+        ("baseline_middle", f"Baseline · Collapsed retrieval layer (L{collapsed_layer})"),
         ("abtt_last", f"ABTT · Last layer (L{last_layer})"),
-        ("abtt_middle", f"ABTT · Collapsed layer (L{collapsed_layer})"),
+        ("abtt_middle", f"ABTT · Collapsed retrieval layer (L{collapsed_layer})"),
     ]
     fig, axes = plt.subplots(2, 2, figsize=(10.5, 7.2), sharex=True)
     axes = axes.ravel()

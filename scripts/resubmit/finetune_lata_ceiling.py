@@ -709,8 +709,8 @@ class CeilingFacts:
         if self.epochs_run is not None and self.selected_epoch == self.epochs_run:
             return (
                 f" The selected checkpoint is epoch {self.selected_epoch}, the terminal "
-                f"epoch of the {budget}, so this is a ceiling at this training budget "
-                f"rather than an asymptote."
+                f"epoch of the sweep under the {budget}, so this is a ceiling at this "
+                f"training budget rather than an asymptote."
             )
         return (
             f" The selected checkpoint is epoch {self.selected_epoch} of "

@@ -2,7 +2,7 @@
 \small
 \setlength{\tabcolsep}{4pt}
 \begin{longtable}{llcccc}
-\caption{Per-layer Task~A pairwise metrics for the non-T5 models (LaBSE, Qwen3-0.6B, KaLM-mini), under the same two-method comparison as the main paper. \texttt{baseline} is mean pooling without correction; \texttt{abtt\_optimal} applies ABTT (no SIF weighting) with $D$ tuned per layer on the train split. Both AUROC and cosine gap are computed over the test n$\times$n cosine matrix with no threshold and no directory routing: AUROC treats same-directory test pairs as positives, and cosine gap is the difference between mean same-directory and mean different-directory cosine. Rows in bold mark the best layer per model, selected by ABTT AUROC.}
+\caption{Per-layer Task~A pairwise metrics for the non-T5 models (LaBSE, Qwen3-0.6B, KaLM-mini), under the same two-method comparison as the main paper. \texttt{baseline} is mean pooling without correction; \texttt{abtt\_optimal} applies ABTT (no SIF weighting) with $D$ tuned per layer on the train split. Both AUROC and cosine gap are computed over the test n$\times$n cosine matrix with no threshold and no directory routing: AUROC treats same-directory test pairs as positives, and cosine gap is the difference between mean same-directory and mean different-directory cosine. Rows in bold mark the layer chosen on the train split, the layer with the highest training-set AUROC under ABTT; it is the ABTT subscript in Table~\ref{tab:taskA_headline}, and not always the layer with the highest test score in this table.}
 \label{tab:taskA_appendix} \\
 \toprule
 \multicolumn{2}{c}{} & \multicolumn{4}{c}{\textbf{Task A: Pairwise Duplicate Detection (appendix models)}} \\
@@ -35,9 +35,9 @@ LaBSE & 1 & 0.806 & 0.977 & 0.060 & 0.520 \\
  & 12 & 0.956 & 0.981 & 0.183 & 0.592 \\
 \midrule
 Qwen3-0.6B & 1 & 0.858 & 0.978 & 0.033 & 0.564 \\
- & 2 & 0.863 & 0.973 & 0.024 & 0.553 \\
+ & \textbf{2} & \textbf{0.863} & \textbf{0.973} & \textbf{0.024} & \textbf{0.553} \\
  & 3 & 0.862 & 0.980 & 0.037 & 0.556 \\
- & \textbf{4} & \textbf{0.860} & \textbf{0.986} & \textbf{0.036} & \textbf{0.547} \\
+ & 4 & 0.860 & 0.986 & 0.036 & 0.547 \\
  & 5 & 0.861 & 0.981 & 0.030 & 0.545 \\
  & 6 & 0.867 & 0.983 & 0.035 & 0.545 \\
  & 7 & 0.876 & 0.980 & 0.033 & 0.544 \\
@@ -63,7 +63,7 @@ Qwen3-0.6B & 1 & 0.858 & 0.978 & 0.033 & 0.564 \\
  & 27 & 0.967 & 0.982 & 0.017 & 0.559 \\
  & 28 & 0.958 & 0.975 & 0.098 & 0.556 \\
 \midrule
-KaLM-mini & 1 & 0.887 & 0.981 & 0.063 & 0.568 \\
+KaLM-mini & \textbf{1} & \textbf{0.887} & \textbf{0.981} & \textbf{0.063} & \textbf{0.568} \\
  & 2 & 0.906 & 0.983 & 0.044 & 0.566 \\
  & 3 & 0.881 & 0.981 & 0.062 & 0.551 \\
  & 4 & 0.871 & 0.983 & 0.060 & 0.553 \\
@@ -85,7 +85,7 @@ KaLM-mini & 1 & 0.887 & 0.981 & 0.063 & 0.568 \\
  & 20 & 0.960 & 0.980 & 0.054 & 0.555 \\
  & 21 & 0.962 & 0.981 & 0.043 & 0.555 \\
  & 22 & 0.971 & 0.985 & 0.050 & 0.555 \\
- & \textbf{23} & \textbf{0.972} & \textbf{0.986} & \textbf{0.056} & \textbf{0.552} \\
+ & 23 & 0.972 & 0.986 & 0.056 & 0.552 \\
  & 24 & 0.956 & 0.981 & 0.243 & 0.520 \\
 \end{longtable}
 \endgroup

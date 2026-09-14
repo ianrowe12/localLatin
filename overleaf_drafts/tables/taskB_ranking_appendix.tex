@@ -2,7 +2,7 @@
 \small
 \setlength{\tabcolsep}{4pt}
 \begin{longtable}{llcccccc}
-\caption{Per-layer Task~B top-$k$ ranking metrics for the non-T5 models. \texttt{baseline} is mean pooling without correction; \texttt{abtt\_optimal} applies ABTT (no SIF weighting) with $D$ tuned per layer on the train split. This table is computed on the single-seed v2 split (no $M$-seed averaging, since the mseed sweep was run only for SIF-conditioned variants; see Table~\ref{tab:taskB_ranking_appendix_mseed} for the multi-seed SIF+ABTT view). \textbf{Acc@1} is directory accuracy at rank~1, with an existing/new decomposition. Rows in bold mark the best layer per model, selected by ABTT Acc@1.}
+\caption{Per-layer Task~B top-$k$ ranking metrics for the non-T5 models. \texttt{baseline} is mean pooling without correction; \texttt{abtt\_optimal} applies ABTT (no SIF weighting) with $D$ tuned per layer on the train split. This table is computed on the single-seed v2 split (no $M$-seed averaging, since the mseed sweep was run only for SIF-conditioned variants; see Table~\ref{tab:taskB_ranking_appendix_mseed} for the multi-seed SIF+ABTT view). \textbf{Acc@1} is directory accuracy at rank~1, with an existing/new decomposition. Rows in bold mark the layer chosen on the train split, the layer with the highest training-set directory accuracy at rank~1 under ABTT; it is the ABTT subscript in Table~\ref{tab:taskB_headline}, and not always the layer with the highest test score in this table.}
 \label{tab:taskB_ranking_appendix} \\
 \toprule
 \multicolumn{2}{c}{} & \multicolumn{6}{c}{\textbf{Task B: Top-K Ranking (appendix models, single-seed)}} \\
@@ -38,7 +38,7 @@ Qwen3-0.6B & 1 & 0.521 & 0.875 & 0.264 & 0.921 & 0.960 & 0.885 \\
  & 2 & 0.558 & 0.871 & 0.437 & 0.869 & 0.814 & 0.916 \\
  & 3 & 0.508 & 0.890 & 0.250 & 0.914 & 0.947 & 0.907 \\
  & 4 & 0.559 & 0.874 & 0.411 & 0.936 & 0.848 & 0.842 \\
- & 5 & 0.450 & 0.894 & 0.181 & 0.910 & 0.932 & 0.923 \\
+ & \textbf{5} & \textbf{0.450} & \textbf{0.894} & \textbf{0.181} & \textbf{0.910} & \textbf{0.932} & \textbf{0.923} \\
  & 6 & 0.551 & 0.858 & 0.422 & 0.935 & 0.830 & 0.796 \\
  & 7 & 0.507 & 0.859 & 0.250 & 0.890 & 0.947 & 0.876 \\
  & 8 & 0.580 & 0.852 & 0.409 & 0.931 & 0.895 & 0.799 \\
@@ -57,15 +57,15 @@ Qwen3-0.6B & 1 & 0.521 & 0.875 & 0.264 & 0.921 & 0.960 & 0.885 \\
  & 21 & 0.752 & 0.881 & 0.647 & 0.912 & 0.950 & 0.898 \\
  & 22 & 0.795 & 0.876 & 0.731 & 0.888 & 0.938 & 0.916 \\
  & 23 & 0.742 & 0.886 & 0.622 & 0.914 & 0.966 & 0.895 \\
- & \textbf{24} & \textbf{0.808} & \textbf{0.896} & \textbf{0.748} & \textbf{0.901} & \textbf{0.935} & \textbf{0.935} \\
+ & 24 & 0.808 & 0.896 & 0.748 & 0.901 & 0.935 & 0.935 \\
  & 25 & 0.718 & 0.886 & 0.574 & 0.893 & 0.975 & 0.923 \\
  & 26 & 0.740 & 0.881 & 0.613 & 0.899 & 0.975 & 0.895 \\
  & 27 & 0.787 & 0.876 & 0.793 & 0.877 & 0.833 & 0.923 \\
  & 28 & 0.803 & 0.872 & 0.796 & 0.877 & 0.867 & 0.913 \\
 \midrule
-KaLM-mini & \textbf{1} & \textbf{0.577} & \textbf{0.902} & \textbf{0.391} & \textbf{0.921} & \textbf{0.907} & \textbf{0.920} \\
+KaLM-mini & 1 & 0.577 & 0.902 & 0.391 & 0.921 & 0.907 & 0.920 \\
  & 2 & 0.607 & 0.879 & 0.493 & 0.916 & 0.848 & 0.879 \\
- & 3 & 0.587 & 0.894 & 0.443 & 0.923 & 0.870 & 0.907 \\
+ & \textbf{3} & \textbf{0.587} & \textbf{0.894} & \textbf{0.443} & \textbf{0.923} & \textbf{0.870} & \textbf{0.907} \\
  & 4 & 0.538 & 0.887 & 0.308 & 0.931 & 0.935 & 0.895 \\
  & 5 & 0.524 & 0.882 & 0.338 & 0.905 & 0.882 & 0.923 \\
  & 6 & 0.490 & 0.876 & 0.256 & 0.895 & 0.910 & 0.920 \\

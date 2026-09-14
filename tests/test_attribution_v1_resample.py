@@ -20,6 +20,7 @@ set was rebuilt on benchmark v1, and each has a test here.
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -35,6 +36,12 @@ sys.path.insert(0, str(REPO_ROOT / "scripts" / "ig"))
 from sample_positive_test_pairs import resolve_corpus_path  # noqa: E402
 from verify_attribution_artifacts import verify  # noqa: E402
 from compare_attribution_runs import win  # noqa: E402
+from pair_manifest_digest import compute as manifest_digest  # noqa: E402
+from run_attribution_metrics import (  # noqa: E402
+    TokenFilterMismatch,
+    check_token_filter,
+    stored_token_filter,
+)
 
 SLUG = "bowphs_LaTa"
 LAYER = 7
@@ -202,3 +209,97 @@ class TestWinDirection:
         # wrong direction silently inverts a win count.
         assert win(0.291, 0.614, higher_is_better=False) == "b"
         assert win(0.534, 0.124, higher_is_better=False) == "A"
+
+
+class TestStoredTokenFilterGuard:
+    """A mismatched --token_filter must stop the run, not skew it quietly.
+
+    The generator applies the filter to the pooling and stores unfiltered hidden
+    states, so scoring a run with the wrong filter pools a different vector and
+    cleans it with PCs fit on the other one. Under a filter ``full_cos_drift`` is
+    NaN, so there is no signal in the output at all; the only defence is the
+    filter the artifact already records in ``hyperparams_retrieval_mark``.
+    """
+
+    @staticmethod
+    def _npz(tmp_path: Path, token_filter=None):
+        payload = {"query_hidden": np.zeros((2, 2))}
+        if token_filter is not None:
+            payload["hyperparams_retrieval_mark"] = np.array(
+                json.dumps({"steps": 200, "token_filter": token_filter})
+            )
+        path = tmp_path / f"pair_{token_filter}.npz"
+        np.savez(path, **payload)
+        return np.load(path, allow_pickle=True), path
+
+    def test_reads_the_filter_the_generator_recorded(self, tmp_path):
+        data, _ = self._npz(tmp_path, "tokenizer_empty")
+        assert stored_token_filter(data) == "tokenizer_empty"
+
+    def test_matching_filter_passes(self, tmp_path):
+        data, path = self._npz(tmp_path, "tokenizer_empty")
+        check_token_filter(data, "tokenizer_empty", path)
+
+    def test_mismatched_filter_raises(self, tmp_path):
+        data, path = self._npz(tmp_path, "tokenizer_empty")
+        with pytest.raises(TokenFilterMismatch, match="tokenizer_empty"):
+            check_token_filter(data, "all", path)
+
+    def test_the_default_is_also_guarded(self, tmp_path):
+        """Scoring an all-run with a filter is as wrong as the other direction."""
+        data, path = self._npz(tmp_path, "all")
+        with pytest.raises(TokenFilterMismatch):
+            check_token_filter(data, "tokenizer_empty", path)
+
+    def test_an_artifact_without_the_record_still_runs(self, tmp_path):
+        """Artifacts predating the hyperparameter record must not start failing."""
+        data, path = self._npz(tmp_path, None)
+        assert stored_token_filter(data) is None
+        check_token_filter(data, "tokenizer_empty", path)
+
+
+class TestPairManifestDigest:
+    """The digest identifies the sample, not the file that carries it."""
+
+    @staticmethod
+    def _inputs(tmp_path: Path):
+        split = pd.DataFrame({
+            "file_id": [0, 1, 2],
+            "filename": ["a.txt", "b.txt", "c.txt"],
+        })
+        split_csv = tmp_path / "split.csv"
+        split.to_csv(split_csv, index=False)
+        examples = pd.DataFrame({
+            "model_name": ["m/one", "m/one"],
+            "query_file_id": [0, 1],
+            "candidate_file_id": [1, 2],
+            "query_folder_id": ["dir", "dir"],
+            "methods_available": ["ig", "ig"],
+        })
+        examples_csv = tmp_path / "examples.csv"
+        examples.to_csv(examples_csv, index=False)
+        return examples_csv, split_csv
+
+    def test_digest_is_stable_when_methods_available_is_rewritten(self, tmp_path):
+        examples_csv, split_csv = self._inputs(tmp_path)
+        _, before = manifest_digest(examples_csv, split_csv)
+        frame = pd.read_csv(examples_csv)
+        frame["methods_available"] = "ig,retrieval_mark"
+        frame.to_csv(examples_csv, index=False)
+        _, after = manifest_digest(examples_csv, split_csv)
+        assert before == after
+
+    def test_digest_changes_when_a_pair_changes(self, tmp_path):
+        examples_csv, split_csv = self._inputs(tmp_path)
+        _, before = manifest_digest(examples_csv, split_csv)
+        frame = pd.read_csv(examples_csv)
+        frame.loc[0, "candidate_file_id"] = 2
+        frame.to_csv(examples_csv, index=False)
+        _, after = manifest_digest(examples_csv, split_csv)
+        assert before != after
+
+    def test_text_has_no_trailing_newline(self, tmp_path):
+        """The published sha256 is of the joined rows, not of the .tsv file."""
+        examples_csv, split_csv = self._inputs(tmp_path)
+        text, _ = manifest_digest(examples_csv, split_csv)
+        assert not text.endswith("\n")

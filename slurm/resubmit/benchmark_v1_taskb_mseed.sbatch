@@ -21,6 +21,9 @@ mkdir -p slurm/logs
 
 PY="${PY:-/u/irowerojas/.conda/envs/localLatin/bin/python}"
 SPLIT_CSV="$REPO_ROOT/runs/active/resubmit/data/phase_resubmit_split.csv"
+# Single-seed per-layer results: its train_dir_acc_at_1 fixes the layer each
+# model reports in tables/taskB_topk.tex (issue #175; see taskb_mseed_selection.py).
+LAYER_SELECT_CSV="$REPO_ROOT/runs/active/resubmit/results/phase_resubmit_results.csv"
 RUNS_ROOT="$REPO_ROOT/runs/active/resubmit_bases"
 OUT_DIR="$REPO_ROOT/runs/active/resubmit/taskb_mseed"
 FIG_DIR="$REPO_ROOT/overleaf_drafts/figures"
@@ -51,8 +54,10 @@ test -f "$OUT_DIR/aggregated_results.csv"
 echo "Aggregated results lines: $(wc -l < "$OUT_DIR/aggregated_results.csv")"
 
 echo "=== Task B M-seed figures ==="
+test -f "$LAYER_SELECT_CSV"
 $PY scripts/resubmit/visualize_taskb_mseed.py \
   --agg_csv "$OUT_DIR/aggregated_results.csv" \
+  --layer_select_csv "$LAYER_SELECT_CSV" \
   --out_dir "$FIG_DIR" \
   --paper_table_tex "$REPO_ROOT/overleaf_drafts/tables/taskB_topk.tex"
 

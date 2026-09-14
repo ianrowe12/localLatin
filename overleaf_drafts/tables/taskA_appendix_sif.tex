@@ -2,7 +2,7 @@
 \small
 \setlength{\tabcolsep}{4pt}
 \begin{longtable}{llcccc}
-\caption{Per-layer Task~A AUROC across the SIF-conditioned post-processing suite for all six models. \texttt{sif\_only} replaces mean pooling with SIF-weighted pooling; \texttt{sif\_abtt\_fixed} adds ABTT with fixed $D{=}10$; \texttt{sif\_abtt\_optimal} tunes $D$ per layer on the train split. Gap is omitted to keep the table narrow; the pure-ABTT comparison (not SIF-conditioned) is in Tables~\ref{tab:taskA_main} and~\ref{tab:taskA_appendix}. Rows in bold mark the best layer per model, selected by SIF+ABTT (D-tuned) AUROC.}
+\caption{Per-layer Task~A AUROC across the SIF-conditioned post-processing suite for all six models. \texttt{sif\_only} replaces mean pooling with SIF-weighted pooling; \texttt{sif\_abtt\_fixed} adds ABTT with fixed $D{=}10$; \texttt{sif\_abtt\_optimal} tunes $D$ per layer on the train split. Gap is omitted to keep the table narrow; the pure-ABTT comparison (not SIF-conditioned) is in Tables~\ref{tab:taskA_main} and~\ref{tab:taskA_appendix}. Rows in bold mark the layer chosen on the train split, the layer with the highest training-set AUROC under SIF+ABTT; it is the SIF+ABTT subscript in Table~\ref{tab:taskA_headline}, and not always the layer with the highest test score in this table.}
 \label{tab:taskA_appendix_sif} \\
 \toprule
 \multicolumn{2}{c}{} & \multicolumn{4}{c}{\textbf{Task A: SIF-suite AUROC (appendix)}} \\
@@ -21,13 +21,13 @@
 \endfoot
 \bottomrule
 \endlastfoot
-LaTa & \textbf{1} & \textbf{0.934} & \textbf{0.948} & \textbf{0.972} & \textbf{0.976} \\
+LaTa & 1 & 0.934 & 0.948 & 0.972 & 0.976 \\
  & 2 & 0.563 & 0.938 & 0.964 & 0.971 \\
  & 3 & 0.513 & 0.921 & 0.967 & 0.966 \\
  & 4 & 0.500 & 0.890 & 0.970 & 0.968 \\
  & 5 & 0.496 & 0.878 & 0.970 & 0.970 \\
  & 6 & 0.496 & 0.865 & 0.965 & 0.965 \\
- & 7 & 0.498 & 0.858 & 0.966 & 0.966 \\
+ & \textbf{7} & \textbf{0.498} & \textbf{0.858} & \textbf{0.966} & \textbf{0.966} \\
  & 8 & 0.502 & 0.842 & 0.964 & 0.964 \\
  & 9 & 0.503 & 0.854 & 0.964 & 0.964 \\
  & 10 & 0.505 & 0.859 & 0.966 & 0.966 \\
@@ -69,12 +69,12 @@ LaBSE & 1 & 0.806 & 0.818 & 0.974 & 0.974 \\
  & 7 & 0.887 & 0.892 & 0.964 & 0.964 \\
  & 8 & 0.879 & 0.883 & 0.968 & 0.968 \\
  & 9 & 0.916 & 0.915 & 0.973 & 0.973 \\
- & 10 & 0.934 & 0.934 & 0.976 & 0.976 \\
+ & \textbf{10} & \textbf{0.934} & \textbf{0.934} & \textbf{0.976} & \textbf{0.976} \\
  & 11 & 0.960 & 0.959 & 0.983 & 0.983 \\
- & \textbf{12} & \textbf{0.956} & \textbf{0.956} & \textbf{0.980} & \textbf{0.984} \\
+ & 12 & 0.956 & 0.956 & 0.980 & 0.984 \\
 \midrule
-Qwen3-0.6B & \textbf{1} & \textbf{0.858} & \textbf{0.852} & \textbf{0.982} & \textbf{0.981} \\
- & 2 & 0.863 & 0.853 & 0.972 & 0.972 \\
+Qwen3-0.6B & 1 & 0.858 & 0.852 & 0.982 & 0.981 \\
+ & \textbf{2} & \textbf{0.863} & \textbf{0.853} & \textbf{0.972} & \textbf{0.972} \\
  & 3 & 0.862 & 0.858 & 0.977 & 0.975 \\
  & 4 & 0.860 & 0.860 & 0.976 & 0.977 \\
  & 5 & 0.861 & 0.858 & 0.971 & 0.971 \\
@@ -103,7 +103,7 @@ Qwen3-0.6B & \textbf{1} & \textbf{0.858} & \textbf{0.852} & \textbf{0.982} & \te
  & 28 & 0.958 & 0.925 & 0.968 & 0.968 \\
 \midrule
 KaLM-mini & 1 & 0.887 & 0.880 & 0.982 & 0.980 \\
- & 2 & 0.906 & 0.899 & 0.981 & 0.981 \\
+ & \textbf{2} & \textbf{0.906} & \textbf{0.899} & \textbf{0.981} & \textbf{0.981} \\
  & 3 & 0.881 & 0.882 & 0.977 & 0.977 \\
  & 4 & 0.871 & 0.873 & 0.974 & 0.974 \\
  & 5 & 0.861 & 0.862 & 0.971 & 0.971 \\
@@ -124,7 +124,7 @@ KaLM-mini & 1 & 0.887 & 0.880 & 0.982 & 0.980 \\
  & 20 & 0.960 & 0.956 & 0.978 & 0.978 \\
  & 21 & 0.962 & 0.958 & 0.980 & 0.983 \\
  & 22 & 0.971 & 0.967 & 0.983 & 0.984 \\
- & \textbf{23} & \textbf{0.972} & \textbf{0.964} & \textbf{0.986} & \textbf{0.985} \\
+ & 23 & 0.972 & 0.964 & 0.986 & 0.985 \\
  & 24 & 0.956 & 0.956 & 0.976 & 0.976 \\
 \end{longtable}
 \endgroup

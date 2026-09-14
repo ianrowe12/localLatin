@@ -246,8 +246,17 @@ def _ties_for(pairs_root: Optional[Path], metric_key: str,
     re-sampled and the narrow cells moved. Reading them off the per-pair cache
     keeps the claim true of whatever summary is passed in.
     """
-    if pairs_root is None or not pairs_root.exists():
+    if pairs_root is None:
         return []
+    if not pairs_root.exists():
+        raise FileNotFoundError(
+            f"per-pair metric cache not found at {pairs_root}. The caption's tie "
+            "clause is computed from paired per-pair differences, so without it "
+            "the committed table cannot be reproduced. Re-run "
+            "scripts/ig/run_attribution_metrics.py to rebuild the cache (it is "
+            "gitignored and regenerable from the tracked NPZs), or pass "
+            "--no_tie_clause to render the caption without it."
+        )
     stats = paired_cell_stats(pairs_root, metric_key)
     out = []
     for model, model_label in MODELS:
@@ -284,8 +293,8 @@ def tie_clause(pairs_root: Optional[Path], tie_se: float = 2.0) -> str:
             parts.append(f"{label} for {' and '.join(ties)}")
     if not parts:
         return ""
-    return (f" Differences within {tie_se:.0f} standard errors of zero, "
-            f"that is ties rather than decisions: {'; '.join(parts)}.")
+    return (f" Ties, within {tie_se:.0f} standard errors of zero: "
+            f"{', '.join(parts)}.")
 
 
 def _random_floor_range(summary: pd.DataFrame) -> tuple[float, float]:
@@ -604,6 +613,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--summary_csv", type=Path, default=DEFAULT_SUMMARY)
     parser.add_argument(
+        "--no_tie_clause", action="store_true",
+        help="Render the caption without the tie clause. Only for a run with no "
+             "per-pair cache; the committed table is built with the clause.",
+    )
+    parser.add_argument(
         "--pairs_root", type=Path, default=None,
         help="Per-pair metric JSON cache from run_attribution_metrics.py. Used "
              "for the caption's paired standard errors. Defaults to "
@@ -617,8 +631,9 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    if args.pairs_root is None:
-        args.pairs_root = args.summary_csv.parent / "v2_hidden"
+    args.pairs_root = None if args.no_tie_clause else (
+        args.pairs_root or args.summary_csv.parent / "v2_hidden"
+    )
     summary = _load_main_rows(args.summary_csv)
     render_table(summary, args.table_out, args.pairs_root)
     render_secondary_table(summary, args.secondary_table_out)

@@ -722,8 +722,9 @@ InsAUC, **InsAUC gap**, all shuffled-attribution gaps, and the `random` and
 > `docs/research/attribution_v1_resample.md` (issue #141).** The numbers below
 > come from `ig_examples_200pos_run3_operational`, which sampled the legacy
 > phase-9 split over `data/canon` rather than benchmark v1. On the re-sampled
-> set `rho_LOO` is 5/6 with the sixth cell a tie at 1.0 standard error, and
-> `DelAUC gap` is 4/6. The *reasoning* below stands unchanged, including why the
+> set `rho_LOO` is 5/6, the five gains running 10.3 to 22.5 paired standard
+> errors and the sixth cell a tie at 1.5, and `DelAUC gap` is 4/6 with one of
+> the two remaining cells a tie at 1.8. The *reasoning* below stands unchanged, including why the
 > sufficiency-side metrics stay out of the main table; only the win counts move.
 
 This is the sentence the paper should carry:

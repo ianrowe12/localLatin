@@ -2,8 +2,13 @@
 
 Produces two figures (`fig_tsne_per_model.pdf`, `fig_umap_per_model.pdf`) showing
 how ABTT tightens same-directory fragment clusters compared to baseline, SIF-only,
-and whitening. Each model is evaluated at its best-performing layer as recorded in
-``runs/active/resubmit/results/taskA_per_model_summary.csv``.
+and whitening. Each model is drawn at its train-selected layer (issue #184): the
+layer with the highest ``--layer_select_metric`` (default ``train_dir_acc_at_1``)
+under ``--layer_select_method`` (default ``abtt_optimal``) in
+``runs/active/resubmit/results/phase_resubmit_results.csv``, through the same
+``train_selected_layers`` helper as the headline tables, so the panels sit at the
+ABTT subscript of ``tables/taskB_headline.tex``. The old ``--best_layer_csv`` input,
+``taskA_per_model_summary.csv``, was the test-set argmax across methods and is gone.
 
 Pipeline per (model, method):
   1. Load the appropriate pooled embedding (mean for baseline/whitening, SIF for
@@ -15,9 +20,9 @@ Pipeline per (model, method):
   4. Project to 2D with t-SNE and UMAP (seeded, with cached outputs under
      ``runs/active/resubmit/cluster_viz/``).
 
-The final figures place models as rows (6) and methods as columns (4), with
-winnable fragments (folder size >= 2) colored by folder and singletons shown in
-light gray. Dense same-color clumps under ``sif_abtt_optimal`` are the intended
+The final figures place models as rows (6) and methods as columns (4), with the
+``--top_k`` (default 6) largest directories in distinct colours, the other winnable
+fragments (folder size >= 2) in mid gray and singletons in light gray. Dense same-color clumps under ``sif_abtt_optimal`` are the intended
 visual evidence that complements the cosine-gap line plots.
 """
 from __future__ import annotations
@@ -45,6 +50,12 @@ from canon_retrieval import l2_normalize  # noqa: E402
 from embedding_alignment import AlignmentResolver  # noqa: E402
 from sif_abtt import EmbeddingCleaner  # noqa: E402
 from evaluate_vectors import find_optimal_D  # noqa: E402
+from build_per_layer_tables import MODEL_DISPLAY  # noqa: E402
+from taskb_mseed_selection import train_selected_layers  # noqa: E402
+
+DISPLAY_TO_MODEL_ID = {display: model_id for model_id, display in MODEL_DISPLAY.items()}
+DEFAULT_LAYER_SELECT_METHOD = "abtt_optimal"
+DEFAULT_LAYER_SELECT_METRIC = "train_dir_acc_at_1"
 
 
 MODELS: List[Tuple[str, str, str]] = [
@@ -77,8 +88,19 @@ def parse_args() -> argparse.Namespace:
         default=str(REPO_ROOT / "runs/active/resubmit_bases/phase9_bases"),
     )
     parser.add_argument(
-        "--best_layer_csv",
-        default=str(REPO_ROOT / "runs/active/resubmit/results/taskA_per_model_summary.csv"),
+        "--results_csv",
+        default=str(REPO_ROOT / "runs/active/resubmit/results/phase_resubmit_results.csv"),
+        help="Single-seed per-layer results CSV the layer is selected from (train columns).",
+    )
+    parser.add_argument(
+        "--layer_select_method",
+        default=DEFAULT_LAYER_SELECT_METHOD,
+        help="Method whose train metric picks the layer per model.",
+    )
+    parser.add_argument(
+        "--layer_select_metric",
+        default=DEFAULT_LAYER_SELECT_METRIC,
+        help="Train-split column maximised per model; must start with 'train_'.",
     )
     parser.add_argument(
         "--intermediate_dir",
@@ -150,9 +172,25 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def load_best_layers(csv_path: str) -> Dict[str, int]:
-    df = pd.read_csv(csv_path)
-    return dict(zip(df["model_display"], df["best_layer"].astype(int)))
+def select_layers(
+    results_df: pd.DataFrame,
+    display_names: List[str],
+    method: str = DEFAULT_LAYER_SELECT_METHOD,
+    metric: str = DEFAULT_LAYER_SELECT_METRIC,
+) -> Dict[str, int]:
+    """Display name -> train-selected layer, the rule of the headline tables.
+
+    Refuses a test-split metric so the figures cannot drift back to a test
+    argmax (issue #184).
+    """
+    if not metric.startswith("train_"):
+        raise SystemExit(
+            f"--layer_select_metric={metric!r} is not a train-split column; "
+            "the cluster figures select layers on train only"
+        )
+    model_ids = [DISPLAY_TO_MODEL_ID[name] for name in display_names]
+    by_id = train_selected_layers(results_df, model_ids, method=method, metric=metric)
+    return {name: by_id[DISPLAY_TO_MODEL_ID[name]] for name in display_names}
 
 
 def embedding_file(
@@ -257,7 +295,7 @@ def compute_or_load_projection(
     return coords
 
 
-HIGHLIGHT_K = 12  # top-K most-populated winnable folders receive distinct colors
+HIGHLIGHT_K = 6  # top-K largest directories receive distinct colors (the legend)
 
 
 def build_folder_color_map(
@@ -318,8 +356,9 @@ def render_grid(
         n_rows, n_cols, figsize=(3.2 * n_cols, 3.0 * n_rows), squeeze=False
     )
 
-    # High-contrast palette for the highlighted folders. Extend up to 12 slots;
-    # we pick as many as there are selected directories.
+    # High-contrast palette for the highlighted folders, up to 12 slots; we
+    # pick as many as there are selected directories. The first six are the
+    # distinct ones; slots 7 to 12 repeat hues, so keep --top_k at 6 for print.
     palette_full = np.array(
         [
             "#e41a1c", "#377eb8", "#4daf4a", "#984ea3",
@@ -408,7 +447,7 @@ def render_grid(
                     )
 
     fig.suptitle(
-        f"2D {proj_name.upper()} of labelled fragments at each model's best layer",
+        f"2D {proj_name.upper()} of labelled fragments at each model's train-selected layer",
         fontsize=14,
         y=0.995,
     )
@@ -526,7 +565,6 @@ def main() -> None:
     is_winnable = split_df["is_winnable"].values.astype(bool)
     train_folder_ids = folder_ids[train_mask]
 
-    best_layers = load_best_layers(args.best_layer_csv)
     D_values = [int(x) for x in args.D_values.split(",") if x.strip()]
 
     if args.models is not None:
@@ -536,6 +574,16 @@ def main() -> None:
         active_models = list(MODELS)
 
     model_order = [m[0] for m in active_models]
+    best_layers = select_layers(
+        pd.read_csv(args.results_csv),
+        model_order,
+        method=args.layer_select_method,
+        metric=args.layer_select_metric,
+    )
+    print(
+        f"[layers] {args.layer_select_method} argmax of {args.layer_select_metric} (train): "
+        f"{best_layers}"
+    )
 
     color_idx, highlight_labels = build_folder_color_map(
         folder_ids,

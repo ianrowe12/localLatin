@@ -2,7 +2,7 @@
 \small
 \setlength{\tabcolsep}{4pt}
 \begin{longtable}{llcccccc}
-\caption{Per-layer Task~B top-$k$ ranking accuracy across all six models, averaged over $M=5$ query/reference reseedings of the v2 train/test split (mean $\pm$ std). \texttt{sif\_abtt\_optimal} applies SIF weighting plus ABTT with $D$ tuned per layer on the train split; the mseed sweep was not run for the pure \texttt{abtt\_optimal} variant reported in the main paper, so we include this table to give a variance-aware view of the SIF-conditioned best variant. Overall assignment accuracy coincides with Acc@1 in the mseed pipeline, so we report the existing/new decomposition instead. Rows in bold mark the best layer per model, selected by SIF+ABTT Acc@1.}
+\caption{Per-layer Task~B top-$k$ ranking accuracy across all six models, averaged over $M=5$ query/reference reseedings of the v2 train/test split (mean $\pm$ std). \texttt{sif\_abtt\_optimal} applies SIF weighting plus ABTT with $D$ tuned per layer on the train split; the mseed sweep was not run for the ABTT-only variant of Tables~\ref{tab:taskA_headline} and~\ref{tab:taskB_headline}, so we include this table to give a variance-aware view of the SIF-conditioned best variant. Overall assignment accuracy coincides with Acc@1 in the mseed pipeline, so we report the existing/new decomposition instead. Rows in bold mark the layer reported per model, the row printed in Table~\ref{tab:taskb}. For each model the reported layer is chosen on the train split: the layer with the highest training-set directory accuracy at rank~1 for SIF+ABTT in the single-seed run, the same layer as the SIF+ABTT subscript in Table~\ref{tab:taskB_headline}. $D$ is tuned per layer on the train split. This is not always the layer with the highest five-seed mean.}
 \label{tab:taskB_ranking_appendix_mseed} \\
 \toprule
 \multicolumn{2}{c}{} & \multicolumn{6}{c}{\textbf{Task B: Top-K Ranking (appendix, 5-seed mean $\pm$ std, SIF+ABTT)}} \\
@@ -27,28 +27,28 @@ LaTa & 1 & 0.731 $\pm$ 0.010 & 0.889 $\pm$ 0.010 & 0.563 $\pm$ 0.007 & 0.844 $\p
  & 4 & 0.331 $\pm$ 0.019 & 0.889 $\pm$ 0.009 & 0.048 $\pm$ 0.009 & 0.860 $\pm$ 0.009 & 0.696 $\pm$ 0.030 & 0.925 $\pm$ 0.013 \\
  & 5 & 0.326 $\pm$ 0.021 & 0.891 $\pm$ 0.009 & 0.038 $\pm$ 0.005 & 0.858 $\pm$ 0.008 & 0.698 $\pm$ 0.028 & 0.934 $\pm$ 0.014 \\
  & 6 & 0.322 $\pm$ 0.018 & 0.891 $\pm$ 0.009 & 0.038 $\pm$ 0.007 & 0.863 $\pm$ 0.010 & 0.688 $\pm$ 0.026 & 0.927 $\pm$ 0.013 \\
- & \textbf{7} & \textbf{0.328 $\pm$ 0.020} & \textbf{0.896 $\pm$ 0.008} & \textbf{0.045 $\pm$ 0.007} & \textbf{0.848 $\pm$ 0.009} & \textbf{0.693 $\pm$ 0.028} & \textbf{0.957 $\pm$ 0.010} \\
+ & 7 & 0.328 $\pm$ 0.020 & 0.896 $\pm$ 0.008 & 0.045 $\pm$ 0.007 & 0.848 $\pm$ 0.009 & 0.693 $\pm$ 0.028 & 0.957 $\pm$ 0.010 \\
  & 8 & 0.325 $\pm$ 0.022 & 0.884 $\pm$ 0.008 & 0.046 $\pm$ 0.010 & 0.834 $\pm$ 0.008 & 0.685 $\pm$ 0.032 & 0.949 $\pm$ 0.011 \\
  & 9 & 0.332 $\pm$ 0.019 & 0.886 $\pm$ 0.011 & 0.045 $\pm$ 0.010 & 0.848 $\pm$ 0.009 & 0.701 $\pm$ 0.024 & 0.935 $\pm$ 0.015 \\
  & 10 & 0.346 $\pm$ 0.017 & 0.889 $\pm$ 0.004 & 0.045 $\pm$ 0.010 & 0.846 $\pm$ 0.008 & 0.735 $\pm$ 0.021 & 0.944 $\pm$ 0.012 \\
  & 11 & 0.361 $\pm$ 0.018 & 0.882 $\pm$ 0.009 & 0.045 $\pm$ 0.009 & 0.862 $\pm$ 0.010 & 0.767 $\pm$ 0.029 & 0.907 $\pm$ 0.014 \\
- & 12 & 0.707 $\pm$ 0.014 & 0.889 $\pm$ 0.005 & 0.511 $\pm$ 0.016 & 0.834 $\pm$ 0.005 & 0.961 $\pm$ 0.008 & 0.961 $\pm$ 0.010 \\
+ & \textbf{12} & \textbf{0.707 $\pm$ 0.014} & \textbf{0.889 $\pm$ 0.005} & \textbf{0.511 $\pm$ 0.016} & \textbf{0.834 $\pm$ 0.005} & \textbf{0.961 $\pm$ 0.008} & \textbf{0.961 $\pm$ 0.010} \\
 \midrule
-PhilTa & 1 & 0.705 $\pm$ 0.015 & 0.898 $\pm$ 0.008 & 0.531 $\pm$ 0.016 & 0.858 $\pm$ 0.010 & 0.931 $\pm$ 0.012 & 0.951 $\pm$ 0.011 \\
+PhilTa & \textbf{1} & \textbf{0.705 $\pm$ 0.015} & \textbf{0.898 $\pm$ 0.008} & \textbf{0.531 $\pm$ 0.016} & \textbf{0.858 $\pm$ 0.010} & \textbf{0.931 $\pm$ 0.012} & \textbf{0.951 $\pm$ 0.011} \\
  & 2 & 0.626 $\pm$ 0.019 & 0.888 $\pm$ 0.010 & 0.410 $\pm$ 0.017 & 0.866 $\pm$ 0.010 & 0.906 $\pm$ 0.018 & 0.917 $\pm$ 0.017 \\
  & 3 & 0.440 $\pm$ 0.013 & 0.893 $\pm$ 0.009 & 0.071 $\pm$ 0.014 & 0.858 $\pm$ 0.010 & 0.917 $\pm$ 0.013 & 0.939 $\pm$ 0.011 \\
  & 4 & 0.421 $\pm$ 0.016 & 0.891 $\pm$ 0.009 & 0.027 $\pm$ 0.007 & 0.858 $\pm$ 0.008 & 0.928 $\pm$ 0.015 & 0.935 $\pm$ 0.013 \\
  & 5 & 0.375 $\pm$ 0.016 & 0.895 $\pm$ 0.010 & 0.042 $\pm$ 0.013 & 0.852 $\pm$ 0.010 & 0.804 $\pm$ 0.018 & 0.950 $\pm$ 0.014 \\
  & 6 & 0.337 $\pm$ 0.015 & 0.897 $\pm$ 0.009 & 0.060 $\pm$ 0.012 & 0.861 $\pm$ 0.010 & 0.696 $\pm$ 0.026 & 0.944 $\pm$ 0.013 \\
- & \textbf{7} & \textbf{0.361 $\pm$ 0.017} & \textbf{0.900 $\pm$ 0.009} & \textbf{0.056 $\pm$ 0.012} & \textbf{0.860 $\pm$ 0.008} & \textbf{0.755 $\pm$ 0.020} & \textbf{0.952 $\pm$ 0.013} \\
+ & 7 & 0.361 $\pm$ 0.017 & 0.900 $\pm$ 0.009 & 0.056 $\pm$ 0.012 & 0.860 $\pm$ 0.008 & 0.755 $\pm$ 0.020 & 0.952 $\pm$ 0.013 \\
  & 8 & 0.389 $\pm$ 0.016 & 0.891 $\pm$ 0.010 & 0.058 $\pm$ 0.014 & 0.859 $\pm$ 0.009 & 0.818 $\pm$ 0.018 & 0.932 $\pm$ 0.015 \\
  & 9 & 0.371 $\pm$ 0.016 & 0.893 $\pm$ 0.008 & 0.066 $\pm$ 0.014 & 0.861 $\pm$ 0.009 & 0.766 $\pm$ 0.027 & 0.934 $\pm$ 0.016 \\
  & 10 & 0.377 $\pm$ 0.014 & 0.892 $\pm$ 0.009 & 0.066 $\pm$ 0.014 & 0.855 $\pm$ 0.005 & 0.778 $\pm$ 0.023 & 0.940 $\pm$ 0.017 \\
  & 11 & 0.394 $\pm$ 0.014 & 0.888 $\pm$ 0.008 & 0.059 $\pm$ 0.010 & 0.851 $\pm$ 0.010 & 0.827 $\pm$ 0.021 & 0.935 $\pm$ 0.013 \\
  & 12 & 0.566 $\pm$ 0.013 & 0.897 $\pm$ 0.010 & 0.282 $\pm$ 0.014 & 0.863 $\pm$ 0.010 & 0.934 $\pm$ 0.007 & 0.941 $\pm$ 0.018 \\
 \midrule
-mT5-base & \textbf{1} & \textbf{0.487 $\pm$ 0.012} & \textbf{0.899 $\pm$ 0.005} & \textbf{0.100 $\pm$ 0.009} & \textbf{0.856 $\pm$ 0.007} & \textbf{0.987 $\pm$ 0.007} & \textbf{0.954 $\pm$ 0.011} \\
- & 2 & 0.476 $\pm$ 0.012 & 0.893 $\pm$ 0.005 & 0.083 $\pm$ 0.008 & 0.851 $\pm$ 0.012 & 0.984 $\pm$ 0.008 & 0.947 $\pm$ 0.013 \\
+mT5-base & 1 & 0.487 $\pm$ 0.012 & 0.899 $\pm$ 0.005 & 0.100 $\pm$ 0.009 & 0.856 $\pm$ 0.007 & 0.987 $\pm$ 0.007 & 0.954 $\pm$ 0.011 \\
+ & \textbf{2} & \textbf{0.476 $\pm$ 0.012} & \textbf{0.893 $\pm$ 0.005} & \textbf{0.083 $\pm$ 0.008} & \textbf{0.851 $\pm$ 0.012} & \textbf{0.984 $\pm$ 0.008} & \textbf{0.947 $\pm$ 0.013} \\
  & 3 & 0.483 $\pm$ 0.014 & 0.883 $\pm$ 0.011 & 0.124 $\pm$ 0.009 & 0.817 $\pm$ 0.014 & 0.947 $\pm$ 0.008 & 0.970 $\pm$ 0.007 \\
  & 4 & 0.500 $\pm$ 0.015 & 0.852 $\pm$ 0.007 & 0.206 $\pm$ 0.006 & 0.772 $\pm$ 0.010 & 0.879 $\pm$ 0.020 & 0.956 $\pm$ 0.010 \\
  & 5 & 0.371 $\pm$ 0.014 & 0.825 $\pm$ 0.008 & 0.155 $\pm$ 0.006 & 0.724 $\pm$ 0.007 & 0.651 $\pm$ 0.023 & 0.956 $\pm$ 0.006 \\
@@ -77,10 +77,10 @@ Qwen3-0.6B & 1 & 0.550 $\pm$ 0.008 & 0.894 $\pm$ 0.005 & 0.223 $\pm$ 0.006 & 0.8
  & 2 & 0.572 $\pm$ 0.015 & 0.882 $\pm$ 0.004 & 0.363 $\pm$ 0.014 & 0.828 $\pm$ 0.005 & 0.841 $\pm$ 0.032 & 0.952 $\pm$ 0.007 \\
  & 3 & 0.541 $\pm$ 0.007 & 0.889 $\pm$ 0.006 & 0.216 $\pm$ 0.007 & 0.827 $\pm$ 0.008 & 0.962 $\pm$ 0.007 & 0.968 $\pm$ 0.011 \\
  & 4 & 0.580 $\pm$ 0.012 & 0.891 $\pm$ 0.004 & 0.353 $\pm$ 0.008 & 0.845 $\pm$ 0.007 & 0.874 $\pm$ 0.028 & 0.950 $\pm$ 0.006 \\
- & 5 & 0.487 $\pm$ 0.017 & 0.893 $\pm$ 0.007 & 0.133 $\pm$ 0.012 & 0.839 $\pm$ 0.011 & 0.944 $\pm$ 0.014 & 0.964 $\pm$ 0.009 \\
+ & \textbf{5} & \textbf{0.487 $\pm$ 0.017} & \textbf{0.893 $\pm$ 0.007} & \textbf{0.133 $\pm$ 0.012} & \textbf{0.839 $\pm$ 0.011} & \textbf{0.944 $\pm$ 0.014} & \textbf{0.964 $\pm$ 0.009} \\
  & 6 & 0.568 $\pm$ 0.012 & 0.897 $\pm$ 0.005 & 0.350 $\pm$ 0.010 & 0.857 $\pm$ 0.008 & 0.850 $\pm$ 0.023 & 0.948 $\pm$ 0.012 \\
  & 7 & 0.541 $\pm$ 0.007 & 0.902 $\pm$ 0.006 & 0.211 $\pm$ 0.009 & 0.862 $\pm$ 0.008 & 0.967 $\pm$ 0.012 & 0.953 $\pm$ 0.012 \\
- & \textbf{8} & \textbf{0.609 $\pm$ 0.009} & \textbf{0.903 $\pm$ 0.006} & \textbf{0.362 $\pm$ 0.013} & \textbf{0.861 $\pm$ 0.010} & \textbf{0.929 $\pm$ 0.017} & \textbf{0.956 $\pm$ 0.005} \\
+ & 8 & 0.609 $\pm$ 0.009 & 0.903 $\pm$ 0.006 & 0.362 $\pm$ 0.013 & 0.861 $\pm$ 0.010 & 0.929 $\pm$ 0.017 & 0.956 $\pm$ 0.005 \\
  & 9 & 0.612 $\pm$ 0.013 & 0.900 $\pm$ 0.004 & 0.393 $\pm$ 0.016 & 0.868 $\pm$ 0.008 & 0.894 $\pm$ 0.021 & 0.943 $\pm$ 0.006 \\
  & 10 & 0.638 $\pm$ 0.013 & 0.890 $\pm$ 0.009 & 0.452 $\pm$ 0.009 & 0.847 $\pm$ 0.014 & 0.878 $\pm$ 0.022 & 0.944 $\pm$ 0.010 \\
  & 11 & 0.578 $\pm$ 0.006 & 0.885 $\pm$ 0.005 & 0.257 $\pm$ 0.010 & 0.838 $\pm$ 0.014 & 0.991 $\pm$ 0.005 & 0.947 $\pm$ 0.012 \\
@@ -102,8 +102,8 @@ Qwen3-0.6B & 1 & 0.550 $\pm$ 0.008 & 0.894 $\pm$ 0.005 & 0.223 $\pm$ 0.006 & 0.8
  & 27 & 0.812 $\pm$ 0.004 & 0.881 $\pm$ 0.005 & 0.741 $\pm$ 0.008 & 0.824 $\pm$ 0.006 & 0.903 $\pm$ 0.011 & 0.954 $\pm$ 0.011 \\
  & 28 & 0.824 $\pm$ 0.010 & 0.871 $\pm$ 0.006 & 0.736 $\pm$ 0.015 & 0.802 $\pm$ 0.010 & 0.939 $\pm$ 0.005 & 0.961 $\pm$ 0.007 \\
 \midrule
-KaLM-mini & 1 & 0.596 $\pm$ 0.012 & 0.893 $\pm$ 0.005 & 0.344 $\pm$ 0.003 & 0.846 $\pm$ 0.005 & 0.922 $\pm$ 0.022 & 0.953 $\pm$ 0.006 \\
- & \textbf{2} & \textbf{0.620 $\pm$ 0.018} & \textbf{0.893 $\pm$ 0.003} & \textbf{0.422 $\pm$ 0.014} & \textbf{0.845 $\pm$ 0.005} & \textbf{0.876 $\pm$ 0.023} & \textbf{0.955 $\pm$ 0.008} \\
+KaLM-mini & \textbf{1} & \textbf{0.596 $\pm$ 0.012} & \textbf{0.893 $\pm$ 0.005} & \textbf{0.344 $\pm$ 0.003} & \textbf{0.846 $\pm$ 0.005} & \textbf{0.922 $\pm$ 0.022} & \textbf{0.953 $\pm$ 0.006} \\
+ & 2 & 0.620 $\pm$ 0.018 & 0.893 $\pm$ 0.003 & 0.422 $\pm$ 0.014 & 0.845 $\pm$ 0.005 & 0.876 $\pm$ 0.023 & 0.955 $\pm$ 0.008 \\
  & 3 & 0.605 $\pm$ 0.011 & 0.893 $\pm$ 0.004 & 0.379 $\pm$ 0.008 & 0.843 $\pm$ 0.000 & 0.896 $\pm$ 0.018 & 0.959 $\pm$ 0.010 \\
  & 4 & 0.562 $\pm$ 0.015 & 0.889 $\pm$ 0.005 & 0.265 $\pm$ 0.009 & 0.842 $\pm$ 0.008 & 0.945 $\pm$ 0.016 & 0.949 $\pm$ 0.008 \\
  & 5 & 0.550 $\pm$ 0.013 & 0.890 $\pm$ 0.004 & 0.270 $\pm$ 0.005 & 0.841 $\pm$ 0.004 & 0.910 $\pm$ 0.019 & 0.952 $\pm$ 0.009 \\

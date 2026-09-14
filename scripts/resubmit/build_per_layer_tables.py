@@ -9,7 +9,17 @@ Post-2026-04-20 layout:
 Inputs:
   - Single-seed per-layer CSV (has all 7 methods incl. `abtt_optimal`).
   - Multi-seed (mseed) CSV (has baseline + three SIF variants only; no
-    pure `abtt_optimal`). Used only for the appendix mseed ranking table.
+    pure `abtt_optimal`). Used only for the appendix mseed ranking table,
+    whose bold rows are the train-selected `sif_abtt_optimal` layers taken
+    from the single-seed CSV (see `taskb_mseed_selection.py`, issue #175),
+    so they match `tables/taskB_topk.tex` cell for cell.
+
+Bold rows (issue #184): every table bolds the layer the headline tables
+report, chosen on the train split through `train_selected_layers`: the
+argmax of `train_aucroc` for the Task A tables (the subscript in
+`tables/taskA_headline.tex`) and of `train_dir_acc_at_1` for the Task B
+tables (the subscript in `tables/taskB_headline.tex`), under the table's
+ABTT method. No table takes an argmax over a test column.
 
 Outputs (tex + audit CSVs):
   tables/taskA_main.tex                      — 3 models, base vs ABTT
@@ -30,6 +40,12 @@ from pathlib import Path
 from typing import Callable, Sequence
 
 import pandas as pd
+
+from taskb_mseed_selection import (
+    MSEED_METHOD,
+    SELECTION_RULE_CAPTION,
+    train_selected_layers,
+)
 
 
 MODEL_DISPLAY = {
@@ -52,6 +68,11 @@ APPENDIX_MODELS = [
     "KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5",
 ]
 ALL_MODELS = MAIN_MODELS + APPENDIX_MODELS
+
+# Train-split columns the headline tables select on, per task (issue #184).
+TASKA_SELECT_METRIC = "train_aucroc"
+TASKB_SELECT_METRIC = "train_dir_acc_at_1"
+HEADLINE_LABEL = {"taskA": "tab:taskA_headline", "taskB": "tab:taskB_headline"}
 
 METHOD_DISPLAY = {
     "baseline": "base",
@@ -268,11 +289,24 @@ def _write_table_star(wide: pd.DataFrame, spec: TableSpec, out_path: Path) -> No
 # ------------------------------ table emitters -------------------------------
 
 
-def _best_rows(wide: pd.DataFrame, key_col: str) -> set:
-    if key_col not in wide.columns:
-        return set()
-    idx = wide.groupby("model")[key_col].idxmax()
-    return set(idx.values)
+def _mark_train_selected(wide: pd.DataFrame, selected_layers: dict[str, int]) -> set:
+    """Flag the row per model that carries its train-selected layer.
+
+    Adds a ``train_selected`` column to ``wide`` (so the audit CSV records
+    the choice) and returns the index set to bold. Refuses to bold a subset:
+    a selected layer missing from the pivot means the two CSVs disagree.
+    """
+    wide["train_selected"] = [
+        int(row["layer"]) == selected_layers[row["model"]] for _, row in wide.iterrows()
+    ]
+    rows = set(wide.index[wide["train_selected"]])
+    if len(rows) != len(selected_layers):
+        missing = {
+            m: l for m, l in selected_layers.items()
+            if not ((wide["model"] == m) & (wide["layer"] == l)).any()
+        }
+        raise SystemExit(f"train-selected layers absent from the per-layer pivot: {missing}")
+    return rows
 
 
 def emit_taskA(
@@ -285,19 +319,19 @@ def emit_taskA(
     caption: str,
     label: str,
     banner: str,
-    best_method: str,
-    best_metric: str = "aucroc",
+    select_method: str,
+    select_metric: str = TASKA_SELECT_METRIC,
     float_table: bool = False,
 ) -> pd.DataFrame:
     """Emit Task A per-layer table.
 
-    metrics: subset of {"aucroc", "gap"}.
+    metrics: subset of {"aucroc", "gap"}. The bold row per model is the
+    train-split argmax of ``select_metric`` under ``select_method``.
     """
     wide = _pivot(df, models, methods, metrics)
+    selected = train_selected_layers(df, list(models), method=select_method, metric=select_metric)
+    best_rows = _mark_train_selected(wide, selected)
     wide.to_csv(out_audit, index=False)
-
-    best_key = f"{best_metric}__{best_method}"
-    best_rows = _best_rows(wide, best_key)
 
     col_spec = "ll" + "c" * (len(metrics) * len(methods))
     metric_name_display = {"aucroc": "AUROC", "gap": "Cosine gap"}
@@ -340,19 +374,20 @@ def emit_taskB_routing(
     caption: str,
     label: str,
     banner: str,
-    best_method: str,
-    best_metric: str = "overall_assignment_acc",
+    select_method: str,
+    select_metric: str = TASKB_SELECT_METRIC,
     float_table: bool = False,
 ) -> pd.DataFrame:
     """Emit Task B routing per-layer table (single-seed).
 
     metrics: subset of {"existing_acc", "new_acc", "overall_assignment_acc"}.
+    The bold row per model is the train-split argmax of ``select_metric``
+    under ``select_method``.
     """
     wide = _pivot(df, models, methods, metrics)
+    selected = train_selected_layers(df, list(models), method=select_method, metric=select_metric)
+    best_rows = _mark_train_selected(wide, selected)
     wide.to_csv(out_audit, index=False)
-
-    best_key = f"{best_metric}__{best_method}"
-    best_rows = _best_rows(wide, best_key)
 
     col_spec = "ll" + "c" * (len(metrics) * len(methods))
     metric_name_display = {
@@ -399,16 +434,19 @@ def emit_taskB_ranking_single(
     caption: str,
     label: str,
     banner: str,
-    best_method: str,
-    best_metric: str = "dir_acc_at_1",
+    select_method: str,
+    select_metric: str = TASKB_SELECT_METRIC,
     float_table: bool = False,
 ) -> pd.DataFrame:
-    """Emit Task B ranking table from the single-seed Task A CSV (no ±std)."""
-    wide = _pivot(df, models, methods, metrics)
-    wide.to_csv(out_audit, index=False)
+    """Emit Task B ranking table from the single-seed Task A CSV (no ±std).
 
-    best_key = f"{best_metric}__{best_method}"
-    best_rows = _best_rows(wide, best_key)
+    The bold row per model is the train-split argmax of ``select_metric``
+    under ``select_method``.
+    """
+    wide = _pivot(df, models, methods, metrics)
+    selected = train_selected_layers(df, list(models), method=select_method, metric=select_metric)
+    best_rows = _mark_train_selected(wide, selected)
+    wide.to_csv(out_audit, index=False)
 
     col_spec = "ll" + "c" * (len(metrics) * len(methods))
     metric_name_display = {
@@ -454,11 +492,13 @@ def emit_taskB_ranking_mseed(
     caption: str,
     label: str,
     banner: str,
-    best_method: str,
+    selected_layers: dict[str, int],
 ) -> pd.DataFrame:
     """Emit mseed Task B ranking table with mean ± std.
 
-    Reports Acc@1, existing, new.
+    Reports Acc@1, existing, new. ``selected_layers`` (model -> layer) marks
+    the bold row per model; it is the train-selected layer shared with the
+    top-K table, not an argmax over the five-seed means in this table.
     """
     value_cols = [
         "dir_acc_at_1_mean",
@@ -469,10 +509,8 @@ def emit_taskB_ranking_mseed(
         "new_acc_std",
     ]
     wide = _pivot(df, models, methods, value_cols)
+    best_rows = _mark_train_selected(wide, selected_layers)
     wide.to_csv(out_audit, index=False)
-
-    best_key = f"dir_acc_at_1_mean__{best_method}"
-    best_rows = _best_rows(wide, best_key)
 
     metric_groups = [
         ("Acc@1", "dir_acc_at_1"),
@@ -538,9 +576,24 @@ CAP_RANK_SINGLE_METHOD = CAP_BASE_ABTT + (
 )
 
 
-def _best_layer_caption(method_label: str, metric_label: str) -> str:
+def _selected_layer_caption(method_label: str, task: str) -> str:
+    """The bold-row sentence: the train-only rule, tied to the headline subscript.
+
+    ``task`` is ``"taskA"`` (selection by training-set AUROC, the rule of
+    Table~tab:taskA_headline) or ``"taskB"`` (training-set directory accuracy
+    at rank 1, Table~tab:taskB_headline). ``method_label`` must be the
+    headline column name (``ABTT`` or ``SIF+ABTT``) so the reader can find
+    the subscript.
+    """
+    metric_phrase = {
+        "taskA": "AUROC",
+        "taskB": "directory accuracy at rank~1",
+    }[task]
     return (
-        rf"Rows in bold mark the best layer per model, selected by {method_label} {metric_label}."
+        rf"Rows in bold mark the layer chosen on the train split, the layer with the highest "
+        rf"training-set {metric_phrase} under {method_label}; it is the {method_label} "
+        rf"subscript in Table~\ref{{{HEADLINE_LABEL[task]}}}, and not always the layer with "
+        rf"the highest test score in this table."
     )
 
 
@@ -568,12 +621,11 @@ def main() -> None:
         caption=(
             r"Per-layer Task~A pairwise duplicate-detection metrics for the three T5 encoders "
             r"(LaTa, PhilTa, mT5-base). " + CAP_TASKA_METHOD
-            + _best_layer_caption("ABTT", "AUROC")
+            + _selected_layer_caption("ABTT", "taskA")
         ),
         label="tab:taskA_main",
         banner=r"Task A: Pairwise Duplicate Detection (main)",
-        best_method="abtt_optimal",
-        best_metric="aucroc",
+        select_method="abtt_optimal",
         float_table=True,
     )
     emit_taskA(
@@ -586,12 +638,11 @@ def main() -> None:
         caption=(
             r"Per-layer Task~A pairwise metrics for the non-T5 models "
             r"(LaBSE, Qwen3-0.6B, KaLM-mini), under the same two-method comparison as the main paper. "
-            + CAP_TASKA_METHOD + _best_layer_caption("ABTT", "AUROC")
+            + CAP_TASKA_METHOD + _selected_layer_caption("ABTT", "taskA")
         ),
         label="tab:taskA_appendix",
         banner=r"Task A: Pairwise Duplicate Detection (appendix models)",
-        best_method="abtt_optimal",
-        best_metric="aucroc",
+        select_method="abtt_optimal",
     )
     emit_taskA(
         taskA_df,
@@ -607,12 +658,11 @@ def main() -> None:
             r"tunes $D$ per layer on the train split. Gap is omitted to keep the table narrow; the "
             r"pure-ABTT comparison (not SIF-conditioned) is in "
             r"Tables~\ref{tab:taskA_main} and~\ref{tab:taskA_appendix}. "
-            + _best_layer_caption("SIF+ABTT (D-tuned)", "AUROC")
+            + _selected_layer_caption("SIF+ABTT", "taskA")
         ),
         label="tab:taskA_appendix_sif",
         banner=r"Task A: SIF-suite AUROC (appendix)",
-        best_method="sif_abtt_optimal",
-        best_metric="aucroc",
+        select_method="sif_abtt_optimal",
     )
 
     # -------- Task B: routing (single-seed, from Task A CSV) --------
@@ -626,12 +676,11 @@ def main() -> None:
         caption=(
             r"Per-layer Task~B autonomous routing accuracy for the three T5 encoders. "
             + CAP_ROUTING_METHOD
-            + _best_layer_caption("ABTT", "overall assignment accuracy")
+            + _selected_layer_caption("ABTT", "taskB")
         ),
         label="tab:taskB_routing_main",
         banner=r"Task B: Autonomous Routing (main, file-level, $\tau$-thresholded)",
-        best_method="abtt_optimal",
-        best_metric="overall_assignment_acc",
+        select_method="abtt_optimal",
         float_table=True,
     )
     emit_taskB_routing(
@@ -644,12 +693,11 @@ def main() -> None:
         caption=(
             r"Per-layer Task~B autonomous routing accuracy for the non-T5 models. "
             + CAP_ROUTING_METHOD
-            + _best_layer_caption("ABTT", "overall assignment accuracy")
+            + _selected_layer_caption("ABTT", "taskB")
         ),
         label="tab:taskB_routing_appendix",
         banner=r"Task B: Autonomous Routing (appendix models)",
-        best_method="abtt_optimal",
-        best_metric="overall_assignment_acc",
+        select_method="abtt_optimal",
     )
     emit_taskB_routing(
         taskA_df,
@@ -664,12 +712,11 @@ def main() -> None:
             r"to keep the table compact; see Tables~\ref{tab:taskB_routing_main} and~"
             r"\ref{tab:taskB_routing_appendix} for the pure-ABTT pairwise comparison with existing/new "
             r"broken out. "
-            + _best_layer_caption("SIF+ABTT (D-tuned)", "overall assignment accuracy")
+            + _selected_layer_caption("SIF+ABTT", "taskB")
         ),
         label="tab:taskB_routing_appendix_sif",
         banner=r"Task B: SIF-suite routing (appendix)",
-        best_method="sif_abtt_optimal",
-        best_metric="overall_assignment_acc",
+        select_method="sif_abtt_optimal",
     )
 
     # -------- Task B: ranking (single-seed, from Task A CSV) --------
@@ -683,12 +730,11 @@ def main() -> None:
         caption=(
             r"Per-layer Task~B top-$k$ ranking metrics for the three T5 encoders. "
             + CAP_RANK_SINGLE_METHOD
-            + _best_layer_caption("ABTT", "Acc@1")
+            + _selected_layer_caption("ABTT", "taskB")
         ),
         label="tab:taskB_ranking_main",
         banner=r"Task B: Top-K Ranking (main, single-seed v2)",
-        best_method="abtt_optimal",
-        best_metric="dir_acc_at_1",
+        select_method="abtt_optimal",
         float_table=True,
     )
     emit_taskB_ranking_single(
@@ -701,34 +747,40 @@ def main() -> None:
         caption=(
             r"Per-layer Task~B top-$k$ ranking metrics for the non-T5 models. "
             + CAP_RANK_SINGLE_METHOD
-            + _best_layer_caption("ABTT", "Acc@1")
+            + _selected_layer_caption("ABTT", "taskB")
         ),
         label="tab:taskB_ranking_appendix",
         banner=r"Task B: Top-K Ranking (appendix models, single-seed)",
-        best_method="abtt_optimal",
-        best_metric="dir_acc_at_1",
+        select_method="abtt_optimal",
     )
 
     # -------- Task B: mseed SIF+ABTT (appendix, preserves pre-restructure content) --------
+    # Bold rows come from the single-seed train metric, the same rule as the
+    # headline tables and as tables/taskB_topk.tex (issue #175).
+    mseed_layers = train_selected_layers(
+        taskA_df, ALL_MODELS, method=MSEED_METHOD, metric=TASKB_SELECT_METRIC
+    )
     emit_taskB_ranking_mseed(
         taskB_df,
         models=ALL_MODELS,
-        methods=["baseline", "sif_abtt_optimal"],
+        methods=["baseline", MSEED_METHOD],
         out_tex=tex_dir / "taskB_ranking_appendix_mseed.tex",
         out_audit=audit_dir / "taskB_ranking_appendix_mseed.csv",
         caption=(
             r"Per-layer Task~B top-$k$ ranking accuracy across all six models, averaged over $M=5$ "
             r"query/reference reseedings of the v2 train/test split (mean $\pm$ std). "
             r"\texttt{sif\_abtt\_optimal} applies SIF weighting plus ABTT with $D$ tuned per layer on "
-            r"the train split; the mseed sweep was not run for the pure \texttt{abtt\_optimal} variant "
-            r"reported in the main paper, so we include this table to give a variance-aware view of the "
+            r"the train split; the mseed sweep was not run for the ABTT-only variant of "
+            r"Tables~\ref{tab:taskA_headline} and~\ref{tab:taskB_headline}, so we include this table to give a variance-aware view of the "
             r"SIF-conditioned best variant. Overall assignment accuracy coincides with Acc@1 in the "
             r"mseed pipeline, so we report the existing/new decomposition instead. "
-            + _best_layer_caption("SIF+ABTT", "Acc@1")
+            r"Rows in bold mark the layer reported per model, the row printed in "
+            r"Table~\ref{tab:taskb}. "
+            + SELECTION_RULE_CAPTION
         ),
         label="tab:taskB_ranking_appendix_mseed",
         banner=r"Task B: Top-K Ranking (appendix, 5-seed mean $\pm$ std, SIF+ABTT)",
-        best_method="sif_abtt_optimal",
+        selected_layers=mseed_layers,
     )
 
     print("wrote audit CSVs to", audit_dir)

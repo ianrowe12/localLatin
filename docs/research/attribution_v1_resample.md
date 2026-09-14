@@ -13,7 +13,12 @@ statistical tie, not a loss.
 Issue #113 found that `runs/active/ig_examples_200pos_run3_operational` sampled
 its 600 pairs from the legacy phase-9 split over `data/canon` (1,278 files), not
 from the paper's split over `data/canon_labelled` (1,705 files, benchmark v1).
-Five of the 600 rows are negatives under the corrected labels. Every attribution
+At least five of the 600 rows are negatives under the corrected labels; by
+filename identity the count is 28 (5 involving `BN2123.89r.5`, 23 from the
+`CNIC.325` renumbering of BN2123 items). The two counts differ because the old
+sample records `data/canon` paths and `file_id`s from a different split, so
+mapping a run-3 row onto benchmark v1 requires an identity rule; filename is the
+one used here. Every attribution
 number in the paper therefore rested on a sample drawn from a different corpus
 and a different split than every retrieval number in the same paper. The layer
 contract was never in doubt: LaTa 7, PhilTa 1, mT5-base 1 at `D=10` are selected
@@ -39,7 +44,21 @@ by a train-only retrieval rule and are unchanged here.
 
 `pair_manifest_sha256` digests only `(model, query filename, candidate filename,
 folder)`, so it identifies the sample itself and is stable against the
-`methods_available` column that the merge step rewrites in place.
+`methods_available` column that the merge step rewrites in place. It is **not**
+`sha256sum pair_manifest.tsv` (that is `bf064cf2...`, and covers the file's
+trailing newline). `scripts/ig/pair_manifest_digest.py` is the definition and
+verifies it:
+
+```bash
+python scripts/ig/pair_manifest_digest.py \
+  --examples_csv runs/active/ig_examples_200pos_v1/positive200_examples.csv \
+  --split_csv runs/active/resubmit/data/phase_resubmit_split.csv \
+  --expect 4fcdaa2be99ebcb279c16d47ce2af158411727df27c5b86414404780a43591c8
+```
+
+**Overlap with run 3**: 48 of the 600 (model, pair) rows reuse a run-3 pair, 35
+distinct pairs, and 152 of the 510 files are shared. The two samples are drawn
+from overlapping corpora, so they are not independent.
 
 ### Sample verification
 
@@ -136,10 +155,15 @@ and that direction is carried by the tokens the filter drops.
 
 ### A second defect, not fixed here
 
-`src/retrieval_mask.py` writes `cos_orig_baseline` from a plain
-`q_hidden.mean(axis=0)` and never consults the token filter. Under any filter
-other than `all` it therefore describes a different vector than the generator
-pooled, so it cannot serve as the drift reference. `full_cos_drift` is now
+`src/retrieval_mask.py` computes `cos_orig_*` as
+cos(**unfiltered** query mean, **filtered** candidate partner): the query side is
+a plain `q_hidden.mean(axis=0)` that never consults the token filter, while the
+partner vector comes through the filtered pooling. That mixture is what the
+stored values actually are, and it reproduces them exactly (examples 001-003:
+-0.6840, -0.2184, -0.3067, where pooling both sides unfiltered gives +0.99,
++0.99, +0.87). Under any filter other than `all` it therefore describes a
+different vector than the generator pooled, so it cannot serve as the drift
+reference. `full_cos_drift` is now
 emitted as `NaN` under a token filter, with a printed note, rather than
 reporting a disagreement between two stored quantities as an error in the
 backend. **Consequence: this run has no independent full-cosine reproduction
@@ -186,20 +210,33 @@ Cells read `baseline -> ABTT`. **A** marks an ABTT win.
 
 ### Effect sizes on the new sample
 
-Paired ABTT-minus-baseline differences, over the pairs valid under both variants.
+**Paired** ABTT-minus-baseline differences, over the pairs valid under both
+variants: the two variants score the same pairs, so the difference is paired and
+its standard error is smaller than the unpaired combination
+`sqrt(se_base^2 + se_abtt^2)` that the summary's per-variant columns would give.
+These are the numbers `paired_cell_stats` computes, which is the same statistic
+the table caption uses to decide which cells are ties, and the same statistic the
+paper prose quotes. Read from the per-pair JSON cache, not from `summary_v2.csv`:
+
+```python
+import build_main_attribution_artifacts as b
+b.paired_cell_stats(Path(".../attribution_metrics/v2_hidden"), b.RHO_KEY)
+```
 
 | Cell | rho_LOO | DelAUC gap |
 |---|--:|--:|
-| LaTa/IG | +0.367 (16.7 SE) | -0.661 (-8.4 SE) |
-| LaTa/MaRC | +0.455 (16.8 SE) | **-0.179 (-2.0 SE)** |
-| PhilTa/IG | +0.285 (13.6 SE) | +0.288 (23.7 SE) |
-| PhilTa/MaRC | **-0.024 (-1.0 SE)** | +0.110 (7.0 SE) |
-| mT5-base/IG | +0.543 (19.3 SE) | +0.500 (23.2 SE) |
-| mT5-base/MaRC | +0.247 (9.4 SE) | +0.422 (18.3 SE) |
+| LaTa/IG | +0.367 +/- 0.023 (16.0 SE) | -0.634 +/- 0.078 (-8.1 SE) |
+| LaTa/MaRC | +0.455 +/- 0.027 (17.0 SE) | **-0.159 +/- 0.089 (-1.8 SE)** |
+| PhilTa/IG | +0.285 +/- 0.016 (17.5 SE) | +0.287 +/- 0.010 (27.7 SE) |
+| PhilTa/MaRC | **-0.024 +/- 0.016 (-1.5 SE)** | +0.110 +/- 0.014 (7.7 SE) |
+| mT5-base/IG | +0.543 +/- 0.024 (22.5 SE) | +0.500 +/- 0.021 (23.3 SE) |
+| mT5-base/MaRC | +0.247 +/- 0.024 (10.3 SE) | +0.422 +/- 0.023 (18.3 SE) |
 
-**The one `rho_LOO` cell ABTT loses is a tie at 1.0 standard error, not a
-defeat.** The five wins run from 9.4 to 19.3 SE. That distinction is what the
-changed paper sentence has to carry.
+**The one `rho_LOO` cell ABTT loses is a tie at 1.5 standard errors, not a
+defeat.** The five wins run from 10.3 to 22.5 SE. That distinction is what the
+changed paper sentence has to carry. Both ties sit inside the generator's 2 SE
+threshold, so the caption names both and no verdict depends on the choice of
+paired over unpaired.
 
 ### Shuffled-attribution control (criterion 5)
 
@@ -258,20 +295,28 @@ disagreement; it now prints a range.
 **One sentence, and it weakens a claim.** `rho_LOO` 6/6 becomes 5/6.
 
 Changed, in `overleaf_drafts/acl_latex.tex` (hand-written prose only; every
-`.tex` table and figure comes from its generator):
+`.tex` table and figure comes from its generator). All five sentences are
+re-applied on top of the wording that #182 and #186 merged, not on the wording
+that preceded them:
 
 * **Section 5.4, the headline attribution sentence.** Was "improves rank
   faithfulness in all six model-view cells ($\rho_{\mathrm{LOO}}$ 6/6, with
   tie-corrected Kendall $\tau_b$ agreeing in all six) ... deletion faithfulness
   improves in only three of six, and one of those three wins is within 1.2
-  standard errors of zero". Now five of six with the sixth a tie at 1.0 standard
-  error, tau agreeing in the same five, and deletion faithfulness four of six
-  with one loss a tie at 2.0 standard errors.
-* **The contributions list**, which said ABTT "improves leave-one-out rank
-  faithfulness" without qualification.
-* **Section 6**, which said "only the leave-one-out rank gain is stable across
-  all six cells".
-* **The limitations paragraph**, same phrase.
+  standard errors of zero". Now five of six by 10.3 to 22.5 paired standard
+  errors, the sixth a tie at 1.5, tau agreeing in the same five, and deletion
+  faithfulness four of six with one of the two remaining cells a tie.
+* **Section 5.4, the sentence introducing the table**, which now records that
+  the pairs are drawn from the same benchmark test split as every retrieval
+  result above.
+* **The abstract**, which said ABTT "improves leave-one-out rank faithfulness
+  in every LaTa, PhilTa, and mT5-base model-method cell". That sentence was
+  false against the regenerated Table 6.
+* **The Introduction contributions list**, which said ABTT "improves
+  leave-one-out rank faithfulness" without qualification.
+* **The Discussion**, which said "only the leave-one-out rank gain is stable
+  across all six cells".
+* **The Limitations paragraph**, same phrase.
 
 `docs/research/attribution_metrics_decision.md` B5 is superseded for this sample
 and now points here.
@@ -338,6 +383,12 @@ python scripts/ig/package_attribution_sweep_appendix.py \
   --long_out runs/active/ig_examples_200pos_v1/attribution_metrics/summary_v2_sweep_long_appendix.csv \
   --missing_report_out runs/active/ig_examples_200pos_v1/attribution_metrics/appendix_sweep_v2_completeness.json
 ```
+
+**Regenerating the main table needs the per-pair cache.** The caption's tie
+clause is computed from paired per-pair differences under
+`attribution_metrics/v2_hidden/`, which is gitignored and rebuilt by step 4. The
+generator now fails with a clear message if that directory is absent rather than
+silently dropping the clause; `--no_tie_clause` is the explicit opt-out.
 
 The generators take the new run through their existing `--summary_csv` flag.
 Their module-level `DEFAULT_SUMMARY` still points at the run 3 directory, which

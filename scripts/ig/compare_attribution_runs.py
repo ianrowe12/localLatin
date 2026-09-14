@@ -4,9 +4,10 @@ Issue #141 re-sampled the 200-positive-pair attribution set on benchmark v1
 after #113 found that the published sample came from the legacy phase-9 split
 over ``data/canon``. The question the paper needs answered is not "did the
 numbers move" (they must, the pairs are different files) but "did any
-**verdict** move": does ``rho_LOO`` still favour ABTT in all six model-view
-cells, does ``DelAUC gap`` still favour it in three, and do the two
-sufficiency-side metrics still fail the shuffled-attribution control.
+**verdict** move": in how many of the six model-view cells does ``rho_LOO``
+favour ABTT, likewise ``DelAUC gap``, and do the two sufficiency-side metrics
+still fail the shuffled-attribution control. On the benchmark v1 sample the
+answers are 5/6 (was 6/6), 4/6 (was 3/6) and yes.
 
 Emits a markdown table per metric, with the old and new baseline -> ABTT means
 and the win marker, so the memo can be written straight from the output.

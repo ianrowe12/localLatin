@@ -2,7 +2,7 @@
 \small
 \setlength{\tabcolsep}{4pt}
 \begin{longtable}{llcccccc}
-\caption{Per-layer Task~B autonomous routing accuracy for the non-T5 models. \texttt{baseline} is mean pooling without correction; \texttt{abtt\_optimal} applies ABTT (no SIF weighting) with $D$ tuned per layer on the train split. For every test file we compute $s_i = \max_{j \neq i} \cos(e_i, e_j)$ against the rest of the test set and compare to the learned threshold $\tau$ (fit on train via $F_1$-optimal cut on same-directory vs.\ different-directory pairs). The decision is binary first (existing if $s_i \geq \tau$, else new); only files predicted existing are then routed to their top-1 neighbour's directory. We report \textbf{existing accuracy} (restricted to files whose true partner is in the test set), \textbf{new accuracy} (files that should be flagged as novel), and \textbf{overall assignment accuracy}. Rows in bold mark the best layer per model, selected by ABTT overall assignment accuracy.}
+\caption{Per-layer Task~B autonomous routing accuracy for the non-T5 models. \texttt{baseline} is mean pooling without correction; \texttt{abtt\_optimal} applies ABTT (no SIF weighting) with $D$ tuned per layer on the train split. For every test file we compute $s_i = \max_{j \neq i} \cos(e_i, e_j)$ against the rest of the test set and compare to the learned threshold $\tau$ (fit on train via $F_1$-optimal cut on same-directory vs.\ different-directory pairs). The decision is binary first (existing if $s_i \geq \tau$, else new); only files predicted existing are then routed to their top-1 neighbour's directory. We report \textbf{existing accuracy} (restricted to files whose true partner is in the test set), \textbf{new accuracy} (files that should be flagged as novel), and \textbf{overall assignment accuracy}. Rows in bold mark the layer chosen on the train split, the layer with the highest training-set directory accuracy at rank~1 under ABTT; it is the ABTT subscript in Table~\ref{tab:taskB_headline}, and not always the layer with the highest test score in this table.}
 \label{tab:taskB_routing_appendix} \\
 \toprule
 \multicolumn{2}{c}{} & \multicolumn{6}{c}{\textbf{Task B: Autonomous Routing (appendix models)}} \\
@@ -63,9 +63,9 @@ Qwen3-0.6B & 1 & 0.264 & 0.921 & 0.960 & 0.885 & 0.526 & 0.908 \\
  & 27 & 0.793 & 0.877 & 0.833 & 0.923 & 0.808 & 0.894 \\
  & 28 & 0.796 & 0.877 & 0.867 & 0.913 & 0.823 & 0.890 \\
 \midrule
-KaLM-mini & \textbf{1} & \textbf{0.391} & \textbf{0.921} & \textbf{0.907} & \textbf{0.920} & \textbf{0.585} & \textbf{0.921} \\
+KaLM-mini & 1 & 0.391 & 0.921 & 0.907 & 0.920 & 0.585 & 0.921 \\
  & 2 & 0.493 & 0.916 & 0.848 & 0.879 & 0.627 & 0.902 \\
- & 3 & 0.443 & 0.923 & 0.870 & 0.907 & 0.604 & 0.917 \\
+ & \textbf{3} & \textbf{0.443} & \textbf{0.923} & \textbf{0.870} & \textbf{0.907} & \textbf{0.604} & \textbf{0.917} \\
  & 4 & 0.308 & 0.931 & 0.935 & 0.895 & 0.544 & 0.917 \\
  & 5 & 0.338 & 0.905 & 0.882 & 0.923 & 0.543 & 0.911 \\
  & 6 & 0.256 & 0.895 & 0.910 & 0.920 & 0.502 & 0.904 \\

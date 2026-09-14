@@ -27,7 +27,7 @@ Two facts carry this plank. First, anisotropy is present in all six. At each mod
 
 Second, the retrieval consequence is largest where the collapse is deepest, and the repair is uniform. Baseline mean-pooled AUROC bottoms out at 0.497 for LaTa (layer 6, chance), 0.539 for PhilTa (layer 10) and 0.654 for mT5-base (layer 5). ABTT at those same layers gives 0.963, 0.982 and 0.977. Source: `runs/active/resubmit/results/phase_resubmit_results.csv` (700 rows), rendered as Figures `fig:dip` and `fig:gap` and, per layer, as Table `tab:taskA_main` for the headline models and `tab:taskA_appendix` for the other three.
 
-The cleanest headline number is Task B under five query and reference reseedings. Best-layer baseline top-1 accuracy spans 36.63 points across the six models, from 50.6 for mT5-base to 87.3 for KaLM-mini. Under the best per-model SIF plus ABTT configuration, which is `sif_abtt_fixed` at D=10 for five models and `sif_abtt_optimal` at D=7 for LaBSE, that spread collapses to 1.0 point, from 89.4 to 90.4, and every model clears 95 percent by top-2. Source: `runs/active/resubmit/taskb_mseed/aggregated_results.csv` (400 rows), rendered as Table `tab:taskb`. Per-layer tables live in `runs/active/resubmit/results/perlayer_tables/`.
+The cleanest headline number is Task B under five query and reference reseedings. Best-layer baseline top-1 accuracy spans 36.63 points across the six models, from 50.6 for mT5-base to 87.3 for KaLM-mini. Under SIF plus ABTT at each model's train-selected layer (the rule in `benchmark_v1.md`, section "Five-seed table selection rule", adopted in #175; the earlier 1.0-point figure here came from a test-set argmax over all methods), that spread collapses to 1.7 points, from 88.9 for LaTa to 90.6 for LaBSE, and every model clears 95 percent by top-2. Source: `runs/active/resubmit/taskb_mseed/aggregated_results.csv` (400 rows), rendered as Table `tab:taskb`. Per-layer tables live in `runs/active/resubmit/results/perlayer_tables/`.
 
 That last table already uses SIF plus ABTT while the main Task A tables are ABTT-only. SIF therefore returns to the main text and the main tables become baseline, SIF, ABTT, SIF plus ABTT. The framing is that SIF reweights tokens by frequency before pooling and ABTT removes dominant directions after pooling, so the two corrections are complementary rather than competing.
 
@@ -35,7 +35,19 @@ That last table already uses SIF plus ABTT while the main Task A tables are ABTT
 
 We explain the retrieval score at layers picked by a predeclared train-only rule (earliest layer within 0.5 points of best train directory accuracy at rank 1 under ABTT), which locks LaTa layer 7, PhilTa layer 1 and mT5-base layer 1 before any attribution metric is computed. We use two views of the same scalar: integrated gradients, and MaRC adapted from classification to bi-encoder retrieval by optimising a soft mask on one side against a fixed partner embedding (Equation `eq:retrieval_mark`).
 
-The result we stand behind is rank faithfulness. Leave-one-out Spearman correlation improves under ABTT in all six model-by-view cells: LaTa IG -0.001 to 0.396, LaTa MaRC 0.042 to 0.401, PhilTa IG 0.182 to 0.607, PhilTa MaRC 0.190 to 0.331, mT5-base IG 0.164 to 0.597, mT5-base MaRC 0.250 to 0.392. Evidence: Table `tab:attribution_metrics_main`, Figure `fig:attribution_rho_loo_main`, and Figure `fig:pairmatrix` for the qualitative PhilTa example. Source data: `runs/active/ig_examples_200pos_run3_operational/attribution_metrics/summary.csv`, 200 positive pairs per model.
+The result we stand behind is rank faithfulness. **Superseded by
+`docs/research/attribution_v1_resample.md` (issue #141): the numbers in this
+paragraph come from a sample drawn on the legacy phase-9 split over
+`data/canon`, not from benchmark v1.** On the re-sampled set, leave-one-out
+Spearman correlation improves under ABTT in five of six model-by-view cells, by
+10.3 to 22.5 paired standard errors, and the sixth (PhilTa MaRC) is a tie at 1.5
+standard errors rather than a loss: LaTa IG 0.003 to 0.370, LaTa MaRC 0.083 to
+0.538, PhilTa IG 0.329 to 0.614, PhilTa MaRC 0.469 to 0.445, mT5-base IG 0.143
+to 0.686, mT5-base MaRC 0.257 to 0.504. Evidence: Table
+`tab:attribution_metrics_main`, Figure `fig:attribution_rho_loo_main`, and
+Figure `fig:pairmatrix` for the qualitative PhilTa example. Source data:
+`runs/active/ig_examples_200pos_v1/attribution_metrics/summary_v2.csv`, 200
+positive pairs per model.
 
 ## 3. What We Do Not Claim
 
@@ -46,6 +58,8 @@ We do not claim that ABTT makes similarity depend on a small sufficient token se
 We do not claim that label-free geometry selects the best retrieval layer. It diagnoses collapse. The operational layers come from a train-only retrieval rule and differ from the strongest diagnostic collapse layers for all three attribution models.
 
 We do not claim a uniform mid-layer dip shape. Anisotropy is universal, but the retrieval dip is not. LaBSE, Qwen3-0.6B and KaLM-mini improve close to monotonically with depth under the baseline, so the honest phrasing is that all six models are anisotropic and all six gain from ABTT, while the catastrophic mid-depth collapse is a T5-encoder phenomenon. James and Siddique should sign off on this wording, since it is slightly narrower than "all six models show a mid-layer dip".
+
+We do not claim that the corrected embeddings beat surface overlap. Witnesses to one fragment are hand copies of one exemplar and differ mostly in spelling, so a character 3-5-gram TF-IDF cosine matches the best ABTT cell on Task A (AUROC 0.987 against 0.987) and is level with it on Task B (91.8 against 91.7 assignment accuracy, 89.9 against 89.4 directory accuracy at rank 1, single-seed against seed SDs of up to 1.0), and `docs/research/lexical_vs_embedding.md` finds no overlap stratum in which any embedding configuration ranks better. The paper says so in the abstract and the introduction (issue #176) and presents the lexical baseline as the operating point a practitioner would pick. The fine-tuning ceiling is stated the same way: fine-tuned LaTa with ABTT reaches 87.8 assignment accuracy and 85.2 directory accuracy at rank 1, below every zero-shot ABTT cell (88.5 to 91.7 and 86.1 to 89.4), so a parameter-free repair matches what contrastive fine-tuning on the 565 available positive pairs buys, and ABTT lowers that row's Task A AUROC (0.984 to 0.970) while widening its gap, consistent with fine-tuning having already removed part of the common component.
 
 We do not claim global explanations of model behaviour. Every attribution result is local to one query and candidate pair. Baseline attribution explains raw cosine and ABTT attribution explains corrected cosine, so cross-variant comparisons are descriptive.
 

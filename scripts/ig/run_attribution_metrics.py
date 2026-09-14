@@ -371,6 +371,49 @@ class MetricOptions:
         return tuple(n for n in METRIC_REGISTRY if n in self.metric_names)
 
 
+class TokenFilterMismatch(RuntimeError):
+    """The artifact was generated with a different token filter than requested."""
+
+
+def stored_token_filter(data) -> Optional[str]:
+    """The token filter the artifact generator used, if the NPZ records it.
+
+    The MaRC stage writes its hyperparameters, including ``token_filter``, into
+    ``hyperparams_retrieval_mark``. Artifacts written before that stage ran, or
+    by a generator that did not record it, return None.
+    """
+    if "hyperparams_retrieval_mark" not in getattr(data, "files", []):
+        return None
+    raw = data["hyperparams_retrieval_mark"]
+    try:
+        payload = json.loads(str(raw.item() if raw.shape == () else raw))
+    except (AttributeError, ValueError, TypeError):
+        return None
+    value = payload.get("token_filter")
+    return None if value is None else str(value)
+
+
+def check_token_filter(data, requested: str, npz_path: Path) -> None:
+    """Fail loudly when --token_filter disagrees with the artifact.
+
+    Scoring a run with the wrong filter is silent: the pooled vector is simply a
+    different vector, and under a filter ``full_cos_drift`` is NaN, so there is
+    no signal at all to read. The filter is recorded in the artifact, so the
+    disagreement is detectable and should stop the run rather than produce a
+    plausible-looking table.
+    """
+    stored = stored_token_filter(data)
+    if stored is None or stored == requested:
+        return
+    raise TokenFilterMismatch(
+        f"{npz_path} was generated with --token_filter {stored!r} but this run "
+        f"requested {requested!r}. The generator applies the filter to the "
+        "pooling and stores unfiltered hidden states, so the two choices pool "
+        "different vectors and the PCs in the NPZ only clean one of them. "
+        f"Re-run with --token_filter {stored!r}."
+    )
+
+
 def keep_positions(token_ids: np.ndarray, n: int,
                    keep_lookup: Optional[np.ndarray]) -> np.ndarray:
     """Positions of the tokens the artifact generator actually pooled over.
@@ -443,7 +486,8 @@ def _method_rows(data, ctx: PairContext, variant: str, q_idx: np.ndarray,
 
 def process_pair_hidden(npz_path: Path, method_filter: Optional[List[str]],
                         opts: MetricOptions,
-                        keep_lookup: Optional[np.ndarray] = None) -> List[dict]:
+                        keep_lookup: Optional[np.ndarray] = None,
+                        token_filter: str = "all") -> List[dict]:
     """CPU-only twin of :func:`process_pair` backed by cached hidden states.
 
     Recomputes every masked cosine from ``query_hidden`` / ``candidate_hidden``
@@ -453,6 +497,7 @@ def process_pair_hidden(npz_path: Path, method_filter: Optional[List[str]],
     two backends' numbers must not be mixed inside one table.
     """
     data = np.load(npz_path)
+    check_token_filter(data, token_filter, npz_path)
     layer = int(data["layer"].item())
     n_q = int(data["query_attention_mask"].sum())
     n_c = int(data["candidate_attention_mask"].sum())
@@ -483,12 +528,13 @@ def process_pair_hidden(npz_path: Path, method_filter: Optional[List[str]],
         #
         # The reference is only valid when the artifacts were generated with
         # ``--token_filter all``. ``cos_orig_*`` is written by the MaRC stage
-        # (src/retrieval_mask.py), which pools with a plain unfiltered
-        # ``q_hidden.mean(axis=0)`` and does not consult the token filter, so
-        # under any other filter it describes a different vector than the one
-        # the generator pooled and the PCs were fit on. Reporting a drift
-        # against it would flag a disagreement between two stored quantities as
-        # an error in this backend. It is left NaN instead, loudly.
+        # (src/retrieval_mask.py) as cos(*unfiltered* query mean, *filtered*
+        # candidate partner): the query side never consults the token filter
+        # while the partner does. Under any filter other than ``all`` it
+        # therefore describes a different vector than the one the generator
+        # pooled and the PCs were fit on. Reporting a drift against it would
+        # flag a disagreement between two stored quantities as an error in this
+        # backend. It is left NaN instead, loudly.
         stored_key = f"cos_orig_{variant}"
         if stored_key in data.files:
             drift = (
@@ -505,13 +551,15 @@ def process_pair_hidden(npz_path: Path, method_filter: Optional[List[str]],
 def process_pair(npz_path: Path, model, tokenizer, device: str,
                  method_filter: Optional[List[str]],
                  opts: MetricOptions,
-                 keep_lookup: Optional[np.ndarray] = None) -> List[dict]:
+                 keep_lookup: Optional[np.ndarray] = None,
+                 token_filter: str = "all") -> List[dict]:
     """Process one NPZ with the model backend. One row per method × variant."""
     fractions = opts.fractions
     compactness_thresholds = opts.compactness_thresholds
     compute_aopc = opts.compute_aopc
     random_seeds = opts.random_seeds
     data = np.load(npz_path)
+    check_token_filter(data, token_filter, npz_path)
     layer = int(data["layer"].item())
     n_q = int(data["query_attention_mask"].sum())
     n_c = int(data["candidate_attention_mask"].sum())
@@ -1374,8 +1422,9 @@ def main() -> None:
                       flush=True)
                 print("  note: full_cos_drift is NaN under a token filter. Its "
                       "reference, cos_orig_* in the NPZ, is written by "
-                      "src/retrieval_mask.py from an unfiltered mean and so "
-                      "describes a different vector than the pooled one.",
+                      "src/retrieval_mask.py as cos(unfiltered query mean, "
+                      "filtered candidate partner) and so describes a different "
+                      "vector than the pooled one.",
                       flush=True)
             model = tokenizer = None
             if args.backend == "model":
@@ -1409,12 +1458,14 @@ def main() -> None:
                 if args.backend == "hidden":
                     rows = process_pair_hidden(
                         npz_path, args.methods, opts, keep_lookup=keep_lookup,
+                        token_filter=args.token_filter,
                     )
                 else:
                     rows = process_pair(
                         npz_path, model, tokenizer, device,
                         method_filter=args.methods, opts=opts,
                         keep_lookup=keep_lookup,
+                        token_filter=args.token_filter,
                     )
                 # Annotate with model/example identifiers.
                 for r in rows:
