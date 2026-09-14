@@ -9,7 +9,10 @@ Post-2026-04-20 layout:
 Inputs:
   - Single-seed per-layer CSV (has all 7 methods incl. `abtt_optimal`).
   - Multi-seed (mseed) CSV (has baseline + three SIF variants only; no
-    pure `abtt_optimal`). Used only for the appendix mseed ranking table.
+    pure `abtt_optimal`). Used only for the appendix mseed ranking table,
+    whose bold rows are the train-selected `sif_abtt_optimal` layers taken
+    from the single-seed CSV (see `taskb_mseed_selection.py`, issue #175),
+    so they match `tables/taskB_topk.tex` cell for cell.
 
 Outputs (tex + audit CSVs):
   tables/taskA_main.tex                      — 3 models, base vs ABTT
@@ -30,6 +33,12 @@ from pathlib import Path
 from typing import Callable, Sequence
 
 import pandas as pd
+
+from taskb_mseed_selection import (
+    MSEED_METHOD,
+    SELECTION_RULE_CAPTION,
+    train_selected_layers,
+)
 
 
 MODEL_DISPLAY = {
@@ -454,11 +463,13 @@ def emit_taskB_ranking_mseed(
     caption: str,
     label: str,
     banner: str,
-    best_method: str,
+    selected_layers: dict[str, int],
 ) -> pd.DataFrame:
     """Emit mseed Task B ranking table with mean ± std.
 
-    Reports Acc@1, existing, new.
+    Reports Acc@1, existing, new. ``selected_layers`` (model -> layer) marks
+    the bold row per model; it is the train-selected layer shared with the
+    top-K table, not an argmax over the five-seed means in this table.
     """
     value_cols = [
         "dir_acc_at_1_mean",
@@ -469,10 +480,18 @@ def emit_taskB_ranking_mseed(
         "new_acc_std",
     ]
     wide = _pivot(df, models, methods, value_cols)
+    wide["train_selected"] = [
+        int(row["layer"]) == selected_layers[row["model"]] for _, row in wide.iterrows()
+    ]
     wide.to_csv(out_audit, index=False)
 
-    best_key = f"dir_acc_at_1_mean__{best_method}"
-    best_rows = _best_rows(wide, best_key)
+    best_rows = set(wide.index[wide["train_selected"]])
+    if len(best_rows) != len(selected_layers):
+        missing = {
+            m: l for m, l in selected_layers.items()
+            if not ((wide["model"] == m) & (wide["layer"] == l)).any()
+        }
+        raise SystemExit(f"train-selected layers absent from the mseed CSV: {missing}")
 
     metric_groups = [
         ("Acc@1", "dir_acc_at_1"),
@@ -710,10 +729,13 @@ def main() -> None:
     )
 
     # -------- Task B: mseed SIF+ABTT (appendix, preserves pre-restructure content) --------
+    # Bold rows come from the single-seed train metric, the same rule as the
+    # headline tables and as tables/taskB_topk.tex (issue #175).
+    mseed_layers = train_selected_layers(taskA_df, ALL_MODELS, method=MSEED_METHOD)
     emit_taskB_ranking_mseed(
         taskB_df,
         models=ALL_MODELS,
-        methods=["baseline", "sif_abtt_optimal"],
+        methods=["baseline", MSEED_METHOD],
         out_tex=tex_dir / "taskB_ranking_appendix_mseed.tex",
         out_audit=audit_dir / "taskB_ranking_appendix_mseed.csv",
         caption=(
@@ -724,11 +746,13 @@ def main() -> None:
             r"reported in the main paper, so we include this table to give a variance-aware view of the "
             r"SIF-conditioned best variant. Overall assignment accuracy coincides with Acc@1 in the "
             r"mseed pipeline, so we report the existing/new decomposition instead. "
-            + _best_layer_caption("SIF+ABTT", "Acc@1")
+            r"Rows in bold mark the layer reported per model, the row printed in "
+            r"Table~\ref{tab:taskb}. "
+            + SELECTION_RULE_CAPTION
         ),
         label="tab:taskB_ranking_appendix_mseed",
         banner=r"Task B: Top-K Ranking (appendix, 5-seed mean $\pm$ std, SIF+ABTT)",
-        best_method="sif_abtt_optimal",
+        selected_layers=mseed_layers,
     )
 
     print("wrote audit CSVs to", audit_dir)
