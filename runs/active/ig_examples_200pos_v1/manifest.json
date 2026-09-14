@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "created_at_utc": "2026-09-14T18:58:53.672597+00:00",
+  "script": "scripts/ig/build_attribution_run_manifest.py",
+  "examples_csv": "runs/active/ig_examples_200pos_v1/positive200_examples.csv",
+  "pc_root": "runs/active/ig_examples_200pos_v1/pcs",
+  "artifacts_root": "runs/active/ig_examples_200pos_v1/artifacts",
+  "retrieval_mark_root": "runs/active/ig_examples_200pos_v1/retrieval_mark/artifacts",
+  "metrics_root": "runs/active/ig_examples_200pos_v1/attribution_metrics",
+  "expected_models": [
+    "bowphs/LaTa",
+    "bowphs/PhilTa",
+    "google/mt5-base"
+  ],
+  "expected_n_per_model": 200,
+  "required_methods": [
+    "ig",
+    "retrieval_mark"
+  ],
+  "variants": [
+    "baseline",
+    "abtt"
+  ],
+  "pc_files": {
+    "bowphs_LaTa": {
+      "path": "runs/active/ig_examples_200pos_v1/pcs/bowphs_LaTa/layer7_pcs.npz",
+      "exists": true,
+      "pcs_shape": [
+        10,
+        768
+      ],
+      "mean_vec_shape": [
+        768
+      ]
+    },
+    "bowphs_PhilTa": {
+      "path": "runs/active/ig_examples_200pos_v1/pcs/bowphs_PhilTa/layer1_pcs.npz",
+      "exists": true,
+      "pcs_shape": [
+        10,
+        768
+      ],
+      "mean_vec_shape": [
+        768
+      ]
+    },
+    "google_mt5-base": {
+      "path": "runs/active/ig_examples_200pos_v1/pcs/google_mt5-base/layer1_pcs.npz",
+      "exists": true,
+      "pcs_shape": [
+        10,
+        768
+      ],
+      "mean_vec_shape": [
+        768
+      ]
+    }
+  },
+  "summary": {
+    "path": "runs/active/ig_examples_200pos_v1/attribution_metrics/summary.csv",
+    "exists": false
+  },
+  "inventory_csv": "runs/active/ig_examples_200pos_v1/artifact_inventory.csv",
+  "artifact_method_errors": 0,
+  "warnings": [
+    "summary.csv not found: runs/active/ig_examples_200pos_v1/attribution_metrics/summary.csv"
+  ],
+  "errors": []
+}

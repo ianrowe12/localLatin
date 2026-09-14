@@ -232,9 +232,9 @@ The same training signal also picks the attribution layers, locked before any at
 
 \input{tables/attribution_metrics_main}
 
-Table~\ref{tab:attribution_metrics_main} reports the main attribution comparison: 200 positive query-candidate pairs per model for LaTa, PhilTa, and mT5-base, with baseline and ABTT variants of both integrated gradients and retrieval-adapted MaRC. ABTT repairs the scores being explained at these layers: LaTa layer 7 moves from AUROC 0.498 to 0.962 and directory accuracy 0.302 to 0.868, PhilTa layer 1 from 0.939 to 0.977 and 0.693 to 0.883, and mT5-base layer 1 from 0.822 to 0.979 and 0.451 to 0.885.
+Table~\ref{tab:attribution_metrics_main} reports the main attribution comparison: 200 positive query-candidate pairs per model for LaTa, PhilTa, and mT5-base, drawn from the same benchmark test split as every retrieval result above, with baseline and ABTT variants of both integrated gradients and retrieval-adapted MaRC. ABTT repairs the scores being explained at these layers: LaTa layer 7 moves from AUROC 0.498 to 0.962 and directory accuracy 0.302 to 0.868, PhilTa layer 1 from 0.939 to 0.977 and 0.693 to 0.883, and mT5-base layer 1 from 0.822 to 0.979 and 0.451 to 0.885.
 
-Post-processing with ABTT improves rank faithfulness in all six model-view cells ($\rho_{\mathrm{LOO}}$ 6/6, with tie-corrected Kendall $\tau_b$ agreeing in all six), but chance-corrected deletion faithfulness improves in only three of six, and one of those three wins is within 1.2 standard errors of zero. The sufficiency-side metrics are reported in the appendix rather than the main table because they fail our shuffled-attribution control in two baseline cells. We therefore claim that ABTT yields better-ranked rationales, not that it improves faithfulness on every axis.
+Post-processing with ABTT improves rank faithfulness in five of six model-view cells ($\rho_{\mathrm{LOO}}$ 5/6, Kendall $\tau_b$ agreeing in the same five), with gains of 9.4 to 19.3 standard errors; the sixth cell is a tie at 1.0 standard error, not a loss. Chance-corrected deletion faithfulness improves in four of six. The sufficiency-side metrics are in the appendix rather than the main table because they fail our shuffled-attribution control in a baseline cell. We therefore claim that ABTT yields better-ranked rationales, not that it improves faithfulness on every axis.
 
 Masking is applied at the representation level over cached layer-$L$ hidden states, so every faithfulness statement here is about the pooled read-out at that layer rather than about the encoder's input-to-output map. Appendix~\ref{app:attribution_sweeps} carries $\tau_b$, chance-corrected insertion faithfulness, the ERASER-style rationale metrics and their threshold sweeps (Table~\ref{tab:attribution_metrics_secondary}), and plots the rank-faithfulness column (Figure~\ref{fig:attribution_rho_loo_main}). Appendix~\ref{app:qual_attribution} shows example-level views for one PhilTa retrieval case, including the integrated-gradient pair matrix before and after ABTT.
 
@@ -246,7 +246,7 @@ The practical reading depends on the architecture. With a T5 encoder the middle 
 
 Geometry diagnoses the failure mode but does not select layers. Use it to find where representations collapse and recover, then pick retrieval layers with a train-only task signal. The two answers differ in our attribution experiment: the selected layers are not the most anisotropic ones.
 
-The attribution results need a narrow reading. ABTT changes the cosine being explained, so only the leave-one-out rank gain is stable across all six cells.
+The attribution results need a narrow reading. ABTT changes the cosine being explained, so the leave-one-out rank gain is the only broadly stable effect, and even it is a tie rather than a gain in one of six cells.
 
 % Numbered content ends with the Discussion; start the unnumbered
 % Limitations on a fresh page so the 8-page content limit is unambiguous.

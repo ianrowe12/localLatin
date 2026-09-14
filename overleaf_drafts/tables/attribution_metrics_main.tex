@@ -12,16 +12,16 @@
 \cmidrule(lr){3-4}\cmidrule(lr){5-6}
 Model & Method & base & ABTT & base & ABTT \\
 \midrule
-LaTa & IG & 0.013 & \textbf{0.298} & \textbf{0.504} & 0.178 \\
- & MaRC & 0.070 & \textbf{0.397} & 0.244 & \textbf{0.287} \\
+LaTa & IG & 0.003 & \textbf{0.370} & \textbf{0.842} & 0.180 \\
+ & MaRC & 0.083 & \textbf{0.538} & \textbf{0.506} & 0.327 \\
 \addlinespace[2pt]
-PhilTa & IG & 0.144 & \textbf{0.577} & \textbf{0.806} & 0.420 \\
- & MaRC & 0.179 & \textbf{0.367} & \textbf{0.758} & 0.353 \\
+PhilTa & IG & 0.329 & \textbf{0.614} & 0.112 & \textbf{0.400} \\
+ & MaRC & \textbf{0.469} & 0.445 & 0.200 & \textbf{0.310} \\
 \addlinespace[2pt]
-mT5-base & IG & 0.138 & \textbf{0.626} & 0.394 & \textbf{0.548} \\
- & MaRC & 0.272 & \textbf{0.415} & 0.075 & \textbf{0.431} \\
+mT5-base & IG & 0.143 & \textbf{0.686} & 0.061 & \textbf{0.561} \\
+ & MaRC & 0.257 & \textbf{0.504} & 0.042 & \textbf{0.464} \\
 \bottomrule
 \end{tabular}
-\caption{Attribution faithfulness at the predeclared operational layers, 200 positive pairs per model, for integrated gradients (IG) and retrieval-adapted MaRC. $\rho_{\text{LOO}}$ correlates attribution magnitude with the leave-one-out change in the cosine. DelAUC gap is the deletion-curve area in attribution order minus the area under a random order, whose reference runs from 0.671 to 0.928 here, so zero is chance. Higher is better in both; boldface marks the better variant. ABTT wins 6/6 and 3/6, and the LaTa MaRC DelAUC win is a tie at about 1.2 standard errors. Ratio metrics are undefined below a full-query cosine of 0.05, so the DelAUC columns average 191 to 195 ABTT pairs against 200 baseline pairs. Cross-variant comparisons are descriptive. Secondary metrics: Table~\ref{tab:attribution_metrics_secondary}.}
+\caption{Attribution faithfulness at the predeclared operational layers, 200 positive pairs per model, for integrated gradients (IG) and retrieval-adapted MaRC. $\rho_{\text{LOO}}$ correlates attribution magnitude with the leave-one-out change in the cosine. DelAUC gap is the deletion-curve area in attribution order minus the area under a random order, whose reference runs from 0.692 to 0.961 here, so zero is chance. Higher is better in both; boldface marks the better variant. ABTT wins 5/6 and 4/6. Differences within 2 standard errors of zero, that is ties rather than decisions: $\rho$ for PhilTa MaRC; DelAUC gap for LaTa MaRC. Ratio metrics are undefined below a full-query cosine of 0.05, so the DelAUC columns average 195 to 199 ABTT pairs against 199 to 200 baseline pairs. Cross-variant comparisons are descriptive. Secondary metrics: Table~\ref{tab:attribution_metrics_secondary}.}
 \label{tab:attribution_metrics_main}
 \end{table}
