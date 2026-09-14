@@ -33,7 +33,10 @@ echo "=== 2D cluster projections (t-SNE + UMAP) ==="
 conda run -n localLatin python "$SCRIPT_ROOT/scripts/resubmit/visualize_clusters_2d.py" \
   --split_csv "$DATA_ROOT/runs/active/resubmit/data/phase_resubmit_split.csv" \
   --bases_root "$DATA_ROOT/runs/active/resubmit_bases/phase9_bases" \
-  --best_layer_csv "$DATA_ROOT/runs/active/resubmit/results/taskA_per_model_summary.csv" \
+  --results_csv "$DATA_ROOT/runs/active/resubmit/results/phase_resubmit_results.csv" \
+  --layer_select_method abtt_optimal \
+  --layer_select_metric train_dir_acc_at_1 \
+  --top_k 6 \
   --intermediate_dir "$DATA_ROOT/runs/active/resubmit/cluster_viz" \
   --figures_dir "$DATA_ROOT/overleaf_drafts/figures"
 

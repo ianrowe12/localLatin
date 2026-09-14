@@ -211,7 +211,7 @@ Anisotropy, in contrast, is present in all six. At each model's most anisotropic
 
 At PhilTa's collapsed retrieval layer, equivalent and non-equivalent cosines overlap heavily before ABTT and separate after it (Figure~\ref{fig:density}, Appendix~\ref{app:score_distributions}).
 
-In t-SNE \citep{vandermaaten2008tsne} and UMAP \citep{mcinnes2018umap} projections of all six models (Appendix~\ref{app:cluster_geometry}), ABTT-only with $D=10$ forms tighter same-directory groups than baseline mean pooling, with winnable-witness silhouette scores rising by 0.07 to 0.72 on the three T5 encoders.
+In t-SNE \citep{vandermaaten2008tsne} and UMAP \citep{mcinnes2018umap} projections at the train-selected layers (Appendix~\ref{app:cluster_geometry}), ABTT-only with $D=10$ forms tighter same-directory groups than baseline mean pooling: the t-SNE silhouette of the 1,160 winnable witnesses rises by 0.07 to 1.16 on the three T5 encoders.
 
 \subsection{Task B: Directory Routing}
 
@@ -349,7 +349,7 @@ The main text compresses the headline retrieval results into Tables~\ref{tab:tas
 \section{Last-Token vs.\ Mean Pooling}
 \label{app:lasttok}
 
-Decoder-only embedding models often use last-token pooling. We compare last-token pooling with mean pooling under the same ABTT pipeline, train/test split, and ABTT choices. Table~\ref{tab:lasttok_comparison} reports the layer with the best Task B autonomous-routing accuracy, Task B directory accuracy at rank 1, and cosine gap at the same layer. Mean pooling performs better on assignment accuracy for every model in this experiment, including the decoder-only models.
+Decoder-only embedding models often use last-token pooling. We compare last-token pooling with mean pooling under the same ABTT pipeline, train/test split, and ABTT choices. Table~\ref{tab:lasttok_comparison} reports, for each model and pooling, the layer chosen on the train split by directory accuracy at rank 1, the rule of Table~\ref{tab:taskB_headline}, with test-set Task B assignment accuracy, directory accuracy at rank 1, and cosine gap at that layer. Mean pooling performs better on assignment accuracy for every model in this experiment, including the decoder-only models.
 
 \input{tables/appendix_lasttok_comparison}
 
@@ -420,12 +420,12 @@ This appendix keeps the example-level views for one PhilTa retrieval pair. Figur
 \section{Cluster Geometry}
 \label{app:cluster_geometry}
 
-Figures~\ref{fig:tsne} and~\ref{fig:umap} give the t-SNE and UMAP panels for LaTa, PhilTa, and mT5-base, and Figures~\ref{fig:tsne_appendix} and~\ref{fig:umap_appendix} extend them to LaBSE, Qwen3-0.6B, and KaLM-mini. All four use the same six directories and the same baseline versus ABTT-only comparison.
+Figures~\ref{fig:tsne} and~\ref{fig:umap} give the t-SNE and UMAP panels for LaTa, PhilTa, and mT5-base, and Figures~\ref{fig:tsne_appendix} and~\ref{fig:umap_appendix} extend them to LaBSE, Qwen3-0.6B, and KaLM-mini. All four draw all 1,705 witnesses, color the same six largest directories, and compare baseline mean pooling with ABTT-only at $D=10$; each model sits at the layer chosen on the train split by directory accuracy at rank~1 under ABTT, the ABTT subscript of Table~\ref{tab:taskB_headline}.
 
 \begin{figure*}[!t]
 \centering
 \includegraphics[width=\textwidth]{fig_tsne_main.pdf}
-\caption{t-SNE projections of the 1,705 manuscript witnesses at each model's selected layer for LaTa, PhilTa, and mT5-base. Columns compare baseline mean pooling with ABTT-only using $D=10$. Colors mark the six most-populated directories.}
+\caption{t-SNE projections of all 1,705 manuscript witnesses for LaTa, PhilTa, and mT5-base, each at the layer chosen on the train split: the layer with the highest training-set directory accuracy at rank~1 under ABTT, printed in each panel as L and equal to the ABTT subscript in Table~\ref{tab:taskB_headline}. Columns compare baseline mean pooling with ABTT-only using $D=10$, fit on the training embeddings. Colors mark the six largest directories; other witnesses of directories with at least two witnesses are mid gray, and singletons light gray. The silhouette scores in Section~\ref{sec:results} are computed in these two-dimensional coordinates over the 1,160 winnable witnesses, those whose directory has at least two witnesses.}
 \label{fig:tsne}
 \end{figure*}
 
@@ -439,7 +439,7 @@ Figures~\ref{fig:tsne} and~\ref{fig:umap} give the t-SNE and UMAP panels for LaT
 \begin{figure*}[!t]
 \centering
 \includegraphics[width=\textwidth]{fig_tsne_appendix.pdf}
-\caption{t-SNE projections of the six most-populated directories at each selected layer for LaBSE, Qwen3-0.6B, and KaLM-mini. Columns compare baseline mean pooling with ABTT-only using $D=10$.}
+\caption{t-SNE projections of all 1,705 manuscript witnesses for LaBSE, Qwen3-0.6B, and KaLM-mini under the layer rule of Figure~\ref{fig:tsne}: the layer with the highest training-set directory accuracy at rank~1 under ABTT, printed in each panel and equal to the ABTT subscript in Table~\ref{tab:taskB_headline}. Columns compare baseline mean pooling with ABTT-only using $D=10$. Colors mark the same six largest directories as Figure~\ref{fig:tsne}.}
 \label{fig:tsne_appendix}
 \end{figure*}
 
