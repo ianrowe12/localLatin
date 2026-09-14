@@ -8,6 +8,7 @@ later: the reference block under the headline tables (#118), and the absence of
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -169,9 +170,9 @@ def test_task_b_comparison_states_the_ceiling_as_a_finding():
 
 
 def test_both_headline_captions_share_the_finetune_pairs_clause():
-    """Issue #185 review: Task B once printed the number-free fallback because
-    ``main()`` dropped ``facts`` on the Task B call. Whatever clause the run
-    facts produce, both captions must carry it verbatim."""
+    """Function level: given the same ``facts``, both caption builders emit the
+    same pairs clause. The call site that once dropped ``facts`` on the Task B
+    call is covered by ``test_main_writes_the_pairs_clause_into_both_headline_captions``."""
     results = _results_frame()
     lexical = _lexical_frame()
     finetune = _finetune_frame()
@@ -189,6 +190,37 @@ def test_both_headline_captions_share_the_finetune_pairs_clause():
         assert "a ceiling at this training budget" in cap_b
     assert "499 of the 565 positive train pairs (a 28-directory dev carve" in cap_b
     assert "left by a directory-level dev carve" not in cap_b
+
+
+def test_main_writes_the_pairs_clause_into_both_headline_captions(tmp_path, monkeypatch):
+    """Issue #185 review: ``main()`` once passed ``facts`` only on the Task A
+    call, so the committed Task B caption printed the number-free fallback
+    while the caption function itself was correct. This drives ``main()`` end
+    to end and reads the clause back out of both written files."""
+    _results_frame().to_csv(tmp_path / "r.csv", index=False)
+    _lexical_frame().to_csv(tmp_path / "l.csv", index=False)
+    _finetune_frame().to_csv(tmp_path / "f.csv", index=False)
+    facts = {"n_fit_pairs": 499, "n_all_train_pairs": 565, "n_dev_dirs": 28}
+    (tmp_path / "run_info.json").write_text(json.dumps({"caption_facts": facts}))
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "build_headline_tables.py",
+            "--results_csv", str(tmp_path / "r.csv"),
+            "--lexical_csv", str(tmp_path / "l.csv"),
+            "--finetune_csv", str(tmp_path / "f.csv"),
+            "--finetune_run_info", str(tmp_path / "run_info.json"),
+            "--out_dir", str(tmp_path / "out"),
+        ],
+    )
+    bht.main()
+    clause = bht.finetune_pairs_clause(facts)
+    assert "499 of the 565" in clause
+    for name in ("taskA_headline.tex", "taskB_headline.tex"):
+        tex = (tmp_path / "out" / name).read_text()
+        assert clause in tex, name
+        assert "left by a directory-level dev carve" not in tex, name
 
 
 def _attribution_summary() -> pd.DataFrame:
