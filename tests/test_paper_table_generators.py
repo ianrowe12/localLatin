@@ -168,6 +168,29 @@ def test_task_b_comparison_states_the_ceiling_as_a_finding():
     assert "is below every zero-shot ABTT cell" in sentence
 
 
+def test_both_headline_captions_share_the_finetune_pairs_clause():
+    """Issue #185 review: Task B once printed the number-free fallback because
+    ``main()`` dropped ``facts`` on the Task B call. Whatever clause the run
+    facts produce, both captions must carry it verbatim."""
+    results = _results_frame()
+    lexical = _lexical_frame()
+    finetune = _finetune_frame()
+    best_a = bht.best_rows(results, "hidden", "train_aucroc")
+    best_b = bht.best_rows(results, "hidden", "train_dir_acc_at_1")
+    for facts in (
+        None,
+        {"n_fit_pairs": 499, "n_all_train_pairs": 565, "n_dev_dirs": 28},
+    ):
+        clause = bht.finetune_pairs_clause(facts)
+        cap_a = bht.task_a_caption(best_a, lexical, finetune, facts)
+        cap_b = bht.task_b_caption(results, best_b, lexical, finetune, facts)
+        assert clause in cap_a and clause in cap_b
+        assert "a ceiling at this training budget" in cap_a
+        assert "a ceiling at this training budget" in cap_b
+    assert "499 of the 565 positive train pairs (a 28-directory dev carve" in cap_b
+    assert "left by a directory-level dev carve" not in cap_b
+
+
 def _attribution_summary() -> pd.DataFrame:
     rows = []
     for model, _ in bmaa.MODELS:

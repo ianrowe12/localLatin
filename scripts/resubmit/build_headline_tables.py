@@ -523,7 +523,7 @@ def main() -> None:
         right_col="dir_acc_at_1",
         fmt=".1f",
         scale=100.0,
-        caption=task_b_caption(results, best_b, lexical, finetune),
+        caption=task_b_caption(results, best_b, lexical, finetune, facts),
         label="tab:taskB_headline",
         reference_lines=reference_rows(
             lexical,
