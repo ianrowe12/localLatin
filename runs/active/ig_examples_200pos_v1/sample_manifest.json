@@ -1,0 +1,31 @@
+{
+  "run": "ig_examples_200pos_v1",
+  "issue": 141,
+  "corpus": "data/canon_labelled (benchmark v1)",
+  "split_csv": "runs/active/resubmit/data/phase_resubmit_split.csv",
+  "sampler": "scripts/ig/sample_positive_test_pairs.py",
+  "seed": 20260426,
+  "n_per_model": 200,
+  "models": [
+    "bowphs/LaTa",
+    "bowphs/PhilTa",
+    "google/mt5-base"
+  ],
+  "layers": {
+    "bowphs/LaTa": 7,
+    "bowphs/PhilTa": 1,
+    "google/mt5-base": 1
+  },
+  "D": 10,
+  "test_winnable_pool_files": 585,
+  "test_winnable_pool_folders": 241,
+  "examples_csv_sha256": "4a3399e5b6d1e234b444febc75f7b5a6dfa44da39142adbe0b70ee076364e54a",
+  "pair_manifest_sha256": "4fcdaa2be99ebcb279c16d47ce2af158411727df27c5b86414404780a43591c8",
+  "gpu_job": {
+    "job_id": 22070707,
+    "elapsed": "00:58:45",
+    "reserved": "01:25:00",
+    "partition": "gpuA100x4",
+    "account": "beto-delta-gpu"
+  }
+}

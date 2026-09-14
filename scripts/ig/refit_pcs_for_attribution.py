@@ -54,6 +54,7 @@ import pandas as pd
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "src"))
+from embedding_alignment import AlignmentResolver  # noqa: E402
 from sif_abtt import remove_top_components  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -70,23 +71,30 @@ def refit_one(
     pc_root: Path,
     d: int,
     dry_run: bool,
+    resolver: AlignmentResolver,
 ) -> None:
     emb_path = bases_root / slug / pooling / f"hidden_layer{layer}_embeddings.npy"
     if not emb_path.exists():
         raise SystemExit(f"Embedding cache missing: {emb_path}")
-    emb = np.load(emb_path, mmap_mode="r" if dry_run else None)
-    if emb.shape[0] != n_split_rows:
+    aligner = resolver.aligner_for(emb_path)
+    if aligner.n_rows != n_split_rows:
         raise SystemExit(
-            f"[{slug}] cache rows {emb.shape[0]} != split rows {n_split_rows}. "
-            f"Likely wrong --bases_root / --split_csv combination."
+            f"[{slug}] aligner rows {aligner.n_rows} != split rows {n_split_rows}."
         )
     out = pc_root / slug / f"layer{layer}_pcs.npz"
     if dry_run:
+        shape = np.load(emb_path, mmap_mode="r").shape
+        if shape[0] != n_split_rows:
+            raise SystemExit(
+                f"[{slug}] cache rows {shape[0]} != split rows {n_split_rows}. "
+                f"Likely wrong --bases_root / --split_csv combination."
+            )
         print(
             f"[DRY] {slug}: would fit D={d} on layer {layer} train "
-            f"({len(train_idx)}, {emb.shape[1]}) from {emb_path} -> {out}"
+            f"({len(train_idx)}, {shape[1]}) from {emb_path} -> {out}"
         )
         return
+    emb = resolver.load(emb_path)
     train_emb = emb[train_idx].astype(np.float32)
     print(f"[{slug}] fitting D={d} on layer {layer} train ({train_emb.shape})")
     _, mean_vec, pcs = remove_top_components(train_emb, num_components=d, center=True)
@@ -137,13 +145,19 @@ def main() -> None:
 
     bases_root = Path(args.bases_root)
     pc_root = Path(args.pc_root)
+    # Cached rows sit in extraction order; split rows sit in (folder_id, filename)
+    # order. A relabelling permutes the second and not the first, so the two are
+    # paired by filename through the extractor's own manifest, never by position.
+    resolver = AlignmentResolver(split, search_roots=[bases_root])
 
     for slug in args.slugs:
         if slug not in slug_layers:
             known = ", ".join(sorted(slug_layers))
             raise SystemExit(f"Unknown slug {slug!r}; known slugs: {known}")
         refit_one(slug, slug_layers[slug], bases_root, args.pooling,
-                  train_idx, n_split_rows, pc_root, args.d, args.dry_run)
+                  train_idx, n_split_rows, pc_root, args.d, args.dry_run,
+                  resolver)
+    print(resolver.summary())
 
 
 if __name__ == "__main__":

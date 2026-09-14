@@ -22,6 +22,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+LEGACY_CANON_PREFIX = "/u/irowerojas/localLatin/canon/"
+
 from attribution_model_config import (  # noqa: E402
     DEFAULT_MODELS,
     FEATURED_MODELS,
@@ -57,6 +60,29 @@ def _sample_positive(test_meta: pd.DataFrame, n: int, rng: np.random.Generator) 
     return _rows_to_frame(rows)
 
 
+def resolve_corpus_path(raw: str, repo_root: str) -> str:
+    """Return an absolute corpus path for a split row.
+
+    Two split vintages feed this script. The legacy phase-9 split over
+    ``data/canon`` records absolute paths under a home directory that no longer
+    holds the corpus; the benchmark v1 split over ``data/canon_labelled``
+    records paths relative to the repo root. Downstream NPZ generation opens
+    these strings directly from whatever directory the job happens to run in,
+    so both are normalised to absolute here rather than at the far end.
+    """
+    text = str(raw)
+    if text.startswith(LEGACY_CANON_PREFIX):
+        text = text.replace(
+            LEGACY_CANON_PREFIX,
+            str(Path(repo_root) / "data" / "canon") + "/",
+            1,
+        )
+    path = Path(text)
+    if not path.is_absolute():
+        path = Path(repo_root) / path
+    return str(path)
+
+
 def _rows_to_frame(rows) -> pd.DataFrame:
     records = []
     for q, c in rows:
@@ -75,6 +101,10 @@ def _rows_to_frame(rows) -> pd.DataFrame:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--split_csv", default="runs/phase9/phase9_split.csv")
+    ap.add_argument(
+        "--repo_root", default=str(REPO_ROOT),
+        help="Root that relative split paths (data/canon_labelled/...) resolve against.",
+    )
     ap.add_argument(
         "--out_csv",
         default="runs/active/ig_examples_200pos/positive200_examples.csv",
@@ -99,11 +129,7 @@ def main() -> None:
 
     split = pd.read_csv(args.split_csv)
     test = split[(split["split"] == "test") & split["is_winnable"]].reset_index(drop=True)
-    test["path"] = test["path"].str.replace(
-        "/u/irowerojas/localLatin/canon/",
-        "/projects/beto/irowerojas/localLatin/data/canon/",
-        regex=False,
-    )
+    test["path"] = [resolve_corpus_path(p, args.repo_root) for p in test["path"]]
     missing = sum(1 for p in test["path"] if not Path(p).exists())
     if missing:
         raise SystemExit(f"{missing}/{len(test)} test paths do not exist after rewrite; check layout")

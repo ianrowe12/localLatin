@@ -35,7 +35,19 @@ That last table already uses SIF plus ABTT while the main Task A tables are ABTT
 
 We explain the retrieval score at layers picked by a predeclared train-only rule (earliest layer within 0.5 points of best train directory accuracy at rank 1 under ABTT), which locks LaTa layer 7, PhilTa layer 1 and mT5-base layer 1 before any attribution metric is computed. We use two views of the same scalar: integrated gradients, and MaRC adapted from classification to bi-encoder retrieval by optimising a soft mask on one side against a fixed partner embedding (Equation `eq:retrieval_mark`).
 
-The result we stand behind is rank faithfulness. Leave-one-out Spearman correlation improves under ABTT in all six model-by-view cells: LaTa IG -0.001 to 0.396, LaTa MaRC 0.042 to 0.401, PhilTa IG 0.182 to 0.607, PhilTa MaRC 0.190 to 0.331, mT5-base IG 0.164 to 0.597, mT5-base MaRC 0.250 to 0.392. Evidence: Table `tab:attribution_metrics_main`, Figure `fig:attribution_rho_loo_main`, and Figure `fig:pairmatrix` for the qualitative PhilTa example. Source data: `runs/active/ig_examples_200pos_run3_operational/attribution_metrics/summary.csv`, 200 positive pairs per model.
+The result we stand behind is rank faithfulness. **Superseded by
+`docs/research/attribution_v1_resample.md` (issue #141): the numbers in this
+paragraph come from a sample drawn on the legacy phase-9 split over
+`data/canon`, not from benchmark v1.** On the re-sampled set, leave-one-out
+Spearman correlation improves under ABTT in five of six model-by-view cells, by
+10.3 to 22.5 paired standard errors, and the sixth (PhilTa MaRC) is a tie at 1.5
+standard errors rather than a loss: LaTa IG 0.003 to 0.370, LaTa MaRC 0.083 to
+0.538, PhilTa IG 0.329 to 0.614, PhilTa MaRC 0.469 to 0.445, mT5-base IG 0.143
+to 0.686, mT5-base MaRC 0.257 to 0.504. Evidence: Table
+`tab:attribution_metrics_main`, Figure `fig:attribution_rho_loo_main`, and
+Figure `fig:pairmatrix` for the qualitative PhilTa example. Source data:
+`runs/active/ig_examples_200pos_v1/attribution_metrics/summary_v2.csv`, 200
+positive pairs per model.
 
 ## 3. What We Do Not Claim
 

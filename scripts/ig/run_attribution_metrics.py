@@ -59,6 +59,11 @@ import pandas as pd
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
+from token_filtering import (  # noqa: E402
+    TOKEN_FILTER_CHOICES,
+    build_token_keep_lookup,
+)
+
 from attribution_metrics import (  # noqa: E402
     DEFAULT_COMPACTNESS_THRESHOLDS,
     DEFAULT_RANDOM_ORDER_DRAWS,
@@ -133,8 +138,15 @@ def model_slug(name: str) -> str:
 # Embedding + ABTT helpers
 # ---------------------------------------------------------------------------
 def forward_pooled(model, input_ids: "torch.Tensor", attention_mask: "torch.Tensor",
-                   layer: int) -> "torch.Tensor":
+                   layer: int, pool_weight: "Optional[torch.Tensor]" = None) -> "torch.Tensor":
     """Mean-pool the layer-L hidden states using ``attention_mask`` weights.
+
+    ``pool_weight`` is an optional 0/1 weight over positions, multiplied into
+    the pooling mask but *not* into the attention mask. That is how the artifact
+    generator applies a token filter: filtered tokens still contextualise their
+    neighbours inside the encoder, they just do not enter the mean. Passing the
+    filter as an attention mask instead would silently change the encoder's
+    input, which is a different operation.
 
     Returns shape (hidden,). Casts to float32 before pooling for numerical
     stability when the model runs in fp16. ``no_grad`` is applied inside the
@@ -145,12 +157,15 @@ def forward_pooled(model, input_ids: "torch.Tensor", attention_mask: "torch.Tens
                     output_hidden_states=True, return_dict=True)
         hidden = out.hidden_states[layer].float()  # (1, seq, hidden)
         mask = attention_mask.float()              # (1, seq)
+        if pool_weight is not None:
+            mask = mask * pool_weight.float()
         pooled = (hidden * mask.unsqueeze(-1)).sum(dim=1) / mask.sum(dim=1, keepdim=True).clamp(min=1.0)
         return pooled.squeeze(0)
 
 
 def forward_pooled_batch(model, input_ids: "torch.Tensor", attention_mask: "torch.Tensor",
-                         layer: int) -> "torch.Tensor":
+                         layer: int,
+                         pool_weight: "Optional[torch.Tensor]" = None) -> "torch.Tensor":
     """Batched twin of :func:`forward_pooled`. Returns shape (batch, hidden).
 
     Rows of a batch do not interact inside the encoder, so stacking B masks of
@@ -164,6 +179,8 @@ def forward_pooled_batch(model, input_ids: "torch.Tensor", attention_mask: "torc
                     output_hidden_states=True, return_dict=True)
         hidden = out.hidden_states[layer].float()      # (batch, seq, hidden)
         mask = attention_mask.float()                  # (batch, seq)
+        if pool_weight is not None:
+            mask = mask * pool_weight.float()
         return (hidden * mask.unsqueeze(-1)).sum(dim=1) / mask.sum(dim=1, keepdim=True).clamp(min=1.0)
 
 
@@ -354,7 +371,72 @@ class MetricOptions:
         return tuple(n for n in METRIC_REGISTRY if n in self.metric_names)
 
 
-def _pseudo_baseline_rows(data, ctx: PairContext, variant: str, n_q: int,
+class TokenFilterMismatch(RuntimeError):
+    """The artifact was generated with a different token filter than requested."""
+
+
+def stored_token_filter(data) -> Optional[str]:
+    """The token filter the artifact generator used, if the NPZ records it.
+
+    The MaRC stage writes its hyperparameters, including ``token_filter``, into
+    ``hyperparams_retrieval_mark``. Artifacts written before that stage ran, or
+    by a generator that did not record it, return None.
+    """
+    if "hyperparams_retrieval_mark" not in getattr(data, "files", []):
+        return None
+    raw = data["hyperparams_retrieval_mark"]
+    try:
+        payload = json.loads(str(raw.item() if raw.shape == () else raw))
+    except (AttributeError, ValueError, TypeError):
+        return None
+    value = payload.get("token_filter")
+    return None if value is None else str(value)
+
+
+def check_token_filter(data, requested: str, npz_path: Path) -> None:
+    """Fail loudly when --token_filter disagrees with the artifact.
+
+    Scoring a run with the wrong filter is silent: the pooled vector is simply a
+    different vector, and under a filter ``full_cos_drift`` is NaN, so there is
+    no signal at all to read. The filter is recorded in the artifact, so the
+    disagreement is detectable and should stop the run rather than produce a
+    plausible-looking table.
+    """
+    stored = stored_token_filter(data)
+    if stored is None or stored == requested:
+        return
+    raise TokenFilterMismatch(
+        f"{npz_path} was generated with --token_filter {stored!r} but this run "
+        f"requested {requested!r}. The generator applies the filter to the "
+        "pooling and stores unfiltered hidden states, so the two choices pool "
+        "different vectors and the PCs in the NPZ only clean one of them. "
+        f"Re-run with --token_filter {stored!r}."
+    )
+
+
+def keep_positions(token_ids: np.ndarray, n: int,
+                   keep_lookup: Optional[np.ndarray]) -> np.ndarray:
+    """Positions of the tokens the artifact generator actually pooled over.
+
+    The generator applies its ``--token_filter`` inside ``pool_hidden``: the
+    pooling mask is ``attention_mask * keep_lookup[input_ids]``. It stores the
+    *unfiltered* hidden states, so a consumer that means over every attended row
+    reconstructs a different vector than the one the stored ``cos_orig_*`` and
+    the fitted PCs belong to. Under ``--token_filter all`` the lookup is all
+    ones and this is ``arange(n)``, which is what every published run used.
+    """
+    idx = np.arange(n, dtype=np.int64)
+    if keep_lookup is None:
+        return idx
+    ids = np.asarray(token_ids).reshape(-1)[:n].astype(np.int64)
+    kept = idx[keep_lookup[ids] > 0]
+    # A pair whose every token is filtered out has no pooled vector at all.
+    # Falling back to the unfiltered set would silently reintroduce the bug, so
+    # the caller gets the empty set and skips the pair.
+    return kept
+
+
+def _pseudo_baseline_rows(data, ctx: PairContext, variant: str, q_idx: np.ndarray,
                           opts: MetricOptions) -> List[dict]:
     """The ``random`` and ``inverse`` diagnostic rows for one (pair, variant)."""
     rows: List[dict] = []
@@ -364,7 +446,7 @@ def _pseudo_baseline_rows(data, ctx: PairContext, variant: str, n_q: int,
     # across-pair std (per statistician audit).
     rng = np.random.default_rng(0)
     for _ in range(opts.random_seeds):
-        r = rng.uniform(-1.0, 1.0, size=n_q)
+        r = rng.uniform(-1.0, 1.0, size=len(q_idx))
         rows.append(_eval_one(ctx, "random", r, opts))
 
     # Inverse. We want a method whose ranking is the *reverse* of IG (low |IG|
@@ -373,15 +455,21 @@ def _pseudo_baseline_rows(data, ctx: PairContext, variant: str, n_q: int,
     # loo_correlation). Using ``1 / (eps + |IG|)`` satisfies both.
     ig_key = f"query_ig_{variant}"
     if ig_key in data.files:
-        ig_abs = np.abs(data[ig_key][:n_q].astype(np.float64))
+        ig_abs = np.abs(data[ig_key][q_idx].astype(np.float64))
         inv_scores = 1.0 / (1e-9 + ig_abs)
         rows.append(_eval_one(ctx, "inverse", inv_scores, opts))
     return rows
 
 
-def _method_rows(data, ctx: PairContext, variant: str, n_q: int, n_c: int,
-                 methods_present: Sequence[str], opts: MetricOptions) -> List[dict]:
-    """One result row per stored attribution method for this (pair, variant)."""
+def _method_rows(data, ctx: PairContext, variant: str, q_idx: np.ndarray,
+                 c_idx: np.ndarray, methods_present: Sequence[str],
+                 opts: MetricOptions) -> List[dict]:
+    """One result row per stored attribution method for this (pair, variant).
+
+    ``q_idx`` / ``c_idx`` are the pooled positions from :func:`keep_positions`,
+    so the score vector is indexed the same way as the tokens the evaluator
+    ranks and erases.
+    """
     rows: List[dict] = []
     for method in methods_present:
         pm = data[f"pair_matrix_{method}_{variant}"]
@@ -389,15 +477,17 @@ def _method_rows(data, ctx: PairContext, variant: str, n_q: int, n_c: int,
             method == "ig" and f"query_ig_{variant}" in data.files
         ) else None
         if stored is not None:
-            stored = stored[:n_q]
+            stored = stored[q_idx]
         reducer = METHOD_SCORE_REDUCER.get(method, REDUCER_FALLBACK)
-        scores = scores_from_pair_matrix(pm[:n_q, :n_c], stored, reducer)
+        scores = scores_from_pair_matrix(pm[np.ix_(q_idx, c_idx)], stored, reducer)
         rows.append(_eval_one(ctx, method, scores, opts))
     return rows
 
 
 def process_pair_hidden(npz_path: Path, method_filter: Optional[List[str]],
-                        opts: MetricOptions) -> List[dict]:
+                        opts: MetricOptions,
+                        keep_lookup: Optional[np.ndarray] = None,
+                        token_filter: str = "all") -> List[dict]:
     """CPU-only twin of :func:`process_pair` backed by cached hidden states.
 
     Recomputes every masked cosine from ``query_hidden`` / ``candidate_hidden``
@@ -407,12 +497,18 @@ def process_pair_hidden(npz_path: Path, method_filter: Optional[List[str]],
     two backends' numbers must not be mixed inside one table.
     """
     data = np.load(npz_path)
+    check_token_filter(data, token_filter, npz_path)
     layer = int(data["layer"].item())
     n_q = int(data["query_attention_mask"].sum())
     n_c = int(data["candidate_attention_mask"].sum())
 
-    q_hidden = data["query_hidden"][:n_q]
-    c_hidden = data["candidate_hidden"][:n_c]
+    q_idx = keep_positions(data["query_input_ids"], n_q, keep_lookup)
+    c_idx = keep_positions(data["candidate_input_ids"], n_c, keep_lookup)
+    if len(q_idx) == 0 or len(c_idx) == 0:
+        return []
+
+    q_hidden = data["query_hidden"][q_idx]
+    c_hidden = data["candidate_hidden"][c_idx]
     pcs = data["pcs"]
     mean_vec = data["mean_vec"]
 
@@ -423,15 +519,29 @@ def process_pair_hidden(npz_path: Path, method_filter: Optional[List[str]],
     rows: List[dict] = []
     for variant in ("baseline", "abtt"):
         evaluator = HiddenPairEvaluator(q_hidden, c_hidden, pcs, mean_vec, variant)
-        ctx = evaluator.context(metadata={"layer": layer, "n_c": n_c})
-        variant_rows = _method_rows(data, ctx, variant, n_q, n_c, methods_present, opts)
-        variant_rows.extend(_pseudo_baseline_rows(data, ctx, variant, n_q, opts))
+        ctx = evaluator.context(metadata={"layer": layer, "n_c": len(c_idx)})
+        variant_rows = _method_rows(data, ctx, variant, q_idx, c_idx, methods_present, opts)
+        variant_rows.extend(_pseudo_baseline_rows(data, ctx, variant, q_idx, opts))
         # The consistency check that ties this backend to the artifact: the
         # *unmasked* cosine must reproduce the value stored at build time, when
         # the model actually ran. Carried per row so the aggregate can report it.
+        #
+        # The reference is only valid when the artifacts were generated with
+        # ``--token_filter all``. ``cos_orig_*`` is written by the MaRC stage
+        # (src/retrieval_mask.py) as cos(*unfiltered* query mean, *filtered*
+        # candidate partner): the query side never consults the token filter
+        # while the partner does. Under any filter other than ``all`` it
+        # therefore describes a different vector than the one the generator
+        # pooled and the PCs were fit on. Reporting a drift against it would
+        # flag a disagreement between two stored quantities as an error in this
+        # backend. It is left NaN instead, loudly.
         stored_key = f"cos_orig_{variant}"
         if stored_key in data.files:
-            drift = abs(ctx.full_cos - float(data[stored_key]))
+            drift = (
+                abs(ctx.full_cos - float(data[stored_key]))
+                if keep_lookup is None
+                else float("nan")
+            )
             for row in variant_rows:
                 row["full_cos_drift"] = drift
         rows.extend(variant_rows)
@@ -440,13 +550,16 @@ def process_pair_hidden(npz_path: Path, method_filter: Optional[List[str]],
 
 def process_pair(npz_path: Path, model, tokenizer, device: str,
                  method_filter: Optional[List[str]],
-                 opts: MetricOptions) -> List[dict]:
+                 opts: MetricOptions,
+                 keep_lookup: Optional[np.ndarray] = None,
+                 token_filter: str = "all") -> List[dict]:
     """Process one NPZ with the model backend. One row per method × variant."""
     fractions = opts.fractions
     compactness_thresholds = opts.compactness_thresholds
     compute_aopc = opts.compute_aopc
     random_seeds = opts.random_seeds
     data = np.load(npz_path)
+    check_token_filter(data, token_filter, npz_path)
     layer = int(data["layer"].item())
     n_q = int(data["query_attention_mask"].sum())
     n_c = int(data["candidate_attention_mask"].sum())
@@ -466,11 +579,28 @@ def process_pair(npz_path: Path, model, tokenizer, device: str,
         methods_present = [m for m in methods_present if m in method_filter]
 
     pad_id = int(tokenizer.pad_token_id) if tokenizer.pad_token_id is not None else 0
+
+    # The filter is a pooling weight, never an attention mask: a filtered token
+    # still contextualises its neighbours inside the encoder, exactly as in the
+    # artifact generator. ``q_idx`` maps rank-space positions (what the metrics
+    # erase) back to sequence positions (what gets PADded).
+    q_idx = keep_positions(data["query_input_ids"], n_q, keep_lookup)
+    c_idx = keep_positions(data["candidate_input_ids"], n_c, keep_lookup)
+    if len(q_idx) == 0 or len(c_idx) == 0:
+        return []
+    n_keep = len(q_idx)
+    q_pool_w = c_pool_w = None
+    if keep_lookup is not None:
+        q_pool_w = torch.zeros_like(q_mask_full, dtype=torch.float32)
+        q_pool_w[0, torch.from_numpy(q_idx).to(device)] = 1.0
+        c_pool_w = torch.zeros_like(c_mask, dtype=torch.float32)
+        c_pool_w[0, torch.from_numpy(c_idx).to(device)] = 1.0
+
     rows: List[dict] = []
 
     for variant in ("baseline", "abtt"):
         # 1. Candidate embedding (computed once per variant; query is masked many times)
-        c_pooled = forward_pooled(model, c_ids, c_mask, layer)
+        c_pooled = forward_pooled(model, c_ids, c_mask, layer, c_pool_w)
         if variant == "abtt":
             c_pooled = abtt_clean(c_pooled, pcs, mean_vec)
 
@@ -483,13 +613,13 @@ def process_pair(npz_path: Path, model, tokenizer, device: str,
                 ids = q_ids_full.clone()
                 attn = q_mask_full.clone()
                 if (~m_bool).any():
-                    drop_idx = torch.from_numpy(np.where(~m_bool)[0]).to(device)
+                    drop_idx = torch.from_numpy(q_idx[~m_bool]).to(device)
                     ids[0, drop_idx] = pad_id
                     attn[0, drop_idx] = 0
                 # If everything is masked, attention sum is 0 -> avoid NaN by bailing.
                 if attn.sum() == 0:
                     return 0.0
-                q_pooled = forward_pooled(model, ids, attn, layer)
+                q_pooled = forward_pooled(model, ids, attn, layer, q_pool_w)
                 if variant == "abtt":
                     q_pooled = abtt_clean(q_pooled, pcs, mean_vec)
                 return cos(q_pooled, cap)
@@ -507,11 +637,15 @@ def process_pair(npz_path: Path, model, tokenizer, device: str,
                 live = np.where(masks.any(axis=1))[0]  # all-masked rows stay 0.0
                 for start in range(0, len(live), MODEL_MASK_BATCH):
                     idx = live[start:start + MODEL_MASK_BATCH]
-                    keep = torch.from_numpy(masks[idx].astype(np.int64)).to(device)
+                    # Scatter the rank-space masks back to sequence positions.
+                    full = np.ones((len(idx), q_ids_full.shape[1]), dtype=np.int64)
+                    full[:, q_idx] = masks[idx].astype(np.int64)
+                    keep = torch.from_numpy(full).to(device)
                     ids = q_ids_full.repeat(len(idx), 1)
                     ids = torch.where(keep.bool(), ids, torch.full_like(ids, pad_id))
                     attn = q_mask_full.repeat(len(idx), 1) * keep
-                    pooled = forward_pooled_batch(model, ids, attn, layer)
+                    pool_w = None if q_pool_w is None else q_pool_w.repeat(len(idx), 1)
+                    pooled = forward_pooled_batch(model, ids, attn, layer, pool_w)
                     if variant == "abtt":
                         pooled = abtt_clean(pooled, pcs, mean_vec)
                     num = pooled @ cap
@@ -529,42 +663,44 @@ def process_pair(npz_path: Path, model, tokenizer, device: str,
                 them in batches. Endpoints are pinned by ``PairContext.curves``.
                 """
                 order = np.asarray(order, dtype=np.int64)
-                keep_masks = np.zeros((n_q + 1, n_q), dtype=bool)
-                for k in range(1, n_q + 1):
+                keep_masks = np.zeros((n_keep + 1, n_keep), dtype=bool)
+                for k in range(1, n_keep + 1):
                     keep_masks[k, order[:k]] = True
-                stacked = np.concatenate([keep_masks[1:n_q], ~keep_masks[1:n_q]], axis=0)
+                stacked = np.concatenate(
+                    [keep_masks[1:n_keep], ~keep_masks[1:n_keep]], axis=0
+                )
                 vals = eval_masked_cos_many(stacked)
-                keep = np.zeros(n_q + 1, dtype=np.float64)
-                drop = np.zeros(n_q + 1, dtype=np.float64)
-                keep[1:n_q] = vals[: n_q - 1]
-                drop[1:n_q] = vals[n_q - 1:]
+                keep = np.zeros(n_keep + 1, dtype=np.float64)
+                drop = np.zeros(n_keep + 1, dtype=np.float64)
+                keep[1:n_keep] = vals[: n_keep - 1]
+                drop[1:n_keep] = vals[n_keep - 1:]
                 return keep, drop
             return prefix_curves
         prefix_curves = make_prefix_curves()
 
-        full_cos = eval_masked_cos(np.ones(n_q, dtype=np.int64))
+        full_cos = eval_masked_cos(np.ones(n_keep, dtype=np.int64))
 
         # Single-token leave-one-out cache: shared across all methods for this
         # variant. Deliberately still one forward per mask: the published
         # summary.csv was produced this way, and batching would change the
         # matmul reduction order and so the last bits of every legacy number.
         # It is n forwards against the curves' 2n(n-1), so nothing is gained.
-        single_ablation_cos = np.empty(n_q, dtype=np.float64)
-        for i in range(n_q):
-            mask = np.ones(n_q, dtype=np.int64)
+        single_ablation_cos = np.empty(n_keep, dtype=np.float64)
+        for i in range(n_keep):
+            mask = np.ones(n_keep, dtype=np.int64)
             mask[i] = 0
             single_ablation_cos[i] = eval_masked_cos(mask)
 
         ctx = PairContext(
-            n_q=n_q, variant=variant, full_cos=full_cos,
+            n_q=n_keep, variant=variant, full_cos=full_cos,
             single_ablation_cos=single_ablation_cos,
             eval_masked_cos=eval_masked_cos,
-            metadata={"layer": layer, "n_c": n_c},
+            metadata={"layer": layer, "n_c": len(c_idx)},
             prefix_curves=prefix_curves,
         )
 
-        rows.extend(_method_rows(data, ctx, variant, n_q, n_c, methods_present, opts))
-        rows.extend(_pseudo_baseline_rows(data, ctx, variant, n_q, opts))
+        rows.extend(_method_rows(data, ctx, variant, q_idx, c_idx, methods_present, opts))
+        rows.extend(_pseudo_baseline_rows(data, ctx, variant, q_idx, opts))
 
     return rows
 
@@ -1113,6 +1249,15 @@ def parse_args() -> argparse.Namespace:
                         "--backend hidden; ~2*n_q extra forward passes per method "
                         "per variant under --backend model, hence off by default. "
                         "The registered `aopc` metric reports the same numbers.")
+    p.add_argument("--token_filter", choices=list(TOKEN_FILTER_CHOICES), default="all",
+                   help="The token filter the artifacts were generated with. It "
+                        "must match run_phase12e_pair_explanations.py's "
+                        "--token_filter for that run, because the generator "
+                        "applies the filter to the pooling but stores the "
+                        "unfiltered hidden states, and the PCs in the NPZ are "
+                        "fit on the filtered pooling. A mismatch is visible as "
+                        "a large full_cos_drift in the summary. Default 'all' "
+                        "reproduces every published run bit for bit.")
     p.add_argument("--backend", choices=("model", "hidden"), default="model",
                    help="'model' re-runs the encoder with PAD in the masked positions "
                         "(the original, GPU-shaped path). 'hidden' recomputes masked "
@@ -1264,6 +1409,23 @@ def main() -> None:
                 ex_rows = ex_rows[: args.max_pairs_per_model]
             print(f"\n=== {model_name} ({model_type}) - {len(ex_rows)} pairs ===",
                   flush=True)
+            keep_lookup = None
+            if args.token_filter != "all":
+                from transformers import AutoTokenizer as _AutoTokenizer
+
+                tok = _AutoTokenizer.from_pretrained(
+                    model_name, trust_remote_code=args.trust_remote_code
+                )
+                keep_lookup = build_token_keep_lookup(tok, args.token_filter)
+                print(f"  token_filter={args.token_filter}: keeping "
+                      f"{int(keep_lookup.sum())}/{len(keep_lookup)} vocabulary ids",
+                      flush=True)
+                print("  note: full_cos_drift is NaN under a token filter. Its "
+                      "reference, cos_orig_* in the NPZ, is written by "
+                      "src/retrieval_mask.py as cos(unfiltered query mean, "
+                      "filtered candidate partner) and so describes a different "
+                      "vector than the pooled one.",
+                      flush=True)
             model = tokenizer = None
             if args.backend == "model":
                 t_load = time.time()
@@ -1294,11 +1456,16 @@ def main() -> None:
                     print(f"  [recompute] {example_tag}: cached JSON lacks requested sweep keys")
                 t_pair = time.time()
                 if args.backend == "hidden":
-                    rows = process_pair_hidden(npz_path, args.methods, opts)
+                    rows = process_pair_hidden(
+                        npz_path, args.methods, opts, keep_lookup=keep_lookup,
+                        token_filter=args.token_filter,
+                    )
                 else:
                     rows = process_pair(
                         npz_path, model, tokenizer, device,
                         method_filter=args.methods, opts=opts,
+                        keep_lookup=keep_lookup,
+                        token_filter=args.token_filter,
                     )
                 # Annotate with model/example identifiers.
                 for r in rows:
