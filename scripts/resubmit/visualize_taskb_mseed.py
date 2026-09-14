@@ -16,10 +16,6 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-import matplotlib
-
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
@@ -67,10 +63,25 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def save(fig: plt.Figure, out_dir: Path, stem: str) -> None:
+def _plt():
+    """Import matplotlib only where a figure is drawn.
+
+    The table path (``select_train_layer_configs`` / ``write_paper_topk_table``)
+    is imported by ``tests/test_taskb_mseed_selection.py`` in CI, where
+    matplotlib is deliberately not installed.
+    """
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    return plt
+
+
+def save(fig, out_dir: Path, stem: str) -> None:
     fig.savefig(out_dir / f"{stem}.png", dpi=180, bbox_inches="tight")
     fig.savefig(out_dir / f"{stem}.pdf", bbox_inches="tight")
-    plt.close(fig)
+    _plt().close(fig)
 
 
 def select_train_layer_configs(
@@ -208,7 +219,7 @@ def render_table_figure(best_df: pd.DataFrame, out_dir: Path, ks: list[int]) -> 
         cell_data.append(cells)
         means_top1.append(row.get("dir_acc_at_1_mean", 0))
 
-    fig, ax = plt.subplots(figsize=(8.5, 2.8))
+    fig, ax = _plt().subplots(figsize=(8.5, 2.8))
     ax.axis("off")
     table = ax.table(
         cellText=cell_data,
@@ -241,7 +252,7 @@ def plot_grouped_bar_topk(best_df: pd.DataFrame, out_dir: Path, ks: list[int]) -
 
     colors = ["#1f77b4", "#2ca02c", "#ff7f0e", "#d62728"]
 
-    fig, ax = plt.subplots(figsize=(10, 5))
+    fig, ax = _plt().subplots(figsize=(10, 5))
     for i, k in enumerate(ks):
         means = best_df[f"dir_acc_at_{k}_mean"].values * 100
         stds = best_df[f"dir_acc_at_{k}_std"].values * 100
@@ -278,7 +289,7 @@ def plot_breakdown(best_df: pd.DataFrame, out_dir: Path) -> None:
         ("overall_assignment_acc", "Overall", "#1f77b4"),
     ]
 
-    fig, ax = plt.subplots(figsize=(10, 5))
+    fig, ax = _plt().subplots(figsize=(10, 5))
     for i, (metric, label, color) in enumerate(metrics):
         means = best_df[f"{metric}_mean"].values * 100
         stds = best_df[f"{metric}_std"].values * 100

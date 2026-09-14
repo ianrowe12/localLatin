@@ -168,7 +168,7 @@ REAL_MSEED = REPO_ROOT / "runs/active/resubmit/taskb_mseed/aggregated_results.cs
 
 @pytest.mark.skipif(
     not (REAL_SINGLE.exists() and REAL_MSEED.exists()),
-    reason="benchmark v1 result CSVs are gitignored and absent in CI",
+    reason="the result CSVs are tracked but ci.yml sparse-checkouts without runs/",
 )
 def test_committed_tables_agree_on_the_real_csvs():
     single, mseed = pd.read_csv(REAL_SINGLE), pd.read_csv(REAL_MSEED)
