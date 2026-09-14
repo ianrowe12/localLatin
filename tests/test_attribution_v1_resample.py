@@ -303,3 +303,38 @@ class TestPairManifestDigest:
         examples_csv, split_csv = self._inputs(tmp_path)
         text, _ = manifest_digest(examples_csv, split_csv)
         assert not text.endswith("\n")
+
+
+def test_cpu_attribution_path_imports_without_torch():
+    """The hidden backend is CPU-only and must not need torch to import.
+
+    ``run_attribution_metrics.py`` documents ``--backend hidden`` as needing
+    "neither a GPU nor a model", and CI installs no torch on purpose (see the
+    comment in .github/workflows/ci.yml). ``src/token_filtering.py`` is imported
+    by that path for its pure-Python vocabulary classification, so its torch
+    import has to stay inside the one function that uses it. This test is the
+    guard: a module-level torch import anywhere on the chain makes the whole
+    test suite uncollectable on CI rather than failing one case.
+    """
+    script = """
+import builtins, sys
+from pathlib import Path
+ROOT = Path(%r)
+sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "scripts" / "ig"))
+real_import = builtins.__import__
+def guard(name, *a, **k):
+    if name == "torch" or name.startswith("torch."):
+        raise ModuleNotFoundError("No module named 'torch'")
+    return real_import(name, *a, **k)
+builtins.__import__ = guard
+import token_filtering
+import run_attribution_metrics
+import build_main_attribution_artifacts
+print(token_filtering.TOKEN_FILTER_CHOICES[0])
+""" % str(REPO_ROOT)
+    result = subprocess.run(
+        [sys.executable, "-c", script], capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "all"

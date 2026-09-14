@@ -1,9 +1,16 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
-import torch
+
+# torch is imported inside torch_token_keep_mask, the only function that needs
+# it. Everything else here is pure-Python string classification over a
+# tokenizer vocabulary, and the CPU-only attribution path imports this module
+# for exactly that. CI installs no torch on purpose, so a module-level import
+# would make a torch-free consumer uninstallable there.
+if TYPE_CHECKING:  # pragma: no cover
+    import torch
 
 TokenFilter = Literal["all", "tokenizer_empty", "no_empty", "content_only"]
 TOKEN_FILTER_CHOICES: tuple[TokenFilter, ...] = (
@@ -96,10 +103,12 @@ def numpy_token_keep_mask(
 
 
 def torch_token_keep_mask(
-    input_ids: torch.Tensor,
-    attention_mask: torch.Tensor,
+    input_ids: "torch.Tensor",
+    attention_mask: "torch.Tensor",
     token_keep_lookup: np.ndarray | None,
-) -> torch.Tensor:
+) -> "torch.Tensor":
+    import torch
+
     mask = attention_mask.float()
     if token_keep_lookup is None:
         return mask
