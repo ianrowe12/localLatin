@@ -109,7 +109,7 @@ def test_caption_quotes_the_runs_own_pair_count(tmp_path):
 def test_terminal_epoch_is_flagged_as_a_budget_ceiling(tmp_path):
     facts, _, _ = build_facts({"selected_epoch": 7, "epochs_run": 7}, epoch_budget=8)
     tex = render(tmp_path, facts)
-    assert "epoch 7, the terminal epoch of the 8-epoch budget" in tex
+    assert "epoch 7, the terminal epoch of the sweep under the 8-epoch budget" in tex
     assert "ceiling at this training budget" in tex
 
 
