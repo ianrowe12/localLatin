@@ -92,7 +92,7 @@ def _render_task_a() -> str:
         right_col="gap",
         fmt=".3f",
         scale=1.0,
-        caption=bht.task_a_caption(best),
+        caption=bht.task_a_caption(best, lexical, _finetune_frame()),
         label="tab:taskA_headline",
         reference_lines=bht.reference_rows(
             lexical,
@@ -146,6 +146,26 @@ def test_caption_does_not_claim_an_embedding_win_over_surface_matching():
     caption = tex[tex.index(r"\caption{") :]
     assert "practitioner's operating point" in caption
     assert "rather than beat it" in caption
+    # Issue #176: the comparison sentence is derived from the cells, and a
+    # single-seed difference inside the seed spread is never a lead.
+    assert "leads" not in caption and "reaches" not in caption
+
+
+def test_level_word_only_calls_a_lead_outside_the_seed_spread():
+    assert bht.level_word(0.1, 1.0) == "level with"
+    assert bht.level_word(-0.9, 1.0) == "level with"
+    assert bht.level_word(1.5, 1.0) == "above"
+    assert bht.level_word(-1.5, 1.0) == "below"
+
+
+def test_task_b_comparison_states_the_ceiling_as_a_finding():
+    results = _results_frame()
+    best = bht.best_rows(results, "hidden", "train_dir_acc_at_1")
+    # Fixture: ABTT cells at 0.91 assignment / 0.90 dir@1; lexical 0.80 / 0.70;
+    # fine-tuned + ABTT 0.83 / 0.81, so below every zero-shot ABTT cell.
+    sentence = bht.task_b_comparison(best, _lexical_frame(), _finetune_frame())
+    assert "TF-IDF char 3--5 is below the best ABTT cell (80.0 against 91.0" in sentence
+    assert "is below every zero-shot ABTT cell" in sentence
 
 
 def _attribution_summary() -> pd.DataFrame:
