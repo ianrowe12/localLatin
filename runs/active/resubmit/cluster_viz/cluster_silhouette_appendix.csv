@@ -3,11 +3,11 @@ LaBSE,baseline,tsne,0.4055222570896148,1160
 LaBSE,abtt_fixed,tsne,0.534669816493988,1160
 Qwen3-0.6B,baseline,tsne,-0.1008817628026008,1160
 Qwen3-0.6B,abtt_fixed,tsne,0.5295474529266357,1160
-KaLM-mini,baseline,tsne,0.0724840238690376,1160
-KaLM-mini,abtt_fixed,tsne,0.4979373812675476,1160
+KaLM-mini,baseline,tsne,0.151960551738739,1160
+KaLM-mini,abtt_fixed,tsne,0.5023937821388245,1160
 LaBSE,baseline,umap,0.10969473421573639,1160
 LaBSE,abtt_fixed,umap,0.300682008266449,1160
 Qwen3-0.6B,baseline,umap,-0.29030194878578186,1160
 Qwen3-0.6B,abtt_fixed,umap,0.2660543918609619,1160
-KaLM-mini,baseline,umap,-0.11567956209182739,1160
-KaLM-mini,abtt_fixed,umap,0.2003069519996643,1160
+KaLM-mini,baseline,umap,-0.1467885822057724,1160
+KaLM-mini,abtt_fixed,umap,0.25307169556617737,1160
