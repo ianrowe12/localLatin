@@ -288,26 +288,111 @@ def render_table(
     return "\n".join(lines) + "\n"
 
 
-def reference_caption() -> str:
-    """The two sentences that explain the reference block.
+def reference_caption(comparison: str) -> str:
+    """The sentences that explain the reference block.
 
-    It says what the rows are and how to read them, and nothing else. The
-    comparison itself is a row-against-row read of the table, so restating the
-    cells in prose would only cost lines. The second sentence is the framing
-    constraint from issue #119: no caption may imply that the embeddings beat
-    surface matching on this corpus.
+    The first says what the rows are. ``comparison`` is one sentence, derived
+    from the cells by the caller, that states how the reference rows sit
+    against the model rows, so a re-run cannot ship new numbers under old
+    prose. The last sentence is the framing constraint from issues #119 and
+    #176: no caption may imply that the embeddings beat surface matching on
+    this corpus, and the fine-tuning ceiling is a finding, not a bar cleared.
     """
     return (
         " Below the rule, reference systems on the same split with the same "
         "evaluation code: LaTa fine-tuned contrastively on the 565 positive "
         "train pairs, and three lexical baselines fitted on train files. "
-        "Surface overlap is the practitioner's operating point on this corpus, "
-        "and the embedding rows diagnose representation geometry rather than "
-        "beat it."
+        + comparison
+        + " Surface overlap is the practitioner's operating point on this "
+        "corpus, and the embedding rows diagnose representation geometry "
+        "rather than beat it."
     )
 
 
-def task_a_caption(best: pd.DataFrame) -> str:
+def _lexical_value(lexical: pd.DataFrame, key: str, col: str) -> float:
+    rows = lexical[lexical["model"] == key]
+    if rows.empty:
+        raise SystemExit(f"no {key!r} row in the lexical baselines CSV")
+    return float(rows.iloc[0][col])
+
+
+def _finetune_value(finetune: pd.DataFrame, csv_label: str, col: str) -> float:
+    rows = finetune[finetune["system"] == csv_label]
+    if rows.empty:
+        raise SystemExit(f"no {csv_label!r} row in the fine-tuning ceiling CSV")
+    return float(rows.iloc[0][col])
+
+
+def level_word(diff: float, tolerance: float) -> str:
+    """'level with' inside the seed spread, otherwise 'above' or 'below'.
+
+    Issue #176: a 0.1-point single-seed difference against seed standard
+    deviations of up to 1.0 is not a lead, so the caption may only say
+    'above' or 'below' when the difference clears ``tolerance``.
+    """
+    if abs(diff) <= tolerance:
+        return "level with"
+    return "above" if diff > 0 else "below"
+
+
+def task_a_comparison(
+    best: pd.DataFrame, lexical: pd.DataFrame, finetune: pd.DataFrame
+) -> str:
+    """One sentence on the reference rows of the Task A table, from its cells."""
+    abtt_best = float(best[best["_method"] == "abtt_optimal"]["aucroc"].max())
+    tfidf = _lexical_value(lexical, "TF-IDF char 3-5", "aucroc")
+    ft_base = _finetune_value(finetune, "LaTa (fine-tuned)", "taskA_aucroc")
+    ft_abtt = _finetune_value(finetune, "LaTa (fine-tuned) + ABTT", "taskA_aucroc")
+    ft_base_gap = _finetune_value(finetune, "LaTa (fine-tuned)", "taskA_cosine_gap")
+    ft_abtt_gap = _finetune_value(
+        finetune, "LaTa (fine-tuned) + ABTT", "taskA_cosine_gap"
+    )
+    return (
+        f"TF-IDF char 3--5 is {level_word(tfidf - abtt_best, 0.001)} the best "
+        f"ABTT AUROC ({tfidf:.3f} against {abtt_best:.3f}), and ABTT moves the "
+        f"fine-tuned encoder's AUROC from {ft_base:.3f} to {ft_abtt:.3f} while "
+        f"moving its gap from {ft_base_gap:.3f} to {ft_abtt_gap:.3f}."
+    )
+
+
+def task_b_comparison(
+    best: pd.DataFrame, lexical: pd.DataFrame, finetune: pd.DataFrame
+) -> str:
+    """One sentence on the reference rows of the Task B table, from its cells.
+
+    ``tolerance`` is one point: the five-seed standard deviations of the
+    SIF+ABTT cells reach 1.0, so a smaller single-seed difference is 'level'.
+    """
+    abtt = best[best["_method"] == "abtt_optimal"]
+    assign = 100.0 * abtt["overall_assignment_acc"]
+    dir1 = 100.0 * abtt["dir_acc_at_1"]
+    tf_assign = 100.0 * _lexical_value(lexical, "TF-IDF char 3-5", "overall_assignment_acc")
+    tf_dir1 = 100.0 * _lexical_value(lexical, "TF-IDF char 3-5", "dir_acc_at_1")
+    ft_assign = 100.0 * _finetune_value(
+        finetune, "LaTa (fine-tuned) + ABTT", "taskB_assignment_acc"
+    )
+    ft_dir1 = 100.0 * _finetune_value(
+        finetune, "LaTa (fine-tuned) + ABTT", "taskB_dir_acc_at_1"
+    )
+    if ft_assign < assign.min() and ft_dir1 < dir1.min():
+        ceiling = "below every zero-shot ABTT cell"
+    elif ft_assign > assign.max() and ft_dir1 > dir1.max():
+        ceiling = "above every zero-shot ABTT cell"
+    else:
+        ceiling = "inside the zero-shot ABTT range"
+    return (
+        f"TF-IDF char 3--5 is {level_word(tf_assign - assign.max(), 1.0)} the "
+        f"best ABTT cell ({tf_assign:.1f} against {assign.max():.1f} assignment "
+        f"accuracy, {tf_dir1:.1f} against {dir1.max():.1f} directory accuracy at "
+        f"rank 1), and the fine-tuned encoder with ABTT ({ft_assign:.1f} and "
+        f"{ft_dir1:.1f}) is {ceiling} ({assign.min():.1f} to {assign.max():.1f} "
+        f"and {dir1.min():.1f} to {dir1.max():.1f})."
+    )
+
+
+def task_a_caption(
+    best: pd.DataFrame, lexical: pd.DataFrame, finetune: pd.DataFrame
+) -> str:
     base = best[best["_method"] == "baseline"]["aucroc"]
     abtt = best[best["_method"] == "abtt_optimal"]["aucroc"]
     return (
@@ -320,11 +405,16 @@ def task_a_caption(best: pd.DataFrame) -> str:
         "Figure~\\ref{fig:gap}. Per-layer "
         "grids: Appendix Tables~\\ref{tab:taskA_main}, \\ref{tab:taskA_appendix}, "
         "and~\\ref{tab:taskA_appendix_sif}."
-        + reference_caption()
+        + reference_caption(task_a_comparison(best, lexical, finetune))
     )
 
 
-def task_b_caption(results: pd.DataFrame) -> str:
+def task_b_caption(
+    results: pd.DataFrame,
+    best: pd.DataFrame,
+    lexical: pd.DataFrame,
+    finetune: pd.DataFrame,
+) -> str:
     row = results.iloc[0]
     prior = 100.0 * float(row["n_existing"]) / float(row["n_test"])
     return (
@@ -339,7 +429,7 @@ def task_b_caption(results: pd.DataFrame) -> str:
         "together. Per-layer grids: Appendix "
         "Tables~\\ref{tab:taskB_routing_main}, \\ref{tab:taskB_routing_appendix}, "
         "and~\\ref{tab:taskB_routing_appendix_sif}."
-        + reference_caption()
+        + reference_caption(task_b_comparison(best, lexical, finetune))
     )
 
 
@@ -360,7 +450,7 @@ def main() -> None:
         right_col="gap",
         fmt=".3f",
         scale=1.0,
-        caption=task_a_caption(best_a),
+        caption=task_a_caption(best_a, lexical, finetune),
         label="tab:taskA_headline",
         reference_lines=reference_rows(
             lexical,
@@ -386,7 +476,7 @@ def main() -> None:
         right_col="dir_acc_at_1",
         fmt=".1f",
         scale=100.0,
-        caption=task_b_caption(results),
+        caption=task_b_caption(results, best_b, lexical, finetune),
         label="tab:taskB_headline",
         reference_lines=reference_rows(
             lexical,
