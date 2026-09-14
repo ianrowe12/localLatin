@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -69,6 +70,10 @@ INS_GAP_KEY = "ins_auc_gap"
 SUFF_KEY = "suff@0.25_ratio"
 COMP_KEY = "comp@0.25_ratio"
 MINFRAC_KEY = "compactness@0.80"
+
+_NUMBER_WORDS = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five",
+                 6: "six", 7: "seven", 8: "eight", 9: "nine", 10: "ten",
+                 11: "eleven", 12: "twelve"}
 
 MAIN_METRIC_KEYS = (RHO_KEY, DEL_GAP_KEY, DEL_RANDOM_KEY)
 SECONDARY_METRIC_KEYS = (TAU_KEY, INS_GAP_KEY, SUFF_KEY, COMP_KEY, MINFRAC_KEY)
@@ -166,15 +171,121 @@ def _abtt_pair_count_range(summary: pd.DataFrame, metric_key: str) -> tuple[int,
     return min(counts), max(counts)
 
 
-def _baseline_pair_count(summary: pd.DataFrame, metric_key: str) -> int:
-    counts = {
+def _baseline_pair_count_range(summary: pd.DataFrame, metric_key: str) -> tuple[int, int]:
+    """Baseline pair counts, as a range.
+
+    The ratio metrics are undefined below ``FULL_COS_FLOOR``. On the canon
+    sample the baseline cleared that floor for all 200 pairs in every cell, so
+    the caption could quote one number. It is not a property of the protocol:
+    at a layer whose *uncorrected* pair cosines sit near zero, the baseline
+    loses pairs too. Reported as a range, which collapses to one number printed
+    once when every cell agrees.
+    """
+    counts = [
         int(_get(summary, model, method, "baseline", f"{metric_key}_n"))
         for model, _ in MODELS
         for method, _ in METHODS
-    }
-    if len(counts) != 1:
-        raise ValueError(f"baseline pair counts for {metric_key} disagree: {sorted(counts)}")
-    return counts.pop()
+    ]
+    return min(counts), max(counts)
+
+
+def _count_phrase(lo: int, hi: int) -> str:
+    return str(lo) if lo == hi else f"{lo} to {hi}"
+
+
+def paired_cell_stats(pairs_root: Path, metric_key: str) -> dict[tuple[str, str], tuple[float, float]]:
+    """Paired ABTT-minus-baseline mean and standard error per (model, method).
+
+    The summary carries per-variant standard errors, which do not give the
+    standard error of the *difference*: the two variants score the same pairs,
+    so the difference is paired and its error is smaller than the unpaired
+    combination. The per-pair JSON cache written by
+    ``run_attribution_metrics.py`` is what makes the paired form computable, so
+    a caption claim about a cell being a tie is read off the same statistic the
+    selection memo used.
+    """
+    import json
+    from collections import defaultdict
+
+    per_cell: dict[tuple[str, str], dict[str, dict[str, float]]] = defaultdict(dict)
+    for path in sorted(pairs_root.rglob("*.json")):
+        try:
+            rows = json.loads(path.read_text())
+        except json.JSONDecodeError:
+            continue
+        for row in rows:
+            key = metric_key if metric_key in row else None
+            if key is None or row.get("method") is None:
+                continue
+            cell = (str(row.get("model")), str(row["method"]))
+            slot = per_cell[cell].setdefault(path.stem, {})
+            slot[str(row["variant"])] = row[key]
+
+    out: dict[tuple[str, str], tuple[float, float]] = {}
+    for cell, examples in per_cell.items():
+        diffs = [
+            v["abtt"] - v["baseline"]
+            for v in examples.values()
+            if "abtt" in v and "baseline" in v
+            and v["abtt"] is not None and v["baseline"] is not None
+            and np.isfinite(v["abtt"]) and np.isfinite(v["baseline"])
+        ]
+        if len(diffs) < 2:
+            continue
+        arr = np.asarray(diffs, dtype=float)
+        out[cell] = (float(arr.mean()), float(arr.std(ddof=1) / np.sqrt(len(arr))))
+    return out
+
+
+def _ties_for(pairs_root: Optional[Path], metric_key: str,
+              tie_se: float = 2.0) -> list[str]:
+    """Cells whose paired ABTT-minus-baseline difference is inside the noise.
+
+    The published canon caption hardcoded "the LaTa MaRC DelAUC win is a tie at
+    about 1.2 standard errors". That was a property of one sample; issue #141
+    re-sampled and the narrow cells moved. Reading them off the per-pair cache
+    keeps the claim true of whatever summary is passed in.
+    """
+    if pairs_root is None or not pairs_root.exists():
+        return []
+    stats = paired_cell_stats(pairs_root, metric_key)
+    out = []
+    for model, model_label in MODELS:
+        for method, method_label in METHODS:
+            entry = stats.get((model, method))
+            if entry is None:
+                continue
+            mean, se = entry
+            if se > 0 and abs(mean / se) < tie_se:
+                out.append(f"{model_label} {method_label}")
+    return out
+
+
+def tie_sentence(pairs_root: Optional[Path], summary: pd.DataFrame,
+                 metric_key: str, label: str, tie_se: float = 2.0) -> str:
+    """One clause naming this metric's tie cells, or the empty string."""
+    ties = _ties_for(pairs_root, metric_key, tie_se)
+    if not ties:
+        return ""
+    return f" {label} is a tie for {', '.join(ties)}."
+
+
+def tie_clause(pairs_root: Optional[Path], tie_se: float = 2.0) -> str:
+    """One compact clause covering both main columns.
+
+    Kept to a single sentence: the caption is already long, and two parallel
+    sentences saying the same thing about different columns cost a line of the
+    page budget for no extra information.
+    """
+    parts = []
+    for key, label in ((RHO_KEY, r"$\rho$"), (DEL_GAP_KEY, "DelAUC gap")):
+        ties = _ties_for(pairs_root, key, tie_se)
+        if ties:
+            parts.append(f"{label} for {' and '.join(ties)}")
+    if not parts:
+        return ""
+    return (f" Differences within {tie_se:.0f} standard errors of zero, "
+            f"that is ties rather than decisions: {'; '.join(parts)}.")
 
 
 def _random_floor_range(summary: pd.DataFrame) -> tuple[float, float]:
@@ -187,31 +298,18 @@ def _random_floor_range(summary: pd.DataFrame) -> tuple[float, float]:
     return min(floors), max(floors)
 
 
-def main_caption(summary: pd.DataFrame) -> str:
+def main_caption(summary: pd.DataFrame, pairs_root: Optional[Path] = None) -> str:
     rho_wins = _wins(summary, RHO_KEY)
     del_wins = _wins(summary, DEL_GAP_KEY)
     lo_n, hi_n = _abtt_pair_count_range(summary, DEL_GAP_KEY)
-    base_n = _baseline_pair_count(summary, DEL_GAP_KEY)
+    base_lo, base_hi = _baseline_pair_count_range(summary, DEL_GAP_KEY)
     lo_floor, hi_floor = _random_floor_range(summary)
 
-    # The "about 1.2 standard errors" figure is the paired ABTT-minus-baseline
-    # difference for LaTa/MaRC from part A7 of the selection memo, which needs
-    # per-pair values the summary does not carry. It is only true while that
-    # cell is the narrow DelAUC win, so refuse to print it otherwise: on a new
-    # summary, recompute the paired standard errors before restoring the claim.
-    lata_marc_base = _get(
-        summary, "bowphs/LaTa", "retrieval_mark", "baseline", _mean_col(DEL_GAP_KEY)
-    )
-    lata_marc_abtt = _get(
-        summary, "bowphs/LaTa", "retrieval_mark", "abtt", _mean_col(DEL_GAP_KEY)
-    )
-    margin = lata_marc_abtt - lata_marc_base
-    if not 0.0 < margin < 0.10:
-        raise ValueError(
-            "the caption's 1.2 standard error claim is about the LaTa/MaRC "
-            f"DelAUC gap being a narrow ABTT win; this summary gives {margin:+.3f}. "
-            "Recompute the paired standard errors before regenerating."
-        )
+    # Which cells are ties is read off the paired per-pair differences, not
+    # asserted. See tie_sentence: the published canon caption named LaTa MaRC
+    # because that was the narrow cell on that sample, and a different sample
+    # has different narrow cells or none.
+    ties = tie_clause(pairs_root)
 
     return (
         r"\caption{Attribution faithfulness at the predeclared operational "
@@ -222,16 +320,16 @@ def main_caption(summary: pd.DataFrame) -> str:
         rf"area under a random order, whose reference runs from {lo_floor:.3f} "
         rf"to {hi_floor:.3f} here, so zero is chance. Higher is better in both; "
         rf"boldface marks the better variant. ABTT wins {rho_wins}/6 and "
-        rf"{del_wins}/6, and the LaTa MaRC DelAUC win is a tie at about 1.2 "
-        r"standard errors. Ratio metrics are undefined below a full-query "
-        rf"cosine of 0.05, so the DelAUC columns average {lo_n} to {hi_n} ABTT "
-        rf"pairs against {base_n} baseline pairs. Cross-variant comparisons are "
+        rf"{del_wins}/6.{ties} Ratio metrics are undefined below a full-query "
+        rf"cosine of 0.05, so the DelAUC columns average {_count_phrase(lo_n, hi_n)} ABTT "
+        rf"pairs against {_count_phrase(base_lo, base_hi)} baseline pairs. Cross-variant comparisons are "
         r"descriptive. Secondary metrics: "
         r"Table~\ref{tab:attribution_metrics_secondary}.}"
     )
 
 
-def render_table(summary: pd.DataFrame, out_path: Path) -> None:
+def render_table(summary: pd.DataFrame, out_path: Path,
+                 pairs_root: Optional[Path] = None) -> None:
     lines: list[str] = [
         HEADER,
         REGEN_NOTE,
@@ -268,7 +366,7 @@ def render_table(summary: pd.DataFrame, out_path: Path) -> None:
     lines += [
         r"\bottomrule",
         r"\end{tabular}",
-        main_caption(summary),
+        main_caption(summary, pairs_root),
         r"\label{tab:attribution_metrics_main}",
         r"\end{table}",
         "",
@@ -286,11 +384,39 @@ SECONDARY_COLUMNS = (
 )
 
 
+SHUFFLE_GAP_KEY = "rand_ins_auc_gap_gap"
+
+
+def _shuffle_failures(summary: pd.DataFrame, gap_key: str) -> list[str]:
+    """Cells where the real attribution does not beat a shuffle of its own scores.
+
+    Criterion 5 of the selection memo, read off the summary instead of quoted
+    from it. The published caption said "two of the twelve cells, both of them
+    baseline cells"; both halves of that are properties of one sample.
+    """
+    failures = []
+    for model, model_label in MODELS:
+        for method, method_label in METHODS:
+            for variant in ("baseline", "abtt"):
+                value = _get(summary, model, method, variant, _mean_col(gap_key))
+                if value <= 0:
+                    failures.append(f"{model_label} {method_label} {variant}")
+    return failures
+
+
 def secondary_caption(summary: pd.DataFrame) -> str:
     tau_wins = _wins(summary, TAU_KEY)
     ins_wins = _wins(summary, INS_GAP_KEY)
     lo_n, hi_n = _abtt_pair_count_range(summary, INS_GAP_KEY)
-    base_n = _baseline_pair_count(summary, INS_GAP_KEY)
+    base_lo, base_hi = _baseline_pair_count_range(summary, INS_GAP_KEY)
+    failures = _shuffle_failures(summary, SHUFFLE_GAP_KEY)
+    n_fail = len(failures)
+    all_baseline = failures and all(f.endswith("baseline") for f in failures)
+    fail_clause = (
+        f"in {_NUMBER_WORDS.get(n_fail, str(n_fail))} of the twelve cells"
+        + (", all of them baseline cells," if all_baseline and n_fail > 1
+           else ", a baseline cell," if all_baseline else ",")
+    )
     return (
         r"\caption{Secondary attribution metrics, on the same pairs, the same "
         r"layers and the same erasure operator as "
@@ -301,15 +427,16 @@ def secondary_caption(summary: pd.DataFrame) -> str:
         rf"{tau_wins}/6 cells, but it is the tie-corrected twin of the same "
         r"statistic rather than a second witness. Chance-corrected insertion "
         rf"faithfulness favours ABTT in {ins_wins}/6 cells, and we do not "
-        r"report it in the main table because in two of the twelve cells, both "
-        r"of them baseline cells, the real attribution does not beat a "
+        rf"report it in the main table because {fail_clause} the real "
+        r"attribution does not beat a "
         r"permutation of its own scores, so the measurement does not meet the "
         r"validity bar we set for a headline column. The threshold-based "
         r"ERASER metrics are reported for completeness: their "
         r"baseline-versus-ABTT verdict depends on the threshold and on the "
         r"erasure operator, which is why the main table uses threshold-free, "
         r"chance-corrected metrics instead. The InsAUC columns average "
-        rf"{lo_n} to {hi_n} ABTT pairs against the baseline's {base_n}, for the "
+        rf"{_count_phrase(lo_n, hi_n)} ABTT pairs against the baseline's "
+        rf"{_count_phrase(base_lo, base_hi)}, for the "
         r"same small-denominator reason. Full threshold sweeps are in "
         r"Tables~\ref{tab:attribution_sweep_main_methods} "
         r"and~\ref{tab:attribution_sweep_supplemental_methods}.}"
@@ -476,6 +603,12 @@ def render_rho_figure(summary: pd.DataFrame, out_base: Path) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--summary_csv", type=Path, default=DEFAULT_SUMMARY)
+    parser.add_argument(
+        "--pairs_root", type=Path, default=None,
+        help="Per-pair metric JSON cache from run_attribution_metrics.py. Used "
+             "for the caption's paired standard errors. Defaults to "
+             "<summary_csv parent>/v2_hidden.",
+    )
     parser.add_argument("--table_out", type=Path, default=DEFAULT_TABLE_OUT)
     parser.add_argument("--secondary_table_out", type=Path, default=DEFAULT_SECONDARY_OUT)
     parser.add_argument("--fig_out_base", type=Path, default=DEFAULT_FIG_OUT)
@@ -484,8 +617,10 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    if args.pairs_root is None:
+        args.pairs_root = args.summary_csv.parent / "v2_hidden"
     summary = _load_main_rows(args.summary_csv)
-    render_table(summary, args.table_out)
+    render_table(summary, args.table_out, args.pairs_root)
     render_secondary_table(summary, args.secondary_table_out)
     render_rho_figure(summary, args.fig_out_base)
     print(f"Wrote {args.table_out}")
