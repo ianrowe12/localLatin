@@ -42,6 +42,13 @@ metrics improve under ABTT in only 6/18 comparisons.
 
 ## Rebuild
 
+> Historical run 3 log. Since #201 the bare invocation below regenerates from the
+> run of record, `runs/active/ig_examples_200pos_v1/` (see
+> `scripts/ig/attribution_run_of_record.py`), not from the run 3 summary this
+> log describes. To rebuild the run 3 tables, pass
+> `--summary_csv runs/active/ig_examples_200pos_run3_operational/attribution_metrics/summary_v2.csv`
+> and redirect the output paths; the stamped committed tables refuse a different run.
+
 ```bash
 python scripts/ig/build_main_attribution_artifacts.py
 python -m py_compile scripts/ig/build_main_attribution_artifacts.py

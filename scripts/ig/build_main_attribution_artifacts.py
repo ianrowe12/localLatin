@@ -1,8 +1,15 @@
 """Build main-text attribution reporting artifacts for the three paper models.
 
-The input is the expanded Run 3 operational attribution summary:
+The input is the attribution summary of the run of record, the benchmark v1
+re-sample of issue #187 (``RUN_OF_RECORD`` in ``attribution_run_of_record.py``):
 
-    runs/active/ig_examples_200pos_run3_operational/attribution_metrics/summary_v2.csv
+    runs/active/ig_examples_200pos_v1/attribution_metrics/summary_v2.csv
+
+together with its gitignored per-pair cache ``v2_hidden/`` for the caption's tie
+clause. Every table written here carries a ``% source run:`` stamp and the
+generator refuses to overwrite a table stamped with a different run unless
+``--allow_run_change`` is passed (issue #201), so a bare rerun cannot rewrite
+the paper's numbers from an older sample.
 
 Outputs:
 
@@ -12,7 +19,8 @@ Outputs:
 
 Selection (issue #120, from ``docs/research/attribution_metrics_decision.md``
 part B). The main table carries two columns and nothing else: ``rho_LOO``,
-which ABTT wins 6/6, and ``DelAUC gap``, which it wins 3/6. Both are
+which ABTT wins 5/6 on the v1 sample, and ``DelAUC gap``, which it wins 4/6
+(6/6 and 3/6 on the run 3 sample the memo was written on). Both are
 threshold-free and both have a calibrated zero. They are printed as paired
 base/ABTT columns rather than ``base -> ABTT`` arrow cells, which are not a
 table convention readers expect.
@@ -28,6 +36,7 @@ Both tables read one summary, so both describe the same erasure operator.
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -41,11 +50,16 @@ import pandas as pd
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT / "scripts" / "ig"))
 
-DEFAULT_SUMMARY = (
-    REPO_ROOT
-    / "runs/active/ig_examples_200pos_run3_operational/attribution_metrics/summary_v2.csv"
+from attribution_run_of_record import (  # noqa: E402
+    DEFAULT_SUMMARY_CSV,
+    refuse_run_change,
+    run_name,
+    stamp_line,
 )
+
+DEFAULT_SUMMARY = DEFAULT_SUMMARY_CSV
 DEFAULT_TABLE_OUT = REPO_ROOT / "overleaf_drafts/tables/attribution_metrics_main.tex"
 DEFAULT_SECONDARY_OUT = (
     REPO_ROOT / "overleaf_drafts/tables/attribution_metrics_secondary.tex"
@@ -82,10 +96,18 @@ METRIC_KEYS = MAIN_METRIC_KEYS + SECONDARY_METRIC_KEYS
 # Overleaf receives these files, so the header says nothing about the repo.
 HEADER = "% generated table"
 REGEN_NOTE = (
-    "% Selection and wording follow the part B memo behind issue #120. If the "
-    "attribution\n% re-sample of issue #141 lands, regenerate this file from "
-    "the new summary rather than\n% editing the numbers here."
+    "% Selection and wording follow the part B memo behind issue #120; the numbers "
+    "come from the\n% run stamped above (issue #187 re-sample). Regenerate from "
+    "that summary rather than\n% editing the numbers here."
 )
+
+
+def _header_lines(source_run: Optional[str]) -> list[str]:
+    lines = [HEADER]
+    if source_run:
+        lines.append(stamp_line(source_run))
+    lines.append(REGEN_NOTE)
+    return lines
 
 
 def _mean_col(metric_key: str) -> str:
@@ -339,10 +361,10 @@ def main_caption(summary: pd.DataFrame, pairs_root: Optional[Path] = None) -> st
 
 
 def render_table(summary: pd.DataFrame, out_path: Path,
-                 pairs_root: Optional[Path] = None) -> None:
+                 pairs_root: Optional[Path] = None, *,
+                 source_run: Optional[str] = None) -> None:
     lines: list[str] = [
-        HEADER,
-        REGEN_NOTE,
+        *_header_lines(source_run),
         r"\begin{table}[t]",
         r"\centering",
         r"\small",
@@ -453,7 +475,8 @@ def secondary_caption(summary: pd.DataFrame) -> str:
     )
 
 
-def render_secondary_table(summary: pd.DataFrame, out_path: Path) -> None:
+def render_secondary_table(summary: pd.DataFrame, out_path: Path, *,
+                           source_run: Optional[str] = None) -> None:
     n_metrics = len(SECONDARY_COLUMNS)
     banner = " & ".join(
         rf"\multicolumn{{2}}{{c}}{{{label}}}" for _, label, _ in SECONDARY_COLUMNS
@@ -462,8 +485,7 @@ def render_secondary_table(summary: pd.DataFrame, out_path: Path) -> None:
         rf"\cmidrule(lr){{{3 + 2 * i}-{4 + 2 * i}}}" for i in range(n_metrics)
     )
     lines: list[str] = [
-        HEADER,
-        REGEN_NOTE,
+        *_header_lines(source_run),
         r"\begin{table*}[t]",
         r"\centering",
         r"\small",
@@ -627,6 +649,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--table_out", type=Path, default=DEFAULT_TABLE_OUT)
     parser.add_argument("--secondary_table_out", type=Path, default=DEFAULT_SECONDARY_OUT)
     parser.add_argument("--fig_out_base", type=Path, default=DEFAULT_FIG_OUT)
+    parser.add_argument(
+        "--allow_run_change", action="store_true",
+        help="Overwrite a table stamped with a different source run. Only when "
+             "the run of record is changing on purpose; see attribution_run_of_record.py.",
+    )
     return parser.parse_args()
 
 
@@ -635,9 +662,12 @@ def main() -> None:
     args.pairs_root = None if args.no_tie_clause else (
         args.pairs_root or args.summary_csv.parent / "v2_hidden"
     )
+    run = run_name(args.summary_csv)
+    for out in (args.table_out, args.secondary_table_out):
+        refuse_run_change(out, run, allow=args.allow_run_change)
     summary = _load_main_rows(args.summary_csv)
-    render_table(summary, args.table_out, args.pairs_root)
-    render_secondary_table(summary, args.secondary_table_out)
+    render_table(summary, args.table_out, args.pairs_root, source_run=run)
+    render_secondary_table(summary, args.secondary_table_out, source_run=run)
     render_rho_figure(summary, args.fig_out_base)
     print(f"Wrote {args.table_out}")
     print(f"Wrote {args.secondary_table_out}")

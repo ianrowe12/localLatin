@@ -4,6 +4,13 @@ This script is intentionally summary-driven: it does not recompute model
 forwards. It renders readable appendix tables from the wide
 ``attribution_metrics/summary.csv`` produced by ``run_attribution_metrics.py``
 and writes a tidy long CSV for auditing.
+
+Defaults read the run of record (``attribution_run_of_record.RUN_OF_RECORD``)
+and write the long CSV and completeness report back into that run's
+``attribution_metrics/`` directory. Each table is stamped with its source run
+and the script refuses to overwrite a table stamped with a different run unless
+``--allow_run_change`` is passed (issue #201). To render an older run for
+comparison, pass its ``--summary_csv`` and redirect every output path.
 """
 from __future__ import annotations
 
@@ -19,6 +26,13 @@ import pandas as pd
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "scripts" / "ig"))
 
+from attribution_run_of_record import (  # noqa: E402
+    ATTRIBUTION_METRICS_DIR,
+    DEFAULT_SUMMARY_CSV,
+    refuse_run_change,
+    run_name,
+    stamp_line,
+)
 from run_attribution_metrics import (  # noqa: E402
     FULL_COS_FLOOR,
     LOO_NOISE_FLOOR,
@@ -138,12 +152,15 @@ def render_table(
     label: str,
     fractions: Sequence[float],
     compactness_thresholds: Sequence[float],
+    source_run: str | None = None,
 ) -> None:
     keys = metric_keys(fractions, compactness_thresholds)
     colspec = "ll" + "rr" * len(keys)
 
-    lines: list[str] = [
-        "% generated table",
+    lines: list[str] = ["% generated table"]
+    if source_run:
+        lines.append(stamp_line(source_run))
+    lines += [
         r"\begin{table*}[t]",
         r"\centering",
         r"\scriptsize",
@@ -265,14 +282,12 @@ def parse_args() -> argparse.Namespace:
     # prints (issue #120). Reading summary.csv here instead would put the appendix
     # sweeps on a different erasure operator than the main table, which produces
     # two different values for the same cell in the same paper.
-    p.add_argument("--summary_csv", default=str(
-        REPO_ROOT / "runs/active/ig_examples_200pos_run3_operational/attribution_metrics/summary_v2.csv"
-    ))
+    p.add_argument("--summary_csv", default=str(DEFAULT_SUMMARY_CSV))
     p.add_argument("--long_out", default=str(
-        REPO_ROOT / "runs/active/ig_examples_200pos_run3_operational/attribution_metrics/summary_v2_sweep_long_appendix.csv"
+        ATTRIBUTION_METRICS_DIR / "summary_v2_sweep_long_appendix.csv"
     ))
     p.add_argument("--missing_report_out", default=str(
-        REPO_ROOT / "runs/active/ig_examples_200pos_run3_operational/attribution_metrics/appendix_sweep_v2_completeness.json"
+        ATTRIBUTION_METRICS_DIR / "appendix_sweep_v2_completeness.json"
     ))
     p.add_argument("--main_tex_out", default=str(
         REPO_ROOT / "overleaf_drafts/tables/attribution_metrics_sweep_main_methods.tex"
@@ -284,6 +299,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--compactness_thresholds", default="0.70,0.80,0.90,0.95")
     p.add_argument("--strict", action="store_true",
                    help="Exit nonzero if any required sweep metric column or main cell is missing.")
+    p.add_argument("--allow_run_change", action="store_true",
+                   help="Overwrite a table stamped with a different source run. Only when the "
+                        "run of record is changing on purpose; see attribution_run_of_record.py.")
     return p.parse_args()
 
 
@@ -295,6 +313,10 @@ def main() -> None:
         name="--compactness_thresholds",
     )
     keys = metric_keys(fractions, compactness_thresholds)
+
+    run = run_name(args.summary_csv)
+    for out in (args.main_tex_out, args.supplemental_tex_out):
+        refuse_run_change(out, run, allow=args.allow_run_change)
 
     summary = pd.read_csv(args.summary_csv)
     summary = summary[summary["model"].isin(MAIN_MODELS)].copy()
@@ -345,6 +367,7 @@ def main() -> None:
         fractions=fractions,
         compactness_thresholds=compactness_thresholds,
         label="tab:attribution_sweep_main_methods",
+        source_run=run,
         caption=(
             r"Appendix attribution sweep for the two paper-facing attribution views, "
             r"\textsc{IG} and retrieval-adapted \textsc{MaRC}, across the three main-paper models."
@@ -358,6 +381,7 @@ def main() -> None:
         fractions=fractions,
         compactness_thresholds=compactness_thresholds,
         label="tab:attribution_sweep_supplemental_methods",
+        source_run=run,
         caption=(
             r"Supplemental attribution sweep for additional methods and sanity baselines. "
             r"\textit{random} and \textit{inverse} are diagnostic baselines, not paper-facing "

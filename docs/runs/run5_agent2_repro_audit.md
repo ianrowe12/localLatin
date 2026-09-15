@@ -108,6 +108,13 @@ python scripts/ig/build_attribution_run_manifest.py \
 
 ## Verification Commands
 
+> Historical run 3 audit. Since #201 the bare `build_main_attribution_artifacts.py`
+> and `package_attribution_sweep_appendix.py` invocations below regenerate from the
+> run of record, `runs/active/ig_examples_200pos_v1/` (see
+> `scripts/ig/attribution_run_of_record.py`), so they no longer reproduce the run 3
+> tables this audit checked; pass the run 3 `--summary_csv` and redirect the output
+> paths for that.
+
 ```bash
 python -m py_compile \
   scripts/ig/run_attribution_metrics.py \
