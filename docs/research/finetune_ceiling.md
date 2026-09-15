@@ -376,8 +376,10 @@ ceiling on that row is the one a reviewer would ask for.
 **Pooling.** Mean pooling with the `tokenizer_empty` filter at max_length 512,
 because that is what the paper's KaLM-mini rows use, not the last-token pooling
 its `hidden_lasttok_tokempty/` sibling cache holds. The parity check confirms
-it: re-extracting with the pre-trained weights reproduces the paper's cache at
-about 1e-06 relative on layers 1 and 24, mean cosine 1.000000.
+it: re-extracting with the pre-trained weights reproduces the paper's cache to a
+max absolute difference of 9.537e-06 at layer 1 and 2.074e-05 at layer 24, mean
+cosine 1.000000 at both, which is what job 22099472 logged over all 1,705 files
+and what the `parity` block of `run_info.json` holds.
 
 **Recipe delta: gradient checkpointing and `--trust_remote_code`, and nothing
 else.** The checkpointing argument is Qwen's argument at 494M parameters rather
@@ -725,10 +727,23 @@ first-hand; that is the right fix whenever the checkpoints are retrained, and
 not worth an A100 to recover a JSON file.
 
 KaLM-mini's record never needed restoring: it was written under the merge rules
-from the start, and its file carries `train_seconds` (60.9), `parity`,
-`selection`, `grad_checkpointing` and `caption_facts` from the GPU job beside
-`report_config` and `report_total_seconds` from the scoring job, with no
-`restored` block. That is what the two rebuilt files are approximating.
+from the start. Its file carries `train_seconds` (60.9), `parity`, `selection`,
+`grad_checkpointing`, `n_blocks` and `device` from the GPU job, and
+`caption_facts` beside the namespaced `report_config`, `report_total_seconds`
+and `report_device` from the scoring job, with no `restored` block.
+`caption_facts` belongs to the scoring job and not to the GPU job, because it is
+written only on the `--tex_out` branch, which only the eval job takes. That is
+what the two rebuilt files are approximating.
+
+**`device` is job-scoped too, and learned that the hard way.** It was merged
+rather than namespaced until #210, so the scoring job, which the budget rule
+sends to the CPU partition, rewrote every finished record to say the weights
+were trained on `cpu`, next to a `parity` block and a `train_seconds` that could
+only have come from a GPU. `JOB_SCOPED_KEYS` in the CLI now covers `config`,
+`total_seconds` and `device`, and `tests/test_finetune_run_info.py` pins that a
+second and third scoring pass still leave the training job's values in place.
+The one record already damaged was repaired in place from the two job logs and
+carries a `repaired` block naming each source.
 
 ## Compute
 

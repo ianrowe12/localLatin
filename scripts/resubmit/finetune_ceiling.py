@@ -920,6 +920,12 @@ class CeilingFacts:
 TEX_HEADER = "% generated table"
 
 
+# Keys that describe the job that ran rather than the artifacts on disk. A job
+# that did not load the encoder has these namespaced under "report_<key>" so it
+# cannot overwrite the training job's account of how the weights were made.
+JOB_SCOPED_KEYS = ("config", "total_seconds", "device")
+
+
 def merge_run_info(
     existing: Dict[str, object], new: Dict[str, object], touched_model: bool
 ) -> Dict[str, object]:
@@ -933,15 +939,18 @@ def merge_run_info(
     appendix asserting a record that no longer existed on disk. Every key the
     current job did not produce is now carried through untouched.
 
-    Two keys describe the *job* rather than the artifacts, so they are
-    namespaced rather than merged: a scoring job's ``config`` and
-    ``total_seconds`` land under ``report_config`` and ``report_total_seconds``,
-    leaving the training job's as the record of how the weights were made.
+    Three keys describe the *job* rather than the artifacts, so they are
+    namespaced rather than merged: a scoring job's ``config``, ``total_seconds``
+    and ``device`` land under ``report_config``, ``report_total_seconds`` and
+    ``report_device``, leaving the training job's as the record of how the
+    weights were made. ``device`` joined them in #210: scoring runs on the CPU
+    partition by budget rule, so without namespacing it a scoring job rewrote
+    the record to say the weights were trained on ``cpu``.
     ``touched_model`` is true exactly when this job loaded the encoder.
     """
     merged = dict(existing)
     for key, value in new.items():
-        if key in ("config", "total_seconds") and not touched_model and key in merged:
+        if key in JOB_SCOPED_KEYS and not touched_model and key in merged:
             merged[f"report_{key}"] = value
         else:
             merged[key] = value

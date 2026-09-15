@@ -80,8 +80,19 @@ def test_the_training_config_stays_the_record_of_how_the_weights_were_made():
 
 def test_scoring_still_contributes_what_it_produced():
     assert merged_after_scoring()["caption_facts"] == CPU_RECORD["caption_facts"]
-    # `device` is written by both; the later job wins, which is harmless.
-    assert merged_after_scoring()["device"] == "cpu"
+
+
+def test_scoring_does_not_rewrite_the_device_the_weights_were_trained_on():
+    """Issue #210 review: `device` used to be written by both jobs, later wins.
+
+    That is not harmless. Scoring runs on the CPU partition by the repo's budget
+    rule, so every finished run's record claimed its weights were trained on
+    `cpu`, contradicting the `parity` and `train_seconds` sitting beside it. It
+    is job-scoped like `config`, so the scoring job's value is namespaced.
+    """
+    merged = merged_after_scoring()
+    assert merged["device"] == "cuda"
+    assert merged["report_device"] == "cpu"
 
 
 def test_a_job_that_loaded_the_model_owns_config_and_total_seconds():
@@ -110,10 +121,25 @@ def test_write_run_info_round_trips_through_disk(tmp_path):
     assert on_disk["grad_checkpointing"] is True
     assert on_disk["selection"]["selected_epoch"] == 3
     assert on_disk["caption_facts"]["n_fit_pairs"] == 499
+    assert on_disk["device"] == "cuda"
+
+
+def test_repeated_scoring_runs_do_not_erode_the_training_record():
+    """A re-verification pass is a scoring job like any other, and there may be
+    several. Every job-scoped key must still name the run that made the weights
+    after the second and third of them."""
+    merged = merged_after_scoring()
+    for _ in range(2):
+        merged = ceiling.merge_run_info(merged, CPU_RECORD, touched_model=False)
+    assert merged["device"] == "cuda"
+    assert merged["config"] == GPU_RECORD["config"]
+    assert merged["total_seconds"] == 200.0
+    assert merged["train_seconds"] == GPU_RECORD["train_seconds"]
 
 
 def test_a_corrupt_record_is_replaced_rather_than_crashing(tmp_path):
     path = tmp_path / "run_info.json"
     path.write_text("{not json", encoding="utf-8")
     ceiling.write_run_info(path, CPU_RECORD, touched_model=False)
+    # Nothing to preserve, so the scoring job's own device is the record.
     assert json.loads(path.read_text(encoding="utf-8"))["device"] == "cpu"

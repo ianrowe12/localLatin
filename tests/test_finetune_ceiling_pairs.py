@@ -184,7 +184,7 @@ def test_a_single_pair_yields_no_batch() -> None:
 
 # --- checkpoint selection on a small dev pool (#194) ------------------------
 
-# The two runs' measured dev curves, as (epoch, dir_acc@1, AUROC). They are
+# The three runs' measured dev curves, as (epoch, dir_acc@1, AUROC). They are
 # literals because runs/ is gitignored, and they are the whole point of these
 # tests: the selection rule has to be checked against what actually happened,
 # not against a curve invented to suit it.
@@ -211,6 +211,19 @@ QWEN_DEV_CURVE = [
 ]
 
 
+# KaLM-mini is the third shape the window has to handle (#210): the pre-trained
+# encoder misses two files, so epoch 1 wins on accuracy outright, and then
+# epochs 2-4 sit ONE file below the incumbent. Neither curve above covers a
+# candidate below the incumbent by exactly the pool's resolution.
+KALM_DEV_CURVE = [
+    (0, 0.9718309859154930, 0.9567001139965174),
+    (1, 1.0000000000000000, 0.9996993498440377),
+    (2, 0.9859154929577465, 0.9994049632329914),
+    (3, 0.9859154929577465, 0.9995239705863931),
+    (4, 0.9859154929577465, 0.9995114434965613),
+]
+
+
 def points(curve):
     return [fp.DevPoint(*row) for row in curve]
 
@@ -234,6 +247,39 @@ def test_a_saturated_dev_pool_no_longer_vetoes_a_trained_checkpoint():
     1.4-point difference outranked an AUROC gain from 0.966 to 0.9998. One file
     is the pool's whole resolution, so it is a tie, and AUROC decides."""
     assert fp.select_checkpoint(points(QWEN_DEV_CURVE), N_DEV_FILES).epoch == 3
+
+
+def test_kalm_selection_is_the_trained_epoch_that_tops_the_pool():
+    """KaLM-mini's published ceiling is extracted from epoch 1, and this pins it.
+
+    The curve exercises the tie window from the side neither other run reaches.
+    Epoch 1 gains two files over the pre-trained encoder (69/71 to 71/71), which
+    is larger than the window and so wins on accuracy outright. Epochs 2 to 4
+    then sit exactly one file *below* the incumbent, which the window makes a
+    tie rather than a loss, so AUROC decides and epoch 1 keeps it on 0.99970
+    against 0.99940 to 0.99952. Under the pre-#194 exact-equality rule the
+    outcome would be the same here; what this curve guards is that widening the
+    window did not hand the run to a later, worse epoch.
+    """
+    assert fp.select_checkpoint(points(KALM_DEV_CURVE), N_DEV_FILES).epoch == 1
+
+
+def test_kalm_epochs_below_the_incumbent_are_ties_that_lose_on_auroc():
+    """The three post-peak epochs must be reachable by the tie-break and lose it.
+
+    If the window were narrower they would be outright losses, and if AUROC were
+    not consulted they would be indistinguishable from epoch 1. Both halves are
+    asserted, so a change to either rule fails here rather than silently moving
+    which checkpoint the paper's KaLM-mini rows come from.
+    """
+    best = fp.DevPoint(*KALM_DEV_CURVE[1])
+    for row in KALM_DEV_CURVE[2:]:
+        candidate = fp.DevPoint(*row)
+        # One file below the incumbent: inside the window, so not an outright loss.
+        assert best.dir_acc_at_1 - candidate.dir_acc_at_1 == pytest.approx(1 / 71)
+        # ... and it loses anyway, on the tie-break.
+        assert candidate.aucroc < best.aucroc
+        assert not fp.is_better_checkpoint(candidate, best, N_DEV_FILES)
 
 
 def test_a_difference_larger_than_one_file_still_wins_outright():
