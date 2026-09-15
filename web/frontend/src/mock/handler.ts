@@ -553,6 +553,20 @@ function handleCreateReviewerDir(init?: RequestInit): Response {
  * already starts a group gets `seed_taken` with NO directory, and anything else
  * creates one.
  */
+/**
+ * WHEN #172 LANDS, this is the one line that conflicts, and the resolution is
+ * mechanical: keep both, dispatching on the outcome. #172 answers the RANK
+ * path's receipt contract (`handleCreateFeedback`), this answers the blue
+ * action's, and they are disjoint --
+ *
+ *   const body = JSON.parse(String(init.body ?? '{}'))
+ *   if (body.outcome === 'none_of_top_k') return mockResponse(handleFeedbackPost(init))
+ *   const written = handleCreateFeedback(init)
+ *   ...
+ *
+ * -- because `handleFeedbackPost` already returns `{ success: true }` for
+ * anything that is not a None answer.
+ */
 function handleFeedbackPost(init: RequestInit): Record<string, unknown> {
   const body = JSON.parse(String(init.body ?? '{}')) as {
     query_id?: number
