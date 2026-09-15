@@ -537,6 +537,85 @@ function handleCreateReviewerDir(init?: RequestInit): Response {
 }
 
 /**
+ * `POST /api/feedback` for the blue "None of the top N" action (issue #196).
+ *
+ * The client refuses a 201 it cannot read, because the receipt is what tells a
+ * reviewer whether a permanent group now holds their document. So the mock has
+ * to answer with the same contract the backend does, including which branch the
+ * key took -- otherwise dev:mock shows an "unreadable answer" error for a save
+ * that would succeed in production.
+ *
+ * The branch rule mirrors `web/routers/feedback.py` closely enough to exercise
+ * the UI: a key that names one of the mock labelled directories matches it, a
+ * key already used by a mock reviewer directory joins it, anything else creates
+ * one.
+ */
+function handleFeedbackPost(init: RequestInit): Record<string, unknown> {
+  const body = JSON.parse(String(init.body ?? '{}')) as {
+    query_id?: number
+    outcome?: string
+    ccl_key?: string
+    model_slug?: string
+    variant?: PredictionVariant
+  }
+  if (body.outcome !== 'none_of_top_k') return { success: true }
+
+  const key = (body.ccl_key ?? '').replace(/\s+/g, ' ').trim()
+  const queryId = body.query_id ?? 0
+  const base = {
+    id: Math.floor(Math.random() * 100000),
+    query_id: queryId,
+    outcome: 'none_of_top_k',
+    correct_rank: 0,
+    correct_dir: null,
+    ccl_key: key || null,
+    ccl_key_action: null as string | null,
+    ccl_key_dir: null as string | null,
+  }
+  if (!key) return base
+
+  const fold = (value: string) => value.replace(/\s+/g, ' ').trim().toLowerCase()
+  const labelled = MOCK_LABELLED_DIRS.find((name) => fold(name) === fold(key))
+  if (labelled) {
+    return { ...base, ccl_key_action: 'matched_labelled_dir', ccl_key_dir: labelled }
+  }
+  const existing = mockReviewerDirs.find((dir) => fold(dir.label) === fold(key))
+  if (existing) {
+    if (!existing.member_query_ids.includes(queryId)) {
+      existing.member_query_ids.push(queryId)
+      existing.status = 'matched'
+    }
+    return {
+      ...base,
+      ccl_key_action: 'joined_reviewer_dir',
+      ccl_key_dir: existing.dir_id,
+    }
+  }
+  if (mockReviewerDirs.some((dir) => dir.seed_query_id === queryId)) {
+    const seeded = mockReviewerDirs.find((dir) => dir.seed_query_id === queryId)!
+    return { ...base, ccl_key_action: 'seed_taken', ccl_key_dir: seeded.dir_id }
+  }
+  const created: ReviewerDir = {
+    dir_id: `reviewer-dir-${mockReviewerDirs.length + 1}`,
+    label: key,
+    status: 'awaiting_match',
+    seed_query_id: queryId,
+    member_query_ids: [queryId],
+    created_at: new Date().toISOString(),
+    created_by: 'scholar',
+    model_slug: body.model_slug ?? 'bowphs_LaTa',
+    variant: body.variant ?? DEFAULT_VARIANT,
+    best_match_score: null,
+    has_potential_match: false,
+  }
+  mockReviewerDirs.push(created)
+  return { ...base, ccl_key_action: 'created_reviewer_dir', ccl_key_dir: created.dir_id }
+}
+
+/** Labelled directory names the mock corpus knows, for the key lookup above. */
+const MOCK_LABELLED_DIRS = ['Can.apost.42', 'Nic.325.c.5', 'Can.apost.49']
+
+/**
  * `GET /api/reviewer_dirs?seed_query_id=N` is the reload/recovery lookup, so
  * the mock has to honour the filter: answering with every group regardless of
  * seed would make any document look already saved.
@@ -628,7 +707,7 @@ export function installMockHandler(): void {
       return mockResponse(handleLatestFeedback(url))
     }
     if (url.includes('/api/feedback') && init?.method === 'POST') {
-      return mockResponse({ success: true })
+      return mockResponse(handleFeedbackPost(init))
     }
 
     // Stats

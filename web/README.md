@@ -111,10 +111,46 @@ artifacts generated before those arrays existed. `query_sif_weights` /
 | GET | `/api/stats` | Dashboard statistics |
 | GET | `/api/models` | Available model metadata |
 
+### Reviewer directories, the CCL key, and the ranked list (issue #196)
+
+Reviewer-created directories are **not ranked candidates**. `GET
+/api/query/{file_id}/predictions` serves them in their own field,
+`reviewer_dir_candidates`, best first and without a `rank`; `predictions` holds
+the retrieval run's own ten and nothing else. They used to be appended at ranks
+anchored on `MAX_MODEL_RANK + 1`, which evaluators read as the model predicting
+them, and whose numbering changed as memberships changed. The PDF packets have
+always listed them unranked (`services/pdf_packets.py`); the web list now agrees.
+
+A document is filed into a reviewer directory by **naming its CCL key**, not by
+pressing a rank. `POST /api/feedback` accepts an optional `ccl_key` alongside
+`outcome: none_of_top_k` (and only there: a rank already names a directory). The
+server normalises it — trimmed, inner whitespace collapsed, stored as typed,
+matched case-folded (`services/ccl_keys.py`) — and takes exactly one of four
+branches, recorded on the feedback row as `ccl_key_action` with the resolved
+directory in `ccl_key_dir`:
+
+| Branch | Meaning | Writes |
+|--------|---------|--------|
+| `matched_labelled_dir` | the key names a labelled corpus directory | assessment only |
+| `joined_reviewer_dir` | the key names an existing reviewer directory | assessment + membership |
+| `created_reviewer_dir` | nothing carries the key | assessment + directory + seed membership |
+| `seed_taken` | nothing carries the key, but this query already seeds a directory | assessment only |
+
+`FeedbackDB.insert_none_of_top_k` does all of it in ONE transaction on a
+dedicated connection opened with `BEGIN IMMEDIATE`, so an assessment citing a
+key cannot outlive the directory write it refers to. `correct_dir` is untouched
+by this path and keeps its meaning: the directory a rank resolved to.
+
+`reviewer_dirs.ccl_key` is the join key. The migration adds the column and fills
+it only where the answer is already written down — a label that IS a CCL key by
+the `scripts/data/label_taxonomy.py` rule. No label is ever rewritten, and a
+non-key label keeps `ccl_key = ''`, which matches nothing.
+
 ### Reviewer directory creation and recovery
 
-Approved, signed-in reviewers can create a group with
-`POST /api/reviewer_dirs {query_file_id, label?}`. Creation immediately saves
+`POST /api/reviewer_dirs {query_file_id, label?}` still exists and is unchanged;
+the reviewer UI no longer calls it, since the retired "New directory" button was
+its only caller. Creation immediately saves
 the directory and its seed membership, independently of feedback submission.
 It returns 201, rejects an existing seed with 409, and rejects an account at
 `MAX_REVIEWER_DIRS_PER_ACCOUNT` with 429. A duplicate takes precedence over the

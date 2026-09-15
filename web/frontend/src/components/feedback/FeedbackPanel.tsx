@@ -25,6 +25,7 @@ import {
 } from '../../contexts/saveFailure'
 import { fetchLatestFeedback, type FeedbackEntry } from '../../api/feedback'
 import MatchPills from './MatchPills'
+import NoneOfTopTenAction from './NoneOfTopTenAction'
 import NotesTextarea from './NotesTextarea'
 import { formatNoteAttribution } from './noteAttribution'
 import SubmitButton from './SubmitButton'
@@ -530,6 +531,31 @@ export default function FeedbackPanel() {
         />
       )}
 
+      {/* The blue action's own field and its own submit (issue #196). It is
+          mounted here, right under the ten buttons, because those two controls
+          are now the whole of this panel's answer surface: the red
+          new-directory call to action and its explanation are gone. */}
+      {evidence.candidates.length > 0 && activeQueryId !== null && draftKey !== null && (
+        <NoneOfTopTenAction
+          // Per query and per assessment: a typed key must not follow the
+          // reviewer to the next document, and a receipt must not either.
+          key={draftKey}
+          queryId={activeQueryId}
+          model={activeModel}
+          variant={activeVariant}
+          notes={draft.notes}
+          open={noneSelected}
+          available={evidence.noneAvailable}
+          onRecorded={() => {
+            // The answer and its prose are on the server now. Clearing the
+            // draft is what the rank path's own save does, and leaving it would
+            // show the saved text back as "your unsaved draft".
+            setNone(false)
+            setNotes('')
+          }}
+        />
+      )}
+
       {/* Why nothing here can be assessed. Rendered whenever the evidence
           refuses evaluation, not only when there is nothing to draw: a ranking
           whose model candidates are all unreadable still has pills on screen,
@@ -736,7 +762,12 @@ export default function FeedbackPanel() {
         // Submit records an evaluation, so it needs a deliberate valid choice
         // on a usable current ranking. Skip is a deferral with a note and stays
         // available even when nothing loaded -- that is the whole point of it.
-        disabled={!readiness.canSubmit}
+        //
+        // `noneSelected` is excluded (issue #196): the blue action records that
+        // answer itself, with its optional key, and two buttons that both write
+        // "none of the top N" is two rows in an append-only log for one
+        // decision.
+        disabled={!readiness.canSubmit || noneSelected}
         skipDisabled={!activeModel || draftKey === null}
       />
     </div>

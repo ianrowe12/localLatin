@@ -1,56 +1,30 @@
 import { BAND_COPY } from '../../utils/confidenceBands'
-import {
-  alreadySeededNote,
-  NO_MATCH_GUIDANCE,
-} from '../../utils/reviewerDirectoryCopy'
-import NewDirectoryCta from './NewDirectoryCta'
+import { NO_MATCH_GUIDANCE } from '../../utils/reviewerDirectoryCopy'
 
 interface NoMatchCalloutProps {
-  /** Query whose top hit fell below the no-match threshold. */
-  queryFileId: number
   /** Best similarity on offer, for the "best is X" line. */
   topScore: number | null
-  /** How many ranks the feedback pills offer, so the fallback copy matches. */
-  topK: number
-  /** Model slug the directory would be created under. */
-  model: string
-  /** Seed filename, used to suggest a default label. */
-  filename?: string
-  /**
-   * This document already seeds a directory, so creation is not on offer here.
-   * `PredictionList` reads that from the durable saved-directory record as well
-   * as from the response, and renders the acknowledgement itself (issue #161),
-   * so this callout never has to hold the outcome of a permanent write.
-   */
-  alreadySeeded: boolean
 }
 
 /**
- * The band-1 treatment (issue #94): when the best candidate scores below the
- * no-match threshold, the reviewer must see in a split second that the ranking
- * below is probably noise, and the *default top option* is to say so rather
- * than to pick a rank.
+ * The band-1 hint (issue #94, trimmed by #196): the best candidate scores below
+ * the no-match threshold, so the ranking below is probably noise.
  *
- * The callout is #94's: red frame, warning glyph, `role="alert"`, the band copy
- * and the best-similarity line. The action inside it is #95's `NewDirectoryCta`,
- * which is the integration point that component always documented -- it now
- * renders here, emphasised, instead of at the foot of the list. #94's own
- * button and its `CtaState` machine are gone: they existed to call an endpoint
- * that did not exist yet, including a "coming with the next update" branch that
- * this PR makes unreachable.
+ * WHAT THIS NO LONGER CARRIES. It used to hold issue #95's `NewDirectoryCta` --
+ * the red "New directory / New file" button, its caption, and an
+ * already-seeded fallback paragraph. Prof. Firey, 15 September 2026: the red
+ * button and its explanation should go "to restore the elegance of the review
+ * panel", and a new evaluator needs space around the ten prediction buttons
+ * rather than a second, louder call to action beside them. Declaring a new
+ * source now happens in one place, the blue "None of the top N" action in the
+ * assessment panel, where an optional CCL key says what the source is.
  *
- * Creation state lives in the durable saved-directory store keyed by seed query
- * (issue #161), which is why this callout can be unmounted by a refetch without
- * costing the reviewer the record of a write.
+ * The red frame stays, because the fact it reports is still true and still
+ * useful: a low score means the model has no useful opinion here, and knowing
+ * that before reading ten candidates is worth a two-line notice. It is now a
+ * hint and nothing else -- no buttons, no state, no writes.
  */
-export default function NoMatchCallout({
-  queryFileId,
-  topScore,
-  topK,
-  model,
-  filename,
-  alreadySeeded,
-}: NoMatchCalloutProps) {
+export default function NoMatchCallout({ topScore }: NoMatchCalloutProps) {
   return (
     <div
       data-testid="no-match-callout"
@@ -96,23 +70,6 @@ export default function NoMatchCallout({
       >
         {NO_MATCH_GUIDANCE}
       </p>
-
-      {alreadySeeded ? (
-        <p
-          data-testid="no-match-already-seeded"
-          className="mt-2 font-ui text-xs italic text-stone-600 dark:text-stone-300"
-        >
-          {alreadySeededNote(topK)}
-        </p>
-      ) : (
-        <NewDirectoryCta
-          queryId={queryFileId}
-          model={model}
-          filename={filename}
-          emphasised
-          inline
-        />
-      )}
     </div>
   )
 }

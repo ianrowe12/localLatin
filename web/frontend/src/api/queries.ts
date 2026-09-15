@@ -106,6 +106,31 @@ export interface Prediction {
   supporting_member?: SupportingMember | null
 }
 
+/**
+ * A reviewer-created directory offered for this query, WITHOUT a rank
+ * (issue #196).
+ *
+ * Mirrors `ReviewerDirCandidate` in `web/models.py`. It is deliberately NOT a
+ * `Prediction`: it has no rank, cannot be selected by one, and is not the
+ * model's answer. Reviewer directories used to arrive inside `predictions` at
+ * anchored ranks 11 and 12, which reviewers read as predictions -- they are
+ * scored live from the query-query matrix against documents a colleague grouped
+ * by hand.
+ */
+export interface ReviewerDirCandidate {
+  dir_id: string
+  label: string
+  ccl_key: string
+  score: number
+  created_by: string
+  seed_query_id: number
+  member_query_ids: number[]
+  dir_files: string[]
+  candidate_files: CandidateFile[] | null
+  preview_text: string
+  supporting_member?: SupportingMember | null
+}
+
 export interface PredictionResponse {
   file_id: number
   filename: string
@@ -127,6 +152,12 @@ export interface PredictionResponse {
   // Reviewer directories seeded by this query. Drives the badge on the
   // document itself rather than on any candidate card.
   seeded_dirs?: ReviewerDir[]
+  /**
+   * Reviewer directories the model can score for this query, best first and
+   * unranked (issue #196). Absent from a backend that predates the split, in
+   * which case there simply is no reviewer block to draw.
+   */
+  reviewer_dir_candidates?: ReviewerDirCandidate[]
 }
 
 // ---------------------------------------------------------------------------
@@ -653,9 +684,11 @@ function validateReviewerDir(value: unknown, index: number): ReviewerDir | strin
  * ranking with a few odd entries: silently dropping a candidate would renumber
  * what the reviewer sees against what the server resolves a rank to.
  *
- * Sparse ranks are legal and preserved. Reviewer directories are anchored at
- * rank 11 whatever the model returned, so [1, 11] is a real ranking, and
- * requiring 1..n or exactly ten would reject it.
+ * Sparse ranks are legal and preserved. Historical responses anchored reviewer
+ * directories at rank 11 whatever the model returned, so [1, 11] is a real
+ * ranking and requiring 1..n or exactly ten would reject it. Since issue #196
+ * the server sends no such entry, but a stale cached response may still carry
+ * one and is still readable.
  */
 export function validatePredictionResponse(
   payload: unknown,
@@ -677,6 +710,12 @@ export function validatePredictionResponse(
   }
   if (payload.seeded_dirs !== undefined && !Array.isArray(payload.seeded_dirs)) {
     return { ok: false, reason: 'seeded_dirs is not an array' }
+  }
+  if (
+    payload.reviewer_dir_candidates !== undefined &&
+    !Array.isArray(payload.reviewer_dir_candidates)
+  ) {
+    return { ok: false, reason: 'reviewer_dir_candidates is not an array' }
   }
 
   const seededDirs: ReviewerDir[] = []
@@ -741,6 +780,15 @@ export function validatePredictionResponse(
     })
   }
 
+  const reviewerDirs: ReviewerDirCandidate[] = []
+  const rawReviewerDirs =
+    (payload.reviewer_dir_candidates as unknown[] | undefined) ?? []
+  for (const entry of rawReviewerDirs) {
+    const card = validateReviewerDirCandidate(entry)
+    if (typeof card === 'string') return { ok: false, reason: card }
+    reviewerDirs.push(card)
+  }
+
   return {
     ok: true,
     value: {
@@ -751,7 +799,67 @@ export function validatePredictionResponse(
       predictions,
       status: typeof status === 'string' ? status : null,
       seeded_dirs: seededDirs,
+      reviewer_dir_candidates: reviewerDirs,
     },
+  }
+}
+
+/**
+ * One unranked reviewer directory, or the reason it could not be read.
+ *
+ * Checked as strictly as a ranked candidate, and for the same reason: this card
+ * offers the reviewer a permanent grouping to file a document into by name, so
+ * a half-read row would invite them to act on a directory nobody vouched for.
+ * A malformed entry fails the WHOLE response rather than being dropped, so the
+ * reviewer never silently sees fewer directories than exist.
+ */
+function validateReviewerDirCandidate(
+  entry: unknown,
+): ReviewerDirCandidate | string {
+  if (!isRecord(entry)) return 'reviewer directory candidate is not an object'
+  if (typeof entry.dir_id !== 'string' || entry.dir_id.length === 0) {
+    return 'reviewer directory candidate has no id'
+  }
+  if (typeof entry.label !== 'string') {
+    return 'reviewer directory candidate has no label'
+  }
+  if (typeof entry.score !== 'number' || !Number.isFinite(entry.score)) {
+    return 'reviewer directory candidate score is not finite'
+  }
+  const dirFiles = entry.dir_files
+  if (dirFiles !== undefined && !Array.isArray(dirFiles)) {
+    return 'reviewer directory candidate dir_files is not an array'
+  }
+  const candidateFiles = validateCandidateFiles(entry.candidate_files)
+  if (candidateFiles === false) {
+    return 'reviewer directory candidate files are malformed'
+  }
+  const supportingMember = validateSupportingMember(entry.supporting_member)
+  if (supportingMember === false) {
+    return 'reviewer directory candidate supporting_member is malformed'
+  }
+  const members = entry.member_query_ids
+  if (members !== undefined && !Array.isArray(members)) {
+    return 'reviewer directory candidate member_query_ids is not an array'
+  }
+  return {
+    dir_id: entry.dir_id,
+    label: entry.label,
+    ccl_key: typeof entry.ccl_key === 'string' ? entry.ccl_key : '',
+    score: entry.score,
+    created_by: typeof entry.created_by === 'string' ? entry.created_by : '',
+    seed_query_id:
+      typeof entry.seed_query_id === 'number' ? entry.seed_query_id : -1,
+    member_query_ids: ((members as unknown[] | undefined) ?? []).filter(
+      (id): id is number => typeof id === 'number',
+    ),
+    dir_files: ((dirFiles as unknown[] | undefined) ?? []).filter(
+      (name): name is string => typeof name === 'string',
+    ),
+    candidate_files: candidateFiles,
+    preview_text:
+      typeof entry.preview_text === 'string' ? entry.preview_text : '',
+    supporting_member: supportingMember,
   }
 }
 

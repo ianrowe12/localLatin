@@ -342,9 +342,14 @@ def test_a_pending_reviewer_may_not_create_a_directory(tmp_path: Path) -> None:
 # --- merge scoring ---------------------------------------------------------
 
 
-def test_reviewer_dirs_merge_into_predictions_as_extra_candidates(
-    tmp_path: Path,
-) -> None:
+def test_reviewer_dirs_are_served_unranked_beside_the_ten(tmp_path: Path) -> None:
+    """Issue #196: they leave the ranked list and arrive in their own field.
+
+    They used to be appended to `predictions` at anchored ranks 11 and 12, and
+    evaluators read that as the model predicting them. Nothing in `predictions`
+    is a reviewer directory now, and nothing in the reviewer block carries a
+    rank -- the same rule the PDF packets have always followed.
+    """
     client = _signed_in(tmp_path)
     try:
         created = _create_dir(client, 0, "Seeded by q0")
@@ -352,19 +357,20 @@ def test_reviewer_dirs_merge_into_predictions_as_extra_candidates(
             "/api/query/1/predictions", params={"model": "bowphs/LaTa"}
         ).json()
 
-        model_cards = [p for p in body["predictions"] if p["source"] == "model"]
-        reviewer_cards = [p for p in body["predictions"] if p["source"] == "reviewer"]
+        # The model's own ranks are exactly what the retrieval CSV produced.
+        assert [p["rank"] for p in body["predictions"]] == [1, 2]
+        assert [p["dir_name"] for p in body["predictions"]] == [
+            "candidate-a",
+            "candidate-b",
+        ]
+        assert [p["source"] for p in body["predictions"]] == ["model", "model"]
 
-        # The model's own ranks are untouched by the merge.
-        assert [p["rank"] for p in model_cards] == [1, 2]
-        assert [p["dir_name"] for p in model_cards] == ["candidate-a", "candidate-b"]
-
-        assert len(reviewer_cards) == 1
-        card = reviewer_cards[0]
-        # Anchored at MAX_MODEL_RANK + 1, NOT "one past however many model
-        # candidates came back" -- this fixture only has two of those.
-        assert card["rank"] == 11
-        assert card["dir_name"] == created["dir_id"]
+        cards = body["reviewer_dir_candidates"]
+        assert len(cards) == 1
+        card = cards[0]
+        assert "rank" not in card
+        assert "dir_name" not in card
+        assert card["dir_id"] == created["dir_id"]
         assert card["label"] == "Seeded by q0"
         assert card["seed_query_id"] == 0
         assert card["score"] == F16_080  # QQ[1, 0] in float16
@@ -378,12 +384,12 @@ def test_merge_score_is_the_max_over_member_documents(tmp_path: Path) -> None:
     """q2 scores 0.30 against {q0} and 0.30 against {q0, q1}: max, not mean."""
     client = _signed_in(tmp_path)
     try:
-        created = _create_dir(client, 0)
+        created = _create_dir(client, 0, "CTOU.567.16")
         before = _reviewer_card(client, query_id=2, dir_id=created["dir_id"])
         assert before["score"] == F16_030  # QQ[2, 0] in float16
 
-        # Confirming the directory from q1 appends q1 as a member.
-        _submit_match(client, query_id=1, rank=before_rank(client, 1, created["dir_id"]))
+        # Naming the directory's key from q1 appends q1 as a member.
+        _join_by_key(client, query_id=1, key="CTOU.567.16")
         after = _reviewer_card(client, query_id=2, dir_id=created["dir_id"])
         # max(QQ[2,0], QQ[2,1]) = max(0.30, 0.20) = 0.30, unchanged. A mean
         # would have dropped to 0.25.
@@ -404,7 +410,7 @@ def test_a_directory_is_not_offered_to_its_own_members(tmp_path: Path) -> None:
         body = client.get(
             "/api/query/0/predictions", params={"model": "bowphs/LaTa"}
         ).json()
-        assert [p for p in body["predictions"] if p["source"] == "reviewer"] == []
+        assert body["reviewer_dir_candidates"] == []
         # ... but the seed still learns about the directory it created.
         assert [d["dir_id"] for d in body["seeded_dirs"]] == [created["dir_id"]]
     finally:
@@ -423,7 +429,7 @@ def test_guard_excluded_queries_are_never_scored(tmp_path: Path) -> None:
         body = client.get(
             "/api/query/3/predictions", params={"model": "bowphs/LaTa"}
         ).json()
-        assert [p for p in body["predictions"] if p["source"] == "reviewer"] == []
+        assert body["reviewer_dir_candidates"] == []
 
     finally:
         client.__exit__(None, None, None)
@@ -457,7 +463,7 @@ def test_a_model_without_a_matrix_serves_no_reviewer_candidates(
         body = client.get(
             "/api/query/1/predictions", params={"model": "bowphs/LaTa"}
         ).json()
-        assert [p for p in body["predictions"] if p["source"] == "reviewer"] == []
+        assert body["reviewer_dir_candidates"] == []
 
         model = client.get("/api/models").json()[0]
         assert model["supports_reviewer_dirs"] is False
@@ -490,7 +496,7 @@ def test_badge_lifecycle_awaiting_then_matched(tmp_path: Path) -> None:
     """
     client = _signed_in(tmp_path)
     try:
-        created = _create_dir(client, 2)
+        created = _create_dir(client, 2, "CTOU.567.16")
         assert created["status"] == "awaiting_match"
 
         seed_view = client.get(
@@ -498,9 +504,8 @@ def test_badge_lifecycle_awaiting_then_matched(tmp_path: Path) -> None:
         ).json()
         assert seed_view["seeded_dirs"][0]["status"] == "awaiting_match"
 
-        # q0 confirms the directory, joining it.
-        rank = before_rank(client, 0, created["dir_id"])
-        _submit_match(client, query_id=0, rank=rank)
+        # q0 names the directory's key, joining it.
+        _join_by_key(client, query_id=0, key="ctou.567.16")
 
         after = client.get(f"/api/reviewer_dirs/{created['dir_id']}").json()
         assert after["status"] == "matched"
@@ -688,34 +693,33 @@ def test_a_rank_with_no_candidate_behind_it_is_rejected(tmp_path: Path) -> None:
         client.__exit__(None, None, None)
 
 
-def test_reviewer_rank_is_anchored_and_agrees_across_endpoints(
-    tmp_path: Path,
-) -> None:
-    """`top_k` must not move a reviewer card's rank.
+def test_no_rank_addresses_a_reviewer_directory_any_more(tmp_path: Path) -> None:
+    """The anchored ranks 11-15 are gone, at every `top_k` (issue #196).
 
-    The offset-based version numbered reviewer cards "one past however many
-    model candidates were returned", but `get_predictions` counted the sliced
-    list and `get_candidates` the unsliced row. At top_k=1 a card served at one
-    rank resolved to a different directory when its files were fetched by that
-    same rank -- and feedback records the rank.
+    They existed so that one number meant one thing in every response. Now no
+    number names a reviewer directory at all: the by-rank candidate route
+    answers with nothing past the model's own ranks, and the directory's files
+    are reached by `dir_id`, which is what the unranked block carries and what
+    the packets print.
     """
     client = _signed_in(tmp_path)
     try:
         created = _create_dir(client, 0)
         for top_k in (1, 2):
-            body = client.get(
-                "/api/query/1/predictions",
-                params={"model": "bowphs/LaTa", "top_k": top_k},
-            ).json()
-            card = next(p for p in body["predictions"] if p["source"] == "reviewer")
-            assert card["rank"] == 11, top_k
-            assert card["dir_name"] == created["dir_id"]
+            cards = _reviewer_cards(client, 1, top_k=top_k)
+            assert [c["dir_id"] for c in cards] == [created["dir_id"]], top_k
 
-            files = client.get(
-                f"/api/query/1/predictions/{card['rank']}/candidates",
-                params={"model": "bowphs/LaTa", "top_k": top_k},
+            for rank in (11, 12, 15):
+                files = client.get(
+                    f"/api/query/1/predictions/{rank}/candidates",
+                    params={"model": "bowphs/LaTa", "top_k": top_k},
+                ).json()
+                assert files == [], (top_k, rank)
+
+            by_id = client.get(
+                f"/api/candidate_dir/{created['dir_id']}/files"
             ).json()
-            assert [f["filename"] for f in files] == ["query-0.txt"], top_k
+            assert [f["filename"] for f in by_id] == ["query-0.txt"], top_k
     finally:
         client.__exit__(None, None, None)
 
@@ -732,14 +736,7 @@ def test_one_directory_per_seed_query(tmp_path: Path) -> None:
         assert created["dir_id"] in duplicate.json()["detail"]
         assert len(client.get("/api/reviewer_dirs").json()) == 1
 
-        cards = [
-            p
-            for p in client.get(
-                "/api/query/1/predictions", params={"model": "bowphs/LaTa"}
-            ).json()["predictions"]
-            if p["source"] == "reviewer"
-        ]
-        assert len(cards) == 1
+        assert len(_reviewer_cards(client, 1)) == 1
     finally:
         client.__exit__(None, None, None)
 
@@ -759,18 +756,9 @@ def test_candidate_list_caps_the_number_of_reviewer_cards(tmp_path: Path) -> Non
                 == 201
             ), query_id
 
-        cards = [
-            p
-            for p in client.get(
-                "/api/query/0/predictions", params={"model": "bowphs/LaTa"}
-            ).json()["predictions"]
-            if p["source"] == "reviewer"
-        ]
+        cards = _reviewer_cards(client, 0)
         assert len(cards) == MAX_REVIEWER_CANDIDATES
-        # Best first, and contiguous from the anchor.
-        assert [c["rank"] for c in cards] == [
-            11 + i for i in range(MAX_REVIEWER_CANDIDATES)
-        ]
+        # Best first. No ranks: the cap bounds a list, it does not number one.
         assert cards == sorted(cards, key=lambda c: -c["score"])
     finally:
         client.__exit__(None, None, None)
@@ -906,34 +894,36 @@ def test_packet_never_prints_a_rank_for_a_reviewer_directory(
         for query_id in (0, 2, 4, 5):
             assert (
                 client.post(
-                    "/api/reviewer_dirs", json={"query_file_id": query_id}
+                    "/api/reviewer_dirs",
+                    json={
+                        "query_file_id": query_id,
+                        "label": f"CTOU.567.{query_id}",
+                    },
                 ).status_code
                 == 201
             )
 
-        live = [
-            (p["rank"], p["dir_name"])
-            for p in client.get(
-                "/api/query/1/predictions", params={"model": "bowphs/LaTa"}
-            ).json()["predictions"]
-            if p["source"] == "reviewer"
-        ]
+        live = [card["dir_id"] for card in _reviewer_cards(client, 1)]
         assert len(live) >= 3, live
-        chosen_rank, chosen_dir = live[1]  # deliberately NOT the first
-        _submit_match(client, query_id=1, rank=chosen_rank)
+        chosen_dir = live[1]  # deliberately NOT the first
+        _join_by_key(client, query_id=1, key=_label_of(client, chosen_dir))
 
         text = _packet_text(client, 1, top_k=10)
 
         squashed = _squashed(client, 1, top_k=10)
 
-        # The feedback row is the authoritative pairing, and names the id.
-        assert f"rank{chosen_rank}|{chosen_dir}" in squashed
+        # The feedback row is the authoritative pairing, and names the id: the
+        # key the reviewer typed, what the server did with it, and the
+        # directory it resolved to.
+        chosen_key = _label_of(client, chosen_dir).replace(" ", "")
+        assert f"CCLkey:{chosen_key}|joined_reviewer_dir|{chosen_dir}" in squashed
 
-        # No reviewer directory is printed under ANY rank -- so in particular
-        # none is printed under the rank the reviewer's answer refers to.
-        for _rank, dir_id in live:
+        # No reviewer directory is printed under ANY rank. Since issue #196 the
+        # ranked list cannot even offer one, so this is now two guarantees deep.
+        for dir_id in live:
             label = _label_of(client, dir_id).replace(" ", "")
-            assert f"Match{_rank}:{label}" not in squashed, (_rank, dir_id)
+            for n in range(1, MAX_CANDIDATE_RANK + 1):
+                assert f"Match{n}:{label}" not in squashed, (n, dir_id)
         for n in range(1, MAX_CANDIDATE_RANK + 1):
             assert f"Match{n}:Newdirectory" not in squashed, n
 
@@ -971,16 +961,25 @@ def _label_of(client: TestClient, dir_id: str) -> str:
 # --- feedback integration --------------------------------------------------
 
 
-def test_feedback_on_a_reviewer_dir_records_normally(tmp_path: Path) -> None:
+def test_joining_a_reviewer_dir_by_key_records_the_assessment(tmp_path: Path) -> None:
     client = _signed_in(tmp_path)
     try:
-        created = _create_dir(client, 0)
-        rank = before_rank(client, 1, created["dir_id"])
-        entry = _submit_match(client, query_id=1, rank=rank)
-        assert entry["outcome"] == "matched_rank"
+        created = _create_dir(client, 0, "CTOU.567.16")
+        entry = _join_by_key(client, query_id=1, key="  ctou.567.16  ")
+        # The answer to the ranking is still "none of the ten": the key names a
+        # directory the ranking never offered.
+        assert entry["outcome"] == "none_of_top_k"
+        assert entry["correct_rank"] == 0
+        assert entry["correct_dir"] is None
         assert entry["variant"] == "sif_abtt"
-        assert entry["correct_dir"] == created["dir_id"]
-        assert entry["correct_rank"] == rank
+        # Stored as typed, matched case- and whitespace-insensitively.
+        assert entry["ccl_key"] == "ctou.567.16"
+        assert entry["ccl_key_action"] == "joined_reviewer_dir"
+        assert entry["ccl_key_dir"] == created["dir_id"]
+
+        members = client.get(f"/api/reviewer_dirs/{created['dir_id']}").json()
+        assert sorted(members["member_query_ids"]) == [0, 1]
+        assert members["status"] == "matched"
     finally:
         client.__exit__(None, None, None)
 
@@ -988,28 +987,16 @@ def test_feedback_on_a_reviewer_dir_records_normally(tmp_path: Path) -> None:
 def test_joining_a_directory_is_idempotent(tmp_path: Path) -> None:
     """A replayed submission must not duplicate or re-open a membership.
 
-    Once q1 joins, the directory stops being offered to q1, so the replay is a
-    rank that no longer resolves -- a 422 rather than a silent second write.
-    Either way the membership list is unchanged.
+    The feedback log is append-only, so the replay legitimately writes a second
+    assessment row; the membership is `INSERT OR IGNORE`, so it writes nothing.
     """
     client = _signed_in(tmp_path)
     try:
-        created = _create_dir(client, 0)
-        rank = before_rank(client, 1, created["dir_id"])
-        _submit_match(client, query_id=1, rank=rank)
-
-        replay = client.post(
-            "/api/feedback",
-            json={
-                "query_id": 1,
-                "model_slug": "bowphs/LaTa",
-                "outcome": "matched_rank",
-                "correct_rank": rank,
-                "correct_dir": created["dir_id"],
-                "notes": "",
-            },
-        )
-        assert replay.status_code == 422
+        created = _create_dir(client, 0, "CTOU.567.16")
+        first = _join_by_key(client, query_id=1, key="CTOU.567.16")
+        replay = _join_by_key(client, query_id=1, key="CTOU.567.16")
+        assert replay["id"] != first["id"]
+        assert replay["ccl_key_action"] == "joined_reviewer_dir"
 
         members = client.get(f"/api/reviewer_dirs/{created['dir_id']}").json()
         assert sorted(members["member_query_ids"]) == [0, 1]
@@ -1161,17 +1148,49 @@ def test_reopening_a_migrated_database_changes_nothing(tmp_path: Path) -> None:
 # --- helpers ---------------------------------------------------------------
 
 
-def _reviewer_card(client: TestClient, *, query_id: int, dir_id: str) -> dict:
+def _reviewer_cards(client: TestClient, query_id: int, **params: object) -> list[dict]:
+    """The unranked reviewer-directory block a query is served (issue #196)."""
     body = client.get(
-        f"/api/query/{query_id}/predictions", params={"model": "bowphs/LaTa"}
+        f"/api/query/{query_id}/predictions",
+        params={"model": "bowphs/LaTa", **params},
     ).json()
-    card = next(p for p in body["predictions"] if p["dir_name"] == dir_id)
-    assert card["source"] == "reviewer"
-    return card
+    # Nothing in `predictions` is ever a reviewer directory any more; every
+    # entry there is the retrieval run's own answer at the rank the CSV gave it.
+    assert all(p["source"] == "model" for p in body["predictions"]), body["predictions"]
+    cards = body["reviewer_dir_candidates"]
+    assert all("rank" not in card for card in cards), cards
+    return cards
 
 
-def before_rank(client: TestClient, query_id: int, dir_id: str) -> int:
-    return _reviewer_card(client, query_id=query_id, dir_id=dir_id)["rank"]
+def _reviewer_card(client: TestClient, *, query_id: int, dir_id: str) -> dict:
+    return next(
+        card for card in _reviewer_cards(client, query_id) if card["dir_id"] == dir_id
+    )
+
+
+def _join_by_key(
+    client: TestClient, *, query_id: int, key: str, notes: str = ""
+) -> dict:
+    """File a query into a directory the way the reviewer UI now does.
+
+    The rank pills no longer offer reviewer directories, so "this document
+    belongs with that group" is said by typing the group's CCL key beside
+    "None of the top N". One request, one transaction: the assessment and the
+    membership are written together or not at all.
+    """
+    response = client.post(
+        "/api/feedback",
+        json={
+            "query_id": query_id,
+            "model_slug": "bowphs/LaTa",
+            "outcome": "none_of_top_k",
+            "correct_rank": 0,
+            "ccl_key": key,
+            "notes": notes,
+        },
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
 
 
 def _post_feedback(client: TestClient, *, query_id: int, rank: int, dir_name: str) -> dict:
@@ -1191,6 +1210,7 @@ def _post_feedback(client: TestClient, *, query_id: int, rank: int, dir_name: st
 
 
 def _submit_match(client: TestClient, *, query_id: int, rank: int) -> dict:
+    """Confirm the MODEL candidate at `rank`. Reviewer directories have none."""
     body = client.get(
         f"/api/query/{query_id}/predictions", params={"model": "bowphs/LaTa"}
     ).json()

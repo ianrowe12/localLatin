@@ -7,7 +7,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse, PlainTextResponse
 
 from web.dependencies import get_current_user, get_db, get_store, require_pi_admin
-from web.exceptions import InvalidModelError, QueryNotFoundError, VariantUnavailableError
+from web.exceptions import (
+    InvalidModelError,
+    QueryNotFoundError,
+    ReviewerDirLimitError,
+    VariantUnavailableError,
+)
 from web.models import (
     CandidateSource,
     ErrorDetail,
@@ -21,6 +26,7 @@ from web.models import (
     UserPublic,
 )
 from web.routers.predictions import get_predictions, resolve_variant
+from web.services import ccl_keys
 from web.services import reviewer_dirs as reviewer_dirs_svc
 from web.services.data_store import DataStore, normalize_slug
 from web.services.feedback_db import FeedbackDB
@@ -123,6 +129,43 @@ async def create_feedback(
         correct_dir = candidates[ranks[0]].dir_name
 
     assert body.outcome is not None
+
+    # --- None of the top N, with an optional CCL key (issue #196) -----------
+    # One write for the assessment AND whatever the key implies. The labelled
+    # corpus is consulted here, where the DataStore is, and the answer is passed
+    # into the transaction; everything that touches the database happens inside
+    # it, so a reviewer never ends up with an assessment citing a directory that
+    # was never written, or a directory nobody's assessment refers to.
+    if body.outcome == FeedbackOutcome.NONE_OF_TOP_K:
+        key = ccl_keys.normalize_ccl_key(body.ccl_key)
+        labelled_dir = (
+            ccl_keys.find_labelled_dir(key, store.labelled_dir_files) if key else None
+        )
+        try:
+            row = await db.insert_none_of_top_k(
+                query_id=body.query_id,
+                model_slug=slug,
+                variant=variant,
+                notes=body.notes,
+                reviewer=current_user.display_name,
+                reviewer_account_id=current_user.id,
+                ccl_key=key,
+                labelled_dir=labelled_dir,
+                max_per_account=reviewer_dirs_svc.MAX_REVIEWER_DIRS_PER_ACCOUNT,
+            )
+        except ReviewerDirLimitError as exc:
+            # Nothing was written, so the reviewer keeps their answer and can
+            # record it again without the key. Said plainly rather than as a
+            # bare 429: the refusal is about directories, not about the
+            # assessment they were trying to save.
+            return _feedback_error(
+                429,
+                "REVIEWER_DIR_LIMIT",
+                f"{exc.message} Your assessment was not recorded. "
+                "Save it again without a key, and tell the PI which key it needed.",
+            )
+        return FeedbackEntry(**row)
+
     row = await db.insert(
         query_id=body.query_id,
         model_slug=slug,

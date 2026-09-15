@@ -230,10 +230,13 @@ def test_none_eligibility_ignores_reviewer_extra_text(
 ) -> None:
     _create_dir(ranked_client, 0)
     get_store().unlabelled_texts[0] = reviewer_text
-    predictions = ranked_client.get(
+    body = ranked_client.get(
         "/api/query/1/predictions", params={"model": "bowphs_LaTa"}
-    ).json()["predictions"]
-    assert [candidate["rank"] for candidate in predictions] == [1, 2, 11]
+    ).json()
+    # The ranked list is the model's ten (two, here); the reviewer directory is
+    # beside it without a rank (issue #196).
+    assert [candidate["rank"] for candidate in body["predictions"]] == [1, 2]
+    assert len(body["reviewer_dir_candidates"]) == 1
     response = ranked_client.post(
         "/api/feedback",
         json={"query_id": 1, "model_slug": "bowphs_LaTa", "outcome": "none_of_top_k"},
@@ -293,64 +296,78 @@ def test_precondition_cannot_accompany_a_nonpositive_outcome(
 
 
 @pytest.mark.parametrize("rank", range(11, 16))
-def test_sparse_reviewer_ranks_keep_server_identity_and_first_selection(
+def test_reviewer_directories_can_no_longer_be_selected_by_rank(
     ranked_client: TestClient, rank: int,
 ) -> None:
-    by_seed = {seed: _create_dir(ranked_client, seed) for seed in (0, 2, 4, 5, 6)}
+    """Issue #196 closes the rank route into a reviewer directory.
+
+    Five directories are scorable for this query, so under the old anchoring
+    every one of ranks 11-15 named one of them and a submission at that rank
+    filed the query into it permanently. Now nothing but the model's own ranks
+    exists: each of these is refused before anything is written, and no
+    membership moves.
+
+    Filing a query into a reviewer directory is done by naming its CCL key, and
+    the last two assertions show the same query reaching the same directory that
+    way -- the route is replaced, not merely removed.
+    """
+    by_seed = {
+        seed: _create_dir(ranked_client, seed, f"CTOU.567.{seed}")
+        for seed in (0, 2, 4, 5, 6)
+    }
     get_store().predictions[("bowphs_LaTa", "sif_abtt")][1]["predictions"].pop()
-    predictions = ranked_client.get(
+    body = ranked_client.get(
         "/api/query/1/predictions", params={"model": "bowphs_LaTa", "top_k": 1}
-    ).json()["predictions"]
-    assert [candidate["rank"] for candidate in predictions] == [1, 11, 12, 13, 14, 15]
-    # These positions follow the fixture's literal q-q scores, not list length.
-    seed_for_rank = {11: 0, 12: 4, 13: 5, 14: 6, 15: 2}
-    chosen = by_seed[seed_for_rank[rank]]["dir_id"]
-    other_rank = 15 if rank != 15 else 11
-    other = by_seed[seed_for_rank[other_rank]]["dir_id"]
-    selected = [rank, 1, other_rank]
+    ).json()
+    assert [candidate["rank"] for candidate in body["predictions"]] == [1]
+    assert len(body["reviewer_dir_candidates"]) == 5
+
     response = ranked_client.post(
         "/api/feedback",
         json={
             "query_id": 1,
             "model_slug": "bowphs/LaTa",
-            "correct_rank": 1,
-            "correct_dir": other,
-            "selected_ranks": selected,
-            "expected_candidate_dirs": {
-                str(rank): chosen, "1": "candidate-a", str(other_rank): other,
-            },
+            "correct_rank": rank,
+            "selected_ranks": [rank, 1],
+        },
+    )
+    assert response.status_code == 422, response.text
+    assert "No candidate at rank" in response.json()["detail"]
+    assert ranked_client.get("/api/stats").json()["feedback_count"] == 0
+    for record in ranked_client.get("/api/reviewer_dirs").json():
+        assert 1 not in record["member_query_ids"]
+
+    chosen = by_seed[0]["dir_id"]
+    saved = ranked_client.post(
+        "/api/feedback",
+        json={
+            "query_id": 1,
+            "model_slug": "bowphs/LaTa",
+            "outcome": "none_of_top_k",
+            "correct_rank": 0,
+            "ccl_key": "CTOU.567.0",
             "reviewer": "Untrusted attribution",
         },
     )
-    assert response.status_code == 201, response.text
-    saved = response.json()
-    assert saved["correct_rank"] == rank
-    assert saved["correct_dir"] == chosen
-    assert saved["selected_ranks"] == selected
-    assert saved["reviewer"] == "PI"
-    latest = ranked_client.get(
-        "/api/feedback/latest", params={"query_id": 1, "model": "bowphs_LaTa"}
-    ).json()
-    assert latest["selected_ranks"] == selected
+    assert saved.status_code == 201, saved.text
+    assert saved.json()["ccl_key_dir"] == chosen
+    assert saved.json()["reviewer"] == "PI"
     for record in ranked_client.get("/api/reviewer_dirs").json():
         assert (1 in record["member_query_ids"]) == (record["dir_id"] == chosen)
 
 
-@pytest.mark.parametrize("changed_rank", [1, 11, 12])
+@pytest.mark.parametrize("changed_rank", [1, 2])
 def test_changed_identity_at_any_selected_rank_writes_nothing(
     ranked_client: TestClient, changed_rank: int,
 ) -> None:
-    first = _create_dir(ranked_client, 0)["dir_id"]
-    second = _create_dir(ranked_client, 2)["dir_id"]
-    expected = {"11": first, "1": "candidate-a", "12": second}
+    expected = {"1": "candidate-a", "2": "candidate-b"}
     expected[str(changed_rank)] = "previous-directory"
-    before = ranked_client.get("/api/reviewer_dirs").json()
     response = ranked_client.post(
         "/api/feedback",
         json={
             "query_id": 1,
             "model_slug": "bowphs_LaTa",
-            "selected_ranks": [11, 1, 12],
+            "selected_ranks": [2, 1],
             "expected_candidate_dirs": expected,
         },
     )
@@ -359,66 +376,71 @@ def test_changed_identity_at_any_selected_rank_writes_nothing(
     assert error["code"] == "CANDIDATE_IDENTITY_CHANGED"
     assert f"rank {changed_rank}" in error["message"]
     assert ranked_client.get("/api/stats").json()["feedback_count"] == 0
-    assert ranked_client.get("/api/reviewer_dirs").json() == before
 
 
 @pytest.mark.parametrize("another_directory", [False, True])
-def test_retry_after_membership_changes_cannot_assign_the_next_directory(
+def test_a_repeated_key_join_cannot_reassign_the_next_directory(
     ranked_client: TestClient, another_directory: bool,
 ) -> None:
-    first = _create_dir(ranked_client, 0)["dir_id"]
+    """The retry hazard the anchored ranks created is gone with them.
+
+    A reviewer who retried a save at rank 11 used to hit a *different*
+    directory, because their own first save had removed the original from the
+    list and shifted everything up. A key names one directory whatever else has
+    happened, so the replay reaches the same one, adds no membership and simply
+    appends a second assessment to an append-only log.
+    """
+    first = _create_dir(ranked_client, 0, "CTOU.567.0")["dir_id"]
     if another_directory:
-        _create_dir(ranked_client, 2)
+        _create_dir(ranked_client, 2, "CTOU.567.2")
     payload = {
         "query_id": 1,
         "model_slug": "bowphs_LaTa",
-        "correct_rank": 11,
-        "expected_candidate_dirs": {"11": first},
+        "outcome": "none_of_top_k",
+        "correct_rank": 0,
+        "ccl_key": "CTOU.567.0",
     }
     assert ranked_client.post("/api/feedback", json=payload).status_code == 201
     before = ranked_client.get("/api/reviewer_dirs").json()
     retry = ranked_client.post("/api/feedback", json=payload)
-    assert retry.status_code == 409, retry.text
-    assert retry.json()["error"]["code"] == "CANDIDATE_IDENTITY_CHANGED"
-    assert ranked_client.get("/api/stats").json()["feedback_count"] == 1
+    assert retry.status_code == 201, retry.text
+    assert retry.json()["ccl_key_dir"] == first
+    assert ranked_client.get("/api/stats").json()["feedback_count"] == 2
     assert ranked_client.get("/api/reviewer_dirs").json() == before
 
 
-def test_multi_select_resolves_one_snapshot_during_membership_change(
+def test_multi_select_resolves_one_snapshot_of_the_ranking(
     ranked_client: TestClient, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    first = _create_dir(ranked_client, 0)["dir_id"]
-    second = _create_dir(ranked_client, 2)["dir_id"]
+    """Every selected rank is resolved against ONE read of the candidate list.
+
+    A reviewer directory can no longer be selected by rank, but the snapshot
+    rule it was built for still holds and is still worth pinning: the router
+    reads the candidates once per save, not once per rank.
+    """
+    _create_dir(ranked_client, 0, "CTOU.567.0")
     db = get_db()
     original_list = db.list_reviewer_dirs
     reads = 0
 
-    async def list_then_confirm_elsewhere() -> list[dict]:
+    async def counted() -> list[dict]:
         nonlocal reads
-        records = await original_list()
         reads += 1
-        if reads == 1:
-            # Another confirmation lands after the snapshot was read. It
-            # removes the first directory from subsequent candidate rankings.
-            await db.add_reviewer_dir_member(
-                dir_id=first, query_id=1, added_by="Concurrent fixture reviewer",
-                added_by_account_id=None,
-            )
-        return records
+        return await original_list()
 
-    monkeypatch.setattr(db, "list_reviewer_dirs", list_then_confirm_elsewhere)
+    monkeypatch.setattr(db, "list_reviewer_dirs", counted)
     response = ranked_client.post(
         "/api/feedback",
         json={
             "query_id": 1,
             "model_slug": "bowphs_LaTa",
-            "selected_ranks": [12, 11],
-            "expected_candidate_dirs": {"12": second, "11": first},
+            "selected_ranks": [2, 1],
+            "expected_candidate_dirs": {"2": "candidate-b", "1": "candidate-a"},
         },
     )
     assert response.status_code == 201, response.text
-    assert response.json()["correct_dir"] == second
-    assert response.json()["selected_ranks"] == [12, 11]
+    assert response.json()["correct_dir"] == "candidate-b"
+    assert response.json()["selected_ranks"] == [2, 1]
     assert reads == 1
 
 
@@ -441,7 +463,10 @@ def test_missing_query_row_is_not_evidence(client: TestClient, rank: int) -> Non
     assert skipped.status_code == 201, skipped.text
 
 
-def test_blank_reviewer_candidate_cannot_be_selected(ranked_client: TestClient) -> None:
+def test_a_blank_reviewer_directory_is_not_reachable_by_rank(
+    ranked_client: TestClient,
+) -> None:
+    """It was rank 11 and unreadable; now it is not a rank at all."""
     _create_dir(ranked_client, 0)
     get_store().unlabelled_texts[0] = " \t\n "
     rejected = ranked_client.post(
@@ -449,7 +474,7 @@ def test_blank_reviewer_candidate_cannot_be_selected(ranked_client: TestClient) 
         json={"query_id": 1, "model_slug": "bowphs_LaTa", "selected_ranks": [1, 11]},
     )
     assert rejected.status_code == 422, rejected.text
-    assert rejected.json()["error"]["code"] == "CANDIDATE_NOT_EVALUABLE"
+    assert "No candidate at rank 11" in rejected.json()["detail"]
     assert ranked_client.get("/api/stats").json()["feedback_count"] == 0
     assert ranked_client.get("/api/reviewer_dirs").json()[0]["member_query_ids"] == [0]
 

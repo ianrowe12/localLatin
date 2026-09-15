@@ -138,6 +138,17 @@ def build_review_packet_pdf(
             f"{row['timestamp']} | {_attribution(row)} | variant {row_variant} | "
             f"{row['outcome']} | rank {rank} | {candidate}"
         )
+        # The CCL key an evaluator typed beside "None of the top N" (issue
+        # #196), and what the server did with it. Printed on its own line, and
+        # only when there is one, so every row written before the field existed
+        # prints exactly as it always has. `ccl_key_dir` is the join key to the
+        # unranked section below: a labelled directory name, or a reviewer
+        # dir_id.
+        key = (row.get("ccl_key") or "").strip()
+        if key:
+            action = row.get("ccl_key_action") or "recorded"
+            target = row.get("ccl_key_dir") or ""
+            pdf.add_text(f"CCL key: {key} | {action} | {target}")
         if row["notes"]:
             pdf.add_text(f"Notes: {row['notes']}")
     pdf.add_rule()

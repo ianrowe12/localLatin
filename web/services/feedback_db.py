@@ -16,6 +16,7 @@ from pathlib import Path
 import aiosqlite
 
 from web.exceptions import ReviewerDirLimitError, ReviewerDirSeedExistsError
+from web.services import ccl_keys
 from web.variants import DEFAULT_VARIANT
 
 logger = logging.getLogger(__name__)
@@ -109,6 +110,11 @@ _EXPORT_COLUMNS = [
     # Appended, not inserted: anything parsing the export positionally keeps
     # working. Empty for rows written before the variant column existed.
     "variant",
+    # Also appended, for the same reason. Empty on every row whose reviewer
+    # typed no CCL key, which is every row written before issue #196.
+    "ccl_key",
+    "ccl_key_action",
+    "ccl_key_dir",
 ]
 
 
@@ -250,6 +256,31 @@ class FeedbackDB:
             # them. They keep variant NULL and simply never prefill a variant.
             await self._db.execute("ALTER TABLE feedback ADD COLUMN variant TEXT")
 
+        # --- CCL key carried by a None-of-top-N assessment (issue #196) ------
+        # Three columns, all NULL on every row written before this release and
+        # never backfilled: a reviewer who did not type a key did not type one,
+        # and no rule can recover a key from a row that has none.
+        #
+        # `correct_dir` is deliberately untouched by this feature. It means
+        # "the directory this document was filed under, resolved from the rank
+        # the reviewer pressed", and every consumer -- the export, the packets,
+        # the dashboard, the reviewer-directory membership rule -- reads it that
+        # way. A key names a directory the ranking did NOT offer, so writing it
+        # there would silently change the meaning of a column that already has
+        # one, for every row ever written.
+        for column, ddl in (
+            # Exactly as typed, whitespace-normalised. See services/ccl_keys.py.
+            ("ccl_key", "ALTER TABLE feedback ADD COLUMN ccl_key TEXT"),
+            # What the server did with it: matched_labelled_dir /
+            # joined_reviewer_dir / created_reviewer_dir / seed_taken.
+            ("ccl_key_action", "ALTER TABLE feedback ADD COLUMN ccl_key_action TEXT"),
+            # The directory that action resolved to: a labelled directory name
+            # or a reviewer dir_id.
+            ("ccl_key_dir", "ALTER TABLE feedback ADD COLUMN ccl_key_dir TEXT"),
+        ):
+            if column not in columns:
+                await self._db.execute(ddl)
+
         await self._db.execute(
             """
             UPDATE feedback
@@ -382,6 +413,7 @@ class FeedbackDB:
         await self._db.execute(
             "CREATE INDEX IF NOT EXISTS idx_reviewer_dirs_seed ON reviewer_dirs(seed_query_id)"
         )
+        await self._migrate_reviewer_dir_keys()
         await self._db.execute(
             """
             CREATE TABLE IF NOT EXISTS reviewer_dir_members (
@@ -402,6 +434,60 @@ class FeedbackDB:
         await self._db.execute(
             "CREATE INDEX IF NOT EXISTS idx_reviewer_dir_members_query ON reviewer_dir_members(query_id)"
         )
+
+    async def _migrate_reviewer_dir_keys(self) -> None:
+        """Give reviewer directories a `ccl_key`, keeping every existing name.
+
+        Issue #196 point 5. A directory created before this release is named by
+        whatever the reviewer typed into the retired naming form -- usually the
+        seed's filename, occasionally a real source key. Both tables are
+        append-only and there is no rename, so this migration does NOT touch a
+        single `label`: what a reviewer called a directory is what it is still
+        called.
+
+        It adds one column and fills it only where the answer is already
+        written down: a label that IS a CCL source key by the
+        `scripts/data/label_taxonomy.py` rule becomes that directory's key, so
+        an evaluator typing `CTOU.567.16` joins the directory somebody already
+        made for it instead of creating a second one. A label that is not
+        key-shaped keeps `ccl_key = ''`, which means "no key recorded" and never
+        matches anything -- inventing a key from `New directory from BN2123.89r.5`
+        would attach a citation nobody made.
+
+        Idempotent twice over: the ALTER is guarded by the column list, and the
+        backfill only ever writes rows whose `ccl_key` is still empty, so the
+        second boot updates nothing. Preserving `feedback.db` in place is the
+        point -- see deploy/deploy.sh, which never writes into `data/`.
+        """
+        assert self._db is not None
+        rows = await (
+            await self._db.execute("PRAGMA table_info(reviewer_dirs)")
+        ).fetchall()
+        columns = {r["name"] for r in rows}
+        if "ccl_key" not in columns:
+            await self._db.execute(
+                "ALTER TABLE reviewer_dirs ADD COLUMN ccl_key TEXT NOT NULL DEFAULT ''"
+            )
+        await self._db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_reviewer_dirs_key ON reviewer_dirs(ccl_key)"
+        )
+        # Key-shapedness is a Python rule (a regex over Unicode), so the
+        # candidates are read out and only the matching ones written back.
+        # `ccl_key = ''` is the only state this will overwrite.
+        candidates = await (
+            await self._db.execute(
+                "SELECT dir_id, label FROM reviewer_dirs "
+                "WHERE ccl_key IS NULL OR ccl_key = ''"
+            )
+        ).fetchall()
+        for row in candidates:
+            label = str(row["label"] or "")
+            if not ccl_keys.is_key_shaped(label):
+                continue
+            await self._db.execute(
+                "UPDATE reviewer_dirs SET ccl_key = ? WHERE dir_id = ?",
+                (ccl_keys.normalize_ccl_key(label), row["dir_id"]),
+            )
 
     async def _assert_account_schema(self) -> None:
         """Refuse to serve if the accounts table lost a security-relevant column.
@@ -473,16 +559,28 @@ class FeedbackDB:
             if created_count >= max_per_account:
                 raise ReviewerDirLimitError(created_count, max_per_account)
 
+            # A label that IS a CCL source key becomes this directory's key,
+            # by the same rule the migration applies to historical rows: a
+            # directory named `CTOU.567.16` must be reachable by an evaluator
+            # who types `CTOU.567.16`, whichever route created it. Anything else
+            # keeps `ccl_key = ''`, which matches nothing.
+            label = label.strip()
+            dir_key = (
+                ccl_keys.normalize_ccl_key(label)
+                if ccl_keys.is_key_shaped(label)
+                else ""
+            )
             await transaction.execute(
                 """
                 INSERT INTO reviewer_dirs
-                    (dir_id, label, seed_query_id, model_slug, variant,
+                    (dir_id, label, ccl_key, seed_query_id, model_slug, variant,
                      created_by, created_by_account_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     dir_id,
-                    label.strip(),
+                    label,
+                    dir_key,
                     seed_query_id,
                     model_slug,
                     variant,
@@ -617,6 +715,195 @@ class FeedbackDB:
         )
         await self._db.commit()
         return cursor.rowcount > 0
+
+    async def get_reviewer_dir_by_key(self, key: str) -> dict | None:
+        """The oldest reviewer directory recorded under this CCL key, or None.
+
+        Compared on `ccl_keys.match_form` in Python rather than with SQL
+        `lower()`, which is ASCII-only: the corpus is Latin with editorial
+        apparatus, and a key that differs only in case must reach the same
+        directory or the pilot accumulates undeletable near-duplicates. The
+        table is reviewer-authored and small enough to scan -- `list_reviewer_dirs`
+        already reads all of it on every candidate list.
+        """
+        assert self._db is not None
+        target = ccl_keys.match_form(key)
+        if not target:
+            return None
+        rows = await (
+            await self._db.execute(
+                "SELECT dir_id, ccl_key FROM reviewer_dirs "
+                "WHERE ccl_key IS NOT NULL AND ccl_key <> '' ORDER BY id"
+            )
+        ).fetchall()
+        for row in rows:
+            if ccl_keys.match_form(row["ccl_key"]) == target:
+                return await self.get_reviewer_dir(row["dir_id"])
+        return None
+
+    async def insert_none_of_top_k(
+        self,
+        *,
+        query_id: int,
+        model_slug: str,
+        variant: str,
+        notes: str,
+        reviewer: str,
+        reviewer_account_id: int | None,
+        ccl_key: str,
+        labelled_dir: str | None,
+        max_per_account: int,
+    ) -> dict:
+        """Record "none of the ranked candidates" and act on the key. ONE write.
+
+        Issue #196 point 2. The assessment and whatever the key implies are a
+        single transaction on a dedicated connection, opened with
+        BEGIN IMMEDIATE exactly like `create_reviewer_dir` (issue #165): either
+        the reviewer's answer and the directory action are both stored, or
+        neither is. The alternative -- the pattern the rank path still uses,
+        where the feedback row commits and the membership row follows on a
+        shared connection -- can leave an assessment claiming a key whose
+        directory was never written.
+
+        `labelled_dir` is resolved by the caller from the corpus (a pure
+        in-memory lookup, see services/ccl_keys.find_labelled_dir) and, when
+        present, means NOTHING is created: a labelled directory already exists,
+        and a reviewer directory bearing its name would be a duplicate that
+        nothing can merge away. The assessment simply records that the key names
+        it.
+
+        The four recorded actions:
+
+        ``matched_labelled_dir``  the key names a labelled directory
+        ``joined_reviewer_dir``   the key names a reviewer directory; the query joins it
+        ``created_reviewer_dir``  no such directory; one is created, named by the key
+        ``seed_taken``            no such directory, but this query already seeds
+                                  another one. One directory per seed is a
+                                  standing invariant (`create_reviewer_dir`
+                                  refuses a second with 409), so the key is
+                                  recorded against the assessment and nothing is
+                                  created. Refusing the whole submission would
+                                  cost the reviewer their answer over a
+                                  bookkeeping rule they cannot see.
+
+        Without a key, `ccl_key_action` stays NULL and only the assessment is
+        written -- which is the ordinary None-of-top-N save.
+        """
+        assert self._db is not None
+        key = ccl_keys.normalize_ccl_key(ccl_key)
+        action: str | None = None
+        key_dir: str | None = None
+
+        async with aiosqlite.connect(str(self.db_path)) as transaction:
+            transaction.row_factory = aiosqlite.Row
+            await transaction.execute("BEGIN IMMEDIATE")
+
+            if key and labelled_dir is not None:
+                action, key_dir = "matched_labelled_dir", labelled_dir
+            elif key:
+                target = ccl_keys.match_form(key)
+                existing = None
+                rows = await (
+                    await transaction.execute(
+                        "SELECT dir_id, ccl_key FROM reviewer_dirs "
+                        "WHERE ccl_key IS NOT NULL AND ccl_key <> '' ORDER BY id"
+                    )
+                ).fetchall()
+                for row in rows:
+                    if ccl_keys.match_form(row["ccl_key"]) == target:
+                        existing = row["dir_id"]
+                        break
+
+                if existing is not None:
+                    # Idempotent: a reviewer re-submitting the same key adds no
+                    # second membership row, exactly as add_reviewer_dir_member.
+                    await transaction.execute(
+                        """
+                        INSERT OR IGNORE INTO reviewer_dir_members
+                            (dir_id, query_id, role, added_by, added_by_account_id)
+                        VALUES (?, ?, 'member', ?, ?)
+                        """,
+                        (existing, query_id, reviewer, reviewer_account_id),
+                    )
+                    action, key_dir = "joined_reviewer_dir", existing
+                else:
+                    seeded = await (
+                        await transaction.execute(
+                            "SELECT dir_id FROM reviewer_dirs WHERE seed_query_id = ? "
+                            "ORDER BY id LIMIT 1",
+                            (query_id,),
+                        )
+                    ).fetchone()
+                    if seeded is not None:
+                        action, key_dir = "seed_taken", seeded["dir_id"]
+                    else:
+                        quota = await (
+                            await transaction.execute(
+                                "SELECT COUNT(*) FROM reviewer_dirs "
+                                "WHERE created_by_account_id IS ?",
+                                (reviewer_account_id,),
+                            )
+                        ).fetchone()
+                        created_count = int(quota[0])
+                        if created_count >= max_per_account:
+                            raise ReviewerDirLimitError(created_count, max_per_account)
+                        dir_id = f"reviewer-dir-{uuid.uuid4().hex[:12]}"
+                        await transaction.execute(
+                            """
+                            INSERT INTO reviewer_dirs
+                                (dir_id, label, ccl_key, seed_query_id, model_slug,
+                                 variant, created_by, created_by_account_id)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            (
+                                dir_id,
+                                # Named by the key, never by a siglum: that is
+                                # the correction Abigail asked for.
+                                key,
+                                key,
+                                query_id,
+                                model_slug,
+                                variant,
+                                reviewer,
+                                reviewer_account_id,
+                            ),
+                        )
+                        await transaction.execute(
+                            """
+                            INSERT INTO reviewer_dir_members
+                                (dir_id, query_id, role, added_by, added_by_account_id)
+                            VALUES (?, ?, 'seed', ?, ?)
+                            """,
+                            (dir_id, query_id, reviewer, reviewer_account_id),
+                        )
+                        action, key_dir = "created_reviewer_dir", dir_id
+
+            cursor = await transaction.execute(
+                """INSERT INTO feedback
+                       (query_id, model_slug, variant, outcome, correct_rank,
+                        correct_dir, selected_ranks_json, notes, reviewer,
+                        reviewer_account_id, ccl_key, ccl_key_action, ccl_key_dir,
+                        schema_version)
+                   VALUES (?, ?, ?, 'none_of_top_k', 0, NULL, NULL, ?, ?, ?, ?, ?, ?, 2)""",
+                (
+                    query_id,
+                    model_slug,
+                    variant,
+                    notes,
+                    reviewer,
+                    reviewer_account_id,
+                    key or None,
+                    action,
+                    key_dir,
+                ),
+            )
+            row = await (
+                await transaction.execute(
+                    _FEEDBACK_SELECT + " WHERE feedback.id = ?", (cursor.lastrowid,)
+                )
+            ).fetchone()
+            await transaction.commit()
+            return _feedback_row(row)
 
     async def account_count(self) -> int:
         await self._ensure_auth_connection()

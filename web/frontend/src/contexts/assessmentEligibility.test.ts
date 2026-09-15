@@ -156,11 +156,14 @@ describe('assessmentEvidence', () => {
     expect(evidence.canEvaluate).toBe(false)
   })
 
-  it('keeps actual sparse ranks, including anchored reviewer directories', () => {
-    const evidence = READY([model(1), reviewer(11), reviewer(12)])
-    expect(evidence.candidates.map((candidate) => candidate.rank)).toEqual([1, 11, 12])
-    expect(evidence.modelCandidates.map((candidate) => candidate.rank)).toEqual([1])
-    expect(evidence.candidateAt(11)?.dirName).toBe('reviewer-dir-11')
+  it('keeps actual sparse ranks and drops reviewer directories entirely', () => {
+    // Issue #196: the server sends no reviewer directory inside `predictions`,
+    // and a cached response that still does must not draw a pressable rank the
+    // server would now refuse. Sparseness among the model's own ranks survives.
+    const evidence = READY([model(1), model(4), reviewer(11), reviewer(12)])
+    expect(evidence.candidates.map((candidate) => candidate.rank)).toEqual([1, 4])
+    expect(evidence.modelCandidates.map((candidate) => candidate.rank)).toEqual([1, 4])
+    expect(evidence.candidateAt(11)).toBeNull()
     expect(evidence.candidateAt(2)).toBeNull()
   })
 
@@ -176,7 +179,8 @@ describe('assessmentEvidence', () => {
   it('lets a blank reviewer extra neither supply nor withdraw model evidence', () => {
     const evidence = READY([model(1), reviewer(11, { candidate_files: [] })])
     expect(evidence.noneAvailable).toBe(true)
-    expect(evidence.candidateAt(11)?.usable).toBe(false)
+    // Not merely unusable: not a candidate at all.
+    expect(evidence.candidateAt(11)).toBeNull()
   })
 
   it('refuses every evaluation when no model candidate is readable', () => {
@@ -191,22 +195,22 @@ describe('assessmentEvidence', () => {
 })
 
 describe('reviewSelections', () => {
-  const evidence = READY([model(1), model(2), reviewer(11)])
+  const evidence = READY([model(1), model(2), model(3)])
 
   it('keeps a choice whose directory is still at its rank', () => {
     const selections: DraftSelection[] = [
-      { rank: 11, dirName: 'reviewer-dir-11', source: 'reviewer' },
+      { rank: 3, dirName: 'candidate-3', source: 'model' },
       { rank: 1, dirName: 'candidate-1', source: 'model' },
     ]
     const review = reviewSelections(selections, evidence)
     expect(review.changed).toBe(false)
-    expect(review.confirmed.map((selection) => selection.rank)).toEqual([11, 1])
+    expect(review.confirmed.map((selection) => selection.rank)).toEqual([3, 1])
     expect(review.issues).toEqual([])
   })
 
   it('drops a choice whose rank now holds a different directory', () => {
     const review = reviewSelections(
-      [{ rank: 11, dirName: 'reviewer-dir-99', source: 'reviewer' }],
+      [{ rank: 3, dirName: 'candidate-old', source: 'model' }],
       evidence,
     )
     expect(review.selections).toEqual([])
@@ -214,11 +218,23 @@ describe('reviewSelections', () => {
     expect(review.issues).toEqual([
       {
         kind: 'reassigned',
-        rank: 11,
-        dirName: 'reviewer-dir-99',
-        nowDirName: 'reviewer-dir-11',
+        rank: 3,
+        dirName: 'candidate-old',
+        nowDirName: 'candidate-3',
       },
     ])
+  })
+
+  it('drops a restored choice that named a reviewer directory by rank', () => {
+    // Every such draft predates issue #196. The rank it remembers is not
+    // offered any more, so it is reported as gone rather than re-pointed at
+    // whatever the model now ranks there.
+    const review = reviewSelections(
+      [{ rank: 11, dirName: 'reviewer-dir-11', source: 'reviewer' }],
+      evidence,
+    )
+    expect(review.selections).toEqual([])
+    expect(review.issues[0].kind).toBe('vanished')
   })
 
   it('drops a choice whose rank is no longer offered', () => {
@@ -231,12 +247,12 @@ describe('reviewSelections', () => {
   })
 
   it('holds an identity-less choice for reconfirmation instead of binding it', () => {
-    const review = reviewSelections([{ rank: 11, dirName: null, source: null }], evidence)
+    const review = reviewSelections([{ rank: 3, dirName: null, source: null }], evidence)
     expect(review.selections).toHaveLength(1)
     expect(review.confirmed).toEqual([])
     expect(review.changed).toBe(false)
-    expect(review.issues[0]).toEqual({ kind: 'unverified', rank: 11 })
-    expect(unconfirmedRanks(review)).toEqual([11])
+    expect(review.issues[0]).toEqual({ kind: 'unverified', rank: 3 })
+    expect(unconfirmedRanks(review)).toEqual([3])
   })
 
   it('keeps a choice that lost its text but does not let it be submitted', () => {
@@ -279,7 +295,7 @@ describe('reviewSelections', () => {
 
   it('treats a source change at the same rank as a different candidate', () => {
     const review = reviewSelections(
-      [{ rank: 11, dirName: 'reviewer-dir-11', source: 'model' }],
+      [{ rank: 3, dirName: 'candidate-3', source: 'reviewer' }],
       evidence,
     )
     expect(review.issues[0].kind).toBe('reassigned')
@@ -287,7 +303,7 @@ describe('reviewSelections', () => {
 })
 
 describe('evaluationReadiness', () => {
-  const evidence = READY([model(1), model(2), reviewer(11)])
+  const evidence = READY([model(1), model(2), model(3)])
   const draft = (over: Partial<FeedbackDraft>): FeedbackDraft => ({
     correctRank: null,
     notes: '',
@@ -324,11 +340,11 @@ describe('evaluationReadiness', () => {
   it('refuses a partly confirmed multi answer rather than saving a subset', () => {
     const selections: DraftSelection[] = [
       { rank: 1, dirName: 'candidate-1', source: 'model' },
-      { rank: 11, dirName: null, source: null },
+      { rank: 3, dirName: null, source: null },
     ]
     const review = reviewSelections(selections, evidence)
     const readiness = evaluationReadiness(
-      draft({ correctRank: 1, selectedRanks: [1, 11], selections }),
+      draft({ correctRank: 1, selectedRanks: [1, 3], selections }),
       evidence,
       review,
     )

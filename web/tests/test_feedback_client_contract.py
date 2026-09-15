@@ -53,20 +53,26 @@ def _base(**overrides: object) -> dict:
     return payload
 
 
-def _sparse_reviewer_rank(client: TestClient) -> tuple[int, str]:
-    """A reviewer directory anchored above the model candidates, as served."""
+def _unranked_reviewer_dir(client: TestClient) -> str:
+    """A reviewer directory served for query 1, in its own unranked block.
+
+    Since issue #196 it has NO rank, which is what the two tests below are
+    about: the client cannot address it by one, and no rank the client does
+    send can reach it.
+    """
     directory = _create_dir(client, 0, "Unattested homily")
     get_store().predictions[(MODEL_SLUG, VARIANT)][1]["predictions"].pop()
-    predictions = client.get(
+    body = client.get(
         "/api/query/1/predictions", params={"model": MODEL_SLUG, "top_k": 1}
-    ).json()["predictions"]
-    reviewer = next(
-        candidate
-        for candidate in predictions
-        if candidate["dir_name"] == directory["dir_id"]
+    ).json()
+    assert [c["rank"] for c in body["predictions"]] == [1]
+    card = next(
+        c
+        for c in body["reviewer_dir_candidates"]
+        if c["dir_id"] == directory["dir_id"]
     )
-    assert reviewer["rank"] >= 11
-    return reviewer["rank"], directory["dir_id"]
+    assert "rank" not in card
+    return directory["dir_id"]
 
 
 def test_single_choice_payload_saves_and_resolves_its_own_directory(
@@ -96,46 +102,67 @@ def test_single_choice_payload_saves_and_resolves_its_own_directory(
 def test_multi_choice_payload_keeps_click_order_and_one_assignment(
     client: TestClient,
 ) -> None:
-    rank, dir_id = _sparse_reviewer_rank(client)
-
     response = client.post(
         "/api/feedback",
         json=_base(
             outcome="matched_rank",
-            # The reviewer clicked the anchored directory first, so it is the
-            # canonical answer even though rank 1 is numerically lower.
-            correct_rank=rank,
-            selected_ranks=[rank, 1],
-            expected_candidate_dirs={str(rank): dir_id, "1": "candidate-a"},
+            # The reviewer clicked rank 2 first, so it is the canonical answer
+            # even though rank 1 is numerically lower.
+            correct_rank=2,
+            selected_ranks=[2, 1],
+            expected_candidate_dirs={"2": "candidate-b", "1": "candidate-a"},
         ),
     )
 
     assert response.status_code == 201, response.text
     saved = response.json()
-    assert saved["correct_rank"] == rank
-    assert saved["correct_dir"] == dir_id
-    assert saved["selected_ranks"] == [rank, 1]
-    # Only the canonical choice gains membership; the second is recorded, not
-    # assigned.
-    for record in client.get("/api/reviewer_dirs").json():
-        assert (1 in record["member_query_ids"]) == (record["dir_id"] == dir_id)
+    assert saved["correct_rank"] == 2
+    assert saved["correct_dir"] == "candidate-b"
+    assert saved["selected_ranks"] == [2, 1]
+
+
+def test_no_client_rank_can_reach_a_reviewer_directory(client: TestClient) -> None:
+    """Issue #196: the anchored ranks 11-15 name nothing at all now.
+
+    The client used to be able to select a reviewer directory by its anchored
+    rank, which is how one came to be filed against a query. That route is
+    closed: every rank past the model's own is refused before anything is
+    written, and the directory's membership is untouched.
+    """
+    dir_id = _unranked_reviewer_dir(client)
+    before = client.get("/api/reviewer_dirs").json()
+
+    for rank in (11, 12, 15):
+        response = client.post(
+            "/api/feedback",
+            json=_base(
+                outcome="matched_rank",
+                correct_rank=rank,
+                selected_ranks=[rank],
+                expected_candidate_dirs={str(rank): dir_id},
+            ),
+        )
+        assert response.status_code in (409, 422), (rank, response.text)
+
+    assert client.get("/api/stats").json()["feedback_count"] == 0
+    assert client.get("/api/reviewer_dirs").json() == before
+    assert dir_id in {record["dir_id"] for record in before}
 
 
 def test_stale_precondition_from_a_kept_draft_writes_nothing(
     client: TestClient,
 ) -> None:
-    rank, dir_id = _sparse_reviewer_rank(client)
     before = client.get("/api/reviewer_dirs").json()
 
     response = client.post(
         "/api/feedback",
         json=_base(
             outcome="matched_rank",
-            correct_rank=rank,
-            selected_ranks=[rank],
+            correct_rank=1,
+            selected_ranks=[1],
             # What the reviewer saw when they pressed the pill, which is no
             # longer what stands there.
-            expected_candidate_dirs={str(rank): "reviewer-dir-from-an-older-view"},
+            expected_candidate_dirs={"1": "candidate-from-an-older-view"},
         ),
     )
 
@@ -143,7 +170,6 @@ def test_stale_precondition_from_a_kept_draft_writes_nothing(
     assert response.json()["error"]["code"] == "CANDIDATE_IDENTITY_CHANGED"
     assert client.get("/api/stats").json()["feedback_count"] == 0
     assert client.get("/api/reviewer_dirs").json() == before
-    assert dir_id in {record["dir_id"] for record in before}
 
 
 def test_none_payload_carries_no_identity_precondition(client: TestClient) -> None:
@@ -157,6 +183,61 @@ def test_none_payload_carries_no_identity_precondition(client: TestClient) -> No
     assert saved["outcome"] == "none_of_top_k"
     assert saved["correct_rank"] == 0
     assert saved["correct_dir"] is None
+    # No key typed: the non-match is recorded and nothing else happens.
+    assert saved["ccl_key"] is None
+    assert saved["ccl_key_action"] is None
+    assert saved["ccl_key_dir"] is None
+
+
+def test_none_payload_with_a_key_carries_it_through_unchanged(
+    client: TestClient,
+) -> None:
+    """The literal body the blue None action sends (issue #196).
+
+    One optional field beside the outcome. Everything else about the payload is
+    what it always was, so a deployment that ignores `ccl_key` still records the
+    assessment. Two submissions, because the interesting part is that the second
+    JOINS what the first created rather than making a near-duplicate of it.
+    """
+    dir_id = _unranked_reviewer_dir(client)
+
+    created = client.post(
+        "/api/feedback",
+        json=_base(
+            query_id=2,
+            outcome="none_of_top_k",
+            correct_rank=0,
+            ccl_key="CTOU.567.16",
+            notes="Not in the ten; the CCL has this key.",
+        ),
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["ccl_key_action"] == "created_reviewer_dir"
+    new_dir = created.json()["ccl_key_dir"]
+    assert new_dir != dir_id
+
+    response = client.post(
+        "/api/feedback",
+        json=_base(
+            outcome="none_of_top_k",
+            correct_rank=0,
+            ccl_key="  ctou.567.16 ",
+            notes="Same key, another witness.",
+        ),
+    )
+
+    assert response.status_code == 201, response.text
+    saved = response.json()
+    assert saved["outcome"] == "none_of_top_k"
+    assert saved["correct_rank"] == 0
+    assert saved["correct_dir"] is None
+    # Stored as typed; matched case- and whitespace-insensitively.
+    assert saved["ccl_key"] == "ctou.567.16"
+    assert saved["ccl_key_action"] == "joined_reviewer_dir"
+    assert saved["ccl_key_dir"] == new_dir
+    joined = client.get(f"/api/reviewer_dirs/{new_dir}").json()
+    assert sorted(joined["member_query_ids"]) == [1, 2]
+    assert joined["label"] == "CTOU.567.16"
 
 
 def test_skip_payload_is_a_note_and_nothing_else(client: TestClient) -> None:

@@ -11,7 +11,10 @@ The model of the world is small:
   by the query that had no labelled match;
 * its score for some other query is the max cosine between that query and any
   member -- the same "max over the files it contains" rule a labelled directory
-  is scored by, so the two numbers are comparable and can share a ranked list;
+  is scored by, so the two numbers are comparable. They no longer share a ranked
+  list: since issue #196 a reviewer directory is served unranked, in its own
+  block, because a comparable number is not the same thing as a comparable kind
+  of evidence and reviewers read a numbered slot as the model's answer;
 * its status is ``matched`` once **a human has actually filed a second document
   into it**, and ``awaiting_match`` until then.
 
@@ -25,18 +28,20 @@ embedding space rather than a scholarly finding. The PI's intent behind the
 badge is a discovery event, so the trigger is now a discovery event: a feedback
 row in which some later reviewer chose this directory for another query.
 
-Membership is exactly that record. The seed is member one, and the only other
-way in is `add_reviewer_dir_member`, which runs solely when a reviewer submits
-`matched_rank` against a server-resolved reviewer-directory candidate. So
-``len(members) > 1`` *is* "a human confirmed a second document", and no extra
-bookkeeping is needed.
+Membership is exactly that record. The seed is member one, and the only ways in
+are `add_reviewer_dir_member` (a `matched_rank` against a server-resolved
+reviewer-directory candidate -- the pre-#196 route, still the meaning of every
+row it wrote) and `FeedbackDB.insert_none_of_top_k`, where an evaluator typed
+the directory's CCL key beside "None of the top N". Both are a human naming a
+second document, so ``len(members) > 1`` still *is* "a human confirmed a second
+document", and no extra bookkeeping is needed.
 
 The similarity number has not gone away: `best_match_score` still reports the
 best non-member score, and `has_potential_match` flags when it crosses the band.
 That is the honest framing -- the model thinks something is related, a human has
 not yet agreed -- and it is what lets the UI say so without claiming a match.
-Above-band queries still get the directory as a candidate card, which is the
-loop working; confirming from that card is what flips the badge.
+Above-band queries still get the directory as an unranked candidate, which is
+the loop working; naming its key is what flips the badge.
 
 Both are derived, never stored. A status column would need a scan of every
 directory on every feedback write to stay honest, and would go stale the moment
@@ -47,12 +52,10 @@ from __future__ import annotations
 
 from web.bands import REVIEWER_DIR_MATCH_BAND
 from web.models import (
-    MAX_MODEL_RANK,
     MAX_REVIEWER_CANDIDATES,
     CandidateFile,
-    CandidateSource,
-    Prediction,
     ReviewerDir,
+    ReviewerDirCandidate,
     ReviewerDirStatus,
     SupportingMember,
 )
@@ -203,34 +206,41 @@ def packet_dirs_for_query(
     return out
 
 
-def candidates_for_query(
+def unranked_candidates_for_query(
     *,
     store: DataStore,
     records: list[dict],
     qq: QQMatrix | None,
     query_id: int,
-) -> list[Prediction]:
-    """Reviewer directories scorable for `query_id`, ranked among themselves.
+) -> list[ReviewerDirCandidate]:
+    """Reviewer directories scorable for `query_id`, best first and WITHOUT ranks.
 
-    Ranks are anchored at ``MAX_MODEL_RANK + 1`` -- a fixed 11, not "one past
-    however many model candidates were returned". The retrieval CSVs always
-    rank ten labelled directories, so 11 is where reviewer candidates begin
-    regardless of the caller's `top_k`. Anchoring rather than offsetting is
-    what makes a recorded rank mean the same thing in every response: the
-    earlier offset-based version disagreed with itself between
-    `get_predictions` (which counted the *sliced* list) and `get_candidates`
-    (which counted the unsliced row), so at `top_k=5` a reviewer card served at
-    rank 6 resolved to the labelled directory at model rank 6. Feedback records
-    that rank, so the ambiguity was a data-integrity problem, not a display one.
+    Issue #196 point 3, and the reason the old `candidates_for_query` is gone.
+    These used to be returned as `Prediction`s at ranks anchored on
+    ``MAX_MODEL_RANK + 1``, appended to the model's ten. Two things were wrong
+    with that, and only one of them was cosmetic:
 
-    Model ranks themselves are untouched, which is what keeps every feedback row
-    ever written a valid reference to the candidate its reviewer chose.
+    * Reviewers read #11 and #12 as the model's answers. They are not. A
+      labelled directory is ranked by the retrieval run; a reviewer directory is
+      scored live from the query-query matrix against documents a colleague
+      grouped by hand. Abigail's verdict on the pair sharing one numbered list:
+      "the red button causes more confusion than the clarity we hoped it would
+      provide".
+    * A reviewer directory's rank was computed per request, and confirming one
+      CHANGED it -- the query joined the directory, the directory stopped being
+      offered to it, and everything below shifted up. The PDF packets already
+      refused to print these ranks for exactly that reason (see
+      `packet_dirs_for_query`), and the web list now agrees with them.
+
+    What survives is the score, because a score is a property of the pair rather
+    than a position in a list, and `dir_id`, which is the stable join key. The
+    cap and the best-first order survive too: the list is reviewer-authored and
+    permanent, so an unbounded tail of weak directories would accumulate on
+    every query with no way to prune it.
 
     A directory is skipped when the query is already one of its members (a
-    directory does not propose itself to its own seed) or when nothing about
-    the pair is scorable. At most `MAX_REVIEWER_CANDIDATES` are returned, best
-    first: the list is reviewer-authored and permanent, so an unbounded tail of
-    weak directories would accumulate on every query with no way to prune it.
+    directory does not propose itself to its own seed) or when nothing about the
+    pair is scorable.
     """
     if qq is None:
         return []
@@ -247,17 +257,12 @@ def candidates_for_query(
 
     scored.sort(key=lambda item: (-item[0].score, item[1]["dir_id"]))
     scored = scored[:MAX_REVIEWER_CANDIDATES]
-
-    first_rank = MAX_MODEL_RANK + 1
-    return [
-        _to_prediction(store, record, score, first_rank + offset)
-        for offset, (score, record) in enumerate(scored)
-    ]
+    return [_to_candidate(store, record, score) for score, record in scored]
 
 
-def _to_prediction(
-    store: DataStore, record: dict, score: QQScore, rank: int
-) -> Prediction:
+def _to_candidate(
+    store: DataStore, record: dict, score: QQScore
+) -> ReviewerDirCandidate:
     files = member_files(store, record)
     support = (
         SupportingMember(
@@ -273,16 +278,16 @@ def _to_prediction(
         if support is not None and support.filename is not None
         else ""
     )
-    return Prediction(
-        rank=rank,
-        dir_name=record["dir_id"],
-        score=score.score,
-        dir_files=[f.filename for f in files],
-        preview_text=preview,
-        candidate_files=files,
-        source=CandidateSource.REVIEWER,
+    return ReviewerDirCandidate(
+        dir_id=record["dir_id"],
         label=record["label"],
+        ccl_key=str(record.get("ccl_key") or ""),
+        score=score.score,
         created_by=str(record["created_by"] or ""),
         seed_query_id=int(record["seed_query_id"]),
+        member_query_ids=[int(m) for m in record.get("member_query_ids", [])],
+        dir_files=[f.filename for f in files],
+        candidate_files=files,
+        preview_text=preview,
         supporting_member=support,
     )

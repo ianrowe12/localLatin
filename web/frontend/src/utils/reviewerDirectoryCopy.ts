@@ -13,65 +13,15 @@
  */
 
 export const DIRECTORY_CREATION_COPY = {
-  /** Below the no-match band, where creating is the default top option. */
-  openEmphasised: 'New directory / New file',
-  /** Above it, where creating is a quiet escape hatch. */
-  openQuiet: 'Start a new directory',
-  /** One line under the button, before the form is even opened. */
-  buttonCaption:
-    'Saves a permanent grouping as soon as you confirm it. It does not record your assessment.',
-
-  formHeading: 'Before you create this directory',
-  formPoints: [
-    'The directory and the name you give it are saved the moment you confirm. The app has no rename, no removal and no way to withdraw a document from a grouping.',
-    'This is not an assessment. Submitting or skipping this document afterwards does not undo it.',
-    'Create one only if a new grouping is warranted. To reject the ranked candidates without starting a grouping, close this form, record the None option and say why in your notes.',
-  ],
-
-  fieldLabel: 'Name the new directory',
-  submit: 'Create directory',
-  submitting: 'Creating…',
-  cancel: 'Cancel',
-
   /**
-   * Cancel, once the request has gone (issue #161).
-   *
-   * Before the request there is genuinely something to cancel. Afterwards
-   * there is not: closing a form does not reach the server, and aborting the
-   * fetch would not either, since the write may already be committed. So the
-   * control changes its name rather than keeping a promise it cannot keep.
-   */
-  closePending: 'Close',
-  pendingNote:
-    'Saving. Closing this form does not cancel the save, and nothing in the app can remove a directory once the server has it.',
-
-  /** Reconciled with the server: the write certainly did not land. */
-  failedNotCreated:
-    'Nothing was created. Your name is kept, so you can try again.',
-  /**
-   * The request failed AND the follow-up check failed. Saying "not saved"
-   * here would be a guess, and acting on that guess is how a second permanent
-   * directory gets created for one document.
-   */
-  failedUnknown:
-    'The app could not confirm whether the directory was created. Check again before trying a different name.',
-
-  checking: 'Checking whether this document already has a directory…',
-  checkAgain: 'Check again',
-  /**
-   * The panel closed over a write whose outcome is not known yet. The reviewer
-   * is not offered a name field or a Create button here: both would act on an
-   * answer nobody has.
-   */
-  pendingClosed: 'Saving a new directory for this document…',
-  unknownClosed:
-    'A directory may have been created for this document. Until the app can check, it will not offer to create another.',
-  /**
-   * A failed lookup is not an empty lookup. Offering Create here would invite
-   * a duplicate the server will refuse.
+   * What is left after issue #196 retired the creation flow in the prediction
+   * panel. `SavedDirectoryNotice` reads a record it cannot write to, so the
+   * only sentence it still needs is the one for a lookup that failed -- and
+   * that one matters more than ever: "could not check" must not be shown as
+   * "no directory here", now that nothing in this panel offers to make one.
    */
   unresolvedNote:
-    'The app could not check whether this document already has a directory. Creating one now could be refused as a duplicate.',
+    'The app could not check whether this document already has a directory of its own. Nothing here depends on the answer; it is said rather than left blank.',
 
   savedHeading: 'Directory saved',
   /**
@@ -81,8 +31,48 @@ export const DIRECTORY_CREATION_COPY = {
    * "a candidate for every other document" was a promise the app cannot keep.
    */
   savedAvailability:
-    'Saved permanently and seeded with this document. It can be offered as a candidate on other documents this model can score, not on every one.',
+    'Saved permanently and seeded with this document. It can be offered on other documents this model can score, not on every one.',
   savedIndependence: 'Submitting or skipping your assessment does not undo it.',
+} as const
+
+/**
+ * The CCL key field on the blue "None of the top N" action (issue #196).
+ *
+ * Every sentence an evaluator reads about the key lives here, for the same
+ * reason the creation copy did: the wording is Prof. Firey's subject matter and
+ * the behaviour is not, so they change independently.
+ *
+ * Two things are said and a third is deliberately not. Said: the field is
+ * optional, and what the server will do with what is typed. Not said: anything
+ * that asks a general evaluator to go and search the CCL by hand. The field is
+ * for a key they already know, which is the case Abigail described -- she
+ * recognises the source and the ten candidates simply do not contain it.
+ */
+export const CCL_KEY_COPY = {
+  fieldLabel: 'CCL key of the source, if known',
+  placeholder: 'e.g. CTOU.567.16',
+  optionalNote:
+    'Optional. Leave it blank to record only that none of the candidates match.',
+  outcomeNote:
+    'If the key is already in the collection, your answer is recorded against it. If a colleague has grouped documents under it, this one joins them. Otherwise the key starts a group and this document is its first member.',
+  submit: 'Record this answer',
+  submitting: 'Recording…',
+  /** The receipt, per branch. `target` is a key or a directory label. */
+  recorded: {
+    none: 'Recorded: none of the ranked candidates match.',
+    matched_labelled_dir: (key: string) =>
+      `Recorded: matches directory ${key} (not in the shortlist). Nothing new was created.`,
+    joined_reviewer_dir: (key: string) =>
+      `Recorded, and this document joined the group under ${key}.`,
+    created_reviewer_dir: (key: string) =>
+      `Recorded, and a group under ${key} now holds this document.`,
+    seed_taken: (key: string) =>
+      `Recorded with the key ${key}. This document already starts a group of its own, and one document can start only one, so no second group was created.`,
+  },
+  failed:
+    'Nothing was recorded. Your answer and the key are still here, so you can try again.',
+  uncertain:
+    'The app did not get an answer it can trust, so it cannot tell whether this was recorded. Reload the document and check before recording it again.',
 } as const
 
 /**
@@ -155,6 +145,10 @@ export const NO_MATCH_GUIDANCE =
 /**
  * The None control's label, as `MatchPills` actually draws it (issue #157).
  *
+ * "Top N" rather than "N model candidates" since issue #196: nothing else is
+ * numbered beside them any more, so the shorter phrase Prof. Firey uses is now
+ * also the accurate one.
+ *
  * Duplicated deliberately rather than imported: this module is a leaf that the
  * prediction list and the tour both read, and reaching into an assessment-panel
  * component for a string would invert that. The drift guard is a test that
@@ -165,13 +159,8 @@ export const NO_MATCH_GUIDANCE =
  */
 export function noneOptionLabel(modelCandidateCount: number): string {
   return modelCandidateCount === 1
-    ? 'None of the 1 model candidate'
-    : `None of the ${modelCandidateCount} model candidates`
-}
-
-/** Shown in place of the button when this document already seeds a directory. */
-export function alreadySeededNote(modelCandidateCount: number): string {
-  return `This document already seeds a provisional directory, and only one directory per document is allowed. If none of the ranked candidates fits, record “${noneOptionLabel(modelCandidateCount)}” and explain in your notes.`
+    ? 'None of the 1 candidate'
+    : `None of the top ${modelCandidateCount}`
 }
 
 /**

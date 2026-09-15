@@ -100,19 +100,18 @@ async def get_predictions(
             candidate_files=candidate_files,
         ))
 
-    # --- reviewer-created directories (issue #95) ---------------------------
-    # Appended after the model's candidates, never interleaved: the model's
-    # ranks stay exactly what the retrieval CSV produced, so every feedback row
-    # ever written -- each of which records a rank -- keeps pointing at the
-    # candidate its reviewer actually chose.
+    # --- reviewer-created directories (issue #95, reshaped by #196) ---------
+    # NEVER merged into `predictions`. Every entry there is the retrieval run's
+    # own answer at the rank the CSV gave it, and nothing else is ever numbered
+    # alongside them: a reviewer directory arrives in its own field, unranked,
+    # the way the PDF packets have always printed it.
     reviewer_records = await db.list_reviewer_dirs()
     seeded_dirs = []
+    reviewer_dir_candidates = []
     if reviewer_records:
         qq = await store.ensure_qq_async(slug)
-        predictions.extend(
-            reviewer_dirs_svc.candidates_for_query(
-                store=store, records=reviewer_records, qq=qq, query_id=file_id
-            )
+        reviewer_dir_candidates = reviewer_dirs_svc.unranked_candidates_for_query(
+            store=store, records=reviewer_records, qq=qq, query_id=file_id
         )
         seeded_dirs = [
             reviewer_dirs_svc.to_api(record, qq, slug)
@@ -132,6 +131,7 @@ async def get_predictions(
         # the reviewer which one they are looking at.
         status=row.get("status"),
         seeded_dirs=seeded_dirs,
+        reviewer_dir_candidates=reviewer_dir_candidates,
     )
 
 
@@ -156,9 +156,13 @@ async def get_candidates(
     preds = row["predictions"]
     pred = next((p for p in preds if p["rank"] == rank), None)
     if pred is None:
-        # Ranks past the model's own candidates belong to reviewer-created
-        # directories, anchored at the same fixed offset get_predictions uses.
-        return await _reviewer_candidate_files(store, db, slug, file_id, rank)
+        # Nothing but the model's own candidates has a rank any more (issue
+        # #196), so a rank this row does not carry names nothing. Reviewer
+        # directories are addressed by `dir_id` through
+        # /api/candidate_dir/{dir}/files, which is what their unranked block
+        # links to; historical feedback rows recording ranks 11-15 stay readable
+        # through that same route and through the packets.
+        return []
 
     dir_name = pred["dir_name"]
     texts = store.labelled_texts.get(dir_name, {})
@@ -166,20 +170,6 @@ async def get_candidates(
         CandidateFile(filename=fname, text=text)
         for fname, text in sorted(texts.items())
     ]
-
-
-async def _reviewer_candidate_files(
-    store: DataStore, db: FeedbackDB, slug: str, file_id: int, rank: int
-) -> list[CandidateFile]:
-    records = await db.list_reviewer_dirs()
-    if not records:
-        return []
-    qq = await store.ensure_qq_async(slug)
-    candidates = reviewer_dirs_svc.candidates_for_query(
-        store=store, records=records, qq=qq, query_id=file_id
-    )
-    match = next((c for c in candidates if c.rank == rank), None)
-    return list(match.candidate_files or []) if match else []
 
 
 @router.get("/candidate_dir/{candidate_dir}/files", response_model=list[CandidateFile])
