@@ -25,9 +25,9 @@ match, exactly as before. Type a CCL key and the app decides what it means,
 which is the part that used to be impossible to express:
 
 - the key names a source already in our labelled set: the answer is recorded as
-  "matches that key, not in the shortlist", and nothing new is created. This is
-  your case of finding the source in the CCL when the ten candidates are all
-  wrong;
+  a match to that key, the receipt says whether the ranking offered it and at
+  which rank, and nothing new is created. This is your case of finding the
+  source in the CCL when the ten candidates are all wrong;
 - the key names a group a reviewer has already started: this fragment joins it,
   so the two witnesses sit together;
 - the key is new to the app: a group under that key is started and this fragment
