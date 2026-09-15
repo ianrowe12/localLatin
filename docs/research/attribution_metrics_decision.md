@@ -87,7 +87,7 @@ Five registry functions in `src/attribution_metrics.py`, one per metric.
 | AOPC-Comp | mean over k = 1..n of [S_v(full) - S_v(top-k removed)] / S_v(full) | higher | same |
 | DelAUC | area under S_v(remaining)/S_v(full) as tokens are removed most-important-first | lower | Petsiuk et al. 2018 (RISE) |
 | InsAUC | area under S_v(kept)/S_v(full) as tokens are inserted most-important-first | higher | same |
-| DelAUC gap, InsAUC gap | the same AUC minus (or minus-from) a 5-draw random-order reference | higher | same |
+| DelAUC gap, InsAUC gap | chance-corrected against a 5-draw random-order reference: DelAUC gap = random-order DelAUC minus attribution-order DelAUC (positive when the attribution order destroys the score faster than chance); InsAUC gap = attribution-order InsAUC minus random-order InsAUC | higher | same |
 | tau_LOO | Kendall tau-b between abs(a) and the per-token LOO delta | higher | tie-corrected companion to the existing Spearman rho_LOO |
 | Rand gap | real metric minus the mean over 5 permutations of the attribution vector | higher | control in the spirit of Adebayo et al. 2018 |
 

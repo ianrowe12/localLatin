@@ -22,6 +22,8 @@ sys.path.insert(0, str(REPO_ROOT / "scripts" / "ig"))
 
 import build_headline_tables as bht  # noqa: E402
 import build_main_attribution_artifacts as bmaa  # noqa: E402
+import attribution_run_of_record as aror  # noqa: E402
+import package_attribution_sweep_appendix as pasa  # noqa: E402
 
 
 def _results_frame() -> pd.DataFrame:
@@ -398,3 +400,85 @@ def test_load_main_rows_rejects_a_summary_missing_the_new_columns():
     summary = _attribution_summary().drop(columns=[f"{bmaa.DEL_GAP_KEY}_mean"])
     with pytest.raises(ValueError, match="missing required columns"):
         bmaa.select_main_rows(summary)
+
+
+# --- Run of record (issue #201) -------------------------------------------------
+#
+# The committed attribution tables come from the benchmark v1 re-sample, but the
+# generators' defaults stayed on the run 3 sample after #187, so a bare rerun
+# rewrote the paper's numbers from the old run. These tests pin the defaults to
+# the run of record and check that a bare regeneration is a no-op on the
+# committed tables. The byte-identity tests need the run's summary (tracked) and,
+# for the main generator, its gitignored per-pair cache, so they skip where that
+# material is absent (CI) rather than fail.
+
+TABLES_DIR = REPO_ROOT / "overleaf_drafts" / "tables"
+
+
+def test_generator_defaults_resolve_under_the_run_of_record(monkeypatch):
+    assert aror.RUN_OF_RECORD == "ig_examples_200pos_v1"
+    assert aror.RUN_OF_RECORD in bmaa.DEFAULT_SUMMARY.parts
+    assert bmaa.DEFAULT_SUMMARY.name == "summary_v2.csv"
+
+    monkeypatch.setattr(sys, "argv", ["package_attribution_sweep_appendix.py"])
+    args = pasa.parse_args()
+    for raw in (args.summary_csv, args.long_out, args.missing_report_out):
+        assert aror.RUN_OF_RECORD in Path(raw).parts, raw
+        assert "run3" not in raw
+    assert Path(args.main_tex_out).parent == TABLES_DIR
+    assert Path(args.supplemental_tex_out).parent == TABLES_DIR
+
+
+def test_stamped_table_refuses_a_different_run(tmp_path: Path):
+    """A table built from one run is not silently rewritten from another."""
+    stamped = tmp_path / "stamped.tex"
+    stamped.write_text("% generated table\n% source run: run_a\n\\begin{table}\n")
+    with pytest.raises(SystemExit, match="built from run run_a"):
+        aror.refuse_run_change(stamped, "run_b")
+    aror.refuse_run_change(stamped, "run_a")
+    aror.refuse_run_change(stamped, "run_b", allow=True)
+    # First-time stamping and scratch outputs: no stamp, no objection.
+    unstamped = tmp_path / "legacy.tex"
+    unstamped.write_text("% generated table\n\\begin{table}\n")
+    aror.refuse_run_change(unstamped, "run_b")
+    aror.refuse_run_change(tmp_path / "absent.tex", "run_b")
+    assert aror.run_name("runs/active/run_c/attribution_metrics/summary_v2.csv") == "run_c"
+
+
+def _skip_unless(path: Path, what: str) -> None:
+    if not path.exists():
+        pytest.skip(f"{what} not present at {path}")
+
+
+def test_bare_packager_run_reproduces_the_committed_sweep_tables(tmp_path: Path, monkeypatch):
+    _skip_unless(aror.DEFAULT_SUMMARY_CSV, "run-of-record summary")
+    monkeypatch.setattr(sys, "argv", [
+        "package_attribution_sweep_appendix.py",
+        "--main_tex_out", str(tmp_path / "main.tex"),
+        "--supplemental_tex_out", str(tmp_path / "supp.tex"),
+        "--long_out", str(tmp_path / "long.csv"),
+        "--missing_report_out", str(tmp_path / "report.json"),
+    ])
+    pasa.main()
+    for name, out in (("attribution_metrics_sweep_main_methods.tex", "main.tex"),
+                      ("attribution_metrics_sweep_supplemental_methods.tex", "supp.tex")):
+        assert (tmp_path / out).read_bytes() == (TABLES_DIR / name).read_bytes(), name
+    assert (tmp_path / "long.csv").read_bytes() == (
+        aror.ATTRIBUTION_METRICS_DIR / "summary_v2_sweep_long_appendix.csv").read_bytes()
+
+
+def test_bare_generator_run_reproduces_the_committed_main_tables(tmp_path: Path, monkeypatch):
+    _skip_unless(aror.DEFAULT_SUMMARY_CSV, "run-of-record summary")
+    _skip_unless(aror.ATTRIBUTION_METRICS_DIR / "v2_hidden", "per-pair cache (gitignored)")
+    monkeypatch.setattr(sys, "argv", [
+        "build_main_attribution_artifacts.py",
+        "--table_out", str(tmp_path / "main.tex"),
+        "--secondary_table_out", str(tmp_path / "secondary.tex"),
+        "--fig_out_base", str(tmp_path / "fig_attribution_rho_loo_main"),
+    ])
+    bmaa.main()
+    for name, out in (("attribution_metrics_main.tex", "main.tex"),
+                      ("attribution_metrics_secondary.tex", "secondary.tex")):
+        assert (tmp_path / out).read_bytes() == (TABLES_DIR / name).read_bytes(), name
+    assert (tmp_path / "fig_attribution_rho_loo_main.tex").read_bytes() == (
+        REPO_ROOT / "overleaf_drafts/figures/fig_attribution_rho_loo_main.tex").read_bytes()

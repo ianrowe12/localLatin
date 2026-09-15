@@ -371,13 +371,9 @@ sbatch slurm/ig/run_attribution_200pos_v1.sbatch
 # 4. Metrics + operator spot check (CPU)
 sbatch slurm/ig/attribution_metrics_200pos_v1.sbatch
 
-# 5. Paper artifacts
-python scripts/ig/build_main_attribution_artifacts.py \
-  --summary_csv runs/active/ig_examples_200pos_v1/attribution_metrics/summary_v2.csv
-python scripts/ig/package_attribution_sweep_appendix.py \
-  --summary_csv runs/active/ig_examples_200pos_v1/attribution_metrics/summary_v2.csv \
-  --long_out runs/active/ig_examples_200pos_v1/attribution_metrics/summary_v2_sweep_long_appendix.csv \
-  --missing_report_out runs/active/ig_examples_200pos_v1/attribution_metrics/appendix_sweep_v2_completeness.json
+# 5. Paper artifacts (defaults resolve to this run, see below)
+python scripts/ig/build_main_attribution_artifacts.py
+python scripts/ig/package_attribution_sweep_appendix.py --strict
 ```
 
 **Regenerating the main table needs the per-pair cache.** The caption's tie
@@ -386,9 +382,17 @@ clause is computed from paired per-pair differences under
 generator now fails with a clear message if that directory is absent rather than
 silently dropping the clause; `--no_tie_clause` is the explicit opt-out.
 
-The generators take the new run through their existing `--summary_csv` flag.
-Their module-level `DEFAULT_SUMMARY` still points at the run 3 directory, which
-is deliberate: run 3 stays reproducible byte for byte, and the new path is
-passed explicitly by the sbatch and by the commands above.
+**The generators default to this run.** When this re-sample first landed, the
+generators kept their module-level default on the run 3 directory and the sbatch
+passed the new path explicitly; a bare rerun therefore rewrote the paper's
+tables from the old sample (issue #201). Since PR #204 both generators build
+their defaults from `RUN_OF_RECORD` in `scripts/ig/attribution_run_of_record.py`
+(this run), every generated table carries a `% source run:` stamp, and a
+generator refuses to overwrite a table stamped with a different run unless
+`--allow_run_change` is passed. `tests/test_paper_table_generators.py` checks
+that the defaults resolve here and that a bare regeneration reproduces the
+committed tables byte for byte.
 
-`runs/active/ig_examples_200pos_run3_operational/` is untouched.
+`runs/active/ig_examples_200pos_run3_operational/` is untouched and stays
+reproducible: pass its `summary_v2.csv` as `--summary_csv` and redirect every
+output path (the stamp check refuses the committed table paths).
