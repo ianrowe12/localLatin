@@ -7,11 +7,14 @@
 # 5-seed Task B protocol at the selected layers for both the fine-tuned and the
 # pre-trained encoder.
 #
-# This job is the SINGLE WRITER of overleaf_drafts/tables/finetune_ceiling.tex,
-# which since #194 carries both ceilings. --tex_extra_run reads LaTa's
-# comparison CSV and its saved caption facts back off disk and prints them
-# above Qwen's rows, so neither model inherits the other's prose and neither
-# has to be re-scored to refresh the table.
+# It does NOT write overleaf_drafts/tables/finetune_ceiling.tex. That table has
+# exactly one writer, and since #210 it carries three ceilings, so the writer is
+# the job for the last model added: slurm/resubmit/finetune_kalm_ceiling_eval.sbatch,
+# which reads this run's comparison CSV and caption facts back off disk through
+# --tex_extra_run. A Qwen-only re-run therefore refreshes its own CSVs and leaves
+# the table to that job, which is what stops it from silently dropping KaLM-mini.
+# Pass TEX_OUT plus --tex_extra_run for both other models if you ever need this
+# job to render the table instead.
 #
 # No GPU: this only reads cached embeddings, which the repo's budget rule sends
 # to the CPU partition. The runtime is dominated by the per-layer ABTT D sweep
@@ -48,10 +51,8 @@ SPLIT_CSV="$REPO_ROOT/runs/active/resubmit/data/phase_resubmit_split.csv"
 BASELINE_BASES="$REPO_ROOT/runs/active/resubmit_bases"
 BASELINE_RESULTS="$REPO_ROOT/runs/active/resubmit/results/phase_resubmit_results.csv"
 OUT_DIR="$REPO_ROOT/runs/active/resubmit/finetune/qwen3_0.6b"
-LATA_OUT_DIR="$REPO_ROOT/runs/active/resubmit/finetune"
 BASES_ROOT="$REPO_ROOT/runs/active/resubmit_finetune_bases"
 RESULTS_DIR="$REPO_ROOT/runs/active/resubmit/results/finetune"
-TEX_OUT="${TEX_OUT:-$CODE_ROOT/overleaf_drafts/tables/finetune_ceiling.tex}"
 
 mkdir -p "$RESULTS_DIR"
 
@@ -68,8 +69,6 @@ conda run --no-capture-output -n localLatin python scripts/resubmit/finetune_cei
   --baseline_bases_root "$BASELINE_BASES" \
   --baseline_results_csv "$BASELINE_RESULTS" \
   --results_dir "$RESULTS_DIR" \
-  --tex_out "$TEX_OUT" \
-  --tex_extra_run "LaTa:finetune_lata:$LATA_OUT_DIR" \
   --stages evaluate,report,mseed \
   --seed 42 \
   --dev_dir_frac 0.15 \
@@ -85,11 +84,8 @@ for f in finetune_qwen3_0.6b_layer_results.csv \
   [ -f "$RESULTS_DIR/$f" ] || { echo "ERROR: $RESULTS_DIR/$f was not created!" >&2; exit 1; }
   echo "OK: $f ($(wc -l < "$RESULTS_DIR/$f") lines)"
 done
-grep -q "Qwen3-0.6B (fine-tuned)" "$TEX_OUT" || {
-  echo "ERROR: $TEX_OUT has no Qwen3-0.6B rows" >&2; exit 1; }
-grep -q "LaTa (fine-tuned)" "$TEX_OUT" || {
-  echo "ERROR: $TEX_OUT lost the LaTa rows" >&2; exit 1; }
-echo "OK: $(basename "$TEX_OUT") carries both ceilings"
+echo "NOTE: the generated table is written by finetune_kalm_ceiling_eval.sbatch;"
+echo "      re-run that job to fold these CSVs back into tables/finetune_ceiling.tex."
 
 echo "=== Accounting ==="
 sacct -j "${SLURM_JOB_ID}" --format=JobID,JobName%22,State,Elapsed,Timelimit,AllocTRES%50,TotalCPU || true

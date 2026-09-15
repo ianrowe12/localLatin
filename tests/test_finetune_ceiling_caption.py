@@ -268,6 +268,65 @@ def test_shared_pair_count_is_stated_once_and_dropped_when_runs_disagree(tmp_pat
     assert "trained contrastively on positive pairs available" in mixed
 
 
+# --- three ceilings in one table (#210) ------------------------------------
+
+
+def kalm_comparison() -> pd.DataFrame:
+    return pd.DataFrame([{
+        "system": "KaLM-mini (fine-tuned)", "finetuned": True, "method": "baseline",
+        "taskA_layer": 24, "taskA_aucroc": 0.95, "taskA_cosine_gap": 0.42,
+        "taskB_layer": 24, "taskB_assignment_acc": 0.86, "taskB_dir_acc_at_1": 0.84,
+    }])
+
+
+def three_sections(tmp_path):
+    """A third ceiling joins the table with its own epoch and its own D sweep."""
+    lata, _, _ = build_facts({"selected_epoch": 7, "epochs_run": 7},
+                             display_name="LaTa")
+    qwen, _, _ = build_facts(
+        {"selected_epoch": 4, "epochs_run": 8},
+        ft_results=make_ft_results({l: (10 if l > 6 else 3) for l in range(1, 13)}),
+        display_name="Qwen3-0.6B",
+    )
+    kalm, _, _ = build_facts(
+        {"selected_epoch": 2, "epochs_run": 6},
+        ft_results=make_ft_results({l: (10 if l > 9 else 5) for l in range(1, 13)}),
+        display_name="KaLM-mini",
+    )
+    out = tmp_path / "finetune_ceiling.tex"
+    ceiling.write_tex(
+        [
+            ceiling.CeilingSection("LaTa", COMPARISON, lata),
+            ceiling.CeilingSection("Qwen3-0.6B", qwen_comparison(), qwen),
+            ceiling.CeilingSection("KaLM-mini", kalm_comparison(), kalm),
+        ],
+        out,
+    )
+    return out.read_text(encoding="utf-8")
+
+
+def test_three_model_table_carries_every_models_rows(tmp_path):
+    """No ceiling is dropped from the table, whatever its result (#210)."""
+    tex = three_sections(tmp_path)
+    for system in ("LaTa (fine-tuned) &", "Qwen3-0.6B (fine-tuned) &",
+                   "KaLM-mini (fine-tuned) &"):
+        assert system in tex, system
+    body = tex[tex.index(r"\midrule"):tex.index(r"\bottomrule")]
+    assert body.count(r"\midrule") == 3
+
+
+def test_three_model_caption_names_and_separates_every_model(tmp_path):
+    tex = three_sections(tmp_path)
+    assert "reference ceiling on LaTa, Qwen3-0.6B and KaLM-mini" in tex
+    assert "The selected checkpoint for LaTa is epoch 7, the terminal epoch" in tex
+    assert "The selected checkpoint for Qwen3-0.6B is epoch 4 of 8 run" in tex
+    assert "The selected checkpoint for KaLM-mini is epoch 2 of 6 run" in tex
+    assert "ABTT rows for KaLM-mini sweep $D$ per layer on train over the grid" in tex
+    notes = unwrapped(tex)
+    assert "KaLM-mini: Epoch 2 of 6 run was selected" in notes
+    assert tex.count("Notes for whoever moves these rows into the paper") == 1
+
+
 def test_from_dict_rebuilds_a_run_that_finished_elsewhere(tmp_path):
     """The extra section's facts come off disk, not from a recomputation."""
     facts, _, _ = build_facts({"selected_epoch": 7, "epochs_run": 7})

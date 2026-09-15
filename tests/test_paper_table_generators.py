@@ -68,6 +68,7 @@ def _lexical_frame() -> pd.DataFrame:
 
 FT_LATA = "LaTa (fine-tuned)"
 FT_QWEN = "Qwen3-0.6B (fine-tuned)"
+FT_KALM = "KaLM-mini (fine-tuned)"
 
 
 def _finetune_frame(*labels: str, assignment: float = 0.83,
@@ -408,6 +409,70 @@ def test_main_accepts_one_finetune_csv_per_model(tmp_path, monkeypatch):
     task_b = (tmp_path / "out" / "taskB_headline.tex").read_text()
     assert "below every zero-shot ABTT cell for LaTa" in task_b
     assert "above every zero-shot ABTT cell for Qwen3-0.6B" in task_b
+
+
+# --- three fine-tuning ceilings in the reference block (#210) ---------------
+
+
+def _three_model_finetune() -> pd.DataFrame:
+    """One ceiling below every zero-shot ABTT cell, one above, one inside.
+
+    The fixture's ABTT cells are 0.91 assignment / 0.90 dir@1. The three
+    verdicts are deliberately different: if any of them were written once and
+    reused, at least two rows would carry the wrong one.
+    """
+    return pd.concat(
+        [
+            _finetune_frame(FT_LATA),
+            _finetune_frame(FT_QWEN, assignment=0.95, dir_acc=0.94),
+            _finetune_frame(FT_KALM, assignment=0.92, dir_acc=0.89),
+        ],
+        ignore_index=True,
+    )
+
+
+def test_every_ceiling_that_was_run_is_a_default_input():
+    """Issue #210: the paper reports all three ceilings, so a bare run must load
+    all three. A model must leave the table by decision, never by a default."""
+    assert len(bht.DEFAULT_FINETUNE_CSVS) == len(bht.DEFAULT_FINETUNE_RUN_INFOS) == 3
+    for fragment in ("finetune_lata", "finetune_qwen3_0.6b", "finetune_kalm_mini"):
+        assert any(fragment in path for path in bht.DEFAULT_FINETUNE_CSVS), fragment
+    for fragment in ("finetune/run_info.json", "qwen3_0.6b", "kalm_mini"):
+        assert any(fragment in path for path in bht.DEFAULT_FINETUNE_RUN_INFOS), fragment
+
+
+def test_three_ceilings_each_keep_their_own_verdict():
+    best = bht.best_rows(_results_frame(), "hidden", "train_dir_acc_at_1")
+    sentence = bht.task_b_comparison(best, None, _three_model_finetune())
+    assert "below every zero-shot ABTT cell for LaTa (83.0 and 81.0)" in sentence
+    assert "above every zero-shot ABTT cell for Qwen3-0.6B (95.0 and 94.0)" in sentence
+    assert "inside the zero-shot ABTT range for KaLM-mini (92.0 and 89.0)" in sentence
+    # Three items take the serial comma; two do not.
+    assert ", and inside the zero-shot ABTT range for KaLM-mini" in sentence
+
+
+def test_three_ceilings_are_all_named_and_all_get_a_row():
+    best = bht.best_rows(_results_frame(), "hidden", "train_aucroc")
+    finetune = _three_model_finetune()
+    facts = [{"n_fit_pairs": 499, "n_all_train_pairs": 565, "n_dev_dirs": 28}] * 3
+    caption = bht.task_a_caption(best, None, finetune, facts)
+    assert (
+        "LaTa, Qwen3-0.6B, and KaLM-mini fine-tuned contrastively on 499 of the 565"
+        in caption
+    )
+    lines = bht.reference_rows(
+        None,
+        finetune,
+        lexical_left_col="aucroc",
+        lexical_right_col="gap",
+        finetune_left_col="taskA_aucroc",
+        finetune_right_col="taskA_cosine_gap",
+        finetune_layer_col="taskA_layer",
+        fmt=".3f",
+        scale=1.0,
+    )
+    starts = [line.split(" &")[0] for line in lines if "&" in line]
+    assert starts == [FT_LATA, FT_QWEN, FT_KALM]
 
 
 def _attribution_summary() -> pd.DataFrame:

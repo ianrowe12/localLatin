@@ -1,4 +1,4 @@
-"""Supervised fine-tuning REFERENCE CEILING (issues #123, #138, #194).
+"""Supervised fine-tuning REFERENCE CEILING (issues #123, #138, #194, #210).
 
 This is not a proposed method. It is an upper reference point: how far does the
 retrieval task move when the encoder is allowed to see supervision that the
@@ -9,11 +9,14 @@ selection, and the TEST split is untouched until the final evaluation.
 **The model is a parameter.** #123 ran one ceiling, on LaTa, and "it is the best
 model" is not a reason a reviewer accepts for fine-tuning exactly one of six.
 #194 therefore runs the identical recipe on a second, non-Latin-pretrained
-encoder (Qwen3-Embedding-0.6B). Same objective, optimiser, schedule, batch size,
-seed, dev carve and early stopping; only ``--model_name`` and the labels change.
-The two model families the paper uses are shaped differently -- a T5 seq2seq
-whose *encoder stack* is extracted, and a decoder-only stack that IS the model
--- so :class:`Encoder` dispatches on the config rather than assuming T5.
+encoder (Qwen3-Embedding-0.6B), and #210 on a third (KaLM-mini), which owns the
+paper's best zero-shot ABTT cell. Same objective, optimiser, schedule, batch
+size, seed, dev carve and early stopping; only ``--model_name`` and the labels
+change. Every ceiling that is run is reported, whichever side of its own
+zero-shot row it lands on. The model families the paper uses are shaped
+differently -- a T5 seq2seq whose *encoder stack* is extracted, and a
+decoder-only stack that IS the model -- so :class:`Encoder` dispatches on the
+config rather than assuming T5.
 
 Pipeline
 --------
