@@ -24,9 +24,13 @@ import {
   type SaveFailure,
 } from '../../contexts/saveFailure'
 import { fetchLatestFeedback, type FeedbackEntry } from '../../api/feedback'
-import { recordedKeyAnswer } from '../../api/cclKey'
 import MatchPills from './MatchPills'
 import NoneOfTopTenAction from './NoneOfTopTenAction'
+// Deliberately below the component imports rather than beside the other `api/`
+// ones: that block is rewritten by the save-integrity work in issue #158/#172,
+// and one import placed out of alphabetical order is cheaper than a merge
+// conflict in a file neither change needs to coordinate on.
+import { recordedKeyAnswer } from '../../api/cclKey'
 import NotesTextarea from './NotesTextarea'
 import { formatNoteAttribution } from './noteAttribution'
 import SubmitButton from './SubmitButton'
