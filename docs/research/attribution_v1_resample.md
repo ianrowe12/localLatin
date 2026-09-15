@@ -278,7 +278,7 @@ LaTa/MaRC: the 5-draw tie at 1.8 standard errors is a resolved baseline win at
 now names only `rho` for PhilTa MaRC. The random references move by at most
 0.018 per cell (LaTa baseline 0.697 to 0.715) and the caption's range still
 prints 0.692 to 0.961. The InsAUC gap column of the secondary table uses the
-same reference and ticks at three decimals in ten of twelve cells, with no
+same reference and ticks at three decimals in eleven of twelve cells, with no
 verdict change; the sweep tables carry no reference-based metric and changed by
 their stamp line only. One paper sentence changed with it, in Section 6.4:
 "chance-corrected deletion faithfulness improves in four of six, with one
