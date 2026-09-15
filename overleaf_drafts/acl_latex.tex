@@ -127,8 +127,6 @@ Multi-file ($\geq$3) & 187 & 467 & 477 \\
 \label{tab:split}
 \end{table}
 
-All fitting uses training data only: ABTT principal components, routing thresholds, ABTT dimensionality choices, and the operational layer rule used for attribution. We train no model parameters, so the protocol uses no development split; every choice above is made on train and evaluated once on test. The one exception is the supervised fine-tuning ceiling of Tables~\ref{tab:taskA_headline} and~\ref{tab:taskB_headline}, which carves its development slice out of the training files by directory, never out of test (Appendix~\ref{app:reference_systems}).
-
 \section{Methodology}
 
 Our pipeline has three stages: pool token states from one layer into a passage vector, correct the geometry, then score pairs by cosine.
@@ -137,21 +135,18 @@ Our pipeline has three stages: pool token states from one layer into a passage v
 
 We evaluate six pre-trained models from three architectures. LaTa and PhilTa are T5-based models pre-trained on Latin, PhilTa with a philological orientation, each with 12 encoder layers \citep{riemenschneider2023lata}, and mT5-base is a multilingual T5 encoder-decoder, also with 12 encoder layers \citep{xue2021mt5}. LaBSE is a language-agnostic BERT sentence encoder covering 109 languages, with 12 encoder layers \citep{feng2022labse}. Qwen3-0.6B \citep{qwen3embedding2025} and KaLM-mini \citep{kalm2025embedding} are multilingual decoder-only embedding models with 28 and 24 layers.
 
-\subsection{Embedding Extraction and Layer Selection}
-\label{sec:layers}
+\subsection{Embedding Extraction}
 
 We extract hidden-state representations from every transformer block, starting at layer 1 and skipping layer 0, the static embedding table. Token representations at each layer are pooled into one passage vector by plain mean pooling or SIF weighting \citep{arora2017sif}. Appendix~\ref{app:lasttok} compares last-token pooling, a common choice for decoder-only models, with mean pooling under ABTT.
 
 The paper-facing pooling baseline removes only tokenizer artifacts with no lexical content, such as whitespace, padding, and tokenizer-prefix-only tokens; punctuation and numerals remain in the pooled representations. Attribution figures display original decoded tokens, even when a token contributes little.
 
-Layer geometry and layer selection serve different roles. Label-free geometry diagnostics, including top-PC dominance, effective rank, and cosine concentration, identify the most anisotropic layers and test whether ABTT repairs them. For operational retrieval and attribution, we then apply a predeclared train-only retrieval rule: choose the earliest layer within 0.5 percentage points of the best training-set directory accuracy at rank 1 under ABTT. It selects LaTa layer 7, PhilTa layer 1, and mT5-base layer 1 for attribution, with $D=10$ ABTT components. The most anisotropic layers are LaTa layer 8, PhilTa layer 6, and mT5-base layer 5, and we keep those as mechanism checks rather than attribution layers.
-
 \subsection{Post-Processing}
 \label{sec:postproc}
 
-\paragraph{ABTT.} Our main post-processing method is All-but-the-Top (ABTT) \citep{mu2018allbutthetop}. For each model and layer, we center the pooled training embeddings, compute the top $D$ principal components by SVD, and remove those components from both train and test embeddings. We search $D \in \{1,2,3,5,7,10\}$ and choose $D$ by training-set Task B directory accuracy at rank 1, and apply it as a retrieval-specific repair for anisotropic Latin manuscript representations.
+\paragraph{ABTT.} Our main post-processing method is All-but-the-Top (ABTT) \citep{mu2018allbutthetop}. For each model and layer, we center the pooled training embeddings, compute the top $D$ principal components by SVD, and remove those components from both train and test embeddings, a retrieval-specific repair for anisotropic Latin manuscript representations.
 
-\paragraph{SIF.} The main comparison also includes SIF weighting \citep{arora2017sif}, which divides each token weight by its estimated corpus frequency and so down-weights high-frequency tokens before the passage vector is formed. SIF and ABTT act on the same problem at different stages: SIF reweights tokens before pooling, ABTT removes dominant directions after pooling. Token probabilities for SIF come from training files only. We report four settings throughout: baseline mean pooling, SIF-only, ABTT-only, and SIF followed by ABTT.
+\paragraph{SIF.} The main comparison also includes SIF weighting \citep{arora2017sif}, which divides each token weight by its estimated corpus frequency and so down-weights high-frequency tokens before the passage vector is formed. SIF and ABTT act on the same problem at different stages: SIF reweights tokens before pooling, ABTT removes dominant directions after pooling.
 
 \paragraph{PCA whitening (excluded).} PCA whitening \citep{su2021whitening} rescales principal directions rather than only removing the top components; on this corpus it degenerates the learned routing threshold, so we report its sweep only in Appendix~\ref{app:sif_variants}.
 
@@ -174,18 +169,25 @@ Let $\mathbf{E}(\mathbf{x}_q) \in \mathbb{R}^{T_q \times d_{\text{emb}}}$ denote
 \end{aligned}
 \label{eq:retrieval_mark}
 \end{equation}
-where $\tilde{\mathbf{z}}_q(\mathbf{m}) = \mathrm{pool}(E_{>0}(\mathrm{diag}(\mathbf{m})\,\mathbf{E}(\mathbf{x}_q)), \mathbf{a}_q)$. The baseline variant uses raw cosine in place of the ABTT-corrected cosine in Equation~\ref{eq:retrieval_mark}. We run 200 Adam steps per pair, initialize $\boldsymbol{\zeta}_0 = \log 9$, and freeze logits outside $\mathcal{I}$ at $-\infty$.
+where $\tilde{\mathbf{z}}_q(\mathbf{m}) = \mathrm{pool}(E_{>0}(\mathrm{diag}(\mathbf{m})\,\mathbf{E}(\mathbf{x}_q)), \mathbf{a}_q)$. The baseline variant uses raw cosine in place of the ABTT-corrected cosine in Equation~\ref{eq:retrieval_mark}. Logits outside $\mathcal{I}$ are frozen at $-\infty$.
 
-\subsection{Evaluation Metrics}
+\section{Experimental Setup}
+\label{sec:setup}
+\label{sec:layers}
 
-\paragraph{Task A.}
-Both Task A metrics come from the test $n \times n$ pairwise cosine matrix. AUROC treats same-directory test pairs as positives and different-directory pairs as negatives. Cosine gap is the mean same-directory cosine minus the mean different-directory cosine.
+All fitting uses training data only: SIF token probabilities, ABTT principal components, routing thresholds, $D$, and the operational layer rule. We train no model parameters, so the protocol uses no development split, and every choice is evaluated once on test. The one exception, the supervised fine-tuning ceiling of Tables~\ref{tab:taskA_headline} and~\ref{tab:taskB_headline}, carves its development slice out of the training files by directory, never out of test (Appendix~\ref{app:reference_systems}). We report four settings throughout: baseline mean pooling, SIF-only, ABTT-only, and SIF+ABTT.
 
-\paragraph{Task B.}
-For autonomous routing, we report overall assignment accuracy, existing accuracy, and new accuracy. Assignment accuracy scores only the existing-versus-new decision: a file with a partner in test is correct when its maximum cosine to another test file is at least $\tau$, and a file without one is correct when that maximum falls below $\tau$. It never checks which directory the file would enter, so a degenerate threshold that routes everything as existing already attains the 62.4 percent class prior; read it next to directory accuracy at rank 1, which does require the correct directory. For top-$k$ ranking, cumulative top-$K$ accuracy is the fraction of test queries whose labelled directory appears among the top $K$ options.
+\paragraph{Task A metrics.}
+AUROC treats same-directory test pairs as positives and different-directory pairs as negatives. Cosine gap is the same-directory minus the different-directory mean cosine.
 
-\paragraph{Attribution.}
-For attribution, we adapt ERASER-style sufficiency and comprehensiveness metrics \citep{deyoung2020eraser} to retrieval cosine. Sufficiency keeps the top-ranked query tokens and measures how much of the full pair cosine remains, and comprehensiveness removes those tokens and measures the score drop. MinFrac reports the smallest retained query-token fraction needed to recover a fixed share of the full cosine. We also report $\rho_{\mathrm{LOO}}$, the Spearman correlation between attribution magnitude and the leave-one-out drop in the same retrieval score. Every curve metric ranks tokens by attribution magnitude $|a|$ with ties broken by token position; Appendix~\ref{app:attribution_sweeps} states both conventions and their consequences.
+\paragraph{Task B metrics.}
+For autonomous routing we report assignment, existing, and new accuracy. Assignment accuracy scores only the existing-versus-new decision: a file with a partner in test is correct when its maximum cosine to another test file is at least $\tau$, and a file without one is correct when that maximum falls below $\tau$. It never checks which directory the file would enter, so a degenerate threshold that routes everything as existing already attains the 62.4 percent class prior; read it next to directory accuracy at rank 1, which does require the correct directory. For top-$k$ ranking, cumulative top-$K$ accuracy is the fraction of test queries whose labelled directory is among the top $K$ options.
+
+\paragraph{Attribution metrics.}
+We report two threshold-free metrics: $\rho_{\mathrm{LOO}}$, the Spearman correlation between attribution magnitude and the leave-one-out drop in the same retrieval score, and the DelAUC gap, the deletion-curve area relative to a random-order reference. We computed ERASER-style sufficiency and comprehensiveness \citep{deyoung2020eraser} for retrieval cosine: sufficiency keeps the top-ranked query tokens and measures how much of the full pair cosine remains, comprehensiveness removes those tokens and measures the score drop, and MinFrac reports the smallest retained query-token fraction needed to recover a fixed share of the full cosine. These are dropped from the main table because the sufficiency side fails our shuffled-attribution control and their verdicts depend on the threshold and on the erasure operator. Every curve metric ranks tokens by $|a|$, ties broken by position; Appendix~\ref{app:attribution_sweeps} reports them and states both conventions and their consequences.
+
+\paragraph{Hyperparameters and layer selection.}
+We search $D \in \{1,2,3,5,7,10\}$ and choose $D$ by training-set Task B directory accuracy at rank 1, and MaRC runs 200 Adam steps per pair from $\boldsymbol{\zeta}_0 = \log 9$. Label-free geometry diagnostics (top-PC dominance, effective rank, cosine concentration) identify the most anisotropic layers and test whether ABTT repairs them. For retrieval and attribution we apply a predeclared train-only rule: choose the earliest layer within 0.5 points of the best training-set directory accuracy at rank 1 under ABTT. It selects LaTa layer 7, PhilTa layer 1, and mT5-base layer 1, with $D=10$ ABTT components. The most anisotropic layers are LaTa layer 8, PhilTa layer 6, and mT5-base layer 5, kept as mechanism checks rather than attribution layers.
 
 \section{Results}
 \label{sec:results}
