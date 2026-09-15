@@ -17,6 +17,21 @@ python scripts/resubmit/lexical_vs_embedding.py
 Outputs: `runs/active/resubmit/results/lexical_vs_embedding.csv` (78 rows, one per method
 per stratum) and `overleaf_drafts/figures/fig_lexical_vs_embedding.pdf`. Both are gitignored.
 
+## Status 2026-09-15: removed from the paper by decision; provide on request
+
+Issue #197 (decision by Ian after the meeting with Siddique and James, 2026-09-15): the three
+lexical baselines (BM25, character 3-5-gram TF-IDF, Levenshtein) left the paper entirely. The
+paper's framing is the embedding geometry, the layerwise analysis and the repair; it carries no
+lexical row, no lexical caption clause and no sentence comparing embeddings against surface
+matching in either direction. This note, `runs/active/resubmit/results/lexical_baselines.csv`,
+`lexical_baselines_mseed.csv`, `lexical_vs_embedding.csv`, `overleaf_drafts/tables/lexical_baselines.tex`
+and the scripts `scripts/resubmit/lexical_baselines.py` and `lexical_vs_embedding.py` stay as
+rebuttal material. If a reviewer asks, the numbers below are the answer.
+`scripts/resubmit/build_headline_tables.py --lexical_csv runs/active/resubmit/results/lexical_baselines.csv`
+rebuilds the headline tables with the three rows and their caption clauses; the default run omits
+them. The standing rule stays: no sentence in the paper may state or imply that the embeddings
+solve the task better than string matching would.
+
 ## The question
 
 PR #130 (issue #122) found that a character 3-5-gram TF-IDF cosine matches or beats every

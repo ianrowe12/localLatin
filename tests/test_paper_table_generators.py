@@ -82,9 +82,10 @@ def _finetune_frame() -> pd.DataFrame:
     )
 
 
-def _render_task_a() -> str:
+def _render_task_a(lexical: pd.DataFrame | None = None) -> str:
+    """The paper's default has no lexical rows (issue #197); pass a frame for
+    the opt-in rebuttal variant."""
     results = _results_frame()
-    lexical = _lexical_frame()
     best = bht.best_rows(results, "hidden", "train_aucroc")
     return bht.render_table(
         best,
@@ -120,13 +121,35 @@ def test_reference_block_sits_below_the_six_model_rows():
     assert model_row < ceiling_row
 
 
-def test_lexical_rows_span_their_metric_block():
+LEXICAL_TERMS = ("TF-IDF", "BM25", "Levenshtein", "lexical", "surface", "string")
+
+
+def test_lexical_rows_and_clauses_are_off_by_default():
+    """Issue #197: the paper carries no lexical baseline, in rows or caption."""
     tex = _render_task_a()
+    for term in LEXICAL_TERMS:
+        assert term not in tex, term
+    # The reference block is still there and still holds the ceiling.
+    assert r"\midrule" in tex
+    assert any(
+        line.startswith(bht.FINETUNE_ROW_LABEL + " &") for line in tex.splitlines()
+    )
+
+
+def test_lexical_rows_span_their_metric_block_when_opted_in():
+    tex = _render_task_a(_lexical_frame())
     row = next(
         line for line in tex.splitlines() if line.startswith("TF-IDF char 3--5 &")
     )
     # One value per metric block, not one per post-processing setting.
     assert row.count(r"\multicolumn{4}{c}") == 2
+    caption = tex[tex.index(r"\caption{") :]
+    # The rebuttal variant keeps the framing constraint of issues #119 and #176.
+    assert "practitioner's operating point" in caption
+    assert "rather than beat it" in caption
+    # The fine-tune clause opens with an acronym; it must not be lowercased
+    # when it follows the lexical clause (review of PR #200).
+    assert "and ABTT moves the fine-tuned encoder's AUROC" in caption
 
 
 def test_finetune_row_leaves_the_sif_columns_empty():
@@ -143,14 +166,16 @@ def test_finetune_row_leaves_the_sif_columns_empty():
     assert cells[6] == "--" and cells[8] == "--"
 
 
-def test_caption_does_not_claim_an_embedding_win_over_surface_matching():
-    tex = _render_task_a()
-    caption = tex[tex.index(r"\caption{") :]
-    assert "practitioner's operating point" in caption
-    assert "rather than beat it" in caption
+@pytest.mark.parametrize("lexical", [None, _lexical_frame()], ids=["paper", "rebuttal"])
+def test_caption_never_says_leads_or_reaches(lexical):
     # Issue #176: the comparison sentence is derived from the cells, and a
-    # single-seed difference inside the seed spread is never a lead.
+    # single-seed difference inside the seed spread is never a lead. Issue
+    # #197 removed the comparison from the paper; the guard stays for the
+    # fine-tuning clause and for the opt-in variant.
+    tex = _render_task_a(lexical)
+    caption = tex[tex.index(r"\caption{") :]
     assert "leads" not in caption and "reaches" not in caption
+    assert "a ceiling at this training budget" in caption
 
 
 def test_level_word_only_calls_a_lead_outside_the_seed_spread():
@@ -165,9 +190,21 @@ def test_task_b_comparison_states_the_ceiling_as_a_finding():
     best = bht.best_rows(results, "hidden", "train_dir_acc_at_1")
     # Fixture: ABTT cells at 0.91 assignment / 0.90 dir@1; lexical 0.80 / 0.70;
     # fine-tuned + ABTT 0.83 / 0.81, so below every zero-shot ABTT cell.
-    sentence = bht.task_b_comparison(best, _lexical_frame(), _finetune_frame())
-    assert "TF-IDF char 3--5 is below the best ABTT cell (80.0 against 91.0" in sentence
+    sentence = bht.task_b_comparison(best, None, _finetune_frame())
+    assert sentence.startswith("The fine-tuned encoder with ABTT (83.0 and 81.0)")
     assert "is below every zero-shot ABTT cell" in sentence
+    assert "TF-IDF" not in sentence
+    rebuttal = bht.task_b_comparison(best, _lexical_frame(), _finetune_frame())
+    assert "TF-IDF char 3--5 is below the best ABTT cell (80.0 against 91.0" in rebuttal
+    assert "is below every zero-shot ABTT cell" in rebuttal
+
+
+def test_task_a_comparison_covers_the_finetuned_row_alone_by_default():
+    results = _results_frame()
+    best = bht.best_rows(results, "hidden", "train_aucroc")
+    sentence = bht.task_a_comparison(best, None, _finetune_frame())
+    assert sentence.startswith("ABTT moves the fine-tuned encoder's AUROC")
+    assert "TF-IDF" not in sentence
 
 
 def test_both_headline_captions_share_the_finetune_pairs_clause():
@@ -175,7 +212,6 @@ def test_both_headline_captions_share_the_finetune_pairs_clause():
     same pairs clause. The call site that once dropped ``facts`` on the Task B
     call is covered by ``test_main_writes_the_pairs_clause_into_both_headline_captions``."""
     results = _results_frame()
-    lexical = _lexical_frame()
     finetune = _finetune_frame()
     best_a = bht.best_rows(results, "hidden", "train_aucroc")
     best_b = bht.best_rows(results, "hidden", "train_dir_acc_at_1")
@@ -184,8 +220,8 @@ def test_both_headline_captions_share_the_finetune_pairs_clause():
         {"n_fit_pairs": 499, "n_all_train_pairs": 565, "n_dev_dirs": 28},
     ):
         clause = bht.finetune_pairs_clause(facts)
-        cap_a = bht.task_a_caption(best_a, lexical, finetune, facts)
-        cap_b = bht.task_b_caption(results, best_b, lexical, finetune, facts)
+        cap_a = bht.task_a_caption(best_a, None, finetune, facts)
+        cap_b = bht.task_b_caption(results, best_b, None, finetune, facts)
         assert clause in cap_a and clause in cap_b
         assert "a ceiling at this training budget" in cap_a
         assert "a ceiling at this training budget" in cap_b
@@ -199,7 +235,6 @@ def test_main_writes_the_pairs_clause_into_both_headline_captions(tmp_path, monk
     while the caption function itself was correct. This drives ``main()`` end
     to end and reads the clause back out of both written files."""
     _results_frame().to_csv(tmp_path / "r.csv", index=False)
-    _lexical_frame().to_csv(tmp_path / "l.csv", index=False)
     _finetune_frame().to_csv(tmp_path / "f.csv", index=False)
     facts = {"n_fit_pairs": 499, "n_all_train_pairs": 565, "n_dev_dirs": 28}
     (tmp_path / "run_info.json").write_text(json.dumps({"caption_facts": facts}))
@@ -209,7 +244,6 @@ def test_main_writes_the_pairs_clause_into_both_headline_captions(tmp_path, monk
         [
             "build_headline_tables.py",
             "--results_csv", str(tmp_path / "r.csv"),
-            "--lexical_csv", str(tmp_path / "l.csv"),
             "--finetune_csv", str(tmp_path / "f.csv"),
             "--finetune_run_info", str(tmp_path / "run_info.json"),
             "--out_dir", str(tmp_path / "out"),
@@ -222,6 +256,34 @@ def test_main_writes_the_pairs_clause_into_both_headline_captions(tmp_path, monk
         tex = (tmp_path / "out" / name).read_text()
         assert clause in tex, name
         assert "left by a directory-level dev carve" not in tex, name
+        # Issue #197: a default run must not re-add the lexical rows.
+        for term in LEXICAL_TERMS:
+            assert term not in tex, (name, term)
+
+
+def test_main_adds_lexical_rows_only_when_the_csv_is_passed(tmp_path, monkeypatch):
+    """The rebuttal variant is still buildable, but only on request."""
+    _results_frame().to_csv(tmp_path / "r.csv", index=False)
+    _lexical_frame().to_csv(tmp_path / "l.csv", index=False)
+    _finetune_frame().to_csv(tmp_path / "f.csv", index=False)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "build_headline_tables.py",
+            "--results_csv", str(tmp_path / "r.csv"),
+            "--lexical_csv", str(tmp_path / "l.csv"),
+            "--finetune_csv", str(tmp_path / "f.csv"),
+            "--finetune_run_info", str(tmp_path / "absent.json"),
+            "--out_dir", str(tmp_path / "out"),
+        ],
+    )
+    bht.main()
+    for name in ("taskA_headline.tex", "taskB_headline.tex"):
+        tex = (tmp_path / "out" / name).read_text()
+        for key, display in bht.LEXICAL_SYSTEMS:
+            assert any(line.startswith(display + " &") for line in tex.splitlines()), (name, key)
+        assert "three lexical baselines" in tex, name
 
 
 def _attribution_summary() -> pd.DataFrame:
