@@ -141,19 +141,21 @@ against the wrong labels without an error.
 weights and diffs against that model's cached embeddings, loaded through the
 same resolver. Agreement is at float32 rounding noise in both models.
 
-| Model | Layer | max abs. diff | peak abs. activation | mean cosine |
+| Model | Layer | max abs. diff | mean cosine | Source |
 |---|---|---|---|---|
-| LaTa | 1 | 5.7e-05 | 89 | 1.000000 |
-| LaTa | 12 | 1.4e-06 | 0.30 | 1.000000 |
-| Qwen3-0.6B | 1 | 4.8e-07 | 2.83 | 1.000000 |
-| Qwen3-0.6B | 28 | 1.9e-05 | 13.4 | 1.000000 |
+| LaTa | 1 | 5.7e-05 | 1.000000 | job 21847379 |
+| LaTa | 12 | 1.4e-06 | 1.000000 | job 21847379 |
+| Qwen3-0.6B | 1 | 2.325e-06 | 1.000000 | job 22080571 |
+| Qwen3-0.6B | 28 | 4.625e-05 | 1.000000 | job 22080571 |
 
-The absolute numbers are not comparable across rows as they stand, because the
-activation scales differ by two orders of magnitude; the last two columns are
-what makes them read the same, at about 1e-06 relative. This confirms that text
-loading, pooling and token filtering are identical to the paper's pipeline, so
-any difference in the numbers below is caused by the fine-tuning, not by the
-harness.
+Each row is what that job's own parity stage logged over all 1,705 files, and
+the same values sit in the `parity` block of its `run_info.json`. The absolute
+numbers are not comparable across rows, because activation scales differ by
+orders of magnitude between layers and models; the mean cosine is what makes
+them read the same, and in relative terms every row is about 1e-06. This
+confirms that text loading, pooling and token filtering are identical to the
+paper's pipeline, so any difference in the numbers below is caused by the
+fine-tuning, not by the harness.
 
 ## LaTa results
 
@@ -278,7 +280,7 @@ parameters against LaTa's 110M encoder, and 32 sequences of 512 tokens through
 28 blocks does not fit beside fp32 AdamW state on one A100-40GB. Activations
 are recomputed in the backward pass instead of stored, so the gradients are
 identical and only the memory bill changes. It is recorded as
-`grad_checkpointing` in `run_info.json`.
+`grad_checkpointing` in `run_info.json` and printed in the job log.
 
 ### Qwen3-0.6B's dev curve
 
@@ -342,8 +344,9 @@ their own zero-shot ABTT rows.
 
 For LaTa, supervision lands where the label-free correction already is: 0.8767
 against 0.8766 over five seeds. For Qwen3-0.6B it goes 1.8 points past it
-(0.923 against 0.905), which is roughly five standard deviations of either
-estimate, and past every zero-shot ABTT cell in the headline table (the best is
+(0.9227 against 0.9051), which is 4.9 standard deviations of the zero-shot
+estimate (9.9 of the tighter fine-tuned one, 4.4 pooled), and past every
+zero-shot ABTT cell in the headline table (the best is
 91.7 assignment accuracy and 89.4 directory accuracy at rank 1; fine-tuned
 Qwen3-0.6B with ABTT reaches 92.1 and 91.4).
 
@@ -526,7 +529,7 @@ and asserts the caption follows.
 
 With two ceilings in one table the same rule applies per model. Each
 `CeilingSection` carries its own facts, so the caption says "ABTT rows for LaTa
-... select $D=10$ everywhere" and "ABTT rows for Qwen3-0.6B ... 18 of 28 layer
+... select $D=10$ everywhere" and "ABTT rows for Qwen3-0.6B ... 12 of 28 layer
 rows select the top of the grid" rather than one model's claim standing for
 both, and the epoch sentence is named the same way. The pair count is the one
 statement made jointly, and only because both carves come from one split and
@@ -554,6 +557,28 @@ LaTa writes into `runs/active/resubmit/finetune/`; Qwen3-0.6B writes into
 | `overleaf_drafts/tables/finetune_ceiling.tex` | generated table rows |
 
 Nothing under `runs/` is committed.
+
+### The records were flattened once, and put back
+
+Until #194 both jobs dumped `run_info.json` wholesale, so the scoring job
+deleted the GPU job's `parity` report, its `selection`, its `train_seconds` and
+its `grad_checkpointing` flag, leaving a file that looked complete and read
+`grad_checkpointing: false, parity_check: false` for both models.
+`merge_run_info` in the CLI now folds each job's record into the file and drops
+nothing; a scoring job's own `config` and `total_seconds` land under
+`report_config` and `report_total_seconds` so the training job's stay the record
+of how the weights were made. `tests/test_finetune_run_info.py` pins that.
+
+The two files already on disk were rebuilt by
+`scripts/resubmit/restore_finetune_run_info.py`, which takes `selection` from
+the `selection.json` written beside each checkpoint, `config` from the committed
+sbatch, and the parity numbers from the GPU job's log (Qwen3-0.6B, job 22080571)
+or from the parity table above (LaTa, job 21847379, whose log is no longer under
+`slurm/logs`). **`train_seconds` survived nowhere, so it is absent rather than
+guessed**, and a `restored` block in each file names every source and lists what
+could not be recovered. Re-running the GPU job would regenerate all of it
+first-hand; that is the right fix whenever the checkpoints are retrained, and
+not worth an A100 to recover a JSON file.
 
 ## Compute
 
@@ -585,7 +610,7 @@ Qwen3-0.6B, 2026-09-14, from `sacct`:
 | 22080685 `ft_qwen_eval` | `cpu`, 8 cores | 00:13:18 | 00:20:00 | CANCELLED |
 | 22081016 `ft_qwen_eval` (reported) | `cpu`, 8 cores | 00:05:07 | 00:40:00 | COMPLETED |
 
-**GPU cost: 336 seconds of A100 wall time over two jobs** (229 s + 307 s),
+**GPU cost: 536 seconds of A100 wall time over two jobs** (229 s + 307 s),
 against 1,800 + 1,200 seconds of reservation, which is what SLURM charges. The
 second job is the one whose numbers are reported; the first selected epoch 0
 under the old rule (see *A dev pool at its resolution limit*). Each run is

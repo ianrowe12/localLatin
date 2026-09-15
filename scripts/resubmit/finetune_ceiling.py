@@ -917,6 +917,47 @@ class CeilingFacts:
 TEX_HEADER = "% generated table"
 
 
+def merge_run_info(
+    existing: Dict[str, object], new: Dict[str, object], touched_model: bool
+) -> Dict[str, object]:
+    """Fold one job's record into ``run_info.json`` without dropping another's.
+
+    The stages run in separate jobs: training, extraction and the parity check
+    need a GPU, scoring does not. Both used to dump this file wholesale, so the
+    scoring job silently deleted the GPU job's ``parity`` report, its
+    ``selection``, its ``train_seconds`` and its ``grad_checkpointing`` flag.
+    That is the provenance the paper's appendix quotes, and losing it left the
+    appendix asserting a record that no longer existed on disk. Every key the
+    current job did not produce is now carried through untouched.
+
+    Two keys describe the *job* rather than the artifacts, so they are
+    namespaced rather than merged: a scoring job's ``config`` and
+    ``total_seconds`` land under ``report_config`` and ``report_total_seconds``,
+    leaving the training job's as the record of how the weights were made.
+    ``touched_model`` is true exactly when this job loaded the encoder.
+    """
+    merged = dict(existing)
+    for key, value in new.items():
+        if key in ("config", "total_seconds") and not touched_model and key in merged:
+            merged[f"report_{key}"] = value
+        else:
+            merged[key] = value
+    return merged
+
+
+def write_run_info(path: Path, new: Dict[str, object], touched_model: bool) -> None:
+    """Merge ``new`` into the record at ``path`` and write it back."""
+    existing: Dict[str, object] = {}
+    if path.exists():
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            print(f"  {path} is not valid JSON; replacing it", file=sys.stderr)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(merge_run_info(existing, new, touched_model), f, indent=2, default=str)
+
+
 def load_selection(out_dir: Path) -> Optional[Dict[str, object]]:
     """Read the training stage's selection.json, or None if it has not run."""
     path = Path(out_dir) / "selection.json"
@@ -1299,8 +1340,7 @@ def main() -> None:
         write_tex(extra + [mine], Path(args.tex_out))
 
     run_info["total_seconds"] = time.time() - t0
-    with open(out_dir / "run_info.json", "w", encoding="utf-8") as f:
-        json.dump(run_info, f, indent=2, default=str)
+    write_run_info(out_dir / "run_info.json", run_info, needs_model)
     print(f"Done in {run_info['total_seconds'] / 60:.1f} min.")
 
 
