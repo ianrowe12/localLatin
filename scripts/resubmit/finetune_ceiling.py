@@ -46,7 +46,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import random
 import sys
 import textwrap
@@ -73,9 +72,11 @@ from canon_retrieval import (  # noqa: E402
     upper_triangle_labels,
 )
 from finetune_pairs import (  # noqa: E402
+    DevPoint,
     PairData,
     batch_pairs_by_round,
     build_pairs,
+    is_better_checkpoint,
 )
 from embedding_alignment import AlignmentResolver  # noqa: E402
 from pair_evaluation import safe_auc_roc  # noqa: E402
@@ -428,8 +429,10 @@ def train_contrastive(
         emb = enc.encode_layers(dev_texts, [enc.n_blocks], args.eval_batch_size)[enc.n_blocks]
         m = dev_metrics(emb, dev_fids)
         history.append({"epoch": epoch, "train_loss": mean_loss, **m})
-        improved = (m["dev_dir_acc_at_1"] > best_score) or (
-            math.isclose(m["dev_dir_acc_at_1"], best_score) and m["dev_aucroc"] > best_tiebreak
+        improved = is_better_checkpoint(
+            DevPoint(epoch, m["dev_dir_acc_at_1"], m["dev_aucroc"]),
+            DevPoint(best_epoch, best_score, best_tiebreak),
+            len(pair_data.dev_rows),
         )
         print(f"  epoch {epoch}: loss={mean_loss:.4f} dev_acc@1={m['dev_dir_acc_at_1']:.4f} "
               f"dev_auroc={m['dev_aucroc']:.4f}{'  *' if improved else ''}", flush=True)

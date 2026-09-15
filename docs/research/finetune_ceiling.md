@@ -1,16 +1,28 @@
-# Supervised fine-tuning reference ceiling (LaTa)
+# Supervised fine-tuning reference ceiling (LaTa and Qwen3-0.6B)
 
-Issues #123 and #138, epic #109. **This is a reference ceiling, not a proposed
-method.** The paper's pipeline is zero-shot: it never sees a labelled pair. This
-experiment asks the complementary question a reviewer will ask anyway, namely
-how much of the gap to a perfect system is left once a model is allowed to
-train on the task's own supervision. The answer bounds what post-processing on
-frozen representations can be expected to achieve, and it is reported as a
-bound, never as a system we advocate.
+Issues #123, #138 and #194, epic #109. **This is a reference ceiling, not a
+proposed method.** The paper's pipeline is zero-shot: it never sees a labelled
+pair. This experiment asks the complementary question a reviewer will ask
+anyway, namely how much of the gap to a perfect system is left once a model is
+allowed to train on the task's own supervision. The answer bounds what
+post-processing on frozen representations can be expected to achieve, and it is
+reported as a bound, never as a system we advocate.
 
-Every number below comes from **benchmark v1** (`benchmark_v1.md`), re-trained
-and re-scored end to end on the corrected labels under #138. What that changed
-is in *Benchmark v1 re-run* below; the verdict did not move.
+**Two models, because one was not defensible.** #123 fine-tuned LaTa alone, on
+the grounds that it was the strongest model. Siddique's objection on 2026-09-14
+was that this is a property of the pick, not an argument: a ceiling measured on
+the one Latin-pretrained encoder says nothing about whether the finding is about
+supervision or about Latin pre-training. #194 therefore runs the identical
+recipe on Qwen3-Embedding-0.6B, which never saw Latin as a pre-training target
+and is a decoder rather than a T5 encoder. Same objective, optimiser, schedule,
+batch size, seed, dev carve, early stopping and evaluator; the two ceilings are
+comparable by construction. The short verdict is in *Do the two models agree?*
+below.
+
+Every LaTa number below comes from **benchmark v1** (`benchmark_v1.md`),
+re-trained and re-scored end to end on the corrected labels under #138. What
+that changed is in *Benchmark v1 re-run* below; the verdict did not move. The
+Qwen3-0.6B run is benchmark v1 from the start.
 
 Everything here is fine-tuned and selected on the TRAIN split only. The test
 split is untouched until the final evaluation, which uses the paper's own
@@ -18,9 +30,11 @@ evaluator with no changes.
 
 ## Setup
 
+The recipe is one recipe. Only the encoder changes.
+
 | Item | Value |
 |---|---|
-| Model | `bowphs/LaTa`, T5 encoder only, 12 blocks, mean pooling |
+| Models | `bowphs/LaTa` (T5 encoder stack, 12 blocks) and `Qwen/Qwen3-Embedding-0.6B` (decoder stack, 28 blocks), both mean-pooled |
 | Objective | Symmetric InfoNCE over positive pairs with in-batch negatives (the objective behind sentence-transformers' MultipleNegativesRankingLoss, implemented here because the environment has no `sentence_transformers`) |
 | Temperature | 0.05 |
 | Training pairs | all within-directory pairs from train directories with >= 2 files, minus the dev carve |
@@ -30,6 +44,17 @@ evaluator with no changes.
 | Epochs | up to 8, early stop after 3 epochs without dev improvement |
 | Seed | 42 (Python, NumPy, Torch; also the dev carve and the batch order) |
 | Tokenisation | max_length 512, `tokenizer_empty` token filter, identical to the paper's extraction |
+| Memory | LaTa trains as is; Qwen3-0.6B needs gradient checkpointing (see *Recipe delta* below) |
+
+**Pooling parity matters and is not automatic.** The paper reports Qwen3-0.6B on
+hidden-state **mean** pooling with the `tokenizer_empty` filter, not on the
+last-token pooling a decoder embedding model is usually used with
+(`runs/active/resubmit_bases/phase9_bases/Qwen_Qwen3-Embedding-0.6B/hidden_mean_tokempty/config.json`).
+Fine-tuning and extraction here use mean pooling for exactly that reason: a
+ceiling pooled differently from the zero-shot row it is compared against is not
+a comparison. `scripts/resubmit/finetune_ceiling.py` loads a non-seq2seq
+checkpoint with `AutoModel` and trains on `hidden_states[-1]`, which is what
+`extract_encoder_cli.py` writes as `hidden_layer28_embeddings.npy`.
 
 ### The dev carve
 
@@ -46,6 +71,11 @@ train and dev would leak the exact supervision being measured.
   dev pairs breaks ties. The checkpoint with the best dev accuracy@1 is the one
   extracted from; epoch 0 in the dev curve is the pre-trained encoder, so the
   curve shows what training actually bought.
+
+Both models draw the same 28 dev directories and train on the same 499 pairs:
+the carve is a function of the split and the seed, not of the model.
+
+### LaTa's dev curve
 
 The run early-stopped after epoch 7 and selected epoch 7. Directory accuracy@1
 saturated at epoch 4 on a 71-file pool, where one file is worth 1.4 points, so
@@ -74,8 +104,9 @@ below is a ceiling **at this training budget**, not an asymptote.
 
 ## Evaluation
 
-Fine-tuned mean-pooled embeddings are extracted for all 1,705 labelled files at
-every encoder layer (1-12) and written in the canonical
+Both models are evaluated the same way. Fine-tuned mean-pooled embeddings are
+extracted for all 1,705 labelled files at every encoder layer (1-12 for LaTa,
+1-28 for Qwen3-0.6B) and written in the canonical
 `phase9_bases/<slug>/hidden_mean_tokempty/` layout, so the paper's evaluators
 read them unchanged:
 
@@ -94,24 +125,32 @@ directory accuracy@1. No test metric is ever used to pick a layer.
 **Row alignment.** Every cached matrix is read through an `AlignmentResolver`
 (`src/embedding_alignment.py`), which pairs cache rows to split rows by
 filename via the `meta.csv` written beside the matrices, rather than by row
-position. That matters here because the two caches in play disagree by
-construction: the paper's LaTa cache was frozen before the benchmark v1 label
-corrections and resolves as **verified-permuted, 17 rows moved**, while the
-fine-tuned cache was extracted after them and resolves as **verified-identity,
+position. That matters here because the caches in play disagree by
+construction: the paper's zero-shot caches were frozen before the benchmark v1
+label corrections and resolve as **verified-permuted, 17 rows moved**, while a
+fine-tuned cache is extracted after them and resolves as **verified-identity,
 0 rows moved**. A positional pairing would have scored 17 fine-tuned vectors
 against the wrong labels without an error.
 
 **Extraction parity.** The same script re-extracts with the *pre-trained*
-weights and diffs against the paper's cached LaTa embeddings, loaded through the
-same resolver. Agreement is at float32 rounding noise: max absolute difference
-5.7e-05 at layer 1 and 1.4e-06 at layer 12, mean cosine 1.000000. The two
-absolute numbers are not comparable as they stand, because layer-1 activations
-peak near |x| = 89 and layer-12 near |x| = 0.30; in relative terms both are
-about 1e-06. This confirms that text loading, pooling and token filtering are
-identical to the paper's pipeline, so any difference in the numbers below is
-caused by the fine-tuning, not by the harness.
+weights and diffs against that model's cached embeddings, loaded through the
+same resolver. Agreement is at float32 rounding noise in both models.
 
-## Results
+| Model | Layer | max abs. diff | peak abs. activation | mean cosine |
+|---|---|---|---|---|
+| LaTa | 1 | 5.7e-05 | 89 | 1.000000 |
+| LaTa | 12 | 1.4e-06 | 0.30 | 1.000000 |
+| Qwen3-0.6B | 1 | 4.8e-07 | 2.83 | 1.000000 |
+| Qwen3-0.6B | 28 | 1.9e-05 | 13.4 | 1.000000 |
+
+The absolute numbers are not comparable across rows as they stand, because the
+activation scales differ by two orders of magnitude; the last two columns are
+what makes them read the same, at about 1e-06 relative. This confirms that text
+loading, pooling and token filtering are identical to the paper's pipeline, so
+any difference in the numbers below is caused by the fine-tuning, not by the
+harness.
+
+## LaTa results
 
 Test-set scores. Layer index is the subscript; Task A and Task B select layers
 independently, both on train metrics. Task B figures are percentages.

@@ -448,6 +448,22 @@ def task_a_comparison(
     abtt_best = float(best[best["_method"] == "abtt_optimal"]["aucroc"].max())
     tfidf = _lexical_value(lexical, "TF-IDF char 3-5", "aucroc")
     labels = finetune_labels(finetune)
+    lead = (
+        f"TF-IDF char 3--5 is {level_word(tfidf - abtt_best, 0.001)} the best "
+        f"ABTT AUROC ({tfidf:.3f} against {abtt_best:.3f}), and ABTT moves the "
+    )
+    if len(labels) == 1:
+        # One ceiling keeps the published wording exactly, so adding the
+        # machinery for a second model does not rewrite a shipped caption.
+        label = labels[0]
+        base = _finetune_value(finetune, label, "taskA_aucroc")
+        abtt = _finetune_value(finetune, label + ABTT_SUFFIX, "taskA_aucroc")
+        base_gap = _finetune_value(finetune, label, "taskA_cosine_gap")
+        abtt_gap = _finetune_value(finetune, label + ABTT_SUFFIX, "taskA_cosine_gap")
+        return (
+            lead + f"fine-tuned encoder's AUROC from {base:.3f} to {abtt:.3f} while "
+            f"moving its gap from {base_gap:.3f} to {abtt_gap:.3f}."
+        )
     moves = []
     for label in labels:
         base = _finetune_value(finetune, label, "taskA_aucroc")
@@ -458,12 +474,7 @@ def task_a_comparison(
             f"{base:.3f} to {abtt:.3f} for {short_name(label)} "
             f"(gap {base_gap:.3f} to {abtt_gap:.3f})"
         )
-    encoders = "encoder's" if len(labels) == 1 else "encoders'"
-    return (
-        f"TF-IDF char 3--5 is {level_word(tfidf - abtt_best, 0.001)} the best "
-        f"ABTT AUROC ({tfidf:.3f} against {abtt_best:.3f}), and ABTT moves the "
-        f"fine-tuned {encoders} AUROC " + _and_list(moves) + "."
-    )
+    return lead + "fine-tuned encoders' AUROC " + _and_list(moves) + "."
 
 
 def task_b_comparison(
@@ -480,33 +491,50 @@ def task_b_comparison(
     tf_assign = 100.0 * _lexical_value(lexical, "TF-IDF char 3-5", "overall_assignment_acc")
     tf_dir1 = 100.0 * _lexical_value(lexical, "TF-IDF char 3-5", "dir_acc_at_1")
     labels = finetune_labels(finetune)
-    placements = []
-    for label in labels:
+
+    def placement(label: str):
+        """Where one ceiling sits against the zero-shot ABTT cells.
+
+        Derived per model from the cells, so a second ceiling that clears a
+        cell the first one did not must change the sentence rather than
+        inherit "below everything".
+        """
         ft_assign = 100.0 * _finetune_value(
             finetune, label + ABTT_SUFFIX, "taskB_assignment_acc"
         )
         ft_dir1 = 100.0 * _finetune_value(
             finetune, label + ABTT_SUFFIX, "taskB_dir_acc_at_1"
         )
-        # Derived per model from the cells: a second ceiling that clears a
-        # zero-shot cell must not inherit the first one's "below everything".
         if ft_assign < assign.min() and ft_dir1 < dir1.min():
-            ceiling = "below every zero-shot ABTT cell"
+            where = "below every zero-shot ABTT cell"
         elif ft_assign > assign.max() and ft_dir1 > dir1.max():
-            ceiling = "above every zero-shot ABTT cell"
+            where = "above every zero-shot ABTT cell"
         else:
-            ceiling = "inside the zero-shot ABTT range"
-        placements.append(
-            f"{ceiling} for {short_name(label)} ({ft_assign:.1f} and {ft_dir1:.1f})"
-        )
-    encoders = (
-        "encoder with ABTT sits" if len(labels) == 1 else "encoders with ABTT sit"
-    )
-    return (
+            where = "inside the zero-shot ABTT range"
+        return ft_assign, ft_dir1, where
+
+    lead = (
         f"TF-IDF char 3--5 is {level_word(tf_assign - assign.max(), 1.0)} the "
         f"best ABTT cell ({tf_assign:.1f} against {assign.max():.1f} assignment "
         f"accuracy, {tf_dir1:.1f} against {dir1.max():.1f} directory accuracy at "
-        f"rank 1), and the fine-tuned {encoders} " + _and_list(placements)
+        f"rank 1), and the fine-tuned "
+    )
+    if len(labels) == 1:
+        # One ceiling keeps the published wording exactly.
+        ft_assign_v, ft_dir1_v, where = placement(labels[0])
+        return (
+            lead + f"encoder with ABTT ({ft_assign_v:.1f} and {ft_dir1_v:.1f}) "
+            f"is {where} ({assign.min():.1f} to {assign.max():.1f} "
+            f"and {dir1.min():.1f} to {dir1.max():.1f})."
+        )
+    placements = []
+    for label in labels:
+        ft_assign_v, ft_dir1_v, where = placement(label)
+        placements.append(
+            f"{where} for {short_name(label)} ({ft_assign_v:.1f} and {ft_dir1_v:.1f})"
+        )
+    return (
+        lead + "encoders with ABTT sit " + _and_list(placements)
         + f", against cells spanning {assign.min():.1f} to {assign.max():.1f} "
         f"and {dir1.min():.1f} to {dir1.max():.1f}."
     )

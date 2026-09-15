@@ -48,7 +48,7 @@ OUT_DIR="$REPO_ROOT/runs/active/resubmit/finetune/qwen3_0.6b"
 LATA_OUT_DIR="$REPO_ROOT/runs/active/resubmit/finetune"
 BASES_ROOT="$REPO_ROOT/runs/active/resubmit_finetune_bases"
 RESULTS_DIR="$REPO_ROOT/runs/active/resubmit/results/finetune"
-TEX_OUT="$CODE_ROOT/overleaf_drafts/tables/finetune_ceiling.tex"
+TEX_OUT="${TEX_OUT:-$CODE_ROOT/overleaf_drafts/tables/finetune_ceiling.tex}"
 
 mkdir -p "$RESULTS_DIR"
 

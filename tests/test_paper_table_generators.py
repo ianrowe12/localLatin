@@ -172,7 +172,7 @@ def test_task_b_comparison_states_the_ceiling_as_a_finding():
     # fine-tuned + ABTT 0.83 / 0.81, so below every zero-shot ABTT cell.
     sentence = bht.task_b_comparison(best, _lexical_frame(), _finetune_frame())
     assert "TF-IDF char 3--5 is below the best ABTT cell (80.0 against 91.0" in sentence
-    assert "sits below every zero-shot ABTT cell for LaTa (83.0 and 81.0)" in sentence
+    assert "is below every zero-shot ABTT cell" in sentence
 
 
 def test_both_headline_captions_share_the_finetune_pairs_clause():
@@ -280,6 +280,21 @@ def test_reference_caption_names_every_fine_tuned_model():
     assert "LaTa and Qwen3-0.6B fine-tuned contrastively on 499 of the 565" in caption
     assert "encoders' AUROC 0.980 to 0.980 for LaTa" in caption
     assert "for Qwen3-0.6B" in caption
+
+
+def test_a_single_ceiling_keeps_the_published_wording():
+    """Adding the second-model machinery must not rewrite a shipped caption."""
+    best_a = bht.best_rows(_results_frame(), "hidden", "train_aucroc")
+    best_b = bht.best_rows(_results_frame(), "hidden", "train_dir_acc_at_1")
+    one = _finetune_frame(FT_LATA)
+    assert (
+        "ABTT moves the fine-tuned encoder's AUROC from 0.980 to 0.980 while "
+        "moving its gap from 0.380 to 0.380."
+    ) in bht.task_a_comparison(best_a, _lexical_frame(), one)
+    assert (
+        "the fine-tuned encoder with ABTT (83.0 and 81.0) is below every "
+        "zero-shot ABTT cell (91.0 to 91.0 and 90.0 to 90.0)."
+    ) in bht.task_b_comparison(best_b, _lexical_frame(), one)
 
 
 def test_pairs_clause_drops_the_numbers_when_the_runs_disagree():
