@@ -147,6 +147,9 @@ def test_lexical_rows_span_their_metric_block_when_opted_in():
     # The rebuttal variant keeps the framing constraint of issues #119 and #176.
     assert "practitioner's operating point" in caption
     assert "rather than beat it" in caption
+    # The fine-tune clause opens with an acronym; it must not be lowercased
+    # when it follows the lexical clause (review of PR #200).
+    assert "and ABTT moves the fine-tuned encoder's AUROC" in caption
 
 
 def test_finetune_row_leaves_the_sif_columns_empty():

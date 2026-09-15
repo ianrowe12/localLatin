@@ -433,9 +433,7 @@ def task_a_comparison(
     tfidf = _lexical_value(lexical, "TF-IDF char 3-5", "aucroc")
     return (
         f"TF-IDF char 3--5 is {level_word(tfidf - abtt_best, 0.001)} the best "
-        f"ABTT AUROC ({tfidf:.3f} against {abtt_best:.3f}), and "
-        + finetune_clause[0].lower()
-        + finetune_clause[1:]
+        f"ABTT AUROC ({tfidf:.3f} against {abtt_best:.3f}), and " + finetune_clause
     )
 
 
