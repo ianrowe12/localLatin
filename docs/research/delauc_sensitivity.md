@@ -9,6 +9,16 @@ in Table 4.
 this PR.** One recommendation is put to Ian at the end; it would weaken a claim
 rather than strengthen it.
 
+**Update, 2026-09-15 (issue #206, G10).** Ian took the recommendation. The
+metrics stage was re-run at `--random_order_draws 20` into
+`runs/active/ig_examples_200pos_v1/attribution_metrics_draws20/`, which is now
+the run of record for Table 4, its caption, the secondary table, the two sweep
+tables and the `rho_LOO` figure; the 5-draw `attribution_metrics/` is kept
+untouched, and the `predeclared` arm below is still that 5-draw setting, which
+is what Table 4 carried when this memo was written. The per-cell means of the
+new run agree with the `draws20` arm of `cells.csv` to floating-point noise.
+`docs/research/attribution_v1_resample.md` records the old and new cells.
+
 ## Why this run exists
 
 At the 2026-09-14 meeting Prof. Siddique read the second main-table attribution
@@ -288,7 +298,8 @@ case, not an outlier, and not the most flattering one available: the
 `corpus mean` erasure gives 5 sign wins and the `no_empty` filter would give 6.
 
 The one caveat is the tie. The predeclared setting is the only valid arm
-outside `1 draw`, `5% grid` and the two `corpus mean` arms in which LaTa/MaRC
+outside `1 draw`, `5% grid` and the three `corpus mean` arms (`corpus mean
+vector`, `10% + corpus mean`, `corpus mean + both sides`) in which LaTa/MaRC
 reads as a tie rather than a baseline win, and finding 3 above shows why: at
 five draws the reference is noisy enough to hide a -2.2 SE effect. The
 predeclared setting therefore reports 4 wins, 1 tie, 1 loss where a
@@ -306,13 +317,15 @@ Raise `--random_order_draws` from 5 to 20 for the table-generating run, as the
 decision memo's own A8 recommended before Table 4 was produced. The
 consequences, all measured above:
 
-* **Printed numbers do change.** Seven of the twelve cell means move at three
-  decimals: LaTa/IG baseline 0.814 to 0.831, LaTa/MaRC baseline 0.486 to 0.504,
-  PhilTa/IG 0.113/0.400 to 0.114/0.403, PhilTa/MaRC 0.200/0.310 to 0.201/0.313,
-  mT5-base/MaRC ABTT 0.464 to 0.463. The largest move is 0.017, on the two LaTa
-  baseline cells. Table 4 prints the per-variant convention rather than the
-  paired one, so its own 0.842 and 0.506 move by the same amounts. The table
-  would have to be regenerated, not just re-captioned.
+* **Printed numbers do change.** Under the paired convention of this memo,
+  seven of the twelve cell means move at three decimals: LaTa/IG baseline 0.814
+  to 0.831, LaTa/MaRC baseline 0.486 to 0.504, PhilTa/IG 0.113/0.400 to
+  0.114/0.403, PhilTa/MaRC 0.200/0.310 to 0.201/0.313, mT5-base/MaRC ABTT 0.464
+  to 0.463. The largest move is 0.017, on the two LaTa baseline cells. Table 4
+  prints the per-variant convention rather than the paired one, and there
+  eight printed values tick: 0.842 to 0.859, 0.180 to 0.181, 0.506 to 0.524,
+  0.112 to 0.113, 0.400 to 0.403, 0.200 to 0.201, 0.310 to 0.313 and 0.464 to
+  0.463. The table would have to be regenerated, not just re-captioned.
 * The caption's random-order reference range is itself a five-draw quantity and
   would be re-derived. At twenty draws it still prints as 0.692 to 0.961, but
   the individual cell references move by up to 0.018 (LaTa baseline 0.697 to
@@ -321,8 +334,9 @@ consequences, all measured above:
   becomes a resolved -2.10 SE baseline win.
 * The column therefore reads 4 wins and 2 losses instead of 4 wins, 1 tie and 1
   loss.
-* **Nothing qualitative moves.** Every cell keeps its sign and its verdict, and
-  the headline `4/6` is unaffected.
+* **Nothing else moves.** Every cell keeps its sign, the cell ordering is
+  unchanged, and the headline `4/6` is unaffected; the one verdict that changes
+  is the LaTa/MaRC tie of the previous two bullets.
 
 Doing it costs one CPU job plus a regeneration of Table 4 and its caption. Not
 doing it is also defensible: the published number is the predeclared one, the

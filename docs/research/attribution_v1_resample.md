@@ -39,7 +39,7 @@ by a train-only retrieval rule and are unchanged here.
 | Cleaner source | `runs/active/resubmit_bases/phase9_bases/<slug>/hidden_mean_tokempty/` |
 | `pair_manifest.tsv` sha256 | `4fcdaa2be99ebcb279c16d47ce2af158411727df27c5b86414404780a43591c8` |
 | `positive200_examples.csv` sha256 | `4a3399e5b6d1e234b444febc75f7b5a6dfa44da39142adbe0b70ee076364e54a` |
-| New summary | `runs/active/ig_examples_200pos_v1/attribution_metrics/summary_v2.csv` |
+| New summary | `runs/active/ig_examples_200pos_v1/attribution_metrics/summary_v2.csv` (5 draws; superseded for the paper by `attribution_metrics_draws20/summary_v2.csv`, see the 2026-09-15 update) |
 | Old summary (kept, untouched) | `runs/active/ig_examples_200pos_run3_operational/attribution_metrics/summary_v2.csv` |
 
 `pair_manifest_sha256` digests only `(model, query filename, candidate filename,
@@ -238,6 +238,55 @@ changed paper sentence has to carry. Both ties sit inside the generator's 2 SE
 threshold, so the caption names both and no verdict depends on the choice of
 paired over unpaired.
 
+### Update, 2026-09-15: the 20-draw random reference (issue #206, G10)
+
+The `DelAUC gap` numbers above, and the Table 4 this memo first produced, were
+computed with the random-order reference averaged over 5 orderings
+(`DEFAULT_RANDOM_ORDER_DRAWS`). A8 of `attribution_metrics_decision.md` had
+said a table-generating run should use 20, and `delauc_sensitivity.md` then
+measured what 20 changes. Ian took that recommendation on 2026-09-15. The
+metrics stage was re-run at `--random_order_draws 20` over the same 600 NPZs,
+the same `tokenizer_empty` filter and the same seed stream (the first five
+orderings are the ones the 5-draw run used), into a new directory:
+
+| Item | Value |
+|---|---|
+| Run of record | `runs/active/ig_examples_200pos_v1/attribution_metrics_draws20/` (`METRICS_DIR_OF_RECORD`) |
+| Kept, untouched | `runs/active/ig_examples_200pos_v1/attribution_metrics/` (5 draws) |
+| Job | `22098904`, `cpu` partition, elapsed 00:06:33, reserved 01:00:00, no GPU |
+| sbatch | `slurm/ig/attribution_metrics_200pos_v1_draws20.sbatch` |
+| Check | per-cell paired means equal the `draws20` arm of `attribution_metrics/sensitivity/cells.csv` to 7.3e-17 |
+
+`rho_LOO` does not use the reference, and its per-pair values, paired
+statistics and printed cells are bit-identical between the two directories. The
+`DelAUC gap` column, old (5 draws) against new (20 draws), per-variant means as
+Table 4 prints them and the paired ABTT-minus-baseline difference as the
+caption's tie rule reads it:
+
+| Cell | base 5 | base 20 | ABTT 5 | ABTT 20 | paired, 5 draws | paired, 20 draws |
+|---|--:|--:|--:|--:|--:|--:|
+| LaTa/IG | 0.842 | 0.859 | 0.180 | 0.181 | -0.634 +/- 0.078 (-8.1 SE) | -0.651 +/- 0.077 (-8.5 SE) |
+| LaTa/MaRC | 0.506 | 0.524 | 0.327 | 0.327 | **-0.159 +/- 0.089 (-1.8 SE)** | -0.177 +/- 0.084 (-2.1 SE) |
+| PhilTa/IG | 0.112 | 0.113 | 0.400 | 0.403 | +0.287 +/- 0.010 (27.7 SE) | +0.290 +/- 0.010 (28.4 SE) |
+| PhilTa/MaRC | 0.200 | 0.201 | 0.310 | 0.313 | +0.110 +/- 0.014 (7.7 SE) | +0.112 +/- 0.014 (8.0 SE) |
+| mT5-base/IG | 0.061 | 0.061 | 0.561 | 0.561 | +0.500 +/- 0.021 (23.3 SE) | +0.499 +/- 0.021 (24.0 SE) |
+| mT5-base/MaRC | 0.042 | 0.042 | 0.464 | 0.463 | +0.422 +/- 0.023 (18.3 SE) | +0.421 +/- 0.022 (19.4 SE) |
+
+Every sign holds and ABTT still wins 4/6. The one verdict that changes is
+LaTa/MaRC: the 5-draw tie at 1.8 standard errors is a resolved baseline win at
+2.1, so the column reads four wins and two losses, and the caption's tie clause
+now names only `rho` for PhilTa MaRC. The random references move by at most
+0.018 per cell (LaTa baseline 0.697 to 0.715) and the caption's range still
+prints 0.692 to 0.961. The InsAUC gap column of the secondary table uses the
+same reference and ticks at three decimals in eleven of twelve cells, with no
+verdict change; the sweep tables carry no reference-based metric and changed by
+their stamp line only. One paper sentence changed with it, in Section 6.4:
+"chance-corrected deletion faithfulness improves in four of six, with one
+further tie" became "improves in four of six, and both LaTa cells favour the
+baseline, at 2.1 and 8.5 standard errors". The abstract, the contributions
+list, the Discussion and the Limitations quote only the `rho_LOO` tie, which is
+unchanged.
+
 ### Shuffled-attribution control (criterion 5)
 
 | Metric | old positive cells | new positive cells | new failures |
@@ -368,8 +417,11 @@ python scripts/ig/refit_pcs_for_attribution.py \
 # 3. IG + MaRC + persistence (GPU, one job)
 sbatch slurm/ig/run_attribution_200pos_v1.sbatch
 
-# 4. Metrics + operator spot check (CPU)
+# 4. Metrics + operator spot check (CPU), 5 draws: kept for the record
 sbatch slurm/ig/attribution_metrics_200pos_v1.sbatch
+
+# 4b. Metrics at 20 random-order draws (CPU, about 7 minutes): the run of record
+sbatch slurm/ig/attribution_metrics_200pos_v1_draws20.sbatch
 
 # 5. Paper artifacts (defaults resolve to this run, see below)
 python scripts/ig/build_main_attribution_artifacts.py
@@ -378,7 +430,8 @@ python scripts/ig/package_attribution_sweep_appendix.py --strict
 
 **Regenerating the main table needs the per-pair cache.** The caption's tie
 clause is computed from paired per-pair differences under
-`attribution_metrics/v2_hidden/`, which is gitignored and rebuilt by step 4. The
+`attribution_metrics_draws20/v2_hidden/`, which is gitignored and rebuilt by
+step 4b. The
 generator now fails with a clear message if that directory is absent rather than
 silently dropping the clause; `--no_tie_clause` is the explicit opt-out.
 
@@ -386,10 +439,11 @@ silently dropping the clause; `--no_tie_clause` is the explicit opt-out.
 generators kept their module-level default on the run 3 directory and the sbatch
 passed the new path explicitly; a bare rerun therefore rewrote the paper's
 tables from the old sample (issue #201). Since PR #204 both generators build
-their defaults from `RUN_OF_RECORD` in `scripts/ig/attribution_run_of_record.py`
-(this run), every generated table carries a `% source run:` stamp, and a
-generator refuses to overwrite a table stamped with a different run unless
-`--allow_run_change` is passed. `tests/test_paper_table_generators.py` checks
+their defaults from `RUN_OF_RECORD` and, since issue #206,
+`METRICS_DIR_OF_RECORD` in `scripts/ig/attribution_run_of_record.py` (this run,
+`attribution_metrics_draws20`), every generated table carries a
+`% source run: <run>/<metrics dir>` stamp, and a generator refuses to overwrite
+a table stamped with a different source unless `--allow_run_change` is passed. `tests/test_paper_table_generators.py` checks
 that the defaults resolve here and that a bare regeneration reproduces the
 committed tables byte for byte.
 

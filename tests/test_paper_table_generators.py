@@ -539,13 +539,17 @@ TABLES_DIR = REPO_ROOT / "overleaf_drafts" / "tables"
 
 def test_generator_defaults_resolve_under_the_run_of_record(monkeypatch):
     assert aror.RUN_OF_RECORD == "ig_examples_200pos_v1"
+    # Issue #206: the 20-draw metrics pass, written beside the 5-draw one.
+    assert aror.METRICS_DIR_OF_RECORD == "attribution_metrics_draws20"
     assert aror.RUN_OF_RECORD in bmaa.DEFAULT_SUMMARY.parts
+    assert aror.METRICS_DIR_OF_RECORD in bmaa.DEFAULT_SUMMARY.parts
     assert bmaa.DEFAULT_SUMMARY.name == "summary_v2.csv"
 
     monkeypatch.setattr(sys, "argv", ["package_attribution_sweep_appendix.py"])
     args = pasa.parse_args()
     for raw in (args.summary_csv, args.long_out, args.missing_report_out):
         assert aror.RUN_OF_RECORD in Path(raw).parts, raw
+        assert aror.METRICS_DIR_OF_RECORD in Path(raw).parts, raw
         assert "run3" not in raw
     assert Path(args.main_tex_out).parent == TABLES_DIR
     assert Path(args.supplemental_tex_out).parent == TABLES_DIR
@@ -564,7 +568,12 @@ def test_stamped_table_refuses_a_different_run(tmp_path: Path):
     unstamped.write_text("% generated table\n\\begin{table}\n")
     aror.refuse_run_change(unstamped, "run_b")
     aror.refuse_run_change(tmp_path / "absent.tex", "run_b")
-    assert aror.run_name("runs/active/run_c/attribution_metrics/summary_v2.csv") == "run_c"
+    # The stamp names the metrics directory as well as the run (issue #206):
+    # one run can hold two metrics passes whose tables differ.
+    assert aror.run_name("runs/active/run_c/attribution_metrics/summary_v2.csv") == (
+        "run_c/attribution_metrics")
+    assert aror.run_name("runs/active/run_c/attribution_metrics_draws20/summary_v2.csv") == (
+        "run_c/attribution_metrics_draws20")
 
 
 def _skip_unless(path: Path, what: str) -> None:

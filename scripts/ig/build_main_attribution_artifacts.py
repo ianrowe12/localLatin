@@ -1,15 +1,18 @@
 """Build main-text attribution reporting artifacts for the three paper models.
 
 The input is the attribution summary of the run of record, the benchmark v1
-re-sample of issue #187 (``RUN_OF_RECORD`` in ``attribution_run_of_record.py``):
+re-sample of issue #187 scored with a 20-draw random-order reference (issue
+#206; ``RUN_OF_RECORD`` and ``METRICS_DIR_OF_RECORD`` in
+``attribution_run_of_record.py``):
 
-    runs/active/ig_examples_200pos_v1/attribution_metrics/summary_v2.csv
+    runs/active/ig_examples_200pos_v1/attribution_metrics_draws20/summary_v2.csv
 
 together with its gitignored per-pair cache ``v2_hidden/`` for the caption's tie
-clause. Every table written here carries a ``% source run:`` stamp and the
-generator refuses to overwrite a table stamped with a different run unless
-``--allow_run_change`` is passed (issue #201), so a bare rerun cannot rewrite
-the paper's numbers from an older sample.
+clause. Every table written here carries a ``% source run:`` stamp naming the
+run and the metrics directory, and the generator refuses to overwrite a table
+stamped with a different source unless ``--allow_run_change`` is passed (issue
+#201), so a bare rerun cannot rewrite the paper's numbers from an older sample
+or from the 5-draw pass kept beside this one.
 
 Outputs:
 

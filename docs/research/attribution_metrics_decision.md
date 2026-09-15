@@ -500,6 +500,17 @@ independent review of PR #135 reproduced stays bit-identical; the
 `--random_order_draws` flag exists and a table-generating run for the paper
 should use 20.
 
+**Applied, 2026-09-15 (issue #206, decision by Ian).** The benchmark v1
+table-generating run now uses 20 draws:
+`runs/active/ig_examples_200pos_v1/attribution_metrics_draws20/` is the run of
+record (`METRICS_DIR_OF_RECORD` in `scripts/ig/attribution_run_of_record.py`),
+and the 5-draw pass in `attribution_metrics/` beside it is kept for the record.
+`docs/research/delauc_sensitivity.md` measured the effect before the change was
+made and `docs/research/attribution_v1_resample.md` lists the old and new
+`DelAUC gap` cells: every sign and the 4/6 count hold, and the LaTa/MaRC cell
+moves from a tie at 1.8 standard errors to a baseline win at 2.1. Every number
+in this memo is from the run 3 sample at 5 draws and is unchanged.
+
 ---
 
 # Part B. Selection for the main table
