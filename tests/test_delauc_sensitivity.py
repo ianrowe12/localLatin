@@ -21,6 +21,7 @@ and each has a test here.
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -43,6 +44,7 @@ from run_delauc_sensitivity import (  # noqa: E402
     del_auc_gap,
     deletion_grid,
     paired_cells,
+    verify_against_cache,
     summarise_configs,
     verdict,
 )
@@ -314,3 +316,92 @@ def test_paper_does_not_input_the_table_yet():
 ])
 def test_fmt_does_not_print_a_negative_zero(value, expected):
     assert tablegen.fmt(value, 2) == expected
+
+
+def _cache_dir(tmp_path, values):
+    """A minimal v2_hidden-shaped per-pair JSON cache."""
+    root = tmp_path / "v2_hidden" / "slug"
+    root.mkdir(parents=True)
+    for tag, rows in values.items():
+        (root / f"{tag}.json").write_text(json.dumps([
+            {"method": view, "variant": variant, "del_auc_gap": gap}
+            for view, variant, gap in rows
+        ]))
+    return tmp_path / "v2_hidden"
+
+
+def _ours(rows):
+    return pd.DataFrame([
+        {"config": PREDECLARED.name, "example_tag": tag, "view": view,
+         "variant": variant, "del_auc_gap": gap}
+        for tag, view, variant, gap in rows
+    ])
+
+
+def test_verify_accepts_an_exact_reproduction(tmp_path):
+    cache = _cache_dir(tmp_path, {"example001": [("ig", "baseline", 0.4),
+                                                 ("ig", "abtt", 0.6)]})
+    report = verify_against_cache(
+        _ours([("example001", "ig", "baseline", 0.4),
+               ("example001", "ig", "abtt", 0.6)]), cache)
+    assert report["agrees"] is True
+    assert report["compared"] == 2
+    assert report["floor_mismatches"] == 0
+
+
+def test_verify_treats_both_undefined_as_agreement(tmp_path):
+    """Both sides below the full-cosine floor is agreement, not a comparison."""
+    cache = _cache_dir(tmp_path, {"example001": [("ig", "baseline", None)]})
+    report = verify_against_cache(
+        _ours([("example001", "ig", "baseline", float("nan"))]), cache)
+    assert report["both_undefined"] == 1
+    assert report["floor_mismatches"] == 0
+    # Nothing numeric was compared, so there is nothing to agree about.
+    assert report["agrees"] is False
+
+
+def test_verify_fails_on_a_one_sided_nan(tmp_path):
+    """The nit from the #202 review: a floor disagreement must not be skipped.
+
+    With NaN-skipping arithmetic this case reported a perfect max_abs_diff,
+    because NaN minus a number is NaN and nanmax ignores it.
+    """
+    cache = _cache_dir(tmp_path, {"example001": [("ig", "baseline", 0.4),
+                                                 ("ig", "abtt", 0.6)]})
+    report = verify_against_cache(
+        _ours([("example001", "ig", "baseline", 0.4),
+               ("example001", "ig", "abtt", float("nan"))]), cache)
+    assert report["agrees"] is False
+    assert report["floor_mismatches"] == 1
+    assert report["floor_mismatch_examples"] == ["example001/ig/abtt"]
+    assert report["max_abs_diff"] == pytest.approx(0.0)
+
+
+def test_verify_fails_on_a_numeric_disagreement(tmp_path):
+    cache = _cache_dir(tmp_path, {"example001": [("ig", "baseline", 0.4)]})
+    report = verify_against_cache(
+        _ours([("example001", "ig", "baseline", 0.5)]), cache)
+    assert report["agrees"] is False
+    assert report["max_abs_diff"] == pytest.approx(0.1)
+
+
+def test_verify_fails_when_the_cache_is_missing_a_row(tmp_path):
+    cache = _cache_dir(tmp_path, {"example001": [("ig", "baseline", 0.4)]})
+    report = verify_against_cache(
+        _ours([("example001", "ig", "baseline", 0.4),
+               ("example002", "ig", "baseline", 0.4)]), cache)
+    assert report["agrees"] is False
+    assert report["missing_from_cache"] == 1
+
+
+def test_committed_verification_report_agrees():
+    """The committed sweep must still be a reproduction of the published run."""
+    path = (REPO_ROOT / "runs/active/ig_examples_200pos_v1/attribution_metrics"
+            / "sensitivity" / "verification.json")
+    if not path.exists():
+        pytest.skip("ci.yml sparse-checkouts without runs/")
+    report = json.loads(path.read_text())
+    assert report["agrees"] is True
+    assert report["missing_from_cache"] == 0
+    assert report["floor_mismatches"] == 0
+    assert report["max_abs_diff"] < 1e-9

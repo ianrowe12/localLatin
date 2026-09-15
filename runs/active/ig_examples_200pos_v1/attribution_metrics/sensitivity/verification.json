@@ -1,6 +1,11 @@
 {
   "compared": 2382,
   "missing_from_cache": 0,
+  "both_undefined": 18,
+  "floor_mismatches": 0,
+  "floor_mismatch_examples": [],
   "max_abs_diff": 1.7763568394002505e-15,
-  "mean_abs_diff": 2.2069294801008044e-17
+  "mean_abs_diff": 4.858653811793067e-17,
+  "tolerance": 1e-09,
+  "agrees": true
 }

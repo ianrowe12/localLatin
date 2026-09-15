@@ -49,13 +49,16 @@ is the same computation re-expressed with the knobs exposed, and the run checks
 that against the published per-pair cache:
 
 ```json
-{"compared": 2382, "missing_from_cache": 0,
- "max_abs_diff": 1.78e-15, "mean_abs_diff": 2.21e-17}
+{"compared": 2382, "missing_from_cache": 0, "both_undefined": 18,
+ "floor_mismatches": 0, "max_abs_diff": 1.78e-15,
+ "mean_abs_diff": 4.86e-17, "tolerance": 1e-09, "agrees": true}
 ```
 
 Every per-pair `del_auc_gap` under the predeclared setting lands on the
 published value to floating-point noise, over all 2,382 defined (pair, view,
-variant) rows. The paired cell statistics follow:
+variant) rows; the 18 rows undefined below the cosine floor are undefined in
+both, and no row is defined in one and not the other. The run raises rather
+than writing a table if any of that fails. The paired cell statistics follow:
 
 | Cell | base | ABTT | paired ABTT - base | Verdict |
 |---|--:|--:|--:|:-:|
@@ -192,12 +195,17 @@ setting, and the Spearman correlation of the six cell values with theirs:
 ## What this says
 
 **1. The step schedule, the draw count and the seed are inert.** A 5% grid
-moves no cell by more than 0.007 and a 20% grid by no more than 0.054, on
-differences that run to 0.63. Changing the seed moves cells by 0.016 at most,
-and going from 5 to 50 random orderings by 0.019. The cell ordering is
-preserved exactly (rank correlation 1.000) in every one of these arms. Whatever
-produces the spread Prof. Siddique asked about, it is not the deletion
-bookkeeping and it is not Monte-Carlo noise in the reference.
+moves no cell's paired difference by more than 0.007 and a 20% grid by no more
+than 0.054, on differences that run to 0.63. Changing the seed moves cells by
+0.016 at most, and going from 5 to 50 random orderings by 0.019. The cell
+ordering is preserved exactly (rank correlation 1.000) in every one of these
+arms. Whatever produces the spread Prof. Siddique asked about, it is not the
+deletion bookkeeping and it is not Monte-Carlo noise in the reference.
+
+"Inert" here means no verdict, no sign and no ordering moves. It does not mean
+the printed numbers are identical: a 0.017 shift is visible at the three
+decimals Table 4 prints, and the recommendation section below states exactly
+which cells that reaches.
 
 **2. The draw count does move one thing: the standard error, and therefore the
 one tie.** LaTa/MaRC is the cell the Table 4 caption names as a tie. Its
@@ -271,13 +279,13 @@ the metric's bookkeeping.
 **Yes, on the win count, and mildly optimistic on the loss count.**
 
 Over the eighteen configurations that pool the vectors the components were
-fitted on, ABTT's win count under the two-standard-error rule is 4 in eleven of
-them and 3 in the other seven; the median and the mode are both 4, and the
-predeclared setting gives 4. On the published sign convention the range is 3 to
-5, median 4, and the predeclared setting again gives 4. The predeclared setting
-is a median case, not an outlier, and not the most flattering one available:
-the `corpus mean` erasure gives 5 sign wins and the `no_empty` filter would
-give 6.
+fitted on, ABTT's win count under the two-standard-error rule is 4 in twelve of
+them and 3 in the other six; the median and the mode are both 4, and the
+predeclared setting gives 4. On the published sign convention the counts are 4
+in eleven arms, 3 in five and 5 in two, so the range is 3 to 5 with median 4,
+and the predeclared setting again gives 4. The predeclared setting is a median
+case, not an outlier, and not the most flattering one available: the
+`corpus mean` erasure gives 5 sign wins and the `no_empty` filter would give 6.
 
 The one caveat is the tie. The predeclared setting is the only valid arm
 outside `1 draw`, `5% grid` and the two `corpus mean` arms in which LaTa/MaRC
@@ -298,18 +306,30 @@ Raise `--random_order_draws` from 5 to 20 for the table-generating run, as the
 decision memo's own A8 recommended before Table 4 was produced. The
 consequences, all measured above:
 
-* No cell mean moves by more than 0.017, so no number in the table changes at
-  the printed precision except through rounding.
+* **Printed numbers do change.** Seven of the twelve cell means move at three
+  decimals: LaTa/IG baseline 0.814 to 0.831, LaTa/MaRC baseline 0.486 to 0.504,
+  PhilTa/IG 0.113/0.400 to 0.114/0.403, PhilTa/MaRC 0.200/0.310 to 0.201/0.313,
+  mT5-base/MaRC ABTT 0.464 to 0.463. The largest move is 0.017, on the two LaTa
+  baseline cells. Table 4 prints the per-variant convention rather than the
+  paired one, so its own 0.842 and 0.506 move by the same amounts. The table
+  would have to be regenerated, not just re-captioned.
+* The caption's random-order reference range is itself a five-draw quantity and
+  would be re-derived. At twenty draws it still prints as 0.692 to 0.961, but
+  the individual cell references move by up to 0.018 (LaTa baseline 0.697 to
+  0.715).
 * The caption's tie clause loses `DelAUC gap for LaTa MaRC`, because that cell
   becomes a resolved -2.10 SE baseline win.
 * The column therefore reads 4 wins and 2 losses instead of 4 wins, 1 tie and 1
-  loss. The headline `4/6` is unaffected.
+  loss.
+* **Nothing qualitative moves.** Every cell keeps its sign and its verdict, and
+  the headline `4/6` is unaffected.
 
-Doing it costs one CPU job. Not doing it is also defensible: the published
-number is the predeclared one, the caption's tie is an honest statement of what
-five draws can resolve, and re-running to convert a tie into a loss is not a
-change a reader benefits from mid-resubmission. **This memo does not make the
-change. It records the finding and leaves the call to Ian.**
+Doing it costs one CPU job plus a regeneration of Table 4 and its caption. Not
+doing it is also defensible: the published number is the predeclared one, the
+caption's tie is an honest statement of what five draws can resolve, and
+re-running to move seven printed means by at most 0.017 and convert a tie into
+a loss is not a change a reader benefits from mid-resubmission. **This memo
+does not make the change. It records the finding and leaves the call to Ian.**
 
 If the change is taken, `docs/research/attribution_metrics_decision.md` A8 and
 `docs/research/attribution_v1_resample.md` both need a line saying the

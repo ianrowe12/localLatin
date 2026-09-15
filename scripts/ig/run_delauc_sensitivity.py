@@ -499,13 +499,21 @@ def summarise_configs(cells: pd.DataFrame, configs: Sequence[DelAucConfig]) -> p
     return df.sort_values("config", key=lambda s: s.map(order)).reset_index(drop=True)
 
 
-def verify_against_cache(per_pair: pd.DataFrame, cache_root: Path) -> dict:
+def verify_against_cache(per_pair: pd.DataFrame, cache_root: Path,
+                         tolerance: float = 1e-9) -> dict:
     """Does the predeclared configuration reproduce the published per-pair cache?
 
     The point of the check is that the sweep's own reimplementation of the
     metric is not a second opinion but the same computation: if the predeclared
     row does not land on the published numbers, nothing downstream of it means
     anything.
+
+    A pair that is undefined under both (below ``FULL_COS_FLOOR``) agrees. A
+    pair undefined under exactly one of them is a **disagreement about the
+    floor**, counted in ``floor_mismatches`` rather than folded into the
+    numeric difference: NaN minus a number is NaN, and any max that skips NaNs
+    would report perfect agreement for a run that had silently changed which
+    pairs it scores at all.
     """
     published: Dict[Tuple[str, str, str], float] = {}
     for path in sorted(cache_root.rglob("*.json")):
@@ -517,23 +525,41 @@ def verify_against_cache(per_pair: pd.DataFrame, cache_root: Path) -> dict:
             if row.get("method") in VIEWS and "del_auc_gap" in row:
                 published[(path.stem, str(row["method"]), str(row["variant"]))] = row["del_auc_gap"]
     ours = per_pair[per_pair["config"] == PREDECLARED.name]
-    diffs = []
+    diffs: List[float] = []
     missing = 0
+    both_undefined = 0
+    floor_mismatches: List[str] = []
     for row in ours.itertuples():
         key = (row.example_tag, row.view, row.variant)
         if key not in published:
             missing += 1
             continue
-        a, b = row.del_auc_gap, published[key]
-        if not np.isfinite(a) and not np.isfinite(b):
+        # The driver writes NaN through ``json.dumps``, which emits the
+        # non-standard ``NaN`` literal that ``json.loads`` reads back as a
+        # float; a stricter writer would emit ``null``. Both mean "undefined".
+        a = float(row.del_auc_gap) if row.del_auc_gap is not None else float("nan")
+        b = float(published[key]) if published[key] is not None else float("nan")
+        a_ok, b_ok = np.isfinite(a), np.isfinite(b)
+        if not a_ok and not b_ok:
+            both_undefined += 1
             continue
-        diffs.append(abs(float(a) - float(b)))
+        if a_ok != b_ok:
+            floor_mismatches.append("/".join(key))
+            continue
+        diffs.append(abs(a - b))
     arr = np.asarray(diffs, dtype=float)
+    max_abs = float(arr.max()) if len(arr) else float("nan")
     return {
         "compared": int(len(arr)),
         "missing_from_cache": int(missing),
-        "max_abs_diff": float(np.nanmax(arr)) if len(arr) else float("nan"),
-        "mean_abs_diff": float(np.nanmean(arr)) if len(arr) else float("nan"),
+        "both_undefined": int(both_undefined),
+        "floor_mismatches": len(floor_mismatches),
+        "floor_mismatch_examples": floor_mismatches[:10],
+        "max_abs_diff": max_abs,
+        "mean_abs_diff": float(arr.mean()) if len(arr) else float("nan"),
+        "tolerance": tolerance,
+        "agrees": bool(len(arr) and missing == 0 and not floor_mismatches
+                       and max_abs <= tolerance),
     }
 
 
@@ -641,6 +667,14 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         report = verify_against_cache(per_pair, Path(args.verify_cache))
         (out_dir / "verification.json").write_text(json.dumps(report, indent=2))
         print(f"\nPredeclared vs published cache: {report}")
+        if not report["agrees"]:
+            # The sweep's outputs are already on disk, which is deliberate:
+            # a disagreement is something to diff, not something to lose. But
+            # it must not pass silently into a table.
+            raise RuntimeError(
+                "the predeclared configuration does not reproduce the published "
+                f"per-pair cache at {args.verify_cache}; every other row of the "
+                f"sweep is measured against it. Report: {report}")
 
 
 if __name__ == "__main__":
