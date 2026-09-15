@@ -207,6 +207,33 @@ class AutoHighlight(BaseModel):
     query_idx: int
     ig_score: float
     matches: List[TopMatch]
+    # Word this highlight belongs to, or None when the pieces could not be
+    # grouped. The frontend outlines the word rather than the piece (issue
+    # #211), so a highlight that names `##scop` still points at `Episcopus`.
+    word_idx: Optional[int] = None
+
+
+class WordSpan(BaseModel):
+    """One word of the original text, and the model pieces that make it up.
+
+    The display unit for highlights (issue #211). ``piece_indices`` index the
+    same arrays as ``query_tokens`` / ``candidate_tokens``, so a client can
+    toggle between words and pieces without a second request.
+    """
+
+    idx: int
+    text: str
+    piece_indices: List[int] = Field(default_factory=list)
+    # Aggregated attribution for this word under the response's
+    # `word_aggregation`: the net sum of its pieces, or the single
+    # largest-magnitude piece under "max".
+    score: float = 0.0
+    # Summed separately and always reported: a word whose pieces argue both
+    # ways is not the same thing as a word nothing lands on, and the net sum
+    # cannot tell them apart.
+    score_pos: float = 0.0
+    score_neg: float = 0.0
+    is_content: bool = True
 
 
 class TokenMapResponse(BaseModel):
@@ -243,6 +270,39 @@ class TokenMapResponse(BaseModel):
     # persisted); useful for explaining why a token was down-weighted.
     query_sif_weights: Optional[List[float]] = None
     candidate_sif_weights: Optional[List[float]] = None
+
+    # --- Which variant the highlights actually describe (issues #211, #216) ---
+    # The variant the caller asked for, echoed back; None when unfiltered.
+    variant_requested: Optional[str] = None
+    # The variant whose attribution vector backs `auto_highlights`, the word
+    # scores and `query_attribution` / `candidate_attribution`. Equal to
+    # `variant_requested` whenever the artifact carries it. When it is not, this
+    # says so rather than letting the reviewer read another pipeline's
+    # highlights under their own pipeline's label: `abtt` and `sif_abtt` agree
+    # on only 44 to 78 percent of the top five slots per model.
+    variant_served: Optional[str] = None
+    # "ig" or "retrieval_mark": which family of vectors the highlights came
+    # from. MaRC is used only where the artifact has no IG for the variant and
+    # carries a usable mask (the deployed Qwen gallery masks are ~92 percent
+    # NaN and are rejected here, issue #216).
+    attribution_source: Optional[str] = None
+    query_attribution: List[float] = Field(default_factory=list)
+    candidate_attribution: List[float] = Field(default_factory=list)
+
+    # --- Word-level display (issue #211) ---
+    query_words: List[WordSpan] = Field(default_factory=list)
+    candidate_words: List[WordSpan] = Field(default_factory=list)
+    # How the pieces were grouped, reported at the weaker of the two sides:
+    # "text" (aligned to the original file), "markers" (the tokenizer's own
+    # boundary markers) or "pieces" (no boundary evidence; one word per piece).
+    word_segmentation: Optional[str] = None
+    # "sum" (default) or "max"; see WordSpan.score.
+    word_aggregation: str = "sum"
+    # The same grids as `similarity_matrix` / `pair_matrices`, aggregated to
+    # words. Cosine is aggregated by largest magnitude rather than summed,
+    # which would reward a long word for being long.
+    word_similarity_matrix: Optional[List[List[float]]] = None
+    word_pair_matrices: Dict[str, Dict[str, List[List[float]]]] = Field(default_factory=dict)
 
 
 class TokenMapExampleSummary(BaseModel):

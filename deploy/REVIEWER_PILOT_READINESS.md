@@ -119,6 +119,7 @@ Per-variant checks (read-only, always run):
 - `/api/query/{id}/predictions?variant=` returns a non-empty ranked list for each variant and echoes the variant it served.
 - The same request with no `?variant=` serves the deployment's configured default.
 - `/api/token_map/{id}?method=ig&variant=` returns non-empty `query_tokens` and an `ig` matrix for each of the four attribution variants (`baseline`/`abtt`/`sif`/`sif_abtt` — the artifacts call the uncorrected variant `baseline` where the CSVs call it `raw`).
+- `/api/token_map/{id}?method=ig&variant=` for the default variant reports `variant_served == variant_requested`, and its `query_words` contain at least one word built from more than one model piece. The first is the highlight following the reviewer's pipeline rather than a fixed preference order (issue #216); the second is the word-level grouping actually running on the deployed artifacts (issue #211). A failure here means the highlights are back to one outline per subword piece, or are describing another pipeline's evidence.
 
 To verify DB write/read intentionally, add:
 

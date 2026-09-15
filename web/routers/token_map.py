@@ -34,6 +34,8 @@ AttributionMethodName = Literal[
 # artifact vocabulary; the single raw<->baseline translation point lives in the
 # frontend (`toAttributionVariant` in src/api/variants.ts).
 AttributionVariantName = Literal["baseline", "abtt", "sif", "sif_abtt"]
+# How the pieces of a word are combined for the word-level display (issue #211).
+WordAggregationName = Literal["sum", "max"]
 
 MethodParam = Query(
     None,
@@ -45,8 +47,17 @@ MethodParam = Query(
 VariantParam = Query(
     None,
     description=(
-        "Serialise only this attribution variant's matrices. "
-        "Omit to receive every variant present in the artifact."
+        "Serialise only this attribution variant's matrices, and draw the "
+        "highlights from this variant's attribution vector. The response "
+        "reports what it actually served in `variant_served`."
+    ),
+)
+WordAggregationParam = Query(
+    "sum",
+    description=(
+        "How a word's piece attributions are combined for the word-level "
+        "display: 'sum' (default, positive and negative summed separately) or "
+        "'max' (the single largest-magnitude piece)."
     ),
 )
 
@@ -75,10 +86,14 @@ async def get_token_map(
     example_id: int,
     method: AttributionMethodName | None = MethodParam,
     variant: AttributionVariantName | None = VariantParam,
+    word_aggregation: WordAggregationName = WordAggregationParam,
     store: DataStore = Depends(get_store),
     current_user: UserPublic = Depends(get_current_user),
 ) -> TokenMapResponse:
-    result = token_map_svc.load_token_map(store, example_id, method=method, variant=variant)
+    result = token_map_svc.load_token_map(
+        store, example_id, method=method, variant=variant,
+        word_aggregation=word_aggregation,
+    )
     if result is None:
         raise ExampleNotFoundError(example_id)
     return result
@@ -91,6 +106,7 @@ async def get_token_map_by_query(
     model: str = Query("", description="Model slug (optional, narrows lookup)"),
     method: AttributionMethodName | None = MethodParam,
     variant: AttributionVariantName | None = VariantParam,
+    word_aggregation: WordAggregationName = WordAggregationParam,
     store: DataStore = Depends(get_store),
     current_user: UserPublic = Depends(get_current_user),
 ) -> TokenMapResponse:
@@ -111,7 +127,10 @@ async def get_token_map_by_query(
     )
     if example_id is None:
         raise ExampleNotFoundError(f"{file_id}/{candidate_dir}")
-    result = token_map_svc.load_token_map(store, example_id, method=method, variant=variant)
+    result = token_map_svc.load_token_map(
+        store, example_id, method=method, variant=variant,
+        word_aggregation=word_aggregation,
+    )
     if result is None:
         raise ExampleNotFoundError(example_id)
     return result

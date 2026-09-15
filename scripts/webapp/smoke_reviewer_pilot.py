@@ -425,6 +425,59 @@ def check_token_map_per_variant(client: SmokeClient, example_id: int, variants: 
     print(f"  token maps OK for example {example_id} across {len(variants)} variants")
 
 
+def check_token_map_word_highlights(
+    client: SmokeClient, example_id: int, variant: str
+) -> None:
+    """Read-only: the token map serves the variant asked for, grouped into words.
+
+    Two properties of the reviewer-facing highlight, both from issue #211 and
+    item 2 of issue #216, and both invisible in a response that merely comes
+    back 200:
+
+    * ``variant_served`` equals the variant requested. It used to be whatever a
+      fixed preference order put first, and `abtt` and `sif_abtt` agree on only
+      44 to 78 percent of the top five highlighted slots per model.
+    * at least one word on the query side spans more than one model piece, which
+      is what proves the deployed artifact's pieces were actually grouped rather
+      than passed through one per word.
+    """
+    attribution = ATTRIBUTION_VARIANT.get(variant, variant)
+    params = urlencode({"method": "ig", "variant": attribution})
+    token_map = client.json("GET", f"/api/token_map/{example_id}?{params}")
+
+    served = token_map.get("variant_served")
+    if token_map.get("variant_requested") != attribution:
+        raise RuntimeError(
+            f"token_map {example_id} echoed variant_requested "
+            f"{token_map.get('variant_requested')!r}, asked for {attribution!r}"
+        )
+    if served != attribution:
+        raise RuntimeError(
+            f"token_map {example_id} served the {served!r} attribution for a "
+            f"{attribution!r} request — the highlights would describe another "
+            "pipeline than the ranking on screen"
+        )
+
+    words = token_map.get("query_words") or []
+    if not words:
+        raise RuntimeError(
+            f"token_map {example_id} carries no query_words: the highlights "
+            "would still be per subword piece"
+        )
+    multi = [w for w in words if len(w.get("piece_indices") or []) > 1]
+    if not multi:
+        raise RuntimeError(
+            f"token_map {example_id} grouped no word from more than one piece "
+            f"({len(words)} words over {len(token_map.get('query_tokens') or [])} "
+            "pieces) — the deployed artifact's pieces are not being grouped"
+        )
+    print(
+        f"  word highlights OK for example {example_id}: served {served!r}, "
+        f"{len(multi)}/{len(words)} query words span several pieces "
+        f"(segmentation: {token_map.get('word_segmentation')!r})"
+    )
+
+
 def check_notes_round_trip(
     client: SmokeClient,
     query_id: int,
@@ -776,6 +829,7 @@ def main() -> int:
         raise RuntimeError("/api/token_map_examples returned no token-map artifacts")
     example_id = examples[0]["example_id"]
     check_token_map_per_variant(client, example_id, variants)
+    check_token_map_word_highlights(client, example_id, default_variant)
 
     csv_body, csv_headers = client.request("GET", "/api/feedback/export")
     if "text/csv" not in csv_headers.get("Content-Type", ""):
