@@ -315,43 +315,35 @@ describe('no evidence, no assessment', () => {
 })
 
 describe('the pills are the ranking', () => {
-  it('draws actual sparse ranks, including anchored reviewer directories', async () => {
+  it('draws the ranks the ranking actually carries, sparse or not', async () => {
     answers[MODEL] = {
-      predictions: [
-        modelCard(1),
-        reviewerCard(11, 'reviewer-dir-a'),
-        reviewerCard(12, 'reviewer-dir-b', 'Second reviewer directory'),
-      ],
+      predictions: [modelCard(1), modelCard(4), modelCard(7)],
     }
     renderPanel()
 
     await screen.findByTestId('match-pill-1')
-    // No phantom #2..#10, and the reviewer directories keep the ranks the API
-    // anchored them at rather than being renumbered 2 and 3.
+    // No phantom #2, #3, #5...: each pill is a rank the response carries.
     expect(screen.queryByTestId('match-pill-2')).toBeNull()
-    expect(pill(11).textContent).toBe('#11')
-    expect(pill(12).textContent).toBe('#12')
-    expect(
-      screen.getByRole('button', { name: 'Match reviewer directory #11' }),
-    ).toBeTruthy()
+    expect(pill(4).textContent).toBe('#4')
+    expect(pill(7).textContent).toBe('#7')
     expect(screen.getByRole('button', { name: 'Match prediction #1' })).toBeTruthy()
-    // None is a judgement about the model's candidates only.
-    expect(nonePill().textContent).toBe('None of the 1 model candidate')
+    // The blue action is named after the candidates on screen (issue #196).
+    expect(nonePill().textContent).toBe('None of the top 3')
   })
 
-  it('lets a reviewer directory at rank 11 be chosen and saved as rank 11', async () => {
-    answers[MODEL] = { predictions: [modelCard(1), reviewerCard(11, 'reviewer-dir-a')] }
+  it('saves the rank that was pressed, with the directory it named', async () => {
+    answers[MODEL] = { predictions: [modelCard(1), modelCard(2)] }
     renderPanel()
 
-    await userEvent.click(await screen.findByTestId('match-pill-11'))
+    await userEvent.click(await screen.findByTestId('match-pill-2'))
     await userEvent.click(submitButton())
 
     await waitFor(() => expect(posted).toHaveLength(1))
     expect(posted[0]).toMatchObject({
       outcome: 'matched_rank',
-      correct_rank: 11,
-      selected_ranks: [11],
-      expected_candidate_dirs: { '11': 'reviewer-dir-a' },
+      correct_rank: 2,
+      selected_ranks: [2],
+      expected_candidate_dirs: { '2': 'candidate-2' },
       correct_dir: null,
     })
   })
@@ -384,20 +376,20 @@ describe('the pills are the ranking', () => {
 
   it('refuses the whole ranking when no model candidate can be read', async () => {
     // A deployment missing the labelled texts serves model candidates with no
-    // text beside reviewer directories that read fine. There is nothing to
-    // judge the document against, so no pill may be pressed -- and the reason
-    // has to be on screen, or a disabled Submit reads as a broken app.
+    // text at all. There is nothing to judge the document against, so no pill
+    // may be pressed -- and the reason has to be on screen, or a disabled
+    // Submit reads as a broken app.
     answers[MODEL] = {
       predictions: [
         { ...modelCard(1), candidate_files: [] },
-        reviewerCard(11, 'reviewer-dir-a'),
+        { ...modelCard(2), candidate_files: [] },
       ],
     }
     renderPanel()
 
     await screen.findByTestId('match-pill-1')
     expect(pill(1).disabled).toBe(true)
-    expect(pill(11).disabled).toBe(true)
+    expect(pill(2).disabled).toBe(true)
     expect(nonePill().disabled).toBe(true)
     expect(screen.getByTestId('assessment-unavailable').textContent).toContain(
       'No readable candidate evidence',
@@ -405,8 +397,8 @@ describe('the pills are the ranking', () => {
     expect(submitButton().disabled).toBe(true)
 
     // Clicking is refused visibly rather than silently: nothing is drafted.
-    await userEvent.click(pill(11))
-    expect(pill(11).getAttribute('aria-pressed')).toBe('false')
+    await userEvent.click(pill(2))
+    expect(pill(2).getAttribute('aria-pressed')).toBe('false')
     expect(localStorage.getItem(DRAFT_STORAGE_KEY)).toBe('[]')
 
     // Skip with a note is still the way out.
@@ -486,7 +478,7 @@ describe('the pills are the ranking', () => {
           ],
         },
         {
-          ...reviewerCard(11, 'reviewer-dir-a'),
+          ...modelCard(2),
           candidate_files: [{ filename: 'q-a.txt', text: '' }],
           supporting_member: { query_id: 4, filename: 'q-b.txt', score: 0.8 },
         },
@@ -496,7 +488,7 @@ describe('the pills are the ranking', () => {
 
     await screen.findByTestId('match-pill-1')
     expect(pill(1).disabled).toBe(true)
-    expect(pill(11).disabled).toBe(true)
+    expect(pill(2).disabled).toBe(true)
     expect(nonePill().disabled).toBe(true)
     expect(screen.getByTestId('assessment-unavailable').textContent).toContain(
       'No readable candidate evidence',
@@ -516,11 +508,11 @@ describe('the pills are the ranking', () => {
     expect(posted[0]).toMatchObject({ outcome: 'skipped' })
   })
 
-  it('reaches a reviewer directory through its supporting witness', async () => {
-    // A reviewer group opens on the member the backend credits the score to,
-    // which may be neither the first nor the only readable one. The same
-    // reachability rule has to hold there, or a provisional directory becomes
-    // unanswerable for the shape it is most likely to arrive in.
+  it('draws no pill for a reviewer directory left in a stale ranking', async () => {
+    // Issue #196 took reviewer directories out of the ranked list. A response
+    // cached before that release still carries one at the anchored rank 11, and
+    // a pressable "#11" would post a rank the server now refuses -- so the
+    // ranked controls are the model's candidates wherever the array came from.
     answers[MODEL] = {
       predictions: [
         modelCard(1),
@@ -537,29 +529,22 @@ describe('the pills are the ranking', () => {
     }
     renderPanel({ withCenter: true, withList: true })
 
-    await screen.findByTestId('match-pill-11')
-    expect(pill(11).disabled).toBe(false)
-
-    await userEvent.click(
-      screen.getByRole('button', { name: /Reviewer directory .*rank 11/ }),
-    )
-    await screen.findByText('sermo')
-    await userEvent.click(pill(11))
-    await userEvent.click(submitButton())
-    await waitFor(() => expect(posted).toHaveLength(1))
-    expect(posted[0]).toMatchObject({
-      outcome: 'matched_rank',
-      correct_rank: 11,
-      expected_candidate_dirs: { '11': 'reviewer-dir-a' },
-    })
+    await screen.findByTestId('match-pill-1')
+    expect(screen.queryByTestId('match-pill-11')).toBeNull()
+    // None is still an answer about the model's own candidate.
+    expect(nonePill().textContent).toBe('None of the 1 candidate')
   })
 
-  it('records an explicit None without any candidate identity', async () => {
+  it('records an explicit None from the blue action, with no candidate identity', async () => {
+    // Issue #196: the blue control has its own submit, so pressing it and
+    // pressing the panel's Save are not two ways to write the same row. Save
+    // is withheld while None is held, and the action does the writing.
     answers[MODEL] = { predictions: [modelCard(1), modelCard(2)] }
     renderPanel()
 
     await userEvent.click(await screen.findByTestId('match-pill-none'))
-    await userEvent.click(submitButton())
+    expect(submitButton().disabled).toBe(true)
+    await userEvent.click(screen.getByTestId('none-of-top-k-submit'))
 
     await waitFor(() => expect(posted).toHaveLength(1))
     expect(posted[0]).toMatchObject({
@@ -569,32 +554,34 @@ describe('the pills are the ranking', () => {
     })
     expect(posted[0].expected_candidate_dirs).toBeUndefined()
     expect(posted[0].selected_ranks).toBeUndefined()
+    // No key typed, so none is sent: the payload is what it always was.
+    expect(posted[0].ccl_key).toBeUndefined()
   })
 })
 
 describe('a draft remembers what was chosen, not where it sat', () => {
   it('sends every selected rank with the directory the reviewer saw, in click order', async () => {
     answers[MODEL] = {
-      predictions: [modelCard(1), modelCard(2), reviewerCard(11, 'reviewer-dir-a')],
+      predictions: [modelCard(1), modelCard(2), modelCard(3)],
     }
     renderPanel()
 
     await screen.findByTestId('match-pill-1')
     await userEvent.click(screen.getByLabelText('Select multiple'))
-    await userEvent.click(pill(11))
+    await userEvent.click(pill(3))
     await userEvent.click(pill(1))
     // Two choices are recorded, but only one directory receives the document,
     // and the reviewer is told which.
-    expect(screen.getByTestId('canonical-choice-note').textContent).toContain('#11')
+    expect(screen.getByTestId('canonical-choice-note').textContent).toContain('#3')
     await userEvent.click(submitButton())
 
     await waitFor(() => expect(posted).toHaveLength(1))
     expect(posted[0]).toMatchObject({
       outcome: 'matched_rank',
       // The first click is the canonical answer, not the lowest rank.
-      correct_rank: 11,
-      selected_ranks: [11, 1],
-      expected_candidate_dirs: { '11': 'reviewer-dir-a', '1': 'candidate-1' },
+      correct_rank: 3,
+      selected_ranks: [3, 1],
+      expected_candidate_dirs: { '3': 'candidate-3', '1': 'candidate-1' },
     })
   })
 
@@ -605,24 +592,24 @@ describe('a draft remembers what was chosen, not where it sat', () => {
         [
           draftKeyFor(2),
           {
-            correctRank: 11,
-            selectedRanks: [11],
-            selections: [{ rank: 11, dirName: 'reviewer-dir-a', source: 'reviewer' }],
+            correctRank: 2,
+            selectedRanks: [2],
+            selections: [{ rank: 2, dirName: 'candidate-old', source: 'model' }],
             notes: 'matches the homily',
           },
         ],
       ]),
     )
     answers[MODEL] = {
-      predictions: [modelCard(1), reviewerCard(11, 'reviewer-dir-b', 'Another one')],
+      predictions: [modelCard(1), modelCard(2, 'candidate-new')],
     }
     renderPanel()
 
-    await screen.findByTestId('match-pill-11')
-    expect(pill(11).getAttribute('aria-pressed')).toBe('false')
+    await screen.findByTestId('match-pill-2')
+    expect(pill(2).getAttribute('aria-pressed')).toBe('false')
     const notice = await screen.findByTestId('assessment-notice')
-    expect(notice.textContent).toContain('reviewer-dir-b')
-    expect(notice.textContent).toContain('reviewer-dir-a')
+    expect(notice.textContent).toContain('candidate-new')
+    expect(notice.textContent).toContain('candidate-old')
     expect(submitButton().disabled).toBe(true)
     // The note survives; only the choice that lost its meaning is gone.
     expect(notesBox().value).toBe('matches the homily')
@@ -668,19 +655,19 @@ describe('a draft remembers what was chosen, not where it sat', () => {
       model_slug: MODEL,
       variant: 'sif_abtt',
       outcome: 'matched_rank',
-      correct_rank: 11,
-      correct_dir: 'reviewer-dir-a',
-      selected_ranks: [11, 1],
+      correct_rank: 2,
+      correct_dir: 'candidate-2',
+      selected_ranks: [2, 1],
       notes: 'two readings',
       reviewer: 'Bob Bibliothecarius',
       reviewer_account_id: 2,
       reviewer_username: 'bob',
       schema_version: 2,
     }
-    answers[MODEL] = { predictions: [modelCard(1), reviewerCard(11, 'reviewer-dir-a')] }
+    answers[MODEL] = { predictions: [modelCard(1), modelCard(2)] }
     renderPanel()
 
-    await waitFor(() => expect(pill(11).getAttribute('aria-pressed')).toBe('true'))
+    await waitFor(() => expect(pill(2).getAttribute('aria-pressed')).toBe('true'))
     expect(pill(1).getAttribute('aria-pressed')).toBe('false')
     expect(pill(1).getAttribute('data-unconfirmed')).toBe('true')
     // A half-confirmed answer is not saved as its confirmed half.
@@ -699,9 +686,9 @@ describe('a draft remembers what was chosen, not where it sat', () => {
     await userEvent.click(submitButton())
     await waitFor(() => expect(posted).toHaveLength(1))
     expect(posted[0]).toMatchObject({
-      correct_rank: 11,
-      selected_ranks: [11, 1],
-      expected_candidate_dirs: { '11': 'reviewer-dir-a', '1': 'candidate-1' },
+      correct_rank: 2,
+      selected_ranks: [2, 1],
+      expected_candidate_dirs: { '2': 'candidate-2', '1': 'candidate-1' },
     })
   })
 
@@ -812,19 +799,19 @@ describe('drafts belong to a reviewer', () => {
 
 describe('save failures', () => {
   it('promises an empty log only when the server refused before writing', async () => {
-    answers[MODEL] = { predictions: [modelCard(1), reviewerCard(11, 'reviewer-dir-a')] }
+    answers[MODEL] = { predictions: [modelCard(1), modelCard(2)] }
     postResult = {
       status: 409,
       body: {
         error: {
           code: 'CANDIDATE_IDENTITY_CHANGED',
-          message: 'Rank 11 now resolves to a different directory.',
+          message: 'Rank 2 now resolves to a different directory.',
         },
       },
     }
     renderPanel()
 
-    await userEvent.click(await screen.findByTestId('match-pill-11'))
+    await userEvent.click(await screen.findByTestId('match-pill-2'))
     await userEvent.type(notesBox(), 'same incipit')
     await userEvent.click(submitButton())
 
@@ -835,9 +822,9 @@ describe('save failures', () => {
     expect(error.getAttribute('data-outcome')).toBe('rejected')
     expect(error.textContent).toContain('Nothing was saved')
     // The answer is still on screen, still theirs to resubmit or revise.
-    expect(pill(11).getAttribute('aria-pressed')).toBe('true')
+    expect(pill(2).getAttribute('aria-pressed')).toBe('true')
     expect(notesBox().value).toBe('same incipit')
-    expect(storedDrafts()[draftKeyFor(2)]).toMatchObject({ correctRank: 11 })
+    expect(storedDrafts()[draftKeyFor(2)]).toMatchObject({ correctRank: 2 })
 
     const before = predictionRequests
     await userEvent.click(screen.getByTestId('assessment-refresh-ranking'))
@@ -845,15 +832,15 @@ describe('save failures', () => {
     // The reload returns the same directory at the same rank, which is the
     // same candidate however many requests have been made since: a refresh
     // must not cost the reviewer their answer.
-    await waitFor(() => expect(pill(11).getAttribute('aria-pressed')).toBe('true'))
+    await waitFor(() => expect(pill(2).getAttribute('aria-pressed')).toBe('true'))
     expect(screen.queryByTestId('assessment-notice')).toBeNull()
 
     postResult = { status: 200, body: { success: true } }
     await userEvent.click(submitButton())
     await waitFor(() => expect(posted).toHaveLength(2))
     expect(posted[1]).toMatchObject({
-      correct_rank: 11,
-      expected_candidate_dirs: { '11': 'reviewer-dir-a' },
+      correct_rank: 2,
+      expected_candidate_dirs: { '2': 'candidate-2' },
     })
   })
 

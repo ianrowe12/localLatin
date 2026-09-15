@@ -8,15 +8,17 @@ import pytest
 
 from web.services.data_store import DataStore
 from web.services.qq_matrix import QQMatrix
-from web.services.reviewer_dirs import candidates_for_query, packet_dirs_for_query
+from web.services.reviewer_dirs import (
+    packet_dirs_for_query,
+    unranked_candidates_for_query,
+)
 from web.tests.test_reviewer_dirs import (
     F16_080,
     _build_matrix,
     _create_dir,
+    _join_by_key,
     _reviewer_card,
     _signed_in,
-    _submit_match,
-    before_rank,
 )
 
 
@@ -25,7 +27,7 @@ def test_second_member_supports_the_score_without_reordering_files(
 ) -> None:
     client = _signed_in(tmp_path)
     try:
-        created = _create_dir(client, 2)
+        created = _create_dir(client, 2, "CTOU.567.16")
         dir_id = created["dir_id"]
         seed_only = _reviewer_card(client, query_id=1, dir_id=dir_id)
         assert seed_only["score"] == 0.199951171875
@@ -34,13 +36,13 @@ def test_second_member_supports_the_score_without_reordering_files(
             "filename": "query-2.txt",
             "score": 0.199951171875,
         }
-        _submit_match(client, query_id=0, rank=before_rank(client, 0, dir_id))
+        _join_by_key(client, query_id=0, key="CTOU.567.16")
         before = client.get(f"/api/reviewer_dirs/{dir_id}").json()
         assert before["member_query_ids"] == [2, 0]
 
         card = _reviewer_card(client, query_id=1, dir_id=dir_id)
         assert card["score"] == F16_080
-        assert card["rank"] == 11
+        assert "rank" not in card
         assert card["supporting_member"] == {
             "query_id": 0,
             "filename": "query-0.txt",
@@ -58,17 +60,16 @@ def test_second_member_supports_the_score_without_reordering_files(
                 params={"model": "bowphs/LaTa", "top_k": top_k},
             )
             assert response.status_code == 200, response.text
-            predictions = response.json()["predictions"]
-            assert predictions[-1] == card
+            body = response.json()
+            # The reviewer directory is in its own field at every top_k, and
+            # the model's ranks are the retrieval run's own.
+            assert body["reviewer_dir_candidates"] == [card]
             assert [
                 (p["rank"], p["dir_name"], p["score"], p["supporting_member"])
-                for p in predictions[:-1]
+                for p in body["predictions"]
             ] == [(1, "candidate-a", 0.41, None), (2, "candidate-b", 0.22, None)][:top_k]
 
-        files = client.get(
-            "/api/query/1/predictions/11/candidates",
-            params={"model": "bowphs/LaTa"},
-        )
+        files = client.get(f"/api/candidate_dir/{dir_id}/files")
         assert files.status_code == 200, files.text
         assert files.json() == card["candidate_files"]
         assert client.get(f"/api/reviewer_dirs/{dir_id}").json() == before
@@ -78,15 +79,16 @@ def test_second_member_supports_the_score_without_reordering_files(
             json={
                 "query_id": 1,
                 "model_slug": "bowphs/LaTa",
-                "outcome": "matched_rank",
-                "correct_rank": card["rank"],
-                "correct_dir": "candidate-a",
+                "outcome": "none_of_top_k",
+                "correct_rank": 0,
+                "ccl_key": "CTOU.567.16",
                 "notes": "The second witness supports the group score.",
             },
         )
         assert saved.status_code == 201, saved.text
-        assert saved.json()["correct_dir"] == dir_id
-        assert saved.json()["correct_rank"] == 11
+        assert saved.json()["ccl_key_dir"] == dir_id
+        assert saved.json()["ccl_key_action"] == "joined_reviewer_dir"
+        assert saved.json()["correct_dir"] is None
         assert client.get(f"/api/reviewer_dirs/{dir_id}").json()["member_query_ids"] == [
             2, 0, 1
         ]
@@ -209,14 +211,17 @@ def test_directory_scores_tie_order_cap_ranks_and_packet_shape_stay_unchanged(
         _record("reviewer-dir-unscorable", [3, 999]),
     ][::-1]
     before = deepcopy(records)
-    cards = candidates_for_query(store=store, records=records, qq=qq, query_id=1)
-    assert [(p.rank, p.dir_name, p.score) for p in cards] == [
-        (11, "reviewer-dir-a", F16_080),
-        (12, "reviewer-dir-b", F16_080),
-        (13, "reviewer-dir-c", 0.199951171875),
-        (14, "reviewer-dir-d", 0.199951171875),
-        (15, "reviewer-dir-e", 0.199951171875),
+    cards = unranked_candidates_for_query(
+        store=store, records=records, qq=qq, query_id=1
+    )
+    assert [(p.dir_id, p.score) for p in cards] == [
+        ("reviewer-dir-a", F16_080),
+        ("reviewer-dir-b", F16_080),
+        ("reviewer-dir-c", 0.199951171875),
+        ("reviewer-dir-d", 0.199951171875),
+        ("reviewer-dir-e", 0.199951171875),
     ]
+    assert all(not hasattr(card, "rank") for card in cards)
     assert [p.supporting_member.query_id for p in cards] == [0, 0, 2, 2, 2]
     assert [p.supporting_member.score for p in cards] == [p.score for p in cards]
     assert cards[0].dir_files == ["query-2.txt", "query-0.txt"]
@@ -255,10 +260,11 @@ def test_unavailable_support_keeps_its_identity_and_never_previews_the_seed(
     else:
         del store.unlabelled_texts[0]
     record = _record("reviewer-dir-a", [2, 0])
-    cards = candidates_for_query(store=store, records=[record], qq=qq, query_id=1)
+    cards = unranked_candidates_for_query(
+        store=store, records=[record], qq=qq, query_id=1
+    )
     assert len(cards) == 1
     card = cards[0]
-    assert card.rank == 11
     assert card.score == F16_080
     assert card.supporting_member.model_dump() == {
         "query_id": 0,
@@ -276,7 +282,7 @@ def test_unscorable_members_remain_inspectable_without_becoming_support(
     qq: QQMatrix,
 ) -> None:
     record = _record("reviewer-dir-a", [3, 999, 2])
-    card, = candidates_for_query(
+    card, = unranked_candidates_for_query(
         store=_store(), records=[record], qq=qq, query_id=1
     )
     assert card.supporting_member.query_id == 2

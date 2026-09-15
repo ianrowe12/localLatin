@@ -161,6 +161,12 @@ ATTRIBUTION_VARIANT = {
 # is told to do without anybody noticing.
 EXPECTED_BANDS = {"no_match": 0.5, "verify": 0.7}
 
+#: The retrieval CSVs rank ten labelled directories and nothing else is ranked
+#: beside them (issue #196). Mirrors `MAX_MODEL_RANK` in web/models.py; spelled
+#: out here because this script talks to a deployed host and never imports the
+#: application.
+MAX_MODEL_RANK = 10
+
 # The label on the single reusable reviewer directory the write check owns. It
 # is how a later run recognises the fixture it must reuse instead of creating
 # another, and it tells a reviewer who meets this directory in a candidate list
@@ -251,10 +257,19 @@ def check_reviewer_dir_support(client: SmokeClient, models: list) -> None:
 def check_predictions_carry_reviewer_dirs(
     client: SmokeClient, query_id: int, model: str, variant: str
 ) -> None:
-    """A predictions response carries the seeded_dirs field the new-directory UI reads.
+    """Reviewer directories arrive beside the ranking, never inside it (issue #196).
 
-    Read-only: the field is present and well-typed even when the reviewer has
-    created nothing, which is the state a fresh deploy is in.
+    Three expectations, all read-only and all satisfied by a fresh deploy that
+    has no reviewer directories at all:
+
+    * `seeded_dirs` is present and well-typed (issue #95);
+    * `reviewer_dir_candidates` is present, which is what says the deployed
+      backend has the split rather than the old anchored ranks 11-15;
+    * every entry in `predictions` is a MODEL candidate, and none of them
+      carries a rank above MAX_MODEL_RANK. A reviewer directory numbered
+      alongside the model's answers is the confusion this release removed, so a
+      deploy that reintroduces it must fail here rather than in front of an
+      evaluator.
     """
     params = urlencode({"model": model, "variant": variant, "top_k": 3})
     payload = client.json("GET", f"/api/query/{query_id}/predictions?{params}")
@@ -264,13 +279,38 @@ def check_predictions_carry_reviewer_dirs(
             f"/api/query/{query_id}/predictions has no seeded_dirs list (got {seeded!r}) — "
             "the deployed backend predates issue #95"
         )
+    reviewer_dirs = payload.get("reviewer_dir_candidates")
+    if not isinstance(reviewer_dirs, list):
+        raise RuntimeError(
+            f"/api/query/{query_id}/predictions has no reviewer_dir_candidates list "
+            f"(got {reviewer_dirs!r}) — the deployed backend predates issue #196, so "
+            "reviewer directories would still be served as ranked candidates 11-15"
+        )
+    for entry in reviewer_dirs:
+        if "rank" in entry:
+            raise RuntimeError(
+                f"reviewer directory {entry.get('dir_id')!r} is served with a rank "
+                f"({entry.get('rank')!r}); this block is unranked by design"
+            )
+        if not entry.get("dir_id"):
+            raise RuntimeError("a reviewer directory candidate has no dir_id")
     for prediction in payload.get("predictions") or []:
-        if prediction.get("source") not in ("model", "reviewer"):
+        if prediction.get("source", "model") != "model":
             raise RuntimeError(
                 f"prediction rank {prediction.get('rank')} has source "
-                f"{prediction.get('source')!r}, expected 'model' or 'reviewer'"
+                f"{prediction.get('source')!r}; since issue #196 the ranked list is "
+                "the model's candidates only"
             )
-    print(f"  predictions carry seeded_dirs and per-candidate source for query {query_id}")
+        rank = prediction.get("rank")
+        if not isinstance(rank, int) or not 1 <= rank <= MAX_MODEL_RANK:
+            raise RuntimeError(
+                f"ranked candidate has rank {rank!r}, outside 1..{MAX_MODEL_RANK} — "
+                "only the retrieval run's own candidates may be ranked"
+            )
+    print(
+        f"  predictions carry seeded_dirs and {len(reviewer_dirs)} unranked reviewer "
+        f"directories for query {query_id}; the ranked list is the model's only"
+    )
 
 
 def check_shared_note_shape(client: SmokeClient, query_id: int, model: str, variant: str) -> None:

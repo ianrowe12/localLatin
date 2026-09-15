@@ -40,18 +40,19 @@ function modelCard(rank: number, score: number) {
   }
 }
 
-function reviewerCard(rank: number, score: number) {
+/** An unranked reviewer directory, as the API serves one since issue #196. */
+function reviewerCard(score: number, dirId = 'reviewer-dir-1') {
   return {
-    rank,
-    dir_name: 'reviewer-dir-1',
+    dir_id: dirId,
+    label: 'Unattested homily',
+    ccl_key: '',
     score,
     dir_files: ['query-3.txt'],
     preview_text: 'seed text',
     candidate_files: [{ filename: 'query-3.txt', text: 'seed text' }],
-    source: 'reviewer' as const,
-    label: 'Unattested homily',
     created_by: 'Abigail',
     seed_query_id: 3,
+    member_query_ids: [3],
   }
 }
 
@@ -59,6 +60,7 @@ function reviewerCard(rank: number, score: number) {
 let predictions: {
   predictions: unknown[]
   seeded_dirs: unknown[]
+  reviewer_dir_candidates?: unknown[]
 } = { predictions: [modelCard(1, 0.91)], seeded_dirs: [] }
 
 let posted: { url: string; body: unknown }[] = []
@@ -164,23 +166,31 @@ afterEach(() => {
 // --- distinct candidate card ----------------------------------------------
 
 describe('reviewer directory candidates', () => {
-  it('renders a distinct card, labelled and attributed', async () => {
+  it('renders a distinct card, labelled, attributed and unranked', async () => {
     predictions = {
-      predictions: [modelCard(1, 0.44), reviewerCard(11, 0.62)],
+      predictions: [modelCard(1, 0.44)],
       seeded_dirs: [],
+      reviewer_dir_candidates: [reviewerCard(0.62)],
     }
     renderList()
 
     const card = await screen.findByTestId('reviewer-dir-card-reviewer-dir-1')
     // Distinct from a model card: its own testid, its own accessible name, and
-    // the reviewer's label rather than the opaque directory id.
+    // the reviewer's label rather than the opaque directory id. The accessible
+    // name says outright that it is not ranked (issue #196).
     expect(card.getAttribute('aria-label')).toBe(
-      'Reviewer directory Unattested homily, rank 11',
+      'Reviewer directory Unattested homily, not ranked',
     )
     expect(card.textContent).toContain('Reviewer directory')
     expect(card.textContent).toContain('Unattested homily')
     expect(card.textContent).toContain('Created by Abigail')
     expect(card.textContent).toContain('0.620')
+    expect(card.textContent).not.toContain('11')
+
+    // Under its own heading, not in the ranked list.
+    expect(screen.getByTestId('reviewer-dirs-heading').textContent).toBe(
+      'Directories created by reviewers',
+    )
 
     // The model's own card is still an ordinary prediction card.
     expect(
@@ -189,47 +199,41 @@ describe('reviewer directory candidates', () => {
     expect(screen.queryByTestId('reviewer-dir-card-candidate-1')).toBeNull()
   })
 
-  it('keeps model ranks intact and appends reviewer candidates after them', async () => {
+  it('shows no heading and no block when none is offered', async () => {
+    predictions = { predictions: [modelCard(1, 0.91)], seeded_dirs: [] }
+    renderList()
+    await screen.findByRole('button', { name: /^Prediction rank 1: candidate-1\./ })
+    expect(screen.queryByTestId('reviewer-dirs-heading')).toBeNull()
+  })
+
+  it('keeps every model rank intact beside them', async () => {
     predictions = {
-      predictions: [
-        ...Array.from({ length: 10 }, (_, i) => modelCard(i + 1, 0.9 - i / 100)),
-        reviewerCard(11, 0.61),
-      ],
+      predictions: Array.from({ length: 10 }, (_, i) => modelCard(i + 1, 0.9 - i / 100)),
       seeded_dirs: [],
+      reviewer_dir_candidates: [reviewerCard(0.61)],
     }
     renderList()
 
     await screen.findByTestId('reviewer-dir-card-reviewer-dir-1')
-    // All ten model cards survive the ten-item cap, and the reviewer card is
-    // additional rather than displacing rank 10.
+    // All ten model cards survive, and the reviewer directory displaces none.
     expect(
       screen.getByRole('button', { name: /^Prediction rank 10: candidate-10\./ }),
     ).toBeTruthy()
     expect(
       screen.getByTestId('reviewer-dir-card-reviewer-dir-1').getAttribute('aria-label'),
-    ).toContain('rank 11')
+    ).toContain('not ranked')
   })
 
-  it('arrow keys step across the gap between model and reviewer ranks', async () => {
-    // Ranks are 1, 2 then 11: reviewer cards are anchored, not contiguous, so
-    // stepping numerically would land on rank 3, which has no card.
+  it('arrow keys walk the model ranks only and never reach a reviewer card', async () => {
     predictions = {
-      predictions: [modelCard(1, 0.44), modelCard(2, 0.2), reviewerCard(11, 0.62)],
+      predictions: [modelCard(1, 0.44), modelCard(2, 0.2)],
       seeded_dirs: [],
+      reviewer_dir_candidates: [reviewerCard(0.62)],
     }
     renderList()
     await screen.findByTestId('reviewer-dir-card-reviewer-dir-1')
 
-    await userEvent.keyboard('{ArrowDown}{ArrowDown}')
-    await waitFor(() => {
-      expect(
-        screen
-          .getByTestId('reviewer-dir-card-reviewer-dir-1')
-          .getAttribute('aria-pressed'),
-      ).toBe('true')
-    })
-
-    await userEvent.keyboard('{ArrowUp}')
+    await userEvent.keyboard('{ArrowDown}{ArrowDown}{ArrowDown}')
     await waitFor(() => {
       expect(
         screen
@@ -237,12 +241,18 @@ describe('reviewer directory candidates', () => {
           .getAttribute('aria-pressed'),
       ).toBe('true')
     })
+    expect(
+      screen
+        .getByTestId('reviewer-dir-card-reviewer-dir-1')
+        .getAttribute('aria-pressed'),
+    ).toBe('false')
   })
 
-  it('selects the reviewer card on click', async () => {
+  it('opens a reviewer directory for reading without selecting a rank', async () => {
     predictions = {
-      predictions: [modelCard(1, 0.44), reviewerCard(11, 0.62)],
+      predictions: [modelCard(1, 0.44)],
       seeded_dirs: [],
+      reviewer_dir_candidates: [reviewerCard(0.62)],
     }
     renderList()
 
@@ -256,6 +266,13 @@ describe('reviewer directory candidates', () => {
           .getAttribute('aria-pressed'),
       ).toBe('true')
     })
+    // Reading it is not answering with it: the model's rank 1 stays selected,
+    // and a document is filed here by naming the directory's CCL key instead.
+    expect(
+      screen
+        .getByRole('button', { name: /^Prediction rank 1: candidate-1\./ })
+        .getAttribute('aria-pressed'),
+    ).toBe('false')
   })
 })
 
@@ -367,24 +384,37 @@ describe('AwaitingMatchBadge', () => {
   })
 })
 
-// --- creation flow ---------------------------------------------------------
+// --- the retired creation flow (issue #196) --------------------------------
 
-describe('new-directory creation flow', () => {
-  it('is emphasised inside the no-match callout below the band', async () => {
-    // #94's callout owns the framing; #95's CTA is the action inside it.
+describe('the retired new-directory creation flow', () => {
+  it('offers no create control below the no-match band', async () => {
     predictions = { predictions: [modelCard(1, 0.41)], seeded_dirs: [] }
     renderList()
     const callout = await screen.findByTestId('no-match-callout')
     expect(callout.getAttribute('role')).toBe('alert')
     expect(callout.textContent).toContain('Potentially no match')
-    const cta = screen.getByTestId('new-directory-cta')
-    expect(cta.textContent).toBe('New directory / New file')
-    expect(callout.contains(cta)).toBe(true)
+    expect(screen.queryByTestId('new-directory-cta')).toBeNull()
+    expect(callout.querySelector('button')).toBeNull()
   })
 
-  it('is hidden once this document already seeds a directory', async () => {
-    // The backend answers a second create on the same seed with 409, so the
-    // button must not be offered in the first place.
+  it('offers no create control above it either', async () => {
+    predictions = { predictions: [modelCard(1, 0.72)], seeded_dirs: [] }
+    renderList()
+    await screen.findByRole('button', { name: /^Prediction rank 1: candidate-1\./ })
+    expect(screen.queryByTestId('new-directory-cta')).toBeNull()
+    expect(screen.queryByTestId('no-match-callout')).toBeNull()
+  })
+
+  it('posts nothing to the directory endpoint from this panel', async () => {
+    predictions = { predictions: [modelCard(1, 0.41)], seeded_dirs: [] }
+    renderList()
+    await screen.findByTestId('no-match-callout')
+    expect(posted.filter((p) => p.url.includes('/api/reviewer_dirs'))).toHaveLength(0)
+  })
+
+  it('still reports a directory this document already seeds', async () => {
+    // Permanent and undeletable: the acknowledgement survives the retirement of
+    // the button that made it.
     predictions = {
       predictions: [modelCard(1, 0.41)],
       seeded_dirs: [
@@ -404,72 +434,11 @@ describe('new-directory creation flow', () => {
       ],
     }
     renderList()
-    await screen.findByTestId('awaiting-match-badge')
+    const notice = await screen.findByTestId('new-directory-saved')
+    expect(notice.textContent).toContain('Unattested homily')
+    expect(screen.getByTestId('new-directory-attribution').textContent).toContain(
+      'Abigail',
+    )
     expect(screen.queryByTestId('new-directory-cta')).toBeNull()
-  })
-
-  it('is a quiet escape hatch when the top candidate is above the band', async () => {
-    predictions = { predictions: [modelCard(1, 0.72)], seeded_dirs: [] }
-    renderList()
-    const cta = await screen.findByTestId('new-directory-cta')
-    expect(cta.textContent).toBe('Start a new directory')
-    expect(screen.queryByTestId('no-match-callout')).toBeNull()
-  })
-
-  it('posts the contract body and confirms the result', async () => {
-    predictions = { predictions: [modelCard(1, 0.41)], seeded_dirs: [] }
-    renderList()
-
-    await userEvent.click(await screen.findByTestId('new-directory-cta'))
-    const field = screen.getByLabelText('Name the new directory')
-    await userEvent.clear(field)
-    await userEvent.type(field, 'Unattested homily')
-    await userEvent.click(screen.getByTestId('new-directory-submit'))
-
-    await waitFor(() => {
-      expect(screen.getByTestId('new-directory-created')).toBeTruthy()
-    })
-    const created = posted.find((p) => p.url.includes('/api/reviewer_dirs'))
-    expect(created?.body).toEqual({
-      query_file_id: QUERY_ID,
-      label: 'Unattested homily',
-      model_slug: MODEL,
-    })
-    expect(screen.getByTestId('new-directory-created').textContent).toContain(
-      'Unattested homily',
-    )
-  })
-
-  it('omits the label when the reviewer clears it, letting the backend default it', async () => {
-    predictions = { predictions: [modelCard(1, 0.41)], seeded_dirs: [] }
-    renderList()
-
-    await userEvent.click(await screen.findByTestId('new-directory-cta'))
-    await userEvent.clear(screen.getByLabelText('Name the new directory'))
-    await userEvent.click(screen.getByTestId('new-directory-submit'))
-
-    await waitFor(() => {
-      expect(posted.some((p) => p.url.includes('/api/reviewer_dirs'))).toBe(true)
-    })
-    const created = posted.find((p) => p.url.includes('/api/reviewer_dirs'))
-    expect(created?.body).toEqual({
-      query_file_id: QUERY_ID,
-      model_slug: MODEL,
-    })
-  })
-
-  it('surfaces a rejected creation instead of pretending it worked', async () => {
-    installFetch(() =>
-      jsonResponse({ detail: 'Authentication required' }, 401),
-    )
-    predictions = { predictions: [modelCard(1, 0.41)], seeded_dirs: [] }
-    renderList()
-
-    await userEvent.click(await screen.findByTestId('new-directory-cta'))
-    await userEvent.click(screen.getByTestId('new-directory-submit'))
-
-    const alert = await screen.findByTestId('new-directory-error')
-    expect(alert.textContent).toBe('Authentication required')
-    expect(screen.queryByTestId('new-directory-created')).toBeNull()
   })
 })

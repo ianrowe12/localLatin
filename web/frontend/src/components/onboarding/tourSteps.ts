@@ -104,7 +104,7 @@ export const REVIEW_TOUR_STEPS: TourStep[] = [
     target: 'match-options',
     title: 'Record a Match',
     description:
-      'Mark which predicted source is correct, or reject the model\u2019s candidates with the \u201cNone\u201d option if none fit. Only the candidates this ranking actually offers are shown. None is an independent choice: it needs no new directory, and it is not a claim that the CCL holds no match for this fragment.',
+      'Press the numbered button of the source that is correct. If none of them fits, press the blue \u201cNone of the top\u201d button: it opens one optional box for the CCL key of the source, if you happen to know it, and one button to record the answer. Only the candidates this ranking actually offers are shown, and rejecting them is not a claim that the CCL holds no match for this fragment.',
     placement: 'left',
   },
   {

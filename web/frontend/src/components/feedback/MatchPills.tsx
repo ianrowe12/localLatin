@@ -36,13 +36,23 @@ interface MatchPillsProps {
   onToggleNone: () => void
 }
 
+/**
+ * Deliberately large (issue #196). Prof. Firey, 15 September 2026: the new
+ * evaluator wants "the big prediction buttons right there" with as much space
+ * around them as possible, and this panel now holds only these ten plus the
+ * blue action. The old pills were `text-xs py-1.5` in a tight 1.5-unit grid,
+ * sized for a panel that also carried a red call to action, its caption and a
+ * creation form.
+ */
 const PILL_BASE =
-  'text-xs py-1.5 px-2 rounded-full text-center whitespace-nowrap transition-all focus:outline-none focus:ring-2 focus:ring-accent/40 disabled:cursor-not-allowed'
+  'text-base font-semibold py-3 px-2 rounded-xl text-center whitespace-nowrap transition-all focus:outline-none focus:ring-2 focus:ring-accent/40 disabled:cursor-not-allowed'
+
+/** The blue action. Same size logic, full width, and not a rank. */
+const NONE_BASE =
+  'col-span-5 text-sm font-semibold py-3 px-3 rounded-xl text-center transition-all focus:outline-none focus:ring-2 focus:ring-accent/40 disabled:cursor-not-allowed'
 
 function noneLabel(count: number): string {
-  return count === 1
-    ? 'None of the 1 model candidate'
-    : `None of the ${count} model candidates`
+  return count === 1 ? 'None of the 1 candidate' : `None of the top ${count}`
 }
 
 /**
@@ -52,8 +62,14 @@ function noneLabel(count: number): string {
  * back to ten whenever the panel had no candidates. That produced ten pressable
  * pills over a failed request, and numbered them 1..n rather than by rank, so a
  * sparse ranking of [1, 11] -- one model candidate and one reviewer directory,
- * which are anchored at eleven -- was offered as "#1" and "#2". Nothing here
+ * which were anchored at eleven -- was offered as "#1" and "#2". Nothing here
  * invents a rank any more: no candidates means no pills.
+ *
+ * Since issue #196 the candidates it is given are the model's alone
+ * (`assessmentEligibility.assessmentEvidence`), so a rank here is always one of
+ * the ten the retrieval run produced. The reviewer-directory branches below are
+ * kept for a candidate that still arrives marked `reviewer` from a cached
+ * response; they cost two lines and they cannot mislabel anything.
  */
 export default function MatchPills({
   candidates,
@@ -67,7 +83,7 @@ export default function MatchPills({
   onToggleNone,
 }: MatchPillsProps) {
   return (
-    <div data-tour="match-options" className="grid grid-cols-5 gap-1.5">
+    <div data-tour="match-options" className="grid grid-cols-5 gap-2.5">
       {candidates.map((candidate) => {
         const isSelected = selectedRanks.includes(candidate.rank)
         const isUnconfirmed = unconfirmedRanks.includes(candidate.rank)
@@ -119,9 +135,12 @@ export default function MatchPills({
         )
       })}
 
-      {/* None is a judgement about the model's candidates, so it is named after
-          them rather than after the highest anchored rank on screen: a reviewer
-          directory at rank 11 does not make this "None of top 11". */}
+      {/* THE BLUE ACTION (issue #196). It is named after the model's
+          candidates, which are now the only ranked things on screen, and it is
+          the one way to say "the source is elsewhere": pressing it opens a
+          single optional field for the CCL key. It is blue rather than red
+          because it is an ordinary answer, not a warning -- the red treatment
+          belonged to the retired new-directory button. */}
       <button
         type="button"
         onClick={onToggleNone}
@@ -130,18 +149,18 @@ export default function MatchPills({
         title={
           noneAvailable
             ? undefined
-            : 'Some model candidates cannot be read on this screen, so they cannot be rejected.'
+            : 'Some candidates cannot be read on this screen, so they cannot be rejected.'
         }
-        className={`col-span-5 ${PILL_BASE} ${
+        className={`${NONE_BASE} ${
           !noneAvailable
             ? noneSelected
               ? // Held, not honoured: the reviewer's own answer stays visible
                 // and clearable, but it cannot be saved as it stands.
-                'bg-incorrect/10 text-incorrect/70 ring-1 ring-dashed ring-incorrect/40 cursor-pointer'
+                'bg-indigo-50 dark:bg-indigo-500/5 text-indigo-500/70 ring-1 ring-dashed ring-indigo-400/40 cursor-pointer'
               : 'bg-stone-100 dark:bg-stone-800 text-stone-400 dark:text-stone-500 opacity-70'
             : noneSelected
-              ? 'bg-incorrect/15 text-incorrect ring-1 ring-incorrect/40 font-medium cursor-pointer'
-              : 'bg-stone-100 dark:bg-stone-700 text-stone-600 dark:text-stone-300 hover:bg-stone-200 dark:hover:bg-stone-600 cursor-pointer'
+              ? 'bg-indigo-600 text-white ring-1 ring-indigo-500 cursor-pointer'
+              : 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-200 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 cursor-pointer'
         }`}
         aria-pressed={noneSelected}
       >

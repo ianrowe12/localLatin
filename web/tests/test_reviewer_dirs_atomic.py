@@ -213,7 +213,9 @@ def test_creation_isolated_from_auth_and_feedback_commits(
                 if sql.startswith("INSERT INTO feedback"):
                     feedback_started.set()
                 result = await original(connection, fn, *args, **kwargs)
-                if sql.startswith("INSERT INTO reviewer_dirs") and args[1][2] == 0:
+                # Positional parameter 3 is `seed_query_id`; `ccl_key` sits at
+                # 2 since issue #196. Named by the INSERT in create_reviewer_dir.
+                if sql.startswith("INSERT INTO reviewer_dirs") and args[1][3] == 0:
                     inserted.set()
                     await release.wait()
                 return result
@@ -427,18 +429,19 @@ def test_legacy_duplicates_survive_reopen_and_recover_oldest(
                         "/api/query/1/predictions", params={"model": MODEL_SLUG}
                     )
                     assert predictions.status_code == 200
-                    cards = [
-                        p
+                    # Unranked since issue #196, and never inside `predictions`.
+                    assert all(
+                        p["source"] == "model"
                         for p in predictions.json()["predictions"]
-                        if p["source"] == "reviewer"
-                    ]
-                    assert [p["dir_name"] for p in cards] == (
+                    )
+                    cards = predictions.json()["reviewer_dir_candidates"]
+                    assert [p["dir_id"] for p in cards] == (
                         ["reviewer-dir-a-new", "reviewer-dir-z-old"]
                         if with_matrix
                         else []
                     )
                     if with_matrix:
-                        assert [p["rank"] for p in cards] == [11, 12]
+                        assert all("rank" not in p for p in cards)
                         assert [p["score"] for p in cards] == [0.7998046875] * 2
                     if previous_predictions is not None:
                         assert predictions.json() == previous_predictions

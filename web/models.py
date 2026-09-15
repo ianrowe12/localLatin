@@ -6,6 +6,7 @@ from typing import Annotated, Dict, List, Literal, Optional
 from pydantic import BaseModel, Field, model_validator
 
 from web.bands import NO_MATCH_BAND, VERIFY_BAND
+from web.services.ccl_keys import MAX_KEY_LENGTH as CCL_KEY_MAX_LENGTH
 
 # Re-exported so API consumers can keep importing the variant vocabulary from
 # web.models; the canonical definition lives in web/variants.py.
@@ -130,6 +131,34 @@ class ReviewerDir(BaseModel):
     has_potential_match: bool = False
 
 
+class ReviewerDirCandidate(BaseModel):
+    """A reviewer-created directory offered for a query, WITHOUT a rank.
+
+    Issue #196 point 3. These used to be appended to `predictions` at anchored
+    ranks 11 and 12, which reviewers read as the model predicting them -- it
+    does not; a reviewer directory is scored from the query-query matrix against
+    documents a colleague grouped by hand. Worse, the rank was computed live, so
+    confirming one changed what "rank 11" meant for the next reader.
+
+    Unranked is what the PDF packets have always done (`pdf_packets.py`, and the
+    long note in `services/reviewer_dirs.py::packet_dirs_for_query`), and the web
+    list now matches them. `dir_id` is the join key; `score` is a property of the
+    pair rather than a position in a list, so it is still reported.
+    """
+
+    dir_id: str
+    label: str
+    ccl_key: str = ""
+    score: float
+    created_by: str = ""
+    seed_query_id: int
+    member_query_ids: List[int] = Field(default_factory=list)
+    dir_files: List[str] = Field(default_factory=list)
+    candidate_files: Optional[List[CandidateFile]] = None
+    preview_text: str = ""
+    supporting_member: Optional[SupportingMember] = None
+
+
 class PredictionResponse(BaseModel):
     file_id: int
     filename: str
@@ -153,6 +182,12 @@ class PredictionResponse(BaseModel):
     # match" badge on the document, which is about the query's own directories
     # rather than about its candidates.
     seeded_dirs: List[ReviewerDir] = Field(default_factory=list)
+    # Reviewer directories the q-q matrix can score for this query, best first
+    # and WITHOUT ranks (issue #196). They are never merged into `predictions`,
+    # so every entry there is the retrieval run's own answer and `rank` means
+    # one thing only. A client that ignores this field shows a ten-candidate
+    # list, which is exactly what the reviewer UI now does.
+    reviewer_dir_candidates: List[ReviewerDirCandidate] = Field(default_factory=list)
 
 
 # --- Token Map ---
@@ -308,6 +343,31 @@ class FeedbackOutcome(StrEnum):
     LEGACY_UNRESOLVED = "legacy_unresolved"
 
 
+class CclKeyAction(StrEnum):
+    """What the server did with the CCL key on a None-of-top-N assessment.
+
+    Recorded on the feedback row, so the record says what happened rather than
+    leaving it to be re-derived from a database that has since moved on.
+    """
+
+    #: The key names a directory the labelled corpus already holds. Nothing was
+    #: created: the assessment records "matches <key> (not in shortlist)".
+    MATCHED_LABELLED_DIR = "matched_labelled_dir"
+    #: The key names a directory a reviewer made earlier; this query joined it.
+    JOINED_REVIEWER_DIR = "joined_reviewer_dir"
+    #: ... and this query was already one of its members, so nothing was
+    #: written. Its own value rather than a join, because "this document joined
+    #: the group" is not true of a document that has been in it since last week.
+    ALREADY_JOINED = "already_joined"
+    #: No directory carried the key, so one was created and named by it.
+    CREATED_REVIEWER_DIR = "created_reviewer_dir"
+    #: No directory carried the key, but this query already seeds another one
+    #: and one directory per seed is a standing invariant. The key is recorded
+    #: with the assessment; nothing was created, and `ccl_key_dir` stays NULL --
+    #: the directory that blocked the write is not the one the key names.
+    SEED_TAKEN = "seed_taken"
+
+
 class AccountApprovalStatus(StrEnum):
     PENDING = "pending"
     APPROVED = "approved"
@@ -434,6 +494,12 @@ class FeedbackCreate(BaseModel):
     )
     notes: str = ""
     reviewer: str = ""
+    #: The CCL source key an evaluator typed beside "None of the top N"
+    #: (issue #196). Optional, and meaningful only there: a rank already names a
+    #: directory, so a key alongside one would be a second, unreconciled answer.
+    #: The server normalises it, decides what it names and records the outcome;
+    #: see routers/feedback.py and services/ccl_keys.py.
+    ccl_key: Optional[str] = Field(default=None, max_length=CCL_KEY_MAX_LENGTH)
 
     @model_validator(mode="after")
     def validate_outcome_contract(self) -> FeedbackCreate:
@@ -459,6 +525,13 @@ class FeedbackCreate(BaseModel):
         if self.outcome == FeedbackOutcome.LEGACY_UNRESOLVED:
             raise ValueError("legacy_unresolved cannot be created on new feedback")
 
+        if (
+            self.ccl_key is not None
+            and self.ccl_key.strip()
+            and self.outcome != FeedbackOutcome.NONE_OF_TOP_K
+        ):
+            raise ValueError("ccl_key can only be used with none_of_top_k")
+
         if self.outcome == FeedbackOutcome.MATCHED_RANK:
             if self.correct_rank is None or self.correct_rank == 0:
                 raise ValueError(
@@ -467,6 +540,10 @@ class FeedbackCreate(BaseModel):
         elif self.outcome == FeedbackOutcome.NONE_OF_TOP_K:
             if self.correct_rank not in (None, 0):
                 raise ValueError("none_of_top_k requires correct_rank 0")
+            # Whitespace-only is "no key given", not a key. Normalised here so
+            # the router and the database never see the two apart.
+            if self.ccl_key is not None and not self.ccl_key.strip():
+                self.ccl_key = None
             self.correct_rank = 0
             self.correct_dir = None
             self.selected_ranks = None
@@ -513,6 +590,21 @@ class FeedbackEntry(BaseModel):
     #: written before accounts existed, or whose account has since been removed;
     #: callers fall back to `reviewer` (the display name) for attribution.
     reviewer_username: Optional[str] = None
+    #: The CCL key this assessment carried, exactly as the reviewer typed it
+    #: (whitespace normalised), and what the server did with it. Null on every
+    #: row written before issue #196 and on every row whose reviewer typed none.
+    ccl_key: Optional[str] = None
+    ccl_key_action: Optional[CclKeyAction] = None
+    #: The directory the action resolved to: a labelled directory name for
+    #: `matched_labelled_dir`, a reviewer `dir_id` for the join/create branches,
+    #: and NULL for `seed_taken`, where the key resolved to nothing.
+    ccl_key_dir: Optional[str] = None
+    #: Where that directory stood in the ranking this assessment was made
+    #: against, when the key named one of its candidates -- resolved from the
+    #: same server-side snapshot the rest of the save uses. NULL otherwise,
+    #: which is the ordinary case: the key exists to name a source the ten did
+    #: not offer.
+    ccl_key_rank: Optional[int] = None
     schema_version: int = 2
 
 

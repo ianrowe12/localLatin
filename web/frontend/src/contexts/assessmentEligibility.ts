@@ -75,7 +75,13 @@ export type NoneBlock = EvidenceBlock | 'partial_model_evidence'
 
 export interface AssessmentEvidence {
   phase: PredictionPhase
-  /** Every current candidate, in the order the API returned them. */
+  /**
+   * The ranked candidates, in the order the API returned them. Since issue #196
+   * these are the model's and nothing else, so this is identical to
+   * `modelCandidates`; both names are kept because "what the pills draw" and
+   * "what None is an answer about" are different questions that happen to have
+   * the same answer now.
+   */
   candidates: AssessmentCandidate[]
   /** The model's own candidates, which are what "None" is an answer about. */
   modelCandidates: AssessmentCandidate[]
@@ -150,10 +156,16 @@ export function assessmentEvidence(input: {
   // Only a settled ranking describes candidates. Loading, failure, an
   // unexplained empty answer and a deliberate exclusion all offer none, so no
   // phantom rank can be rendered from an array length.
-  const candidates = ready ? input.predictions.map(toCandidate) : []
-  const model = ready
-    ? modelCandidates(input.predictions).map(toCandidate)
-    : []
+  //
+  // THE MODEL'S CANDIDATES ARE THE ONLY ONES (issue #196). The server no longer
+  // puts a reviewer directory in `predictions`, but a cached response from
+  // before this release still can, and it would draw a pressable "#11" whose
+  // submission the server now refuses. Filtering here means the ranked controls
+  // are the model's answer wherever the array came from; reviewer directories
+  // are offered unranked by the prediction list, and a document is filed into
+  // one by naming its CCL key.
+  const candidates = ready ? modelCandidates(input.predictions).map(toCandidate) : []
+  const model = candidates
   const usableModel = model.filter((candidate) => candidate.usable)
   const evidenceBlock = evidenceBlockFor(
     input.phase,

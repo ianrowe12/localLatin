@@ -17,6 +17,7 @@ import {
   type PredictionPhase,
   type PredictionRequestKey,
   type PredictionResponse,
+  type ReviewerDirCandidate,
 } from '../api/queries'
 import type { ApiErrorInfo } from '../api/client'
 import type { ReviewerDir } from '../api/reviewerDirs'
@@ -68,8 +69,14 @@ export interface PredictionContextValue {
   predictions: Prediction[]
   /** Model candidates only, capped at ten. */
   modelPredictions: Prediction[]
-  /** Reviewer-created directories, uncapped by the model's ten. */
+  /**
+   * Reviewer-created directories carrying a rank. Empty against any current
+   * backend (issue #196 took them out of the ranked list); kept so a stale
+   * cached response is still read the same way it was written.
+   */
   reviewerPredictions: Prediction[]
+  /** Reviewer-created directories offered for this query, unranked. */
+  reviewerDirs: ReviewerDirCandidate[]
   seededDirs: ReviewerDir[]
 
   /** True only in `ready`: the model produced at least one candidate. */
@@ -131,6 +138,7 @@ export function PredictionProvider({ children }: { children: ReactNode }) {
       predictions: all,
       modelPredictions: model,
       reviewerPredictions: reviewer,
+      reviewerDirs: result.response?.reviewer_dir_candidates ?? [],
       seededDirs: result.response?.seeded_dirs ?? [],
       // `ready` already means "at least one model candidate". A response
       // carrying only reviewer directories is not a model ranking, so it can

@@ -64,18 +64,19 @@ function modelCard(rank: number, score: number, dir?: string) {
   }
 }
 
-function reviewerCard(rank: number, score: number) {
+/** An unranked reviewer directory, as the API serves one since issue #196. */
+function reviewerCard(score: number) {
   return {
-    rank,
-    dir_name: 'reviewer-dir-1',
+    dir_id: 'reviewer-dir-1',
+    label: 'Unattested homily',
+    ccl_key: '',
     score,
     dir_files: ['query-3.txt'],
     preview_text: 'seed text',
     candidate_files: [{ filename: 'query-3.txt', text: 'seed text' }],
-    source: 'reviewer',
-    label: 'Unattested homily',
     created_by: 'Abigail',
     seed_query_id: 3,
+    member_query_ids: [3],
   }
 }
 
@@ -84,6 +85,7 @@ type Answer = {
   status?: string | null
   predictions?: unknown[]
   seeded_dirs?: unknown[]
+  reviewer_dir_candidates?: unknown[]
   httpStatus?: number
   delayMs?: number
   /**
@@ -102,6 +104,8 @@ let answers: Record<string, Answer> = {}
 let queued: Record<string, Answer[]> = {}
 let predictionRequests: string[] = []
 let reviewerDirPosts: unknown[] = []
+/** Directories the database already holds for the document under test. */
+let seedLookup: unknown[] = []
 let reviewerDirStatus = 201
 /** Resolves the currently held predictions response, if there is one. */
 let releaseHeld: (() => void) | null = null
@@ -146,13 +150,13 @@ function installFetch(): void {
       }
 
       // The seed-filtered lookup behind the durable acknowledgement (issue
-      // #161). Before a successful create the seed has no directory; after one
-      // the same row the POST returned is what the database holds.
+      // #161). `seedLookup` is what the database already holds for this
+      // document; a successful create adds the row the POST returned.
       if (url.includes('/api/reviewer_dirs')) {
         return jsonResponse(
           reviewerDirPosts.length > 0 && reviewerDirStatus === 201
             ? [createdDirFixture()]
-            : [],
+            : seedLookup,
         )
       }
 
@@ -199,6 +203,7 @@ function installFetch(): void {
           status: answer.status === undefined ? 'ok' : answer.status,
           predictions: answer.predictions ?? [],
           seeded_dirs: answer.seeded_dirs ?? [],
+          reviewer_dir_candidates: answer.reviewer_dir_candidates ?? [],
           ...(answer.identity ?? {}),
         })
       }
@@ -274,6 +279,7 @@ async function selectModel(slug: string) {
 beforeEach(() => {
   answers = {}
   queued = {}
+  seedLookup = []
   reviewerDirStatus = 201
   releaseHeld = null
   installFetch()
@@ -295,7 +301,7 @@ describe('one shared ranking', () => {
 
     await screen.findByTestId('band-chip-1')
     // The panel's pill count comes from the same candidates the list drew.
-    expect(await screen.findByText('None of the 3 model candidates')).toBeTruthy()
+    expect(await screen.findByText('None of the top 3')).toBeTruthy()
     expect(predictionRequests).toHaveLength(1)
   })
 
@@ -464,44 +470,65 @@ describe('excluded, empty and unknown are three different things', () => {
     // A colleague's new directory scoring 0.6 is not the model saying anything
     // about this document. The card is still offered; the model's answer is
     // still reported as empty.
-    answers[MODEL_A] = { status: 'ok', predictions: [reviewerCard(11, 0.6)] }
+    answers[MODEL_A] = {
+      status: 'ok',
+      predictions: [],
+      reviewer_dir_candidates: [reviewerCard(0.6)],
+    }
     renderList()
 
     expect(await screen.findByTestId('predictions-empty')).toBeTruthy()
-    expect(screen.getByText('Unattested homily')).toBeTruthy()
+    // The card is offered, under its own heading and with the key that files a
+    // document into it, and the model's answer is still reported as empty.
+    expect(screen.getByTestId('reviewer-dir-card-reviewer-dir-1')).toBeTruthy()
+    expect(screen.getByTestId('reviewer-dirs-heading')).toBeTruthy()
     expect(screen.queryByTestId('band-chip-1')).toBeNull()
   })
 })
 
-describe('a created directory survives the refetch it caused', () => {
-  it('keeps the acknowledgement even when the refetch fails', async () => {
-    // Creating a directory is permanent and unrepeatable, and it broadcasts a
-    // refresh. If the acknowledgement dies with the old ranking, the reviewer
-    // has no evidence the creation happened and may do it again.
-    answers[MODEL_A] = { predictions: [modelCard(1, 0.31)] }
-    queued[MODEL_A] = [{ predictions: [modelCard(1, 0.31)] }, { httpStatus: 503 }]
+describe('what is already recorded survives the refetch (issue #161, #196)', () => {
+  it('keeps a seeded directory on screen when the refetch fails', async () => {
+    // A directory this document seeds is permanent, and nothing in this panel
+    // can create or remove one any more. It must not vanish because a request
+    // failed: the reviewer would be left unable to tell that it exists.
+    const seeded = {
+      dir_id: 'reviewer-dir-1',
+      label: 'Unattested homily',
+      status: 'awaiting_match',
+      seed_query_id: QUERY_ID,
+      member_query_ids: [QUERY_ID],
+      created_at: '2026-08-26 00:00:00',
+      created_by: 'Abigail',
+      model_slug: MODEL_A,
+      variant: 'sif_abtt',
+      best_match_score: 0.31,
+      has_potential_match: false,
+    }
+    seedLookup = [seeded]
+    answers[MODEL_A] = { predictions: [modelCard(1, 0.31)], seeded_dirs: [seeded] }
+    answers[MODEL_B] = { httpStatus: 503 }
     renderList()
 
-    await userEvent.click(await screen.findByTestId('new-directory-cta'))
-    await userEvent.click(screen.getByTestId('new-directory-submit'))
+    const notice = await screen.findByTestId('new-directory-saved')
+    expect(notice.textContent).toContain('Unattested homily')
 
-    await waitFor(() => {
-      expect(reviewerDirPosts).toHaveLength(1)
-    })
-    // The refetch its own creation triggered failed...
+    // A request that fails replaces the whole ranked subtree. The record of a
+    // permanent grouping is not part of that subtree's evidence.
+    await selectModel(MODEL_B)
+
     expect(await screen.findByTestId('predictions-error')).toBeTruthy()
-    // ...and the confirmation is still on screen.
-    const created = await screen.findByTestId('new-directory-created')
-    expect(created.textContent).toContain('Unattested homily')
+    expect(screen.getByTestId('new-directory-saved').textContent).toContain(
+      'Unattested homily',
+    )
   })
 
-  it('does not offer the new-directory CTA before the ranking has settled', async () => {
-    // "Start a new directory" is a judgement about the ranking. Offering it
-    // while the ranking is still loading invites it on no evidence at all.
+  it('offers no way to create a directory while the ranking loads', async () => {
     answers[MODEL_A] = { predictions: [modelCard(1, 0.9)], delayMs: 30 }
     renderList()
 
     expect(screen.queryByTestId('new-directory-cta')).toBeNull()
-    expect(await screen.findByTestId('new-directory-cta')).toBeTruthy()
+    expect(await screen.findByTestId('band-chip-1')).toBeTruthy()
+    expect(screen.queryByTestId('new-directory-cta')).toBeNull()
+    expect(reviewerDirPosts).toHaveLength(0)
   })
 })

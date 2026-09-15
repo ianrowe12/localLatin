@@ -88,11 +88,24 @@ document, so it could never be matched), 429 (`MAX_REVIEWER_DIRS_PER_ACCOUNT`) o
 model). All of these exist because **nothing can ever remove a directory** — both tables are
 append-only — so a permanent artefact must not be creatable by a double-click or a typo.
 
-Created directories merge into every subsequent predictions response as extra candidates with
-`source: 'reviewer'`, scored live from the q-q matrix (max over member documents), capped at
-`MAX_REVIEWER_CANDIDATES` best-first. Their ranks are **anchored at `MAX_MODEL_RANK + 1`**, not
-offset by however many model candidates a given `top_k` returned, so a rank means the same
-thing in every response and in every feedback row. Model ranks are untouched.
+Created directories are served in their own **unranked** field,
+`PredictionResponse.reviewer_dir_candidates`, scored live from the q-q matrix (max over member
+documents) and capped at `MAX_REVIEWER_CANDIDATES` best-first. They are NOT in `predictions`
+(issue #196): they used to be appended there at ranks anchored on `MAX_MODEL_RANK + 1`, which
+evaluators read as the model predicting them, and a rank computed live changed meaning as
+memberships changed. Model ranks are untouched, and every rank in a response is now one of the
+retrieval run's own.
+
+A query joins a reviewer directory by **naming its CCL key** beside "None of the top N", not by
+pressing a rank: `POST /api/feedback` takes an optional `ccl_key` with `outcome: none_of_top_k`
+and `FeedbackDB.insert_none_of_top_k` writes the assessment and the directory action in one
+`BEGIN IMMEDIATE` transaction. The six branches (`matched_labelled_dir`, `joined_reviewer_dir`,
+`already_joined`, `created_reviewer_dir`, `seed_taken`) are recorded on the feedback row in
+`ccl_key_action` / `ccl_key_dir` / `ccl_key_rank`; `correct_dir` keeps its old meaning and is never
+written by this path. `services/ccl_keys.py` owns the normalisation (stored as typed, matched
+case-folded), and a directory is reached by key first, then by label -- the label is how a
+pre-#196 directory (empty `ccl_key`) stays joinable at all. An identical repeat of the caller's own
+newest row returns it with a 200 and appends nothing; the log is still append-only.
 
 **`correct_dir` is always resolved server-side from `correct_rank`**, never read from the
 request body, and a rank with no candidate behind it is a 422. That is both the anti-spoof
@@ -144,16 +157,28 @@ The webapp reads these from `data_root`:
   distinct witness. The literals in that file are the pre-flight fallback only.
   `PredictionList` resolves them once and passes them to each `PredictionCard`.
   Below the no-match band the list renders `NoMatchCallout` (issue #94's red `role="alert"`
-  framing) with issue #95's `NewDirectoryCta` as the action inside it; above the band the
-  same CTA renders un-emphasised at the foot of the list. #94's feature detection for a
-  not-yet-deployed endpoint is gone, since #95 ships it.
-- Directory guidance (issue #162): every reviewer-facing sentence about creating a
-  provisional directory lives in `src/utils/reviewerDirectoryCopy.ts`, and the blocks around
-  the naming field are their own components (`DirectoryCreationGuidance`,
-  `DirectorySavedNotice`), so wording and creation behaviour can change independently. Three
-  facts must survive any rewrite: creation is a permanent write with no rename or removal,
-  it is not the assessment and Submit/Skip cannot undo it, and a saved directory is offered
-  only where the model can score it — never "every other document".
+  framing). Since issue #196 it is a HINT and nothing else: the red
+  "New directory / New file" button, its caption and the naming form are retired, at
+  Prof. Firey's request, and no control in the prediction panel writes anything.
+  `SavedDirectoryNotice` reports a directory the document already seeds, read-only.
+- Directory guidance (issue #162, trimmed by #196): every reviewer-facing sentence about
+  provisional directories and about the CCL key lives in
+  `src/utils/reviewerDirectoryCopy.ts` (`DIRECTORY_CREATION_COPY`, `CCL_KEY_COPY`), so
+  wording and behaviour change independently. Two facts must survive any rewrite: a
+  grouping is a permanent write with no rename or removal, and a saved directory is offered
+  only where the model can score it — never "every other document". The key field is
+  optional and must never ask a general evaluator to search the CCL by hand.
+- The assessment panel (issue #196) holds the ten large rank buttons (`MatchPills`) and the
+  blue `NoneOfTopTenAction`, which carries one optional "CCL key of the source, if known"
+  field and its OWN submit, posting through `src/api/cclKey.ts`. The panel's Save button is
+  withheld while None is held, so one decision cannot be written twice.
+  THE RECEIPT OUTLIVES THE FORM: on success the panel closes the form and the component keeps
+  the sentence naming the branch, and on a revisit it rebuilds that sentence from
+  `/api/feedback/latest` (`recordedKeyAnswer`) with a "Change this answer" action. A saved
+  `none_of_top_k` row therefore does NOT prefill the None selection -- `draftFromEntry` returns
+  `correctRank: null` -- because re-opening a live Record button over an answer already in an
+  append-only log is how a document gets two. `NoneOfTopTenPanel.test.tsx` drives the real panel
+  wiring; testing the component with `open` hard-coded is what hid this the first time.
 - Candidate provenance (issue #162): `src/utils/documentProvenance.ts` maps a candidate to
   `labeled_reference` (a witness the labelled corpus already groups) or `reviewer_group` (an
   originally unlabeled witness in a provisional reviewer directory), and
