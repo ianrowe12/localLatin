@@ -569,7 +569,7 @@ CAP_ROUTING_METHOD = CAP_BASE_ABTT + (
     r"\textbf{overall assignment accuracy}. "
 )
 CAP_RANK_SINGLE_METHOD = CAP_BASE_ABTT + (
-    r"This table is computed on the single-seed v2 split (no $M$-seed averaging, since the mseed "
+    r"This table is computed on the single-seed split (no $M$-seed averaging, since the mseed "
     r"sweep was run only for SIF-conditioned variants; see "
     r"Table~\ref{tab:taskB_ranking_appendix_mseed} for the multi-seed SIF+ABTT view). "
     r"\textbf{Acc@1} is directory accuracy at rank~1, with an existing/new decomposition. "
@@ -733,7 +733,7 @@ def main() -> None:
             + _selected_layer_caption("ABTT", "taskB")
         ),
         label="tab:taskB_ranking_main",
-        banner=r"Task B: Top-K Ranking (main, single-seed v2)",
+        banner=r"Task B: Top-K Ranking (main, single-seed)",
         select_method="abtt_optimal",
         float_table=True,
     )
@@ -768,7 +768,7 @@ def main() -> None:
         out_audit=audit_dir / "taskB_ranking_appendix_mseed.csv",
         caption=(
             r"Per-layer Task~B top-$k$ ranking accuracy across all six models, averaged over $M=5$ "
-            r"query/reference reseedings of the v2 train/test split (mean $\pm$ std). "
+            r"query/reference reseedings of the train/test split (mean $\pm$ std). "
             r"\texttt{sif\_abtt\_optimal} applies SIF weighting plus ABTT with $D$ tuned per layer on "
             r"the train split; the mseed sweep was not run for the ABTT-only variant of "
             r"Tables~\ref{tab:taskA_headline} and~\ref{tab:taskB_headline}, so we include this table to give a variance-aware view of the "

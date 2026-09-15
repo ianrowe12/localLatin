@@ -1004,10 +1004,16 @@ def _pairs_clause(sections: Sequence[CeilingSection]) -> str:
     see the same pairs; if a future run breaks that, the caption drops the
     number rather than quoting one model's count for both.
     """
-    counts = {sec.facts.n_all_train_pairs for sec in sections if sec.facts is not None}
+    counts = {
+        (sec.facts.n_fit_pairs, sec.facts.n_all_train_pairs)
+        for sec in sections if sec.facts is not None
+    }
     if len(counts) != 1:
-        return ""
-    return f"the {counts.pop()} "
+        return "positive pairs available in the train split "
+    n_fit, n_all = counts.pop()
+    # The headline captions say "499 of the 565 positive train pairs"; this
+    # table says the same thing in the same words (review of 2026-09-15).
+    return f"{n_fit} of the {n_all} positive train pairs "
 
 
 def load_extra_section(spec: str, results_dir: Path) -> CeilingSection:
@@ -1080,8 +1086,7 @@ def write_tex(sections: Sequence[CeilingSection], path: Path) -> None:
         r"\caption{Supervised fine-tuning reference ceiling on " + subject +
         r". The fine-tuned " + encoder + r" trained contrastively on "
         + _pairs_clause(sections) +
-        r"positive pairs available in "
-        r"the train split (in-batch negatives, symmetric InfoNCE), with a dev slice carved "
+        r"(in-batch negatives, symmetric InfoNCE), with a dev slice carved "
         r"out of train by directory for model selection; the test split is untouched "
         r"until this evaluation. Task A columns are test AUROC and cosine gap at the "
         r"layer chosen by train AUROC; Task B columns are test assignment accuracy and "

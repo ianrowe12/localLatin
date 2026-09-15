@@ -9,11 +9,12 @@ settings across, twice over for two metrics. One layer is chosen per (model,
 setting) cell by the training-set criterion for that task, and printed as a
 subscript, so the test numbers are never selected on test.
 
-Below the six model rows sits a reference block (issue #118). By default it
-holds one row, the supervised fine-tuning ceiling, scored on the same split,
-the same held-out test set and the same evaluation code, so a reader does not
-have to leave the headline table to see what supervision achieves. The
-fine-tuned row fills only the Base and ABTT columns.
+Below the six model rows sits a reference block (issue #118): the supervised
+fine-tuning ceilings, scored on the same split, the same held-out test set and
+the same evaluation code, so a reader does not have to leave the headline table
+to see what supervision achieves. By default the block holds both committed
+ceilings, LaTa and Qwen3-0.6B (issue #208: a bare run must reproduce the
+committed tables). A fine-tuned row fills only the Base and ABTT columns.
 
 The three lexical baselines (BM25, character 3-5-gram TF-IDF, Levenshtein)
 left the paper by decision (issue #197, 2026-09-15) and are rebuttal material.
@@ -24,13 +25,13 @@ no lexical sentence.
 ``--finetune_csv`` is repeatable (issue #194): one ceiling per model, one row
 per ceiling, and every caption claim about a ceiling is derived from that
 model's own cells. A second model that beat a zero-shot cell where the first
-did not has to change the sentence, not inherit it.
+did not has to change the sentence, not inherit it. Passing the flag replaces
+the default pair, so a one-model table is still one ``--finetune_csv``.
 
+    python scripts/resubmit/build_headline_tables.py
     python scripts/resubmit/build_headline_tables.py \
         --finetune_csv .../finetune_lata_ceiling_comparison.csv \
-        --finetune_run_info .../finetune/run_info.json \
-        --finetune_csv .../finetune_qwen3_0.6b_ceiling_comparison.csv \
-        --finetune_run_info .../finetune/qwen3_0.6b/run_info.json
+        --finetune_run_info .../finetune/run_info.json
     python scripts/resubmit/build_headline_tables.py \
         --lexical_csv runs/active/resubmit/results/lexical_baselines.csv
 """
@@ -109,10 +110,17 @@ def _and_list(parts: Sequence[str]) -> str:
     return ", ".join(parts[:-1]) + (" and " if len(parts) == 2 else ", and ") + parts[-1]
 
 
-DEFAULT_FINETUNE_CSV = (
-    "runs/active/resubmit/results/finetune/finetune_lata_ceiling_comparison.csv"
-)
-DEFAULT_FINETUNE_RUN_INFO = "runs/active/resubmit/finetune/run_info.json"
+DEFAULT_RESULTS_CSV = "runs/active/resubmit/results/phase_resubmit_results.csv"
+
+# The committed reference block, in row order: LaTa first, then Qwen3-0.6B.
+DEFAULT_FINETUNE_CSVS = [
+    "runs/active/resubmit/results/finetune/finetune_lata_ceiling_comparison.csv",
+    "runs/active/resubmit/results/finetune/finetune_qwen3_0.6b_ceiling_comparison.csv",
+]
+DEFAULT_FINETUNE_RUN_INFOS = [
+    "runs/active/resubmit/finetune/run_info.json",
+    "runs/active/resubmit/finetune/qwen3_0.6b/run_info.json",
+]
 
 # Overleaf receives these files, so the header says nothing about the repo.
 HEADER = "% generated table\n"
@@ -120,10 +128,7 @@ HEADER = "% generated table\n"
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    p.add_argument(
-        "--results_csv",
-        default="runs/active/resubmit/results/phase_resubmit_results.csv",
-    )
+    p.add_argument("--results_csv", default=DEFAULT_RESULTS_CSV)
     p.add_argument(
         "--lexical_csv",
         default=None,
@@ -139,7 +144,8 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help=(
             "Comparison CSV of a fine-tuning ceiling. Repeat once per model; "
-            "the reference block gets a row per model in the order given."
+            "the reference block gets a row per model in the order given. "
+            "Default: the two committed ceilings, LaTa then Qwen3-0.6B."
         ),
     )
     p.add_argument(
@@ -653,13 +659,13 @@ def main() -> None:
     args = parse_args()
     results = pd.read_csv(args.results_csv)
     lexical = pd.read_csv(args.lexical_csv) if args.lexical_csv else None
-    finetune_csvs = args.finetune_csv or [DEFAULT_FINETUNE_CSV]
+    finetune_csvs = args.finetune_csv or DEFAULT_FINETUNE_CSVS
     finetune = pd.concat(
         [pd.read_csv(path) for path in finetune_csvs], ignore_index=True
     )
     facts = [
         load_finetune_facts(path)
-        for path in (args.finetune_run_info or [DEFAULT_FINETUNE_RUN_INFO])
+        for path in (args.finetune_run_info or DEFAULT_FINETUNE_RUN_INFOS)
     ]
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)

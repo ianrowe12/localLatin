@@ -2,6 +2,6 @@
 \begin{figure}[t]
 \centering
 \includegraphics[width=\linewidth]{figures/fig_attribution_rho_loo_main.pdf}
-\caption{\textbf{$\rho_{\text{LOO}}$ foreground view for the main candidate-attribution result.} Each line connects the baseline and ABTT variants for one model-method cell at the predeclared operational attribution layer. ABTT improves the leave-one-out rank-correlation signal in all six cells; Table~\ref{tab:attribution_metrics_secondary} shows the secondary metrics which qualify this narrower faithfulness claim.}
+\caption{Leave-one-out rank correlation $\rho_{\text{LOO}}$ at the predeclared operational attribution layers, for integrated gradients (IG) and retrieval-adapted MaRC. Each line connects the baseline and ABTT variants of one model-method cell. ABTT raises $\rho_{\text{LOO}}$ in five of the six cells; the sixth, PhilTa MaRC, moves from 0.469 to 0.445, a tie within two standard errors (Table~\ref{tab:attribution_metrics_main}). Secondary metrics: Table~\ref{tab:attribution_metrics_secondary}.}
 \label{fig:attribution_rho_loo_main}
 \end{figure}
