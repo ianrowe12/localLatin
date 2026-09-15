@@ -38,8 +38,8 @@ import {
  * back to a store of their own. A per-component fallback would type-check and
  * silently reinstate the bug this module exists to fix; a process-wide one
  * would leak one reviewer's state into the next session. `App` mounts it above
- * `PredictionProvider`; any other surface that renders `NewDirectoryCta` has to
- * wrap it too.
+ * `PredictionProvider`; any other surface that renders `SavedDirectoryNotice`
+ * has to wrap it too.
  */
 
 interface SavedDirectoryContextValue {

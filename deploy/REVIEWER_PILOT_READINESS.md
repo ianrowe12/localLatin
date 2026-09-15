@@ -94,6 +94,25 @@ python3 scripts/webapp/smoke_reviewer_pilot.py \
 
 The smoke script checks static frontend load, SPA refresh, sign-in, `/api/stats`, `/api/models`, `/api/queries`, predictions, token-map artifacts, CSV export, and the PDF packet endpoint.
 
+### Python version
+
+The webapp requires **Python 3.11 or newer** and production runs 3.12
+(`deploy/deploy.sh` builds the venv with `PYTHON_BIN`). `web/models.py` uses
+`enum.StrEnum`, which arrived in 3.11, so on 3.10 the package cannot be imported
+at all: `pytest web/tests` fails at collection, and the repo's HPC conda env
+(`localLatin`, 3.10) cannot run the webapp suite. That is why CI's 3.10 matrix
+leg runs `tests/` only and the 3.12 leg runs `tests web/tests` — the split is
+deliberate, not an oversight, and anyone reproducing a webapp test locally needs
+a 3.11+ interpreter.
+
+Reviewer-directory checks (read-only, always run, issue #196):
+
+- `/api/query/{id}/predictions` carries a `reviewer_dir_candidates` list. Its absence means the host is running a backend from before the split, which would still serve reviewer directories as ranked candidates 11-15.
+- No entry in that list carries a `rank`, and every entry in `predictions` is a model candidate ranked 1-10. A reviewer directory numbered alongside the model's answers is exactly the confusion this release removed, so a deploy that reintroduces it fails the smoke run rather than reaching an evaluator.
+- `seeded_dirs` is still present and well-typed (issue #95).
+
+All three pass on a deployment with no reviewer directories at all, which is what a fresh host looks like.
+
 Per-variant checks (read-only, always run):
 
 - `/api/models` advertises all four variants (`raw`, `abtt`, `sif`, `sif_abtt`) for **every** model, and its `default_variant` is among them. A short list here means a predictions CSV never reached the host.

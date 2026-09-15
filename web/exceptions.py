@@ -55,3 +55,24 @@ class ReviewerDirLimitError(Exception):
             f"maximum is {limit}. Ask a PI/admin if you genuinely need more."
         )
         super().__init__(self.message)
+
+
+class UnscorableSeedError(Exception):
+    """A directory would be seeded from a query nothing can ever score.
+
+    The same refusal `routers/reviewer_dirs.create_reviewer_dir` makes with a
+    422 (issue #165), carried over to the CCL-key path (issue #196): a query the
+    degenerate-source guard excluded has no row in the q-q matrix, so a
+    directory seeded there could never be offered as a candidate and never leave
+    `awaiting_match`. Nothing is written, so the reviewer keeps their answer and
+    can record it without the key.
+    """
+
+    def __init__(self, query_id: int) -> None:
+        self.query_id = query_id
+        self.message = (
+            f"Query {query_id} has no usable embedding for this model (empty or "
+            "whitespace-only source), so a group seeded here could never be "
+            "matched."
+        )
+        super().__init__(self.message)

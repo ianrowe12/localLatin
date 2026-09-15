@@ -227,168 +227,37 @@ describe('confidence bands on the prediction list', () => {
   })
 })
 
-describe('new-directory CTA', () => {
-  it('is hidden above the no-match threshold', async () => {
-    renderList([0.5])
-    await screen.findByTestId('careful-review-note')
-    expect(
-      screen.queryByRole('button', { name: 'New directory / New file' }),
-    ).toBeNull()
-  })
-
-  it('posts the D2 contract and reports the created directory', async () => {
-    // Adapted for #95: the CTA opens a one-field naming form rather than
-    // posting on the first click, because a directory's label is permanent
-    // (both tables are append-only, there is no rename). The field is
-    // pre-filled, so accepting the default is one more click and no typing.
-    const user = userEvent.setup()
-    renderList([0.31])
-    const cta = await screen.findByRole('button', { name: 'New directory / New file' })
-
-    await user.click(cta)
-    await user.click(await screen.findByTestId('new-directory-submit'))
-
-    await waitFor(() => {
-      expect(reviewerDirPosts).toHaveLength(1)
-    })
-    expect(reviewerDirPosts[0].url).toContain('/api/reviewer_dirs')
-    expect(reviewerDirPosts[0].body).toEqual({
-      query_file_id: QUERY_ID,
-      label: 'New directory from query-11',
-      model_slug: MODEL,
-    })
-    expect((await screen.findByTestId('new-directory-created')).textContent).toContain(
-      'New directory 42',
-    )
-  })
-
-  it('surfaces a server failure to the reviewer', async () => {
-    reviewerDirStatus = 500
-    const user = userEvent.setup()
-    renderList([0.1])
-
-    await user.click(
-      await screen.findByRole('button', { name: 'New directory / New file' }),
-    )
-    await user.click(await screen.findByTestId('new-directory-submit'))
-
-    expect(await screen.findByTestId('new-directory-error')).toBeTruthy()
-    expect(screen.queryByTestId('new-directory-created')).toBeNull()
-  })
-
-  it('refuses a second directory on a document that already seeds one', async () => {
-    // The backend answers that with 409, so the CTA is not offered at all.
-    seededDirs = [
-      {
-        dir_id: 'reviewer-dir-1',
-        label: 'Unattested homily',
-        status: 'awaiting_match',
-        seed_query_id: QUERY_ID,
-        member_query_ids: [QUERY_ID],
-        created_at: '2026-08-26 00:00:00',
-        created_by: 'Abigail',
-        model_slug: MODEL,
-        variant: 'sif_abtt',
-        best_match_score: 0.31,
-        has_potential_match: false,
-      },
-    ]
-    renderList([0.2])
-
-    await screen.findByTestId('no-match-callout')
-    expect(screen.getByTestId('no-match-already-seeded')).toBeTruthy()
-    expect(
-      screen.queryByRole('button', { name: 'New directory / New file' }),
-    ).toBeNull()
-  })
-})
-
-describe('CTA staleness (reviewer navigates mid-request)', () => {
-  it('does not paint a created directory onto the next query', async () => {
-    // The reviewer's repro: click the CTA on query 11, move to query 12 before
-    // the POST resolves. The late 201 belongs to a fragment that is no longer
-    // on screen and must not be shown as query 12's outcome.
-    deferReviewerDir = true
-    const user = userEvent.setup()
-    scores = [0.2]
-    render(
-      <AppProvider>
-        <SavedDirectoryProvider accountKey="test-account">
-          <PredictionProvider>
-            <NavigableHarness />
-          </PredictionProvider>
-        </SavedDirectoryProvider>
-      </AppProvider>,
-    )
-
-    await user.click(
-      await screen.findByRole('button', { name: 'New directory / New file' }),
-    )
-    await user.click(await screen.findByTestId('new-directory-submit'))
-    await waitFor(() => {
-      expect(reviewerDirPosts).toHaveLength(1)
-    })
-    expect(reviewerDirPosts[0].body).toMatchObject({ query_file_id: QUERY_ID })
-
-    await user.click(screen.getByRole('button', { name: 'go to next query' }))
-    await waitFor(() => {
-      expect(screen.getByTestId('active-query').textContent).toBe(String(NEXT_QUERY_ID))
-    })
-
-    // ...and only now does query 11's request come back.
-    await act(async () => {
-      releaseReviewerDir()
-    })
-
-    expect(screen.queryByTestId('new-directory-created')).toBeNull()
-    // Query 12 shows a fresh, clickable CTA rather than a stuck "Creating...".
-    expect(screen.getByRole('button', { name: 'New directory / New file' })).toBeTruthy()
-  })
-
-  it('keeps a late result on its own query when the component is reused, not remounted', async () => {
-    // Directly exercises the component independently of the `key` in
-    // PredictionList: here the same instance is handed a new query. Since
-    // issue #161 the late 201 is not thrown away -- it is a permanent write, so
-    // it is recorded against query 11 -- but query 12 must show none of it.
-    deferReviewerDir = true
-    const user = userEvent.setup()
-
-    function Callout({ queryFileId }: { queryFileId: number }) {
-      return (
-        <SavedDirectoryProvider accountKey="test-account">
-          <NoMatchCallout
-            queryFileId={queryFileId}
-            topScore={0.2}
-            topK={10}
-            model={MODEL}
-            alreadySeeded={false}
-          />
-        </SavedDirectoryProvider>
-      )
+describe('the retired new-directory call to action (issue #196)', () => {
+  it('offers no way to create a directory at any band', async () => {
+    for (const band of [[0.2], [0.6], [0.9]]) {
+      const { unmount } = renderList(band)
+      await screen.findByTestId('band-chip-1')
+      expect(screen.queryByTestId('new-directory-cta')).toBeNull()
+      expect(screen.queryByTestId('new-directory-form')).toBeNull()
+      expect(screen.queryByTestId('new-directory-submit')).toBeNull()
+      expect(screen.queryByTestId('directory-creation-guidance')).toBeNull()
+      expect(
+        screen.queryByRole('button', { name: 'New directory / New file' }),
+      ).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Start a new directory' })).toBeNull()
+      unmount()
     }
+  })
 
-    const { rerender } = render(<Callout queryFileId={QUERY_ID} />)
+  it('keeps the red low-confidence notice as a hint, with no action in it', async () => {
+    renderList([0.49, 0.2])
+    const callout = await screen.findByTestId('no-match-callout')
+    expect(callout.getAttribute('role')).toBe('alert')
+    expect(callout.textContent).toContain('Potentially no match')
+    expect(callout.textContent).toContain('Best similarity is 0.490')
+    // The caveat stays: a low score is not evidence the CCL lacks the source.
+    expect(screen.getByTestId('no-match-caveat').textContent).toContain('CCL')
+    expect(callout.querySelector('button')).toBeNull()
+  })
 
-    await user.click(
-      await screen.findByRole('button', { name: 'New directory / New file' }),
-    )
-    await user.click(screen.getByTestId('new-directory-submit'))
-    await waitFor(() => {
-      expect(reviewerDirPosts).toHaveLength(1)
-    })
-
-    rerender(<Callout queryFileId={NEXT_QUERY_ID} />)
-    await act(async () => {
-      releaseReviewerDir()
-    })
-
-    expect(screen.queryByTestId('new-directory-created')).toBeNull()
-    expect(
-      await screen.findByRole('button', { name: 'New directory / New file' }),
-    ).toBeTruthy()
-
-    // ...and query 11's acknowledgement is waiting when the reviewer returns.
-    rerender(<Callout queryFileId={QUERY_ID} />)
-    expect(screen.getByTestId('new-directory-created')).toBeTruthy()
+  it('never posts to the directory endpoint from the prediction panel', async () => {
+    renderList([0.2])
+    await screen.findByTestId('no-match-callout')
+    expect(reviewerDirPosts).toHaveLength(0)
   })
 })

@@ -83,7 +83,8 @@ export default function SavedDirectoryObservations() {
    *
    * "Does this document already seed a grouping?" is answered by its own
    * endpoint, and that endpoint has nothing to do with a ranking. Until now the
-   * only production caller that started the lookup was inside `NewDirectoryCta`,
+   * only production caller that started the lookup was inside the retired
+   * `NewDirectoryCta` (now `SavedDirectoryNotice`),
    * so the question was asked only where a creation offer happened to be
    * rendered. After a reload that makes the answer depend on the ranking: the
    * record starts unknown, neither CTA position mounts while predictions are

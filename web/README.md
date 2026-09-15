@@ -111,10 +111,61 @@ artifacts generated before those arrays existed. `query_sif_weights` /
 | GET | `/api/stats` | Dashboard statistics |
 | GET | `/api/models` | Available model metadata |
 
+### Reviewer directories, the CCL key, and the ranked list (issue #196)
+
+Reviewer-created directories are **not ranked candidates**. `GET
+/api/query/{file_id}/predictions` serves them in their own field,
+`reviewer_dir_candidates`, best first and without a `rank`; `predictions` holds
+the retrieval run's own ten and nothing else. They used to be appended at ranks
+anchored on `MAX_MODEL_RANK + 1`, which evaluators read as the model predicting
+them, and whose numbering changed as memberships changed. The PDF packets have
+always listed them unranked (`services/pdf_packets.py`); the web list now agrees.
+
+A document is filed into a reviewer directory by **naming its CCL key**, not by
+pressing a rank. `POST /api/feedback` accepts an optional `ccl_key` alongside
+`outcome: none_of_top_k` (and only there: a rank already names a directory). The
+server normalises it — trimmed, inner whitespace collapsed, stored as typed,
+matched case-folded (`services/ccl_keys.py`) — and takes exactly one of four
+branches, recorded on the feedback row as `ccl_key_action` with the resolved
+directory in `ccl_key_dir`:
+
+| Branch | Meaning | Writes |
+|--------|---------|--------|
+| `matched_labelled_dir` | the key names a labelled corpus directory; `ccl_key_rank` records where it stood in this ranking, or null if it was not offered | assessment only |
+| `joined_reviewer_dir` | the key names an existing reviewer directory | assessment + membership |
+| `already_joined` | ... and this query was already a member | assessment only |
+| `created_reviewer_dir` | nothing carries the key | assessment + directory + seed membership |
+| `seed_taken` | nothing carries the key, but this query already seeds a directory. `ccl_key_dir` is **null**: the directory that blocked the write is not the one the key names | assessment only |
+
+A directory is reached by its **key first, then its label**, both case-folded
+(`_reviewer_dir_for_key`). The label is a second handle and never a name: a
+directory created through the retired form has an empty `ccl_key`, and with the
+rank route gone a key-only lookup would leave it permanently unjoinable while
+its card kept showing its label, so typing that label would mint a duplicate.
+
+An **identical repeat** -- same document, model, variant, account, key and note
+as the caller's own newest row -- returns that row with **200** and appends
+nothing. The log stays append-only: nothing is updated or removed, and a revised
+note, a different key or another reviewer's submission is a new assertion and is
+appended. A creation is refused before anything is written with **429**
+(`MAX_REVIEWER_DIRS_PER_ACCOUNT`) or **422** (`UNSCORABLE_SEED`, the same guard
+`create_reviewer_dir` makes for a degenerate query).
+
+`FeedbackDB.insert_none_of_top_k` does all of it in ONE transaction on a
+dedicated connection opened with `BEGIN IMMEDIATE`, so an assessment citing a
+key cannot outlive the directory write it refers to. `correct_dir` is untouched
+by this path and keeps its meaning: the directory a rank resolved to.
+
+`reviewer_dirs.ccl_key` is the join key. The migration adds the column and fills
+it only where the answer is already written down — a label that IS a CCL key by
+the `scripts/data/label_taxonomy.py` rule. No label is ever rewritten, and a
+non-key label keeps `ccl_key = ''`, which matches nothing.
+
 ### Reviewer directory creation and recovery
 
-Approved, signed-in reviewers can create a group with
-`POST /api/reviewer_dirs {query_file_id, label?}`. Creation immediately saves
+`POST /api/reviewer_dirs {query_file_id, label?}` still exists and is unchanged;
+the reviewer UI no longer calls it, since the retired "New directory" button was
+its only caller. Creation immediately saves
 the directory and its seed membership, independently of feedback submission.
 It returns 201, rejects an existing seed with 409, and rejects an account at
 `MAX_REVIEWER_DIRS_PER_ACCOUNT` with 429. A duplicate takes precedence over the
