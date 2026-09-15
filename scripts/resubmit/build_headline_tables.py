@@ -9,13 +9,17 @@ settings across, twice over for two metrics. One layer is chosen per (model,
 setting) cell by the training-set criterion for that task, and printed as a
 subscript, so the test numbers are never selected on test.
 
-Below the six model rows sits a reference block (issue #118). It holds the
-supervised fine-tuning ceilings and the three lexical baselines, scored on the
-same split, the same held-out test set and the same evaluation code, so a
-reader does not have to leave the headline table to see what surface overlap
-and what supervision achieve. The lexical rows have no post-processing axis, so
-each spans its metric block; a fine-tuned row fills only the Base and ABTT
-columns.
+Below the six model rows sits a reference block (issue #118). By default it
+holds one row, the supervised fine-tuning ceiling, scored on the same split,
+the same held-out test set and the same evaluation code, so a reader does not
+have to leave the headline table to see what supervision achieves. The
+fine-tuned row fills only the Base and ABTT columns.
+
+The three lexical baselines (BM25, character 3-5-gram TF-IDF, Levenshtein)
+left the paper by decision (issue #197, 2026-09-15) and are rebuttal material.
+Passing ``--lexical_csv`` adds them back as rows that span their metric block
+and adds their caption clauses; without it the tables carry no lexical row and
+no lexical sentence.
 
 ``--finetune_csv`` is repeatable (issue #194): one ceiling per model, one row
 per ceiling, and every caption claim about a ceiling is derived from that
@@ -23,10 +27,12 @@ model's own cells. A second model that beat a zero-shot cell where the first
 did not has to change the sentence, not inherit it.
 
     python scripts/resubmit/build_headline_tables.py \
-      --finetune_csv .../finetune_lata_ceiling_comparison.csv \
-      --finetune_run_info .../finetune/run_info.json \
-      --finetune_csv .../finetune_qwen3_0.6b_ceiling_comparison.csv \
-      --finetune_run_info .../finetune/qwen3_0.6b/run_info.json
+        --finetune_csv .../finetune_lata_ceiling_comparison.csv \
+        --finetune_run_info .../finetune/run_info.json \
+        --finetune_csv .../finetune_qwen3_0.6b_ceiling_comparison.csv \
+        --finetune_run_info .../finetune/qwen3_0.6b/run_info.json
+    python scripts/resubmit/build_headline_tables.py \
+        --lexical_csv runs/active/resubmit/results/lexical_baselines.csv
 """
 from __future__ import annotations
 
@@ -95,6 +101,14 @@ def finetune_variants(label: str) -> List[Tuple[str, str]]:
 def short_name(label: str) -> str:
     return label[: -len(FINETUNE_SUFFIX)] if label.endswith(FINETUNE_SUFFIX) else label
 
+
+def _and_list(parts: Sequence[str]) -> str:
+    parts = list(parts)
+    if len(parts) < 2:
+        return parts[0] if parts else ""
+    return ", ".join(parts[:-1]) + (" and " if len(parts) == 2 else ", and ") + parts[-1]
+
+
 DEFAULT_FINETUNE_CSV = (
     "runs/active/resubmit/results/finetune/finetune_lata_ceiling_comparison.csv"
 )
@@ -112,7 +126,12 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--lexical_csv",
-        default="runs/active/resubmit/results/lexical_baselines.csv",
+        default=None,
+        help=(
+            "Opt-in: the lexical baselines CSV (BM25, TF-IDF char 3-5, "
+            "Levenshtein). Off by default since issue #197 removed the lexical "
+            "rows from the paper; pass it only to rebuild the rebuttal variant."
+        ),
     )
     p.add_argument(
         "--finetune_csv",
@@ -237,7 +256,7 @@ def _finetune_row(
 
 
 def reference_rows(
-    lexical: pd.DataFrame,
+    lexical: Optional[pd.DataFrame],
     finetune: pd.DataFrame,
     lexical_left_col: str,
     lexical_right_col: str,
@@ -253,7 +272,9 @@ def reference_rows(
     has a Base and an ABTT variant, so its numbers sit in those two columns and
     the SIF columns stay empty. A lexical baseline has no post-processing axis
     at all, so one value spans its whole metric block rather than being repeated
-    four times, which would read as four separate runs.
+    four times, which would read as four separate runs. ``lexical`` is None
+    unless ``--lexical_csv`` was given (issue #197), and then the block holds
+    the fine-tuned row alone.
     """
     lines = [r"\midrule"]
     for label in finetune_labels(finetune):
@@ -268,6 +289,9 @@ def reference_rows(
                 scale,
             )
         )
+
+    if lexical is None:
+        return lines
 
     for key, display in LEXICAL_SYSTEMS:
         rows = lexical[lexical["model"] == key]
@@ -300,8 +324,9 @@ def render_table(
         HEADER.rstrip("\n"),
         r"\begin{table*}[t]",
         r"\centering",
-        # \footnotesize, not \small: the reference block adds four rows and the
-        # table has to stay inside the page budget alongside five other floats.
+        # \footnotesize, not \small: the reference block adds rows (one by
+        # default, four with --lexical_csv) and the table has to stay inside
+        # the page budget alongside five other floats.
         r"\footnotesize",
         r"\setlength{\tabcolsep}{4.5pt}",
         r"\begin{tabular}{lrrrrrrrr}",
@@ -340,7 +365,7 @@ def render_table(
 
 
 def load_finetune_facts(path: str) -> Optional[dict]:
-    """The ``caption_facts`` block of one fine-tuning run's ``run_info.json``.
+    """The ``caption_facts`` block of the fine-tuning run's ``run_info.json``.
 
     Returns None when the file is absent so the caption can still be built,
     without the numbers, from the comparison CSV alone.
@@ -378,33 +403,45 @@ def finetune_pairs_clause(facts: Sequence[Optional[dict]]) -> str:
     )
 
 
-def _and_list(parts: Sequence[str]) -> str:
-    parts = list(parts)
-    if len(parts) < 2:
-        return parts[0] if parts else ""
-    return ", ".join(parts[:-1]) + (" and " if len(parts) == 2 else ", and ") + parts[-1]
-
-
 def reference_caption(
     comparison: str,
     facts: Sequence[Optional[dict]] = (),
+    with_lexical: bool = False,
     model_names: Sequence[str] = ("LaTa",),
 ) -> str:
     """The sentences that explain the reference block.
 
     The first says what the rows are, with the fine-tuning pair count taken
-    from the run (``facts``) and a pointer to the appendix that gives both
-    setups. ``comparison`` is one sentence, derived from the cells by the
+    from the run (``facts``) and a pointer to the appendix that gives the
+    setup. ``comparison`` is one sentence, derived from the cells by the
     caller, that states how the reference rows sit against the model rows, so
-    a re-run cannot ship new numbers under old prose. The last sentence is the
-    framing constraint from issues #119 and #176: no caption may imply that
-    the embeddings beat surface matching on this corpus, and the fine-tuning
-    ceiling is a finding at this training budget, not a bar cleared.
+    a re-run cannot ship new numbers under old prose. The fine-tuning ceiling
+    is a finding at this training budget, not a bar cleared (issue #176).
+
+    With ``with_lexical`` (the rebuttal variant, issue #197) the caption also
+    names the three lexical rows and closes with the framing constraint from
+    issues #119 and #176: no caption may imply that the embeddings beat
+    surface matching on this corpus. Without it the paper carries no
+    comparison against surface matching, so it says nothing either way.
     """
+    names = _and_list(list(model_names))
+    if not with_lexical:
+        # "a reference system" for one ceiling, "reference systems" for more:
+        # the article has to go with the plural, not just the noun.
+        opening = (
+            "a reference system" if len(model_names) == 1 else "reference systems"
+        )
+        return (
+            f" Below the rule, {opening} on the same split with "
+            "the same evaluation code: " + names + " fine-tuned contrastively on "
+            + finetune_pairs_clause(facts)
+            + ", a ceiling at this training budget (setup: "
+            "Appendix~\\ref{app:reference_systems}). "
+            + comparison
+        )
     return (
         " Below the rule, reference systems on the same split with the same "
-        "evaluation code: " + _and_list(list(model_names))
-        + " fine-tuned contrastively on "
+        "evaluation code: " + names + " fine-tuned contrastively on "
         + finetune_pairs_clause(facts)
         + ", a ceiling at this training budget, and three lexical baselines "
         "fitted on train files (both setups: Appendix~\\ref{app:reference_systems}). "
@@ -442,57 +479,67 @@ def level_word(diff: float, tolerance: float) -> str:
 
 
 def task_a_comparison(
-    best: pd.DataFrame, lexical: pd.DataFrame, finetune: pd.DataFrame
+    best: pd.DataFrame, lexical: Optional[pd.DataFrame], finetune: pd.DataFrame
 ) -> str:
-    """One sentence on the reference rows of the Task A table, from its cells."""
+    """One sentence on the reference rows of the Task A table, from its cells.
+
+    Without ``lexical`` the sentence covers the fine-tuned row alone.
+    """
     abtt_best = float(best[best["_method"] == "abtt_optimal"]["aucroc"].max())
-    tfidf = _lexical_value(lexical, "TF-IDF char 3-5", "aucroc")
     labels = finetune_labels(finetune)
-    lead = (
-        f"TF-IDF char 3--5 is {level_word(tfidf - abtt_best, 0.001)} the best "
-        f"ABTT AUROC ({tfidf:.3f} against {abtt_best:.3f}), and ABTT moves the "
-    )
+
+    def move(label: str) -> Tuple[float, float, float, float]:
+        return (
+            _finetune_value(finetune, label, "taskA_aucroc"),
+            _finetune_value(finetune, label + ABTT_SUFFIX, "taskA_aucroc"),
+            _finetune_value(finetune, label, "taskA_cosine_gap"),
+            _finetune_value(finetune, label + ABTT_SUFFIX, "taskA_cosine_gap"),
+        )
+
     if len(labels) == 1:
         # One ceiling keeps the published wording exactly, so adding the
         # machinery for a second model does not rewrite a shipped caption.
-        label = labels[0]
-        base = _finetune_value(finetune, label, "taskA_aucroc")
-        abtt = _finetune_value(finetune, label + ABTT_SUFFIX, "taskA_aucroc")
-        base_gap = _finetune_value(finetune, label, "taskA_cosine_gap")
-        abtt_gap = _finetune_value(finetune, label + ABTT_SUFFIX, "taskA_cosine_gap")
-        return (
-            lead + f"fine-tuned encoder's AUROC from {base:.3f} to {abtt:.3f} while "
-            f"moving its gap from {base_gap:.3f} to {abtt_gap:.3f}."
+        ft_base, ft_abtt, ft_base_gap, ft_abtt_gap = move(labels[0])
+        finetune_clause = (
+            f"ABTT moves the fine-tuned encoder's AUROC from {ft_base:.3f} to "
+            f"{ft_abtt:.3f} while moving its gap from {ft_base_gap:.3f} to "
+            f"{ft_abtt_gap:.3f}."
         )
-    moves = []
-    for label in labels:
-        base = _finetune_value(finetune, label, "taskA_aucroc")
-        abtt = _finetune_value(finetune, label + ABTT_SUFFIX, "taskA_aucroc")
-        base_gap = _finetune_value(finetune, label, "taskA_cosine_gap")
-        abtt_gap = _finetune_value(finetune, label + ABTT_SUFFIX, "taskA_cosine_gap")
-        moves.append(
-            f"{base:.3f} to {abtt:.3f} for {short_name(label)} "
-            f"(gap {base_gap:.3f} to {abtt_gap:.3f})"
+    else:
+        moves = []
+        for label in labels:
+            ft_base, ft_abtt, ft_base_gap, ft_abtt_gap = move(label)
+            moves.append(
+                f"{ft_base:.3f} to {ft_abtt:.3f} for {short_name(label)} "
+                f"(gap {ft_base_gap:.3f} to {ft_abtt_gap:.3f})"
+            )
+        finetune_clause = (
+            "ABTT moves the fine-tuned encoders' AUROC " + _and_list(moves) + "."
         )
-    return lead + "fine-tuned encoders' AUROC " + _and_list(moves) + "."
+    if lexical is None:
+        return finetune_clause
+    tfidf = _lexical_value(lexical, "TF-IDF char 3-5", "aucroc")
+    return (
+        f"TF-IDF char 3--5 is {level_word(tfidf - abtt_best, 0.001)} the best "
+        f"ABTT AUROC ({tfidf:.3f} against {abtt_best:.3f}), and " + finetune_clause
+    )
 
 
 def task_b_comparison(
-    best: pd.DataFrame, lexical: pd.DataFrame, finetune: pd.DataFrame
+    best: pd.DataFrame, lexical: Optional[pd.DataFrame], finetune: pd.DataFrame
 ) -> str:
     """One sentence on the reference rows of the Task B table, from its cells.
 
     ``tolerance`` is one point: the five-seed standard deviations of the
     SIF+ABTT cells reach 1.0, so a smaller single-seed difference is 'level'.
+    Without ``lexical`` the sentence covers the fine-tuned row alone.
     """
     abtt = best[best["_method"] == "abtt_optimal"]
     assign = 100.0 * abtt["overall_assignment_acc"]
     dir1 = 100.0 * abtt["dir_acc_at_1"]
-    tf_assign = 100.0 * _lexical_value(lexical, "TF-IDF char 3-5", "overall_assignment_acc")
-    tf_dir1 = 100.0 * _lexical_value(lexical, "TF-IDF char 3-5", "dir_acc_at_1")
     labels = finetune_labels(finetune)
 
-    def placement(label: str):
+    def placement(label: str) -> Tuple[float, float, str]:
         """Where one ceiling sits against the zero-shot ABTT cells.
 
         Derived per model from the cells, so a second ceiling that clears a
@@ -513,36 +560,41 @@ def task_b_comparison(
             where = "inside the zero-shot ABTT range"
         return ft_assign, ft_dir1, where
 
-    lead = (
+    if len(labels) == 1:
+        # One ceiling keeps the published wording exactly.
+        ft_assign, ft_dir1, where = placement(labels[0])
+        finetune_clause = (
+            f"the fine-tuned encoder with ABTT ({ft_assign:.1f} and {ft_dir1:.1f}) "
+            f"is {where} ({assign.min():.1f} to {assign.max():.1f} and "
+            f"{dir1.min():.1f} to {dir1.max():.1f})."
+        )
+    else:
+        placements = []
+        for label in labels:
+            ft_assign, ft_dir1, where = placement(label)
+            placements.append(
+                f"{where} for {short_name(label)} ({ft_assign:.1f} and {ft_dir1:.1f})"
+            )
+        finetune_clause = (
+            "the fine-tuned encoders with ABTT sit " + _and_list(placements)
+            + f", against cells spanning {assign.min():.1f} to {assign.max():.1f} "
+            f"and {dir1.min():.1f} to {dir1.max():.1f}."
+        )
+    if lexical is None:
+        return finetune_clause[0].upper() + finetune_clause[1:]
+    tf_assign = 100.0 * _lexical_value(lexical, "TF-IDF char 3-5", "overall_assignment_acc")
+    tf_dir1 = 100.0 * _lexical_value(lexical, "TF-IDF char 3-5", "dir_acc_at_1")
+    return (
         f"TF-IDF char 3--5 is {level_word(tf_assign - assign.max(), 1.0)} the "
         f"best ABTT cell ({tf_assign:.1f} against {assign.max():.1f} assignment "
         f"accuracy, {tf_dir1:.1f} against {dir1.max():.1f} directory accuracy at "
-        f"rank 1), and the fine-tuned "
-    )
-    if len(labels) == 1:
-        # One ceiling keeps the published wording exactly.
-        ft_assign_v, ft_dir1_v, where = placement(labels[0])
-        return (
-            lead + f"encoder with ABTT ({ft_assign_v:.1f} and {ft_dir1_v:.1f}) "
-            f"is {where} ({assign.min():.1f} to {assign.max():.1f} "
-            f"and {dir1.min():.1f} to {dir1.max():.1f})."
-        )
-    placements = []
-    for label in labels:
-        ft_assign_v, ft_dir1_v, where = placement(label)
-        placements.append(
-            f"{where} for {short_name(label)} ({ft_assign_v:.1f} and {ft_dir1_v:.1f})"
-        )
-    return (
-        lead + "encoders with ABTT sit " + _and_list(placements)
-        + f", against cells spanning {assign.min():.1f} to {assign.max():.1f} "
-        f"and {dir1.min():.1f} to {dir1.max():.1f}."
+        f"rank 1), and " + finetune_clause
     )
 
 
 def task_a_caption(
     best: pd.DataFrame,
-    lexical: pd.DataFrame,
+    lexical: Optional[pd.DataFrame],
     finetune: pd.DataFrame,
     facts: Sequence[Optional[dict]] = (),
 ) -> str:
@@ -561,7 +613,8 @@ def task_a_caption(
         + reference_caption(
             task_a_comparison(best, lexical, finetune),
             facts,
-            [short_name(l) for l in finetune_labels(finetune)],
+            with_lexical=lexical is not None,
+            model_names=[short_name(l) for l in finetune_labels(finetune)],
         )
     )
 
@@ -569,7 +622,7 @@ def task_a_caption(
 def task_b_caption(
     results: pd.DataFrame,
     best: pd.DataFrame,
-    lexical: pd.DataFrame,
+    lexical: Optional[pd.DataFrame],
     finetune: pd.DataFrame,
     facts: Sequence[Optional[dict]] = (),
 ) -> str:
@@ -590,7 +643,8 @@ def task_b_caption(
         + reference_caption(
             task_b_comparison(best, lexical, finetune),
             facts,
-            [short_name(l) for l in finetune_labels(finetune)],
+            with_lexical=lexical is not None,
+            model_names=[short_name(l) for l in finetune_labels(finetune)],
         )
     )
 
@@ -598,7 +652,7 @@ def task_b_caption(
 def main() -> None:
     args = parse_args()
     results = pd.read_csv(args.results_csv)
-    lexical = pd.read_csv(args.lexical_csv)
+    lexical = pd.read_csv(args.lexical_csv) if args.lexical_csv else None
     finetune_csvs = args.finetune_csv or [DEFAULT_FINETUNE_CSV]
     finetune = pd.concat(
         [pd.read_csv(path) for path in finetune_csvs], ignore_index=True

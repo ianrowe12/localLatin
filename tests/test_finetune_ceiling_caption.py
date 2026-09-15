@@ -240,6 +240,8 @@ def test_notes_say_which_model_each_bullet_is_about(tmp_path):
     notes = unwrapped(tex)
     assert "LaTa: Epoch 7 is the LAST epoch run" in notes
     assert "Qwen3-0.6B: Epoch 4 of 8 run was selected" in notes
+    # One header for the whole block, not one per model.
+    assert tex.count("Notes for whoever moves these rows into the paper") == 1
 
 
 def test_shared_pair_count_is_stated_once_and_dropped_when_runs_disagree(tmp_path):
