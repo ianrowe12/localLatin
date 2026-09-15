@@ -5,12 +5,13 @@ forwards. It renders readable appendix tables from the wide
 ``attribution_metrics/summary.csv`` produced by ``run_attribution_metrics.py``
 and writes a tidy long CSV for auditing.
 
-Defaults read the run of record (``attribution_run_of_record.RUN_OF_RECORD``)
-and write the long CSV and completeness report back into that run's
-``attribution_metrics/`` directory. Each table is stamped with its source run
-and the script refuses to overwrite a table stamped with a different run unless
-``--allow_run_change`` is passed (issue #201). To render an older run for
-comparison, pass its ``--summary_csv`` and redirect every output path.
+Defaults read the run of record (``attribution_run_of_record.RUN_OF_RECORD``,
+metrics directory ``METRICS_DIR_OF_RECORD``) and write the long CSV and
+completeness report back into that metrics directory. Each table is stamped
+with its source run and metrics directory, and the script refuses to overwrite
+a table stamped with a different source unless ``--allow_run_change`` is passed
+(issue #201). To render an older run for comparison, pass its ``--summary_csv``
+and redirect every output path.
 """
 from __future__ import annotations
 

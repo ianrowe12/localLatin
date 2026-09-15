@@ -1,5 +1,5 @@
 % generated table
-% source run: ig_examples_200pos_v1
+% source run: ig_examples_200pos_v1/attribution_metrics_draws20
 % Selection and wording follow the part B memo behind issue #120; the numbers come from the
 % run stamped above (issue #187 re-sample). Regenerate from that summary rather than
 % editing the numbers here.
@@ -13,14 +13,14 @@
 \cmidrule(lr){3-4}\cmidrule(lr){5-6}\cmidrule(lr){7-8}\cmidrule(lr){9-10}\cmidrule(lr){11-12}
 Model & Method & base & ABTT & base & ABTT & base & ABTT & base & ABTT & base & ABTT \\
 \midrule
-LaTa & IG & 0.007 & \textbf{0.262} & \textbf{0.265} & 0.060 & \textbf{0.990} & 0.804 & \textbf{1.242} & 0.177 & \textbf{0.111} & 0.272 \\
- & MaRC & 0.068 & \textbf{0.400} & 0.069 & \textbf{0.137} & 0.731 & \textbf{0.917} & \textbf{0.781} & 0.280 & 0.184 & \textbf{0.177} \\
+LaTa & IG & 0.007 & \textbf{0.262} & \textbf{0.284} & 0.061 & \textbf{0.990} & 0.804 & \textbf{1.242} & 0.177 & \textbf{0.111} & 0.272 \\
+ & MaRC & 0.068 & \textbf{0.400} & 0.088 & \textbf{0.138} & 0.731 & \textbf{0.917} & \textbf{0.781} & 0.280 & 0.184 & \textbf{0.177} \\
 \addlinespace[2pt]
-PhilTa & IG & 0.234 & \textbf{0.462} & 0.003 & \textbf{0.242} & 0.814 & \textbf{0.971} & 0.113 & \textbf{0.522} & 0.240 & \textbf{0.136} \\
- & MaRC & \textbf{0.334} & 0.318 & 0.061 & \textbf{0.190} & \textbf{0.888} & 0.878 & 0.093 & \textbf{0.363} & \textbf{0.149} & 0.259 \\
+PhilTa & IG & 0.234 & \textbf{0.462} & 0.004 & \textbf{0.245} & 0.814 & \textbf{0.971} & 0.113 & \textbf{0.522} & 0.240 & \textbf{0.136} \\
+ & MaRC & \textbf{0.334} & 0.318 & 0.063 & \textbf{0.193} & \textbf{0.888} & 0.878 & 0.093 & \textbf{0.363} & \textbf{0.149} & 0.259 \\
 \addlinespace[2pt]
-mT5-base & IG & 0.101 & \textbf{0.515} & -0.024 & \textbf{0.402} & 0.933 & \textbf{1.126} & 0.012 & \textbf{0.642} & \textbf{0.086} & 0.178 \\
- & MaRC & 0.181 & \textbf{0.359} & 0.002 & \textbf{0.329} & 0.960 & \textbf{1.013} & 0.014 & \textbf{0.582} & \textbf{0.031} & 0.246 \\
+mT5-base & IG & 0.101 & \textbf{0.515} & -0.024 & \textbf{0.399} & 0.933 & \textbf{1.126} & 0.012 & \textbf{0.642} & \textbf{0.086} & 0.178 \\
+ & MaRC & 0.181 & \textbf{0.359} & 0.003 & \textbf{0.327} & 0.960 & \textbf{1.013} & 0.014 & \textbf{0.582} & \textbf{0.031} & 0.246 \\
 \bottomrule
 \end{tabular}
 \caption{Secondary attribution metrics, on the same pairs, the same layers and the same erasure operator as Table~\ref{tab:attribution_metrics_main}. Boldface marks the better variant within a pair; higher is better everywhere except MinFrac. None of these columns is in the main table, and each is out for its own reason. Kendall $\tau_b$ agrees with $\rho_{\text{LOO}}$ in 5/6 cells, but it is the tie-corrected twin of the same statistic rather than a second witness. Chance-corrected insertion faithfulness favours ABTT in 5/6 cells, and we do not report it in the main table because in one of the twelve cells, a baseline cell, the real attribution does not beat a permutation of its own scores, so the measurement does not meet the validity bar we set for a headline column. The threshold-based ERASER metrics are reported for completeness: their baseline-versus-ABTT verdict depends on the threshold and on the erasure operator, which is why the main table uses threshold-free, chance-corrected metrics instead. The InsAUC columns average 195 to 199 ABTT pairs against the baseline's 199 to 200, for the same small-denominator reason. Full threshold sweeps are in Tables~\ref{tab:attribution_sweep_main_methods} and~\ref{tab:attribution_sweep_supplemental_methods}.}
