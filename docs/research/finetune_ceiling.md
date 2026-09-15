@@ -16,8 +16,13 @@ supervision or about Latin pre-training. #194 therefore runs the identical
 recipe on Qwen3-Embedding-0.6B, which never saw Latin as a pre-training target
 and is a decoder rather than a T5 encoder. Same objective, optimiser, schedule,
 batch size, seed, dev carve, early stopping and evaluator; the two ceilings are
-comparable by construction. The short verdict is in *Do the two models agree?*
-below.
+comparable by construction.
+
+**The answer is that they do not agree, and the disagreement is the result.**
+On LaTa the label-free correction reaches the supervised ceiling; on
+Qwen3-0.6B supervision goes 1.8 points past it and past every zero-shot ABTT
+cell in the paper. The ceiling is a property of the model, not of the pipeline.
+Full reading in *Do the two models agree?* below.
 
 Every LaTa number below comes from **benchmark v1** (`benchmark_v1.md`),
 re-trained and re-scored end to end on the corrected labels under #138. What
@@ -234,8 +239,10 @@ the paper's grid ($D \in \{1,2,3,5,7,10\}$). The sweep never had the option of
 going higher, and `abtt_optimal` is therefore numerically identical to
 `abtt_fixed` in all 24 layer x method rows.
 
-The practical consequence for the paper: fine-tuning and ABTT are not additive.
-They arrive at the same place, and the correction gets there without labels.
+The practical consequence for the paper: on LaTa, fine-tuning and ABTT are not
+additive. They arrive at the same place, and the correction gets there without
+labels. *That is a statement about LaTa.* Qwen3-0.6B behaves differently; see
+*Do the two models agree?*
 
 ### Why the ceiling is, if anything, overstated
 
@@ -252,21 +259,13 @@ the zero-shot pipeline already is; an overstated ceiling makes that reading
 conservative, because the honest ceiling would sit at or below the number
 reported here.
 
-## Qwen3-0.6B: the same recipe, and the protocol flaw it exposed
-
-**Status: the run did not produce a fine-tuned checkpoint.** Model selection
-kept epoch 0, the pre-trained encoder, so the "fine-tuned" rows below are the
-zero-shot rows. The cause is diagnosed, the fix is in the code, and the numbers
-that would answer #194 need one more A100 job. Nothing here should be moved
-into the paper as it stands.
-
-### What was run
+## Qwen3-0.6B: the same recipe on a model that never saw Latin
 
 One GPU job, `slurm/resubmit/finetune_qwen_ceiling.sbatch`: parity check,
 contrastive fine-tuning, extraction of all 28 layers. Everything except the
-encoder matches LaTa exactly, and the dev carve is a function of the split and
-the seed, so both models train on the same 499 pairs drawn from the same 162
-directories and hold out the same 28.
+encoder matches LaTa, and the dev carve is a function of the split and the
+seed, so both models train on the same 499 pairs from the same 162 directories
+and hold out the same 28.
 
 **Pooling.** Mean pooling with the `tokenizer_empty` filter at max_length 512,
 because that is what the paper's Qwen3-0.6B rows use, not the last-token
@@ -281,81 +280,118 @@ are recomputed in the backward pass instead of stored, so the gradients are
 identical and only the memory bill changes. It is recorded as
 `grad_checkpointing` in `run_info.json`.
 
-### What happened
+### Qwen3-0.6B's dev curve
 
 | Epoch | Train loss | Dev dir. acc.@1 | Dev AUROC |
 |---|---|---|---|
-| **0 (pre-trained, selected)** | | **1.000** (71/71) | **0.9660** |
+| 0 (pre-trained) | | 1.000 (71/71) | 0.9660 |
 | 1 | 0.4426 | 0.986 (70/71) | 0.9991 |
-| 2 | 0.0312 | 0.986 | 0.9996 |
-| 3 | 0.0006 | 0.986 | 0.9998 |
-| 4 | 0.00004 | 0.986 | 0.9998 |
+| 2 | 0.0313 | 0.986 | 0.9996 |
+| **3 (selected)** | **0.0006** | **1.000** | **0.99988** |
+| 4 | 0.00004 | 1.000 | 0.99984 |
+| 5 | 0.00003 | 1.000 | 0.99985 |
+| 6 | 0.00002 | 1.000 | 0.99986 |
 
-Patience fired after epoch 4. Training worked: the loss falls four orders of
-magnitude and dev AUROC goes from 0.966 to 0.9998. Selection still returned
-epoch 0.
+Patience fired after epoch 6 and epoch 3 was selected. The curve is nothing
+like LaTa's, and the difference is the point: **Qwen3-0.6B's pre-trained
+encoder already routes all 71 dev files correctly**, so accuracy has no
+headroom and the AUROC tiebreak does all the work. The first run of this job
+selected epoch 0 for exactly that reason; see *A dev pool at its resolution
+limit* below.
 
-**Why.** The rule was "best dev directory accuracy@1, with dev AUROC breaking
-exact ties". Qwen3-0.6B's *pre-trained* encoder already routes 71 of 71 dev
-files correctly, so accuracy has no headroom; training moves one file the wrong
-way; and 1 file out of 71 is 1.4 points, which is not an exact tie, so the
-AUROC tie-break was never consulted. A 1.4-point accuracy difference vetoed a
-0.034 AUROC gain.
+Train loss reaches 4e-05 by epoch 4, so the 499 pairs are memorised. Whatever
+supervision buys here is bounded by what those pairs can teach.
 
-LaTa never hit this because its pre-trained dev accuracy is 0.930 (66 of 71),
-which leaves five files of headroom for training to claim.
-
-**The consequence is visible in the artifacts.** `encoder_best.pt` holds the
-pre-trained weights, so the extracted cache equals the paper's Qwen cache to
-float32 noise (max abs. difference 2.3e-06 at layer 1, 3.1e-05 at layer 14,
-4.6e-05 at layer 28, against activation peaks of 3.0, 33.8 and 17.0), and every
-fine-tuned row equals its pre-trained row:
+### Results
 
 | System | Task A AUROC | Cosine gap | Assignment acc. | Dir. acc.@1 |
 |---|---|---|---|---|
 | Qwen3-0.6B (pre-trained) | 0.966₂₆ | 0.024₂₆ | 82.3₂₈ | 80.3₂₈ |
-| Qwen3-0.6B (pre-trained) + ABTT | 0.973₂ | 0.553₂ | **91.5₅** | **89.4₅** |
-| Qwen3-0.6B (fine-tuned) | 0.966₂₆ | 0.024₂₆ | 82.3₂₈ | 80.3₂₈ |
-| Qwen3-0.6B (fine-tuned) + ABTT | 0.973₂ | 0.553₂ | **91.5₅** | **89.4₅** |
+| Qwen3-0.6B (pre-trained) + ABTT | 0.973₂ | 0.553₂ | 91.5₅ | 89.4₅ |
+| Qwen3-0.6B (fine-tuned) | 0.996₂₈ | 0.684₂₈ | 91.4₂₈ | 90.8₂₈ |
+| Qwen3-0.6B (fine-tuned) + ABTT | **0.994₂₇** | **0.716₂₇** | **92.1₂₇** | **91.4₂₇** |
 
-Five-seed Task B agrees row for row: 0.824 +/- 0.010 at layer 28 without ABTT
-and 0.905 +/- 0.004 at layer 5 with it, for both the pre-trained and the
-"fine-tuned" cache.
+Five-seed Task B, seeds 42 to 46, at each system's selected layer:
 
-### The fix
+| System | Layer | Dir. acc.@1 | Existing | New |
+|---|---|---|---|---|
+| Qwen3-0.6B (pre-trained) | 28 | 0.824 ± 0.010 | 0.736 | 0.939 |
+| Qwen3-0.6B (pre-trained) + ABTT | 5 | 0.905 ± 0.004 | 0.867 | 0.954 |
+| Qwen3-0.6B (fine-tuned) | 28 | 0.917 ± 0.006 | 0.872 | 0.976 |
+| Qwen3-0.6B (fine-tuned) + ABTT | 27 | **0.923 ± 0.002** | 0.887 | 0.969 |
+
+**The ABTT sweep is a real sweep here, not a boundary hit.** Across the 28
+fine-tuned layers `abtt_optimal` picks $D=10$ twelve times, $D=7$ eleven times
+and $D \in \{2,3,5\}$ five times; the selected Task B layer takes $D=2$. On
+LaTa the sweep pinned $D=10$ at every layer. A fine-tuned Qwen layer needs far
+fewer components removed, which is consistent with contrastive training having
+already flattened most of the common direction: the fine-tuned cosine gap at
+layer 28 is 0.684 before ABTT, against 0.024 for the pre-trained encoder.
+
+## Do the two models agree?
+
+**No, and that is the finding.** The two ceilings sit on opposite sides of
+their own zero-shot ABTT rows.
+
+| | LaTa | Qwen3-0.6B |
+|---|---|---|
+| Zero-shot + ABTT, dir. acc.@1 | 86.1 | 89.4 |
+| Fine-tuned + ABTT, dir. acc.@1 | 85.2 | **91.4** |
+| Five-seed, zero-shot + ABTT | 0.877 ± 0.004 | 0.905 ± 0.004 |
+| Five-seed, fine-tuned + ABTT | 0.877 ± 0.008 | **0.923 ± 0.002** |
+
+For LaTa, supervision lands where the label-free correction already is: 0.8767
+against 0.8766 over five seeds. For Qwen3-0.6B it goes 1.8 points past it
+(0.923 against 0.905), which is roughly five standard deviations of either
+estimate, and past every zero-shot ABTT cell in the headline table (the best is
+91.7 assignment accuracy and 89.4 directory accuracy at rank 1; fine-tuned
+Qwen3-0.6B with ABTT reaches 92.1 and 91.4).
+
+So the honest one-sentence answer to Siddique's question is: **the ceiling is
+not a property of the pipeline, it is a property of the model.** On the
+Latin-pretrained encoder the parameter-free correction reaches what supervision
+buys; on the stronger, non-Latin encoder supervision still has room above it.
+The paper's claim has to be stated for LaTa rather than as a general fact about
+post-processing, and #194 is what turned that from an assumption into a
+measurement.
+
+Two caveats belong next to that reading, and both cut the same way:
+
+- **The ceiling is flattered.** 206 of the 535 test query files (38.5%) sit in
+  a directory that supplied training pairs, and witnesses inside a directory
+  are near-duplicate hand copies. No test file was trained on, but Qwen's
+  1.8-point margin over its own ABTT row is an upper bound on that margin, not
+  an estimate of it.
+- **499 pairs are memorised by epoch 4.** This is a ceiling at this training
+  budget in the literal sense: more epochs will not help, and the interesting
+  question of what more *data* would buy is untouched.
+
+### A dev pool at its resolution limit
+
+The first run of this job (22080103) selected **epoch 0** and extracted the
+pre-trained weights, which made every fine-tuned row identical to its
+pre-trained row. That was not a training failure. The rule from #123 was "best
+dev directory accuracy@1, with dev AUROC breaking exact ties", and Qwen3-0.6B
+starts at 71 of 71: accuracy cannot improve, one file moved the wrong way at
+epoch 1, and 1 file out of 71 is 1.4 points, which is not an exact tie, so the
+tiebreak was unreachable. A 1.4-point accuracy difference vetoed an AUROC gain
+from 0.966 to 0.9998.
 
 One file is the entire resolution of a 71-file pool, so a difference at or
 below it is not a measurement. `is_better_checkpoint` in
 `src/finetune_pairs.py` now treats accuracy differences within `1/n_dev` as
 ties and lets AUROC decide; anything larger still wins on accuracy outright.
+**LaTa's published selection does not move**: its curve gains two files at
+epoch 3 and its last four epochs are already exact ties, so epoch 7 is selected
+either way. `tests/test_finetune_ceiling_pairs.py` replays both runs' measured
+curves and pins LaTa at 7 and Qwen3-0.6B at 3.
 
-**This does not move LaTa.** Its curve gains two files at epoch 3, which is a
-real gain under either rule, and its last four epochs are already exact ties
-that AUROC decided. Replaying its measured curve selects epoch 7 either way, so
-the published LaTa ceiling is untouched.
-`tests/test_finetune_ceiling_pairs.py` replays both runs' curves and pins LaTa
-at epoch 7 and Qwen3-0.6B at epoch 3.
-
-The artifacts under `runs/active/resubmit/finetune/qwen3_0.6b/` predate the
-fix. Re-running `slurm/resubmit/finetune_qwen_ceiling.sbatch` under it should
-select epoch 3 and produce a real ceiling; that job is the only thing standing
-between this section and an answer.
-
-### Do the two models agree?
-
-**Not answerable yet**, and saying otherwise would be reading a ceiling off the
-pre-trained encoder. What this run does establish:
-
-- Qwen3-0.6B's *frozen* representation, corrected with ABTT, routes at 91.5
-  assignment accuracy and 89.4 directory accuracy@1. That is above LaTa's
-  *supervised* ceiling (87.8 and 85.2). The paper's claim that a label-free
-  correction lands where supervision does is therefore, on the numbers now in
-  hand, easier to defend for the non-Latin model than for LaTa, not harder.
-- Whatever supervision buys Qwen3-0.6B, it is bounded by what 499 pairs can
-  teach: train loss reaches 4e-05 by epoch 4, so the model has memorised them.
-- The dev protocol that picks the checkpoint is under-powered at 71 files for a
-  model this strong. That is worth saying in the paper's limitations whichever
-  way the re-run lands.
+The re-run under the fixed rule (22080571) selected epoch 3. Its epochs 1 and 2
+reproduce the first run's to four decimals, but epoch 3 reads 71/71 where the
+first run read 70/71: at a train loss of 6e-04 one borderline dev file flips
+under ordinary GPU non-determinism. That is one more reason to treat a 71-file
+dev pool as the weak link in this protocol, and it is worth a line in the
+paper's limitations whichever model is being discussed.
 
 ## Benchmark v1 re-run (LaTa)
 
@@ -543,20 +579,28 @@ Qwen3-0.6B, 2026-09-14, from `sacct`:
 
 | Job | Partition | Elapsed | Reserved | State |
 |---|---|---|---|---|
-| 22080103 `ft_qwen_ceiling` | `gpuA100x4`, 1x A100-40GB | **00:03:49** | 00:30:00 | COMPLETED |
-| 22080194 `ft_qwen_eval` | `cpu`, 8 cores | 00:09:36 | 01:00:00 | COMPLETED |
+| 22080103 `ft_qwen_ceiling` (epoch-0 run) | `gpuA100x4`, 1x A100-40GB | **00:03:49** | 00:30:00 | COMPLETED |
+| 22080194 `ft_qwen_eval` (epoch-0 run) | `cpu`, 8 cores | 00:09:36 | 01:00:00 | COMPLETED |
+| 22080571 `ft_qwen_ceiling` (reported) | `gpuA100x4`, 1x A100-40GB | **00:05:07** | 00:20:00 | COMPLETED |
+| 22080685 `ft_qwen_eval` | `cpu`, 8 cores | 00:13:18 | 00:20:00 | CANCELLED |
+| 22081016 `ft_qwen_eval` (reported) | `cpu`, 8 cores | 00:05:07 | 00:40:00 | COMPLETED |
 
-**GPU cost: 229 seconds of A100 wall time** against a 1,800-second reservation,
-which is what SLURM charges. 2.6x LaTa's elapsed time for 5.4x the parameters
-and 28 layers instead of 12, which gradient checkpointing pays for. Training was
-4 epochs of 32 steps at 32 sequences of up to 512 tokens; extraction is two
-passes over 1,705 files, one for the parity check and one for the selected
-weights. Peak memory was well inside the 40GB card.
+**GPU cost: 336 seconds of A100 wall time over two jobs** (229 s + 307 s),
+against 1,800 + 1,200 seconds of reservation, which is what SLURM charges. The
+second job is the one whose numbers are reported; the first selected epoch 0
+under the old rule (see *A dev pool at its resolution limit*). Each run is
+about 2.6x LaTa's elapsed time for 5.4x the parameters and 28 layers instead of
+12, which gradient checkpointing pays for. Training is up to 8 epochs of 32
+steps at 32 sequences of up to 512 tokens; extraction is two passes over 1,705
+files, one for the parity check and one for the selected weights. Peak memory
+was well inside the 40GB card.
 
-**The next `--time` for this job can come down to 00:15:00** if it is re-run
-under the fixed selector, which should stop at epoch 7 rather than 4: 4 epochs
-cost 229 s including both extraction passes, so 8 epochs is still under 6
-minutes.
+**The CPU eval's `--time` is 40 minutes on purpose.** The same 28-layer sweep
+measured 00:09:36 and 00:05:07 on two nodes, and on a third it was still at
+layer 18 of 28 after 13 minutes, which is why 22080685 was cancelled rather than
+left to hit a 20-minute wall. The evaluate stage writes its CSV only once all 28
+layers are done, so a timeout loses the whole sweep; the reservation is sized
+for the slow node, not the fast one.
 
 Seeds: 42 throughout (dev carve, batch order, Torch/NumPy/Python RNGs), and
 42 to 46 for the multi-seed Task B protocol, for both models.

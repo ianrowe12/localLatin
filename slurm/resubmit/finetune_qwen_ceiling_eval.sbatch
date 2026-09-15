@@ -14,8 +14,11 @@
 # has to be re-scored to refresh the table.
 #
 # No GPU: this only reads cached embeddings, which the repo's budget rule sends
-# to the CPU partition. The runtime is dominated by the per-layer ABTT D sweep;
-# LaTa's 12 layers measured 2m46s, and this sweeps 28, so 1 hour is reserved.
+# to the CPU partition. The runtime is dominated by the per-layer ABTT D sweep
+# over 28 layers: 00:09:36 on one cpu node, 2.5x slower on another (a 20-minute
+# reservation timed out at layer 18 of 28). The stage writes its CSV only when
+# all 28 layers are done, so a timeout loses the whole sweep; 40 minutes is the
+# reservation, which is 4x the fast node and 1.6x the slow one.
 #
 #SBATCH --job-name=ft_qwen_eval
 #SBATCH --partition=cpu
@@ -24,7 +27,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=48g
-#SBATCH --time=01:00:00
+#SBATCH --time=00:40:00
 #SBATCH --output=slurm/logs/finetune_qwen_ceiling_eval_%j.out
 #SBATCH --error=slurm/logs/finetune_qwen_ceiling_eval_%j.err
 

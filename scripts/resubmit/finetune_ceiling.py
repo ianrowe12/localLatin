@@ -845,7 +845,11 @@ class CeilingFacts:
         )
 
     def notes(self) -> List[str]:
-        """Bullet notes, one paragraph each, wrapped into LaTeX comment lines."""
+        """This run's bullet notes, wrapped into LaTeX comment lines.
+
+        Bullets only: the section header is written once by ``write_tex``, so a
+        two-model table does not repeat it.
+        """
         bullets: List[str] = []
         if self.selected_epoch == 0:
             bullets.append(
@@ -884,20 +888,28 @@ class CeilingFacts:
             "The pre-trained rows are COPIED from the paper's results CSV, not rescored "
             "here; only the fine-tuned bases pass through evaluate_layers."
         )
+        # Which way this cuts depends on the model: for LaTa the ceiling sits
+        # below the zero-shot ABTT cells, so overstating it makes that reading
+        # conservative; for Qwen3-0.6B it sits above them, so overstating it
+        # weakens that reading instead. The note therefore states the fact and
+        # leaves the direction to the row it annotates.
         bullets.append(
             f"Witnesses in one directory are near-duplicates, and "
             f"{self.n_test_queries_touched} of the {self.n_test_queries} test query files "
             f"({self.pct_test_queries_touched:.1f}%) sit in a directory that supplied "
             f"training pairs. No test file was trained on, but the ceiling is if anything "
-            f"overstated, which makes the 'ABTT already reaches it' reading conservative."
+            f"overstated, so read any margin it holds over a zero-shot row as an upper "
+            f"bound on that margin."
         )
 
         prefix = f"{self.display_name}: " if self.display_name else ""
-        bullets = [prefix + b for b in bullets]
-        out = ["% Notes for whoever moves these rows into the paper:"]
+        out: List[str] = []
         for bullet in bullets:
             out += textwrap.wrap(
-                bullet, width=79, initial_indent="%   - ", subsequent_indent="%     "
+                prefix + bullet,
+                width=79,
+                initial_indent="%   - ",
+                subsequent_indent="%     ",
             )
         return out
 
@@ -1052,9 +1064,12 @@ def write_tex(sections: Sequence[CeilingSection], path: Path) -> None:
         r"\label{tab:finetune_ceiling}",
         r"\end{table}",
     ]
+    notes: List[str] = []
     for sec in sections:
         if sec.facts is not None:
-            lines += [""] + sec.facts.notes()
+            notes += sec.facts.notes()
+    if notes:
+        lines += ["", "% Notes for whoever moves these rows into the paper:"] + notes
     mseed_lines = []
     for sec in sections:
         if sec.mseed_agg is not None and not sec.mseed_agg.empty:

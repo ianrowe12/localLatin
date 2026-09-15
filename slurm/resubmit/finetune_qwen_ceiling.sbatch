@@ -27,10 +27,10 @@
 #
 #     sbatch slurm/resubmit/finetune_qwen_ceiling_eval.sbatch
 #
-# Budget: SLURM charges the reserved wall time, not the elapsed time. LaTa's
-# equivalent job measured 1m29s; Qwen3-0.6B is 5.4x the parameters, 28 blocks
-# instead of 12, and extracts 28 layers instead of 12, so 30 minutes is the
-# reservation. GPU use for this issue was approved by Ian on 2026-09-15.
+# Budget: SLURM charges the reserved wall time, not the elapsed time. The first
+# run of this job measured 00:03:49 for 4 epochs plus both full extraction
+# passes, so 8 epochs fits inside six minutes; 20 minutes is the reservation,
+# a 5x margin. GPU use for this issue was approved by Ian on 2026-09-15.
 #
 #SBATCH --job-name=ft_qwen_ceiling
 #SBATCH --partition=gpuA100x4
@@ -40,7 +40,7 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=96g
 #SBATCH --gpus-per-node=1
-#SBATCH --time=00:30:00
+#SBATCH --time=00:20:00
 #SBATCH --output=slurm/logs/finetune_qwen_ceiling_%j.out
 #SBATCH --error=slurm/logs/finetune_qwen_ceiling_%j.err
 
