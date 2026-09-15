@@ -6,21 +6,29 @@ match, and suspect that frequent Latin prefixes (prae, sub, pro, per, ad, ab) cr
 matches, at least in the highlighting. The models tokenise words into pieces, and the webapp
 renders one highlight per piece.
 
-This note answers two questions with numbers, over 89,942 pair sides of the deployed webapp
-artifacts and 4,803 pair sides of the paper's 200-positive-pair run:
+This note answers two questions with numbers:
 
 1. Does the highlight rest on frequent prefix pieces disproportionately?
 2. Does aggregating pieces to whole words restore the words a reader uses?
 
+The evidence is 89,896 scored pair sides of the deployed webapp artifacts (89,264 from the
+unlabelled bulk artifacts, 632 from the gallery pairs) and 4,800 scored pair sides of the
+paper's 200-positive-pair run. The per-pair CSVs hold a few rows more than that, 89,942 and
+4,803, because each carries one `_corpus` row per model and one row per side skipped for a
+non-finite attribution vector.
+
 **Short answer. No to the first, yes to the second.** Prefix pieces are 6 to 8 percent of the
-pieces in a text and receive 1 to 8 percent of the positive attribution mass, so they are at or
-below their share in almost every deployed configuration. The highest prefix lift over the
-deployed bulk artifacts is 1.09, the highest in any deployed cell is 1.14 (PhilTa, MaRC, the 20
-gallery pairs), and under the deployed `sif_abtt` variant the lift falls to 0.09 to 0.82.
-High-frequency pieces are likewise under-weighted, sharply so under `sif_abtt`. What is true,
-and what most likely produced the impression, is that **the highlighted unit is usually not a
-word**: 35 to 93 percent of the top five highlighted pieces are word fragments, and only 2 to
-56 percent of them are a whole word a reader would quote. Summing each word's pieces fixes
+pieces in a text and receive 0.3 to 8.2 percent of the positive attribution mass, so they are at
+or below their share in almost every deployed configuration. Taking the highest prefix lift in
+any deployed cell, on either side of the pair, it is 1.13 over the bulk artifacts (Qwen3-0.6B,
+`raw`, IG, candidate side) and 1.16 over the 20 gallery pairs per model (Qwen3-0.6B, `raw`, IG,
+candidate side); on the query side that the tables below report, the same maxima are 1.09 and
+1.14. Under the deployed `sif_abtt` variant the bulk query-side lift falls to 0.15 to 0.82
+(0.09 in one 20-pair gallery cell, PhilTa). High-frequency pieces are likewise under-weighted,
+sharply so under `sif_abtt`. What is true, and what most likely produced the impression, is that
+**the highlighted unit is usually not a word**: 35 to 93 percent of the top five highlighted
+pieces are word fragments, and only 2 to 56 percent of them are a whole word a reader would
+quote. Summing each word's pieces fixes
 that: 65 to 97 percent of the top five *words* are distinctive words. The fix belongs in the
 display, which is exactly what part 1 of this issue proposes.
 
@@ -32,7 +40,8 @@ sbatch slurm/ig/prefix_attribution_analysis.sbatch
 
 Summary CSVs (tracked, small): `docs/research/data/prefix_attribution_deployed.csv` and
 `docs/research/data/prefix_attribution_pos200.csv`. The per-pair rows land under
-`runs/active/ig_examples/prefix_attribution/` and are gitignored. Analysis code:
+`runs/active/ig_examples/prefix_attribution/` of whichever checkout the job ran in, and are
+gitignored. Analysis code:
 `scripts/ig/prefix_attribution.py` (the classifier and the aggregator) and
 `scripts/ig/run_prefix_attribution_analysis.py` (the driver), with
 `tests/test_prefix_attribution.py` covering both on synthetic pieces and a synthetic NPZ.
@@ -46,8 +55,19 @@ in the issue plus the rest of the productive Latin prefixes. Most of these are a
 prepositions, so every table separates two flavours:
 
 * a **prefix whole word**, for example `_in` standing alone as the preposition;
-* a **prefix fragment**, for example `_prae` opening `praedestinatione`, which is the thing the
-  issue actually describes.
+* a **prefix fragment**, any prefix piece that does not span its whole word, for example
+  `_prae` opening `praedestinatione`, which is the thing the issue actually describes.
+
+Two properties of that second flag should be read with the numbers. It is **positional only in
+the weak sense**: it fires wherever a prefix string appears inside a longer word, not only at
+the start, so `con` in `diaconus`, `re` in `facere` and `in` in `hominum` all count. Measured
+over the whole labelled corpus, the word-internal or word-final share of the flagged prefix
+fragments is LaTa 9.0 percent, PhilTa 8.4 percent, mT5-base 20.8 percent, LaBSE 26.2 percent,
+Qwen3-0.6B and KaLM-mini 23.3 percent each. Restricting the flag to word-opening pieces would
+therefore shrink it by a fifth to a quarter for the four heavily fragmenting tokenizers, and by
+under a tenth for the two Latin T5s. It is also a **lower bound**: a prefix fused into a larger
+piece, such as Qwen's `Ġpra` + `ed` for `prae`, is not counted at all, because no single piece
+equals a prefix string.
 
 **High-frequency pieces.** Piece frequencies come from tokenising all 1,705 files of
 `data/canon_labelled/` with each model's own tokenizer (a null-safe `os.walk`, because CCL
@@ -58,8 +78,9 @@ all piece tokens, which is why the frequency baseline matters.
 
 **The baseline that makes "disproportionate" mean something.** For every pair side the tables
 report both the share of pieces that carry a flag and the share of attribution mass those
-pieces receive. Their ratio is the **lift**. Lift 1.0 means the pieces get exactly their share;
-above 1.0 means disproportionate.
+pieces receive. Each is averaged over the sides in the cell, and the **lift** is the ratio of
+those two cell means, not the mean of the per-side ratios. Lift 1.0 means the pieces get
+exactly their share; above 1.0 means disproportionate.
 
 **Attribution mass.** The positive part of the per-token vector, normalised over the side. A
 negative IG score argues against the match, so folding its magnitude into the denominator would
@@ -90,7 +111,11 @@ not a lexicographic judgement.
   mT5-base, IG and MaRC, `raw` (called `baseline` in the artifacts) and `abtt`.
 
 Query and candidate sides are reported separately; the tables below give the query side, which
-is the text a reviewer is triaging, and the candidate side agrees within a few points.
+is the text a reviewer is triaging. The candidate side tracks it closely on the mass shares
+(the largest query-to-candidate gap in any deployed cell is 0.019) but the lift, being a ratio
+of two small numbers, can diverge more: the largest lift gap is 0.24, on Qwen3-0.6B `raw` IG
+over the 20 gallery pairs. Full candidate-side rows are in
+`docs/research/data/prefix_attribution_deployed.csv`.
 
 ## Result 1: prefix pieces get at most their share of the mass
 
@@ -114,9 +139,11 @@ Deployed run, unlabelled bulk artifacts, IG, query side. `n` is artifacts read.
 The deployed variant is `sif_abtt`, the right column block of every model's second row. Under it
 prefix pieces receive 1.1 to 5.2 percent of the mass while occupying 6.3 to 7.9 percent of the
 pieces: they are down-weighted by a factor of 1.2 to 6.5. The uncorrected `raw` view is close to
-neutral for four models, and the two cases that exceed their share (mT5-base 1.09 overall and
-1.24 on fragments, KaLM-mini 1.07 and 1.51 on fragments) are the two models whose tokenizers
-fragment Latin hardest. Even there the absolute mass is under 8 percent.
+neutral for four models, and the two cases that exceed their share on this side (mT5-base 1.09
+overall and 1.24 on fragments, KaLM-mini 1.07 and 1.51 on fragments) are the two models whose
+tokenizers fragment Latin hardest. Even there the absolute mass is under 8 percent. On the
+candidate side a third model joins them, Qwen3-0.6B at 1.13 overall, though its fragment lift
+stays at 0.99.
 
 ## Result 2: high-frequency pieces are under-weighted, and SIF is why
 
@@ -170,15 +197,16 @@ highlights ranked by `|IG|`.
 Read the two middle columns against the two on the right. Under the deployed `sif_abtt` variant,
 41 to 88 percent of the highlighted pieces are fragments of a longer word, and only 5 to 56
 percent of them are a whole word that is not a corpus commonplace. After summing each word's
-pieces, 85 to 97 percent of the top five words are distinctive words. At most 4.5 percent of the
-highlighted pieces are prefixes of any kind and at most 2.4 percent are the word-internal kind
-the issue describes, so the prefixes are a symptom of fragmentation rather than its cause: they
-are simply the most recognisable fragments when a reader sees one.
+pieces, 85 to 97 percent of the top five words are distinctive words. Still under `sif_abtt`, at
+most 4.5 percent of the highlighted pieces are prefixes of any kind and at most 2.4 percent are
+the part-of-a-longer-word kind the issue describes; under `raw` those ceilings are 6.8 and 3.7
+percent, both on the query side. So the prefixes are a symptom of fragmentation rather than its
+cause: they are simply the most recognisable fragments when a reader sees one.
 
 Fragmentation is a property of the tokenizer, not of the attribution. The share of all pieces
 that are word fragments runs LaTa 0.35, PhilTa 0.48, LaBSE 0.72, mT5-base 0.79, Qwen3-0.6B 0.84,
-KaLM-mini 0.84. A per-piece display cannot show words when, for the decoder models, five pieces in six are not
-words.
+KaLM-mini 0.84. A per-piece display cannot show words when, for the decoder models, five pieces
+in six are not words.
 
 One concrete pair, LaBSE gallery example 1, `Can.apost.7`, `sif_abtt`:
 
@@ -240,29 +268,43 @@ The 200-positive-pair run (issue #141, benchmark v1) carries both views and both
 | mT5-base | abtt | ig | 0.071 | 0.074 | 1.04 | 1.08 | 0.442 | 0.445 | 1.01 | 0.067 | 0.769 | 0.036 | 0.823 |
 | mT5-base | abtt | marc | 0.071 | 0.077 | 1.08 | 1.06 | 0.442 | 0.463 | 1.05 | 0.104 | 0.732 | 0.058 | 0.886 |
 
-MaRC is the one view where the observation lands as stated, and only on the most heavily
-fragmenting tokenizer: mT5-base under `raw` puts 10 percent of its mask mass on prefix pieces
-against a 7.1 percent baseline, and 15.4 percent of its top five slots are prefix pieces. MaRC
-optimises a soft mask rather than integrating a gradient, and the mask drifts towards common
-short pieces when nothing is removed from the embedding first. ABTT pulls it back to 1.08.
-Every IG cell stays at or under 1.04. The deployed gallery pairs agree: LaTa MaRC lift 0.99,
+Within this run, MaRC is the view where the observation lands hardest, and only on the most
+heavily fragmenting tokenizer: mT5-base under `raw` puts 10 percent of its mask mass on prefix
+pieces against a 7.1 percent baseline, and 15.4 percent of its top five slots are prefix pieces.
+MaRC optimises a soft mask rather than integrating a gradient, and the mask drifts towards
+common short pieces when nothing is removed from the embedding first. ABTT pulls it back to
+1.08. Every IG cell in this run stays at or under 1.04, though note that the deployed run's own
+`raw` IG does exceed 1.0 on prefix fragments for two models (Result 1), so MaRC is not the only
+place the effect appears. The deployed gallery pairs agree: LaTa MaRC lift 0.99,
 PhilTa 1.14, LaBSE 0.59 (see `prefix_attribution_deployed.csv`, `stratum=gallery`).
 
-Two data gaps worth recording. The deployed Qwen3-0.6B gallery artifacts carry **all-NaN MaRC
-masks** for every variant (20 of 20 pairs, column `n_nonfinite` in the deployed CSV): the mask
-optimisation diverged for that model when those artifacts were regenerated. The KaLM-mini and
-mT5-base deployed artifacts carry no MaRC keys at all. Neither affects the webapp, which renders
-IG by default, but a MaRC panel for Qwen would currently be blank and the divergence should be
-fixed separately.
+Two data gaps worth recording. The deployed Qwen3-0.6B gallery artifacts carry **MaRC masks
+riddled with NaN**: all 20 pairs, both sides, and both of the variants that carry a mask at all
+(`baseline` and `abtt`; there is no `sif` or `sif_abtt` mask for any model). No vector is
+entirely NaN, but 87 to 97 percent of the positions are, a mean of 92 percent, so the mask is
+unusable and the analysis records those 40 sides as `n_nonfinite` in the deployed CSV rather
+than averaging NaN. The mask optimisation evidently diverged for that model when those
+artifacts were regenerated. Separately, the KaLM-mini and mT5-base deployed artifacts carry no
+MaRC keys at all. Neither gap affects the webapp, which renders IG by default, but a MaRC panel
+for Qwen would currently be blank and the divergence should be fixed separately (issue #216).
 
 ## Answers for Prof. Firey
 
-**"The highlighting seems to fall on frequent prefixes."** Measured over 89,942 pair sides, it
-does not. Prefix pieces hold 6 to 8 percent of the text and receive 1 to 8 percent of the
-highlight weight, and under the variant the webapp serves they receive well under their share.
-Frequent pieces are down-weighted harder still, because the scoring method deliberately
-discounts them. The single exception is one attribution method (MaRC) on one model (mT5-base) in
-its uncorrected form, where prefixes take 1.4 times their share.
+**"The highlighting seems to fall on frequent prefixes."** Measured over 89,896 scored pair
+sides, it does not. Prefix pieces hold 6 to 8 percent of the text and receive 0.3 to 8.2 percent
+of the highlight weight, and under the variant the webapp serves they receive well under their
+share on every model. Frequent pieces are down-weighted harder still, because the scoring method
+deliberately discounts them.
+
+The exceptions are all in the **uncorrected** views, and there are three worth naming. Two of
+the six models put more than their share on word-internal prefix pieces under `raw` IG, which is
+precisely the kind the issue describes: KaLM-mini at 1.51 times its share (4.3 percent of the
+mass) and mT5-base at 1.24 times (4.1 percent). The third is MaRC on mT5-base under `raw`, at
+1.40 times its share overall with 15.4 percent of the top five slots. The deployed `sif_abtt`
+variant brings all three under 1.0 (KaLM-mini to 0.93, mT5-base to 0.63), and no IG cell under
+the deployed variant exceeds 0.96 on fragments. So the intuition has a real home, in the
+uncorrected view of the two tokenizers that cut Latin into the smallest pieces, and it does not
+describe what the webapp serves.
 
 **"The highlighting disregards the distinctive words."** This is right, and the cause is the
 rendering rather than the model. The model reads a word as several pieces, and the display

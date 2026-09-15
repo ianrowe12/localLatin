@@ -105,9 +105,12 @@ def analyse_artifact(path: Path, tokenizer, lex, specials, variants, top_k=5):
                     if attr is None:
                         continue
                     if not np.isfinite(attr[:n]).all():
-                        # The deployed Qwen3-0.6B MaRC masks are all-NaN: the
-                        # mask optimisation diverged for that model. Record the
-                        # gap rather than propagating NaN into the means.
+                        # The deployed Qwen3-0.6B MaRC masks are riddled with
+                        # NaN (87 to 97 percent of positions in all 20 gallery
+                        # pairs, both sides, for both variants that carry a
+                        # mask): the mask optimisation diverged for that model.
+                        # Record the gap rather than propagating NaN into the
+                        # means. Anything non-finite disqualifies the side.
                         rows.append({"variant": variant, "view": view,
                                      "side": side, "artifact": path.name,
                                      "nonfinite": 1})

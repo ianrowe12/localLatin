@@ -304,7 +304,11 @@ def test_top5_counts_distinct_words_and_prefix_fragments():
 
 
 def test_nonfinite_attribution_is_recorded_not_averaged(tmp_path):
-    """The deployed Qwen3-0.6B MaRC masks are all NaN; they must not pollute."""
+    """Qwen3-0.6B's deployed MaRC masks are mostly NaN; they must not pollute.
+
+    A partly-NaN vector is as unusable as an all-NaN one, so the fixture makes
+    the query mask partly NaN and expects the whole side to be skipped.
+    """
     vocab = ["<pad>", f"{SP}prae", "dest", f"{SP}episcopo", f"{SP}ad",
              f"{SP}canonum"]
     tok = StubTokenizer(vocab, ["<pad>"])

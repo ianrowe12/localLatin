@@ -315,8 +315,15 @@ def pair_side_metrics(attr: np.ndarray, table: PieceTable, top_k: int = 5) -> di
         "fragment": ~table.is_whole_word[keep],
     }
     # Most "prefix pieces" in this corpus are standalone prepositions (in, de,
-    # ad, ex, per, ab), not word-internal prefixes. Split them, because only
+    # ad, ex, per, ab), not pieces of a longer word. Split them, because only
     # the second kind is the thing issue #211 describes.
+    #
+    # "fragment" here means "does not span its whole word", at any position, so
+    # `con` in `diaconus` and `re` in `facere` count alongside `prae` in
+    # `praedestinatione`. Corpus-wide that non-opening share runs from 8 percent
+    # (PhilTa) to 26 percent (LaBSE); see docs/research/prefix_attribution_analysis.md.
+    # The flag is also a lower bound: a prefix fused into a larger piece
+    # (Qwen's `Gpra` + `ed`) equals no prefix string and is not counted.
     flags["prefix_fragment"] = flags["prefix"] & flags["fragment"]
     flags["prefix_wholeword"] = flags["prefix"] & flags["whole_word"]
     out = {
@@ -342,8 +349,9 @@ def pair_side_metrics(attr: np.ndarray, table: PieceTable, top_k: int = 5) -> di
     out["top5_share_prefix"] = float(table.is_prefix[order].mean())
     out["top5_share_frequent"] = float(table.is_frequent[order].mean())
     out["top5_share_fragment"] = float(frag.mean())
-    # The exact thing issue #211 describes: a prefix highlighted as a fragment
-    # of a longer word ("prae" inside "praedestinatione").
+    # The closest measurable form of what issue #211 describes: a prefix string
+    # highlighted as part of a longer word ("prae" inside "praedestinatione"),
+    # word-internal occurrences included. See the note on `prefix_fragment` above.
     out["top5_share_prefix_fragment"] = float(
         (table.is_prefix[order] & frag).mean())
     out["top5_share_prefix_wholeword"] = float(
