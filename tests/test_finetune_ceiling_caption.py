@@ -106,7 +106,8 @@ def unwrapped(tex: str) -> str:
 def test_caption_quotes_the_runs_own_pair_count(tmp_path):
     facts, pair_data, _ = build_facts({"selected_epoch": 3, "epochs_run": 5})
     tex = render(tmp_path, facts)
-    assert f"the {pair_data.n_all_train_pairs} positive pairs" in tex
+    assert (f"on {len(pair_data.train_pairs)} of the {pair_data.n_all_train_pairs} "
+            "positive train pairs") in tex
     # The literal the caption used to hardcode must not survive a different run.
     assert "565" not in tex
 
@@ -248,7 +249,7 @@ def test_shared_pair_count_is_stated_once_and_dropped_when_runs_disagree(tmp_pat
     """Both ceilings use one split and one seed, so the count is theirs jointly."""
     tex = two_sections(tmp_path)
     facts, _, _ = build_facts({"selected_epoch": 7, "epochs_run": 7})
-    assert f"the {facts.n_all_train_pairs} positive pairs" in tex
+    assert f"on {facts.n_fit_pairs} of the {facts.n_all_train_pairs} positive train pairs" in tex
 
     disagreeing = ceiling.CeilingFacts.from_dict(
         {**{k: v for k, v in vars(facts).items() if k != "display_name"},

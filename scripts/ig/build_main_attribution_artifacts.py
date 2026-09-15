@@ -525,7 +525,62 @@ def render_secondary_table(summary: pd.DataFrame, out_path: Path, *,
     out_path.write_text("\n".join(lines), encoding="utf-8")
 
 
-def render_rho_figure(summary: pd.DataFrame, out_base: Path) -> None:
+_NUMBER_WORDS = {0: "none", 1: "one", 2: "two", 3: "three", 4: "four",
+                 5: "five", 6: "six"}
+
+
+def rho_figure_caption(summary: pd.DataFrame,
+                       pairs_root: Optional[Path] = None) -> str:
+    """The figure's win count and tie cell, read off the same statistics as
+    the table caption.
+
+    The published figure caption hardcoded "in all six cells" and survived the
+    #187 re-sample while the table caption, computed from ``_wins`` and
+    ``_ties_for``, said five with PhilTa MaRC a tie. Both captions now come
+    from the same two functions, so they cannot disagree again.
+    """
+    wins = _wins(summary, RHO_KEY)
+    tie_labels = set(_ties_for(pairs_root, RHO_KEY))
+    not_won = []
+    for model, model_label in MODELS:
+        for method, method_label in METHODS:
+            base = _get(summary, model, method, "baseline", _mean_col(RHO_KEY))
+            abtt = _get(summary, model, method, "abtt", _mean_col(RHO_KEY))
+            if not abtt > base:
+                not_won.append((f"{model_label} {method_label}", base, abtt))
+    n_cells = len(MODELS) * len(METHODS)
+
+    lead = (
+        r"\caption{Leave-one-out rank correlation $\rho_{\text{LOO}}$ at the "
+        r"predeclared operational attribution layers, for integrated gradients "
+        r"(IG) and retrieval-adapted MaRC. Each line connects the baseline and "
+        r"ABTT variants of one model-method cell. "
+    )
+    if wins == n_cells:
+        wins_text = rf"ABTT raises $\rho_{{\text{{LOO}}}}$ in all {_NUMBER_WORDS[n_cells]} cells."
+    else:
+        parts = []
+        for label, base, abtt in not_won:
+            verdict = ""
+            if pairs_root is not None:
+                verdict = (", a tie within two standard errors" if label in tie_labels
+                           else ", a loss")
+            parts.append(f"{label}, moves from {_fmt(base)} to {_fmt(abtt)}{verdict}")
+        if len(not_won) == 1:
+            rest = f"the {_NUMBER_WORDS[n_cells]}th, {parts[0]}"
+        else:
+            rest = "the others: " + "; ".join(parts)
+        wins_text = (
+            rf"ABTT raises $\rho_{{\text{{LOO}}}}$ in {_NUMBER_WORDS[wins]} of the "
+            rf"{_NUMBER_WORDS[n_cells]} cells; {rest} "
+            r"(Table~\ref{tab:attribution_metrics_main})."
+        )
+    return (lead + wins_text
+            + r" Secondary metrics: Table~\ref{tab:attribution_metrics_secondary}.}")
+
+
+def render_rho_figure(summary: pd.DataFrame, out_base: Path,
+                      pairs_root: Optional[Path] = None) -> None:
     import matplotlib.pyplot as plt
     from matplotlib.lines import Line2D
 
@@ -614,16 +669,7 @@ def render_rho_figure(summary: pd.DataFrame, out_base: Path) -> None:
             r"\begin{figure}[t]",
             r"\centering",
             rf"\includegraphics[width=\linewidth]{{figures/{out_base.name}.pdf}}",
-            (
-                r"\caption{\textbf{$\rho_{\text{LOO}}$ foreground view for the main "
-                r"candidate-attribution result.} Each line connects the baseline "
-                r"and ABTT variants for one model-method cell at the predeclared "
-                r"operational attribution layer. ABTT improves the leave-one-out "
-                r"rank-correlation signal in all six cells; "
-                r"Table~\ref{tab:attribution_metrics_secondary} shows the "
-                r"secondary metrics which qualify this narrower faithfulness "
-                r"claim.}"
-            ),
+            rho_figure_caption(summary, pairs_root),
             r"\label{fig:attribution_rho_loo_main}",
             r"\end{figure}",
             "",
@@ -668,7 +714,7 @@ def main() -> None:
     summary = _load_main_rows(args.summary_csv)
     render_table(summary, args.table_out, args.pairs_root, source_run=run)
     render_secondary_table(summary, args.secondary_table_out, source_run=run)
-    render_rho_figure(summary, args.fig_out_base)
+    render_rho_figure(summary, args.fig_out_base, args.pairs_root)
     print(f"Wrote {args.table_out}")
     print(f"Wrote {args.secondary_table_out}")
     print(f"Wrote {args.fig_out_base.with_suffix('.pdf')}")

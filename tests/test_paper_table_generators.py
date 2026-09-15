@@ -589,6 +589,21 @@ def test_bare_packager_run_reproduces_the_committed_sweep_tables(tmp_path: Path,
         aror.ATTRIBUTION_METRICS_DIR / "summary_v2_sweep_long_appendix.csv").read_bytes()
 
 
+def test_bare_headline_run_reproduces_the_committed_tables(tmp_path: Path, monkeypatch):
+    """Issue #208: a bare run once dropped the Qwen3-0.6B fine-tuned row because
+    the defaults named only the LaTa ceiling. Both ceilings are defaults now, and
+    this drives ``main()`` with no arguments but ``--out_dir``."""
+    for raw in [bht.DEFAULT_RESULTS_CSV, *bht.DEFAULT_FINETUNE_CSVS,
+                *bht.DEFAULT_FINETUNE_RUN_INFOS]:
+        _skip_unless(REPO_ROOT / raw, "headline table input (gitignored)")
+    monkeypatch.chdir(REPO_ROOT)
+    monkeypatch.setattr(sys, "argv", ["build_headline_tables.py",
+                                      "--out_dir", str(tmp_path)])
+    bht.main()
+    for name in ("taskA_headline.tex", "taskB_headline.tex"):
+        assert (tmp_path / name).read_bytes() == (TABLES_DIR / name).read_bytes(), name
+
+
 def test_bare_generator_run_reproduces_the_committed_main_tables(tmp_path: Path, monkeypatch):
     _skip_unless(aror.DEFAULT_SUMMARY_CSV, "run-of-record summary")
     _skip_unless(aror.ATTRIBUTION_METRICS_DIR / "v2_hidden", "per-pair cache (gitignored)")

@@ -72,8 +72,14 @@ $PY scripts/resubmit/visualize_resubmit.py \
   --out_dir "$FIG_DIR"
 
 echo "=== Headline tables ==="
+# Both committed ceilings, in row order (issue #208); these are also the
+# generator's defaults, so a bare run writes the same tables.
 $PY scripts/resubmit/build_headline_tables.py \
   --results_csv "$RESULTS_DIR/phase_resubmit_results.csv" \
+  --finetune_csv "$RESULTS_DIR/finetune/finetune_lata_ceiling_comparison.csv" \
+  --finetune_run_info "$REPO_ROOT/runs/active/resubmit/finetune/run_info.json" \
+  --finetune_csv "$RESULTS_DIR/finetune/finetune_qwen3_0.6b_ceiling_comparison.csv" \
+  --finetune_run_info "$REPO_ROOT/runs/active/resubmit/finetune/qwen3_0.6b/run_info.json" \
   --out_dir "$TABLE_DIR"
 
 echo "=== Task A per-model summary ==="

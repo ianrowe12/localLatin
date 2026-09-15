@@ -149,7 +149,7 @@ PAPER_MODEL_ORDER = [
 
 TASKB_TOPK_CAPTION = (
     "Cumulative top-$K$ accuracy for Task B under SIF+ABTT, as mean $\\pm$ standard "
-    "deviation over five query/reference reseedings at a fixed v2 split. "
+    "deviation over five query/reference reseedings at a fixed split. "
     + SELECTION_RULE_CAPTION
     + " Each row is the bold row of Table~\\ref{tab:taskB_ranking_appendix_mseed}. "
     "Each cell is the percentage of test queries whose labelled directory appears "

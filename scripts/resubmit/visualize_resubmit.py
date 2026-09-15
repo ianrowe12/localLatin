@@ -57,6 +57,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dist_dir", required=True, help="Distribution .npz directory.")
     parser.add_argument("--out_dir", required=True, help="Figure output directory.")
     parser.add_argument(
+        "--aux_dir",
+        default="runs/active/resubmit/figures_aux",
+        help=(
+            "Directory for the per-model diagnostic figures the paper does not "
+            "input (fig_release_*_per_model, fig_appendix_*_per_model). Kept "
+            "out of --out_dir so overleaf_drafts/figures holds only paper "
+            "inputs (issue #208)."
+        ),
+    )
+    parser.add_argument(
         "--repr_name",
         default="hidden",
         help="Representation to plot (paper default: hidden).",
@@ -489,6 +499,8 @@ def main() -> None:
     args = parse_args()
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    aux_dir = Path(args.aux_dir)
+    aux_dir.mkdir(parents=True, exist_ok=True)
 
     results = pd.read_csv(args.results_csv)
     release_rows = filter_release_rows(results, args.repr_name)
@@ -521,7 +533,7 @@ def main() -> None:
         release_rows,
         metric="aucroc",
         ylabel="AUROC",
-        out_dir=out_dir,
+        out_dir=aux_dir,
         stem="fig_release_aucroc_per_model",
         models=main_models,
         methods=["baseline", "abtt_optimal"],
@@ -530,7 +542,7 @@ def main() -> None:
         release_rows,
         metric="aucroc",
         ylabel="AUROC",
-        out_dir=out_dir,
+        out_dir=aux_dir,
         stem="fig_appendix_aucroc_per_model",
         models=appendix_models,
         methods=["baseline", "abtt_optimal"],
@@ -539,7 +551,7 @@ def main() -> None:
         release_rows,
         metric="overall_assignment_acc",
         ylabel="Assignment Accuracy",
-        out_dir=out_dir,
+        out_dir=aux_dir,
         stem="fig_release_taskb_per_model",
         models=main_models,
         methods=["baseline", "abtt_optimal"],
@@ -548,7 +560,7 @@ def main() -> None:
         release_rows,
         metric="overall_assignment_acc",
         ylabel="Assignment Accuracy",
-        out_dir=out_dir,
+        out_dir=aux_dir,
         stem="fig_appendix_taskb_per_model",
         models=appendix_models,
         methods=["baseline", "abtt_optimal"],
@@ -557,7 +569,7 @@ def main() -> None:
         release_rows,
         metric="gap",
         ylabel="Cosine Gap",
-        out_dir=out_dir,
+        out_dir=aux_dir,
         stem="fig_release_gap_per_model",
         models=main_models,
         methods=["baseline", "abtt_optimal", "whitening"],
@@ -566,7 +578,7 @@ def main() -> None:
         release_rows,
         metric="gap",
         ylabel="Cosine Gap",
-        out_dir=out_dir,
+        out_dir=aux_dir,
         stem="fig_appendix_gap_per_model",
         models=appendix_models,
         methods=["baseline", "abtt_optimal", "whitening", "sif_only"],
