@@ -23,7 +23,9 @@ mkdir -p slurm/logs
 SPLIT_CSV="$REPO_ROOT/runs/active/resubmit/data/phase_resubmit_split.csv"
 RUNS_ROOT="$REPO_ROOT/runs/active/resubmit_bases"
 OUT_DIR="$REPO_ROOT/runs/active/resubmit/taskb_mseed"
-FIG_DIR="$REPO_ROOT/overleaf_drafts/figures"
+# Diagnostic figures and the selected-config CSV are byproducts, not paper
+# inputs; only --paper_table_tex reaches overleaf_drafts/ (issue #208).
+FIG_DIR="$OUT_DIR/figures"
 
 mkdir -p "$OUT_DIR" "$FIG_DIR"
 

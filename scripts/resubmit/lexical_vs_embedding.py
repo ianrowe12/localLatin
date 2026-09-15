@@ -90,7 +90,7 @@ Outputs
 -------
 - ``runs/active/resubmit/results/lexical_vs_embedding.csv`` (tidy, one row per
   method x stratum)
-- ``overleaf_drafts/figures/fig_lexical_vs_embedding.{pdf,png}``
+- ``runs/active/resubmit/results/fig_lexical_vs_embedding.{pdf,png}`` (rebuttal material; the paper does not input it)
 - printed summary for ``docs/research/lexical_vs_embedding.md``
 
 Run it in one command from the repo root, CPU only, a few minutes:
@@ -833,7 +833,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     )
     p.add_argument(
         "--out_fig",
-        default=str(REPO_ROOT / "overleaf_drafts/figures/fig_lexical_vs_embedding.pdf"),
+        default=str(REPO_ROOT / "runs/active/resubmit/results/fig_lexical_vs_embedding.pdf"),
     )
     p.add_argument("--neg_decile", type=float, default=0.9,
                    help="Quantile cut for the high-overlap negative slice.")

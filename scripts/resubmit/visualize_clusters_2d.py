@@ -108,7 +108,10 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--figures_dir",
-        default=str(REPO_ROOT / "overleaf_drafts/figures"),
+        # The paper's panels are written by the cluster-viz sbatch, which passes
+        # --figures_dir and --output_stem explicitly; a bare run's default stem
+        # (fig_{proj}_per_model) is a diagnostic and stays out of the paper tree.
+        default=str(REPO_ROOT / "runs/active/resubmit/cluster_viz/figures"),
     )
     parser.add_argument(
         "--methods",
