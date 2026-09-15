@@ -252,7 +252,112 @@ the zero-shot pipeline already is; an overstated ceiling makes that reading
 conservative, because the honest ceiling would sit at or below the number
 reported here.
 
-## Benchmark v1 re-run
+## Qwen3-0.6B: the same recipe, and the protocol flaw it exposed
+
+**Status: the run did not produce a fine-tuned checkpoint.** Model selection
+kept epoch 0, the pre-trained encoder, so the "fine-tuned" rows below are the
+zero-shot rows. The cause is diagnosed, the fix is in the code, and the numbers
+that would answer #194 need one more A100 job. Nothing here should be moved
+into the paper as it stands.
+
+### What was run
+
+One GPU job, `slurm/resubmit/finetune_qwen_ceiling.sbatch`: parity check,
+contrastive fine-tuning, extraction of all 28 layers. Everything except the
+encoder matches LaTa exactly, and the dev carve is a function of the split and
+the seed, so both models train on the same 499 pairs drawn from the same 162
+directories and hold out the same 28.
+
+**Pooling.** Mean pooling with the `tokenizer_empty` filter at max_length 512,
+because that is what the paper's Qwen3-0.6B rows use, not the last-token
+pooling a decoder embedding model is normally used with. The parity check
+confirms it: re-extracting with the pre-trained weights reproduces the paper's
+cache at about 1e-06 relative on layers 1 and 28, mean cosine 1.000000.
+
+**Recipe delta: gradient checkpointing, and nothing else.** Qwen3-0.6B is 596M
+parameters against LaTa's 110M encoder, and 32 sequences of 512 tokens through
+28 blocks does not fit beside fp32 AdamW state on one A100-40GB. Activations
+are recomputed in the backward pass instead of stored, so the gradients are
+identical and only the memory bill changes. It is recorded as
+`grad_checkpointing` in `run_info.json`.
+
+### What happened
+
+| Epoch | Train loss | Dev dir. acc.@1 | Dev AUROC |
+|---|---|---|---|
+| **0 (pre-trained, selected)** | | **1.000** (71/71) | **0.9660** |
+| 1 | 0.4426 | 0.986 (70/71) | 0.9991 |
+| 2 | 0.0312 | 0.986 | 0.9996 |
+| 3 | 0.0006 | 0.986 | 0.9998 |
+| 4 | 0.00004 | 0.986 | 0.9998 |
+
+Patience fired after epoch 4. Training worked: the loss falls four orders of
+magnitude and dev AUROC goes from 0.966 to 0.9998. Selection still returned
+epoch 0.
+
+**Why.** The rule was "best dev directory accuracy@1, with dev AUROC breaking
+exact ties". Qwen3-0.6B's *pre-trained* encoder already routes 71 of 71 dev
+files correctly, so accuracy has no headroom; training moves one file the wrong
+way; and 1 file out of 71 is 1.4 points, which is not an exact tie, so the
+AUROC tie-break was never consulted. A 1.4-point accuracy difference vetoed a
+0.034 AUROC gain.
+
+LaTa never hit this because its pre-trained dev accuracy is 0.930 (66 of 71),
+which leaves five files of headroom for training to claim.
+
+**The consequence is visible in the artifacts.** `encoder_best.pt` holds the
+pre-trained weights, so the extracted cache equals the paper's Qwen cache to
+float32 noise (max abs. difference 2.3e-06 at layer 1, 3.1e-05 at layer 14,
+4.6e-05 at layer 28, against activation peaks of 3.0, 33.8 and 17.0), and every
+fine-tuned row equals its pre-trained row:
+
+| System | Task A AUROC | Cosine gap | Assignment acc. | Dir. acc.@1 |
+|---|---|---|---|---|
+| Qwen3-0.6B (pre-trained) | 0.966₂₆ | 0.024₂₆ | 82.3₂₈ | 80.3₂₈ |
+| Qwen3-0.6B (pre-trained) + ABTT | 0.973₂ | 0.553₂ | **91.5₅** | **89.4₅** |
+| Qwen3-0.6B (fine-tuned) | 0.966₂₆ | 0.024₂₆ | 82.3₂₈ | 80.3₂₈ |
+| Qwen3-0.6B (fine-tuned) + ABTT | 0.973₂ | 0.553₂ | **91.5₅** | **89.4₅** |
+
+Five-seed Task B agrees row for row: 0.824 +/- 0.010 at layer 28 without ABTT
+and 0.905 +/- 0.004 at layer 5 with it, for both the pre-trained and the
+"fine-tuned" cache.
+
+### The fix
+
+One file is the entire resolution of a 71-file pool, so a difference at or
+below it is not a measurement. `is_better_checkpoint` in
+`src/finetune_pairs.py` now treats accuracy differences within `1/n_dev` as
+ties and lets AUROC decide; anything larger still wins on accuracy outright.
+
+**This does not move LaTa.** Its curve gains two files at epoch 3, which is a
+real gain under either rule, and its last four epochs are already exact ties
+that AUROC decided. Replaying its measured curve selects epoch 7 either way, so
+the published LaTa ceiling is untouched.
+`tests/test_finetune_ceiling_pairs.py` replays both runs' curves and pins LaTa
+at epoch 7 and Qwen3-0.6B at epoch 3.
+
+The artifacts under `runs/active/resubmit/finetune/qwen3_0.6b/` predate the
+fix. Re-running `slurm/resubmit/finetune_qwen_ceiling.sbatch` under it should
+select epoch 3 and produce a real ceiling; that job is the only thing standing
+between this section and an answer.
+
+### Do the two models agree?
+
+**Not answerable yet**, and saying otherwise would be reading a ceiling off the
+pre-trained encoder. What this run does establish:
+
+- Qwen3-0.6B's *frozen* representation, corrected with ABTT, routes at 91.5
+  assignment accuracy and 89.4 directory accuracy@1. That is above LaTa's
+  *supervised* ceiling (87.8 and 85.2). The paper's claim that a label-free
+  correction lands where supervision does is therefore, on the numbers now in
+  hand, easier to defend for the non-Latin model than for LaTa, not harder.
+- Whatever supervision buys Qwen3-0.6B, it is bounded by what 499 pairs can
+  teach: train loss reaches 4e-05 by epoch 4, so the model has memorised them.
+- The dev protocol that picks the checkpoint is under-powered at 71 files for a
+  model this strong. That is worth saying in the paper's limitations whichever
+  way the re-run lands.
+
+## Benchmark v1 re-run (LaTa)
 
 The first run of this experiment (#123, PR #134) trained and scored on the
 pre-#131 split. Benchmark v1 moves `BN2123.89r.5.txt` from `Can.apost.48` to
@@ -320,32 +425,55 @@ system than the correction does.
 
 ## Reproducing
 
-Two jobs. Only the first needs a GPU, and it is the only GPU job this work was
-approved for. Scoring reads cached `.npy` files, which the repo's budget rule
-sends to the CPU partition, so it must not sit inside the GPU reservation.
+Four jobs, two per model. Only the training halves need a GPU. Scoring reads
+cached `.npy` files, which the repo's budget rule sends to the CPU partition,
+so it must not sit inside the GPU reservation.
 
 ```bash
-# 1. GPU: fine-tune, extract all 12 layers, parity-check against the paper's cache.
+# GPU: fine-tune, extract every layer, parity-check against the paper's cache.
 sbatch slurm/resubmit/finetune_lata_ceiling.sbatch
+sbatch slurm/resubmit/finetune_qwen_ceiling.sbatch
 
-# 2. CPU: Task A, Task B, 5-seed Task B, comparison CSV, LaTeX rows.
+# CPU: Task A, Task B, 5-seed Task B, comparison CSVs.
 sbatch slurm/resubmit/finetune_lata_ceiling_eval.sbatch
+# ... then this one, which also writes the generated table.
+sbatch slurm/resubmit/finetune_qwen_ceiling_eval.sbatch
 ```
 
-Both accept `CODE_ROOT` (scripts, `src/`, `data/`) and `REPO_ROOT` (the `runs/`
-tree) as environment overrides; they are the same path in a normal checkout and
-differ only when submitting from a git worktree.
+**Order matters, because `tables/finetune_ceiling.tex` has exactly one
+writer.** The table carries both ceilings, so the Qwen eval job renders it: its
+`--tex_extra_run LaTa:finetune_lata:<lata out dir>` reads LaTa's comparison CSV
+and saved caption facts back off disk and prints them above its own rows. The
+LaTa eval job writes CSVs only. That is what stops a LaTa-only re-run from
+silently dropping Qwen from the table.
 
-Regenerating only `tables/finetune_ceiling.tex`, after the CSVs exist, needs
-neither job and no recompute: `--stages report` rebuilds the comparison from
-`finetune_lata_layer_results.csv`, reuses the saved 5-seed aggregate, and
-rewrites the table.
+All four accept `CODE_ROOT` (scripts, `src/`, `data/`) and `REPO_ROOT` (the
+`runs/` tree) as environment overrides; they are the same path in a normal
+checkout and differ only when submitting from a git worktree. The Qwen eval job
+also accepts `TEX_OUT`, for rendering the table somewhere other than
+`overleaf_drafts/`.
 
-The two functions that decide whether the ceiling is honest, the directory-level
-dev carve and the directory-disjoint batching, live in `src/finetune_pairs.py`
-rather than in the CLI. That module imports nothing heavier than pandas, so
-`tests/test_finetune_ceiling_pairs.py` runs on a clean CI checkout instead of
-being skipped for want of torch.
+Regenerating only the table, after the CSVs exist, needs no job and no
+recompute: `--stages report` rebuilds the comparison from the model's
+`*_layer_results.csv`, reuses the saved 5-seed aggregate, and rewrites the
+table.
+
+The three functions that decide whether a ceiling is honest live in
+`src/finetune_pairs.py` rather than in the CLI: the directory-level dev carve,
+the directory-disjoint batching, and the checkpoint selector. That module
+imports nothing heavier than pandas, so `tests/test_finetune_ceiling_pairs.py`
+runs on a clean CI checkout instead of being skipped for want of torch.
+
+### One script, one model at a time
+
+`scripts/resubmit/finetune_ceiling.py` (named `finetune_lata_ceiling.py` until
+#194) takes the model as a parameter. `--model_name` picks the encoder and the
+cache the parity check diffs against, `--display_name` names the rows
+("LaTa", "Qwen3-0.6B"), and `--results_prefix` keeps two models' CSVs apart in
+one results directory. A seq2seq checkpoint contributes its encoder stack; any
+other checkpoint is loaded with `AutoModel`, the way `extract_encoder_cli.py`
+loads the decoder-only models, so the fine-tuned vectors live in the same space
+as the zero-shot rows they are compared against.
 
 ### The generated table's caption
 
@@ -360,18 +488,33 @@ terminal, whether the $D$ sweep hit the top of its grid, and the near-duplicate
 overlap statistic. `tests/test_finetune_ceiling_caption.py` changes each input
 and asserts the caption follows.
 
+With two ceilings in one table the same rule applies per model. Each
+`CeilingSection` carries its own facts, so the caption says "ABTT rows for LaTa
+... select $D=10$ everywhere" and "ABTT rows for Qwen3-0.6B ... 18 of 28 layer
+rows select the top of the grid" rather than one model's claim standing for
+both, and the epoch sentence is named the same way. The pair count is the one
+statement made jointly, and only because both carves come from one split and
+one seed; if two runs ever disagree on it, the clause drops the number instead
+of quoting one model's count for the other.
+
 Outputs:
+
+LaTa writes into `runs/active/resubmit/finetune/`; Qwen3-0.6B writes into
+`runs/active/resubmit/finetune/qwen3_0.6b/`. Result CSVs share
+`runs/active/resubmit/results/finetune/` and are kept apart by their prefix,
+`finetune_lata` and `finetune_qwen3_0.6b`.
 
 | Path | Contents |
 |---|---|
-| `runs/active/resubmit/finetune/dev_curve.csv` | per-epoch train loss and dev metrics |
-| `runs/active/resubmit/finetune/selection.json` | selected epoch and its dev metric |
-| `runs/active/resubmit/finetune/dev_directories.csv`, `train_pairs.csv` | the exact dev carve and training pairs |
-| `runs/active/resubmit/finetune/encoder_best.pt` | selected encoder weights |
-| `runs/active/resubmit_finetune_bases/phase9_bases/bowphs_LaTa-ft/hidden_mean_tokempty/` | fine-tuned embeddings, layers 1-12, plus the `meta.csv` recording their row order |
-| `runs/active/resubmit/results/finetune/finetune_lata_layer_results.csv` | every layer x method row |
-| `runs/active/resubmit/results/finetune/finetune_lata_ceiling_comparison.csv` | the comparison table above |
-| `runs/active/resubmit/results/finetune/finetune_lata_mseed_*.csv` | 5-seed Task B |
+| `<out dir>/dev_curve.csv` | per-epoch train loss and dev metrics |
+| `<out dir>/selection.json` | selected epoch and its dev metric |
+| `<out dir>/dev_directories.csv`, `train_pairs.csv` | the exact dev carve and training pairs |
+| `<out dir>/encoder_best.pt` | selected encoder weights |
+| `<out dir>/run_info.json` | config, parity report, caption facts, whether gradient checkpointing was on |
+| `runs/active/resubmit_finetune_bases/phase9_bases/<slug>-ft/hidden_mean_tokempty/` | fine-tuned embeddings at every layer, plus the `meta.csv` recording their row order |
+| `.../results/finetune/<prefix>_layer_results.csv` | every layer x method row |
+| `.../results/finetune/<prefix>_ceiling_comparison.csv` | the comparison table above |
+| `.../results/finetune/<prefix>_mseed_*.csv` | 5-seed Task B |
 | `overleaf_drafts/tables/finetune_ceiling.tex` | generated table rows |
 
 Nothing under `runs/` is committed.
@@ -396,5 +539,24 @@ and 00:03:18 on the CPU against 04:00:00. The `--time` values were trimmed to 15
 and 30 minutes after it, and this run confirms both are right: 10x and 11x
 margin over measured elapsed time.
 
+Qwen3-0.6B, 2026-09-14, from `sacct`:
+
+| Job | Partition | Elapsed | Reserved | State |
+|---|---|---|---|---|
+| 22080103 `ft_qwen_ceiling` | `gpuA100x4`, 1x A100-40GB | **00:03:49** | 00:30:00 | COMPLETED |
+| 22080194 `ft_qwen_eval` | `cpu`, 8 cores | 00:09:36 | 01:00:00 | COMPLETED |
+
+**GPU cost: 229 seconds of A100 wall time** against a 1,800-second reservation,
+which is what SLURM charges. 2.6x LaTa's elapsed time for 5.4x the parameters
+and 28 layers instead of 12, which gradient checkpointing pays for. Training was
+4 epochs of 32 steps at 32 sequences of up to 512 tokens; extraction is two
+passes over 1,705 files, one for the parity check and one for the selected
+weights. Peak memory was well inside the 40GB card.
+
+**The next `--time` for this job can come down to 00:15:00** if it is re-run
+under the fixed selector, which should stop at epoch 7 rather than 4: 4 epochs
+cost 229 s including both extraction passes, so 8 epochs is still under 6
+minutes.
+
 Seeds: 42 throughout (dev carve, batch order, Torch/NumPy/Python RNGs), and
-42 to 46 for the multi-seed Task B protocol.
+42 to 46 for the multi-seed Task B protocol, for both models.
