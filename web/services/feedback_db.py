@@ -15,7 +15,11 @@ from pathlib import Path
 
 import aiosqlite
 
-from web.exceptions import ReviewerDirLimitError, ReviewerDirSeedExistsError
+from web.exceptions import (
+    ReviewerDirLimitError,
+    ReviewerDirSeedExistsError,
+    UnscorableSeedError,
+)
 from web.services import ccl_keys
 from web.variants import DEFAULT_VARIANT
 
@@ -115,6 +119,7 @@ _EXPORT_COLUMNS = [
     "ccl_key",
     "ccl_key_action",
     "ccl_key_dir",
+    "ccl_key_rank",
 ]
 
 
@@ -277,6 +282,11 @@ class FeedbackDB:
             # The directory that action resolved to: a labelled directory name
             # or a reviewer dir_id.
             ("ccl_key_dir", "ALTER TABLE feedback ADD COLUMN ccl_key_dir TEXT"),
+            # The rank that directory held in the ranking this assessment was
+            # made against, when the key named one of its candidates. NULL
+            # otherwise, which is the ordinary case: the whole point of the key
+            # is a source the ten did NOT offer.
+            ("ccl_key_rank", "ALTER TABLE feedback ADD COLUMN ccl_key_rank INTEGER"),
         ):
             if column not in columns:
                 await self._db.execute(ddl)
@@ -717,29 +727,15 @@ class FeedbackDB:
         return cursor.rowcount > 0
 
     async def get_reviewer_dir_by_key(self, key: str) -> dict | None:
-        """The oldest reviewer directory recorded under this CCL key, or None.
+        """The oldest reviewer directory this key reaches, or None.
 
-        Compared on `ccl_keys.match_form` in Python rather than with SQL
-        `lower()`, which is ASCII-only: the corpus is Latin with editorial
-        apparatus, and a key that differs only in case must reach the same
-        directory or the pilot accumulates undeletable near-duplicates. The
-        table is reviewer-authored and small enough to scan -- `list_reviewer_dirs`
-        already reads all of it on every candidate list.
+        Key first, then label, by exactly the rule `insert_none_of_top_k` uses
+        inside its transaction -- see `_reviewer_dir_for_key` for why a label is
+        a second handle on the same directory.
         """
         assert self._db is not None
-        target = ccl_keys.match_form(key)
-        if not target:
-            return None
-        rows = await (
-            await self._db.execute(
-                "SELECT dir_id, ccl_key FROM reviewer_dirs "
-                "WHERE ccl_key IS NOT NULL AND ccl_key <> '' ORDER BY id"
-            )
-        ).fetchall()
-        for row in rows:
-            if ccl_keys.match_form(row["ccl_key"]) == target:
-                return await self.get_reviewer_dir(row["dir_id"])
-        return None
+        dir_id = await _reviewer_dir_for_key(self._db, key)
+        return await self.get_reviewer_dir(dir_id) if dir_id is not None else None
 
     async def insert_none_of_top_k(
         self,
@@ -752,8 +748,10 @@ class FeedbackDB:
         reviewer_account_id: int | None,
         ccl_key: str,
         labelled_dir: str | None,
+        labelled_rank: int | None,
+        seed_scorable: bool,
         max_per_account: int,
-    ) -> dict:
+    ) -> tuple[dict, bool]:
         """Record "none of the ranked candidates" and act on the key. ONE write.
 
         Issue #196 point 2. The assessment and whatever the key implies are a
@@ -765,29 +763,56 @@ class FeedbackDB:
         shared connection -- can leave an assessment claiming a key whose
         directory was never written.
 
-        `labelled_dir` is resolved by the caller from the corpus (a pure
-        in-memory lookup, see services/ccl_keys.find_labelled_dir) and, when
-        present, means NOTHING is created: a labelled directory already exists,
-        and a reviewer directory bearing its name would be a duplicate that
-        nothing can merge away. The assessment simply records that the key names
-        it.
+        Returns ``(row, appended)``. ``appended`` is False for an IDENTICAL
+        REPEAT -- same document, model, variant, account, key and note as this
+        reviewer's own newest row -- in which case that row comes back unchanged
+        and nothing at all is written. The feedback log stays append-only and
+        gains no correction path; this only declines to append a row that would
+        say exactly what the previous one says. It exists because the panel now
+        shows a recorded answer with a "Change" action, and a reviewer who opens
+        that form, changes nothing and presses Record again means "yes, that",
+        not "record it twice". A changed note, a changed key or another
+        reviewer's submission is a new assertion and is appended.
 
-        The four recorded actions:
+        `labelled_dir` and `labelled_rank` are resolved by the caller: the
+        corpus lookup is a pure in-memory one (`ccl_keys.find_labelled_dir`) and
+        the rank comes from the same candidate snapshot the route already
+        fetched, so the record says whether the key the reviewer typed was in
+        front of them all along.
 
-        ``matched_labelled_dir``  the key names a labelled directory
+        The six recorded actions:
+
+        ``matched_labelled_dir``  the key names a labelled directory. NOTHING is
+                                  created: that directory is corpus data, and a
+                                  reviewer directory bearing its name would be a
+                                  duplicate nothing can merge away.
         ``joined_reviewer_dir``   the key names a reviewer directory; the query joins it
+        ``already_joined``        ... and was already one of its members, so the
+                                  membership write is a no-op. Reported as its
+                                  own branch rather than as a join, because
+                                  telling a reviewer their document "joined" a
+                                  group it has been in since last week is a
+                                  small untruth in a record they are asked to
+                                  trust.
         ``created_reviewer_dir``  no such directory; one is created, named by the key
         ``seed_taken``            no such directory, but this query already seeds
                                   another one. One directory per seed is a
                                   standing invariant (`create_reviewer_dir`
                                   refuses a second with 409), so the key is
                                   recorded against the assessment and nothing is
-                                  created. Refusing the whole submission would
-                                  cost the reviewer their answer over a
-                                  bookkeeping rule they cannot see.
+                                  created. `ccl_key_dir` stays NULL here: that
+                                  column means "the directory this key resolved
+                                  to", and the directory that blocked the write
+                                  is not it.
 
         Without a key, `ccl_key_action` stays NULL and only the assessment is
         written -- which is the ordinary None-of-top-N save.
+
+        Raises `ReviewerDirLimitError` when a creation would exceed the caller's
+        quota and `UnscorableSeedError` when it would seed a directory from a
+        query the degenerate-source guard excluded. Both are raised BEFORE
+        anything is written, so the reviewer keeps their answer and can record
+        it without the key.
         """
         assert self._db is not None
         key = ccl_keys.normalize_ccl_key(ccl_key)
@@ -798,26 +823,35 @@ class FeedbackDB:
             transaction.row_factory = aiosqlite.Row
             await transaction.execute("BEGIN IMMEDIATE")
 
+            previous = await (
+                await transaction.execute(
+                    """SELECT * FROM feedback
+                        WHERE query_id = ? AND model_slug = ? AND variant IS ?
+                          AND reviewer_account_id IS ?
+                     ORDER BY id DESC LIMIT 1""",
+                    (query_id, model_slug, variant, reviewer_account_id),
+                )
+            ).fetchone()
+            if _is_identical_none_repeat(previous, key, notes):
+                row = await (
+                    await transaction.execute(
+                        _FEEDBACK_SELECT + " WHERE feedback.id = ?",
+                        (previous["id"],),
+                    )
+                ).fetchone()
+                # Read-only transaction: commit releases the write lock it took
+                # without having written a thing.
+                await transaction.commit()
+                return _feedback_row(row), False
+
             if key and labelled_dir is not None:
                 action, key_dir = "matched_labelled_dir", labelled_dir
             elif key:
-                target = ccl_keys.match_form(key)
-                existing = None
-                rows = await (
-                    await transaction.execute(
-                        "SELECT dir_id, ccl_key FROM reviewer_dirs "
-                        "WHERE ccl_key IS NOT NULL AND ccl_key <> '' ORDER BY id"
-                    )
-                ).fetchall()
-                for row in rows:
-                    if ccl_keys.match_form(row["ccl_key"]) == target:
-                        existing = row["dir_id"]
-                        break
-
+                existing = await _reviewer_dir_for_key(transaction, key)
                 if existing is not None:
-                    # Idempotent: a reviewer re-submitting the same key adds no
-                    # second membership row, exactly as add_reviewer_dir_member.
-                    await transaction.execute(
+                    # Idempotent by the UNIQUE (dir_id, query_id) constraint,
+                    # and reported as what it was: a join or a no-op.
+                    cursor = await transaction.execute(
                         """
                         INSERT OR IGNORE INTO reviewer_dir_members
                             (dir_id, query_id, role, added_by, added_by_account_id)
@@ -825,7 +859,12 @@ class FeedbackDB:
                         """,
                         (existing, query_id, reviewer, reviewer_account_id),
                     )
-                    action, key_dir = "joined_reviewer_dir", existing
+                    action = (
+                        "joined_reviewer_dir"
+                        if cursor.rowcount > 0
+                        else "already_joined"
+                    )
+                    key_dir = existing
                 else:
                     seeded = await (
                         await transaction.execute(
@@ -835,8 +874,11 @@ class FeedbackDB:
                         )
                     ).fetchone()
                     if seeded is not None:
-                        action, key_dir = "seed_taken", seeded["dir_id"]
+                        # Named, but not resolved: see the docstring.
+                        action, key_dir = "seed_taken", None
                     else:
+                        if not seed_scorable:
+                            raise UnscorableSeedError(query_id)
                         quota = await (
                             await transaction.execute(
                                 "SELECT COUNT(*) FROM reviewer_dirs "
@@ -883,8 +925,8 @@ class FeedbackDB:
                        (query_id, model_slug, variant, outcome, correct_rank,
                         correct_dir, selected_ranks_json, notes, reviewer,
                         reviewer_account_id, ccl_key, ccl_key_action, ccl_key_dir,
-                        schema_version)
-                   VALUES (?, ?, ?, 'none_of_top_k', 0, NULL, NULL, ?, ?, ?, ?, ?, ?, 2)""",
+                        ccl_key_rank, schema_version)
+                   VALUES (?, ?, ?, 'none_of_top_k', 0, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, 2)""",
                 (
                     query_id,
                     model_slug,
@@ -895,6 +937,7 @@ class FeedbackDB:
                     key or None,
                     action,
                     key_dir,
+                    labelled_rank if action == "matched_labelled_dir" else None,
                 ),
             )
             row = await (
@@ -903,7 +946,7 @@ class FeedbackDB:
                 )
             ).fetchone()
             await transaction.commit()
-            return _feedback_row(row)
+            return _feedback_row(row), True
 
     async def account_count(self) -> int:
         await self._ensure_auth_connection()
@@ -1519,6 +1562,70 @@ def _verify_password(password: str, stored: str) -> bool:
         return hmac.compare_digest(digest, expected)
     except (ValueError, TypeError):
         return False
+
+
+async def _reviewer_dir_for_key(
+    connection: aiosqlite.Connection, key: str
+) -> str | None:
+    """The oldest reviewer directory this key reaches, by key OR by label.
+
+    Matching the LABEL as well as the key is what keeps a pre-#196 directory
+    reachable at all (review finding 2). Those rows were named through the
+    retired form -- often `New directory from BN2123.89r.5` -- so the migration
+    leaves their `ccl_key` empty, and with the rank route gone a key-only lookup
+    would make them permanently unjoinable while the unranked card kept showing
+    their label to the evaluator. Typing that label verbatim then created a
+    SECOND directory for the same grouping, which nothing can merge away.
+
+    So the label is a second handle on the same directory, compared the same
+    way (`ccl_keys.match_form`: case-folded, whitespace-collapsed). It can only
+    ever join an existing directory; it never decides a name, and the key column
+    remains the only thing a new directory is created under.
+
+    Read in insertion order and scanned in Python rather than in SQL: `lower()`
+    in SQLite is ASCII-only, the table is reviewer-authored and small, and the
+    oldest match is the deterministic answer when history holds duplicates.
+    """
+    target = ccl_keys.match_form(key)
+    if not target:
+        return None
+    rows = await (
+        await connection.execute(
+            "SELECT dir_id, ccl_key, label FROM reviewer_dirs ORDER BY id"
+        )
+    ).fetchall()
+    for row in rows:
+        if ccl_keys.match_form(row["ccl_key"]) == target:
+            return row["dir_id"]
+    for row in rows:
+        if ccl_keys.match_form(row["label"]) == target:
+            return row["dir_id"]
+    return None
+
+
+def _is_identical_none_repeat(
+    previous: aiosqlite.Row | None, key: str, notes: str
+) -> bool:
+    """Would this submission say exactly what the caller's own last row says?
+
+    Compared on the assertion, not on the timestamp: the outcome, the key (by
+    `match_form`, so re-typing `ctou.567.16` for `CTOU.567.16` is still the same
+    assertion) and the note. Anything else -- a revised note, a different key, a
+    first submission, another reviewer's row -- is a new assertion and is
+    appended, because the log is append-only and two reviewers agreeing is two
+    facts.
+    """
+    if previous is None:
+        return False
+    if previous["outcome"] != "none_of_top_k":
+        return False
+    stored_key = ""
+    if "ccl_key" in previous.keys():
+        stored_key = previous["ccl_key"] or ""
+    return (
+        ccl_keys.match_form(stored_key) == ccl_keys.match_form(key)
+        and (previous["notes"] or "") == notes
+    )
 
 
 def _feedback_row(row: aiosqlite.Row) -> dict:

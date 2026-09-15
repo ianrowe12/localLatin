@@ -131,10 +131,25 @@ directory in `ccl_key_dir`:
 
 | Branch | Meaning | Writes |
 |--------|---------|--------|
-| `matched_labelled_dir` | the key names a labelled corpus directory | assessment only |
+| `matched_labelled_dir` | the key names a labelled corpus directory; `ccl_key_rank` records where it stood in this ranking, or null if it was not offered | assessment only |
 | `joined_reviewer_dir` | the key names an existing reviewer directory | assessment + membership |
+| `already_joined` | ... and this query was already a member | assessment only |
 | `created_reviewer_dir` | nothing carries the key | assessment + directory + seed membership |
-| `seed_taken` | nothing carries the key, but this query already seeds a directory | assessment only |
+| `seed_taken` | nothing carries the key, but this query already seeds a directory. `ccl_key_dir` is **null**: the directory that blocked the write is not the one the key names | assessment only |
+
+A directory is reached by its **key first, then its label**, both case-folded
+(`_reviewer_dir_for_key`). The label is a second handle and never a name: a
+directory created through the retired form has an empty `ccl_key`, and with the
+rank route gone a key-only lookup would leave it permanently unjoinable while
+its card kept showing its label, so typing that label would mint a duplicate.
+
+An **identical repeat** -- same document, model, variant, account, key and note
+as the caller's own newest row -- returns that row with **200** and appends
+nothing. The log stays append-only: nothing is updated or removed, and a revised
+note, a different key or another reviewer's submission is a new assertion and is
+appended. A creation is refused before anything is written with **429**
+(`MAX_REVIEWER_DIRS_PER_ACCOUNT`) or **422** (`UNSCORABLE_SEED`, the same guard
+`create_reviewer_dir` makes for a degenerate query).
 
 `FeedbackDB.insert_none_of_top_k` does all of it in ONE transaction on a
 dedicated connection opened with `BEGIN IMMEDIATE`, so an assessment citing a

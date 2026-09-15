@@ -99,10 +99,13 @@ retrieval run's own.
 A query joins a reviewer directory by **naming its CCL key** beside "None of the top N", not by
 pressing a rank: `POST /api/feedback` takes an optional `ccl_key` with `outcome: none_of_top_k`
 and `FeedbackDB.insert_none_of_top_k` writes the assessment and the directory action in one
-`BEGIN IMMEDIATE` transaction. The four branches (`matched_labelled_dir`, `joined_reviewer_dir`,
-`created_reviewer_dir`, `seed_taken`) are recorded on the feedback row in `ccl_key_action` /
-`ccl_key_dir`; `correct_dir` keeps its old meaning and is never written by this path.
-`services/ccl_keys.py` owns the normalisation (stored as typed, matched case-folded).
+`BEGIN IMMEDIATE` transaction. The six branches (`matched_labelled_dir`, `joined_reviewer_dir`,
+`already_joined`, `created_reviewer_dir`, `seed_taken`) are recorded on the feedback row in
+`ccl_key_action` / `ccl_key_dir` / `ccl_key_rank`; `correct_dir` keeps its old meaning and is never
+written by this path. `services/ccl_keys.py` owns the normalisation (stored as typed, matched
+case-folded), and a directory is reached by key first, then by label -- the label is how a
+pre-#196 directory (empty `ccl_key`) stays joinable at all. An identical repeat of the caller's own
+newest row returns it with a 200 and appends nothing; the log is still append-only.
 
 **`correct_dir` is always resolved server-side from `correct_rank`**, never read from the
 request body, and a rank with no candidate behind it is a 422. That is both the anti-spoof
@@ -169,6 +172,13 @@ The webapp reads these from `data_root`:
   blue `NoneOfTopTenAction`, which carries one optional "CCL key of the source, if known"
   field and its OWN submit, posting through `src/api/cclKey.ts`. The panel's Save button is
   withheld while None is held, so one decision cannot be written twice.
+  THE RECEIPT OUTLIVES THE FORM: on success the panel closes the form and the component keeps
+  the sentence naming the branch, and on a revisit it rebuilds that sentence from
+  `/api/feedback/latest` (`recordedKeyAnswer`) with a "Change this answer" action. A saved
+  `none_of_top_k` row therefore does NOT prefill the None selection -- `draftFromEntry` returns
+  `correctRank: null` -- because re-opening a live Record button over an answer already in an
+  append-only log is how a document gets two. `NoneOfTopTenPanel.test.tsx` drives the real panel
+  wiring; testing the component with `open` hard-coded is what hid this the first time.
 - Candidate provenance (issue #162): `src/utils/documentProvenance.ts` maps a candidate to
   `labeled_reference` (a witness the labelled corpus already groups) or `reviewer_group` (an
   originally unlabeled witness in a provisional reviewer directory), and

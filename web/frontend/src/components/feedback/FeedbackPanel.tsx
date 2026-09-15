@@ -24,6 +24,7 @@ import {
   type SaveFailure,
 } from '../../contexts/saveFailure'
 import { fetchLatestFeedback, type FeedbackEntry } from '../../api/feedback'
+import { recordedKeyAnswer } from '../../api/cclKey'
 import MatchPills from './MatchPills'
 import NoneOfTopTenAction from './NoneOfTopTenAction'
 import NotesTextarea from './NotesTextarea'
@@ -64,7 +65,13 @@ function draftFromEntry(entry: FeedbackEntry): FeedbackDraft {
     }
   }
   if (entry.outcome === 'none_of_top_k') {
-    return { correctRank: 0, notes }
+    // NOT `correctRank: 0` (issue #196). Pressing None open is what mounts the
+    // key form with a live "Record this answer", and the feedback log is
+    // append-only, so re-opening it over an answer already recorded is an
+    // invitation to record a second one. The recorded answer is shown back
+    // instead, by `NoneOfTopTenAction`, with an explicit Change action. The
+    // prose still prefills, exactly as it does for a skipped row.
+    return { correctRank: null, notes }
   }
   // skipped / legacy_unresolved -> the prose only, with nothing pressed.
   return { correctRank: null, notes }
@@ -534,8 +541,16 @@ export default function FeedbackPanel() {
       {/* The blue action's own field and its own submit (issue #196). It is
           mounted here, right under the ten buttons, because those two controls
           are now the whole of this panel's answer surface: the red
-          new-directory call to action and its explanation are gone. */}
-      {evidence.candidates.length > 0 && activeQueryId !== null && draftKey !== null && (
+          new-directory call to action and its explanation are gone.
+
+          Mounted WITHOUT regard to the candidate count, unlike the pills above.
+          The form is unreachable without them -- it opens only when the None
+          control is pressed, and that control needs a ranking -- but a recorded
+          answer is a fact about the document rather than about the request on
+          screen. Gating this on `evidence.candidates` unmounted the receipt the
+          moment a refetch began, and recording a key triggers exactly such a
+          refetch (a new group changes what other documents are offered). */}
+      {activeQueryId !== null && draftKey !== null && (
         <NoneOfTopTenAction
           // Per query and per assessment: a typed key must not follow the
           // reviewer to the next document, and a receipt must not either.
@@ -546,13 +561,24 @@ export default function FeedbackPanel() {
           notes={draft.notes}
           open={noneSelected}
           available={evidence.noneAvailable}
+          // What this reviewer already recorded here, from the server's own
+          // prefill. `latest` is the merged view: the team's newest note with
+          // the CALLER's own decision, and the key counts as decision, so this
+          // is never a colleague's identification shown as this reviewer's.
+          recorded={
+            latest !== null && latest.key === draftKey
+              ? recordedKeyAnswer(latest.entry)
+              : null
+          }
           onRecorded={() => {
-            // The answer and its prose are on the server now. Clearing the
-            // draft is what the rank path's own save does, and leaving it would
-            // show the saved text back as "your unsaved draft".
+            // The answer and its prose are on the server now. Closing the form
+            // leaves the receipt on screen -- the component keeps it -- and
+            // clearing the draft is what the rank path's own save does; leaving
+            // it would show the saved text back as "your unsaved draft".
             setNone(false)
             setNotes('')
           }}
+          onChange={() => setNone(true)}
         />
       )}
 

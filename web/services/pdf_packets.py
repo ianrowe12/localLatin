@@ -147,8 +147,19 @@ def build_review_packet_pdf(
         key = (row.get("ccl_key") or "").strip()
         if key:
             action = row.get("ccl_key_action") or "recorded"
+            # Empty for `seed_taken`, where the key resolved to no directory at
+            # all. Printing the directory that blocked the write there would
+            # read as though the key named it.
             target = row.get("ccl_key_dir") or ""
-            pdf.add_text(f"CCL key: {key} | {action} | {target}")
+            rank = row.get("ccl_key_rank")
+            where = (
+                f" | shortlisted at rank {rank}"
+                if isinstance(rank, int)
+                else " | not in the shortlist"
+                if action == "matched_labelled_dir"
+                else ""
+            )
+            pdf.add_text(f"CCL key: {key} | {action} | {target}{where}")
         if row["notes"]:
             pdf.add_text(f"Notes: {row['notes']}")
     pdf.add_rule()

@@ -478,7 +478,10 @@ describe('excluded, empty and unknown are three different things', () => {
     renderList()
 
     expect(await screen.findByTestId('predictions-empty')).toBeTruthy()
-    expect(screen.getByText('Unattested homily')).toBeTruthy()
+    // The card is offered, under its own heading and with the key that files a
+    // document into it, and the model's answer is still reported as empty.
+    expect(screen.getByTestId('reviewer-dir-card-reviewer-dir-1')).toBeTruthy()
+    expect(screen.getByTestId('reviewer-dirs-heading')).toBeTruthy()
     expect(screen.queryByTestId('band-chip-1')).toBeNull()
   })
 })

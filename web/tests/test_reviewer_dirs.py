@@ -987,16 +987,36 @@ def test_joining_a_reviewer_dir_by_key_records_the_assessment(tmp_path: Path) ->
 def test_joining_a_directory_is_idempotent(tmp_path: Path) -> None:
     """A replayed submission must not duplicate or re-open a membership.
 
-    The feedback log is append-only, so the replay legitimately writes a second
-    assessment row; the membership is `INSERT OR IGNORE`, so it writes nothing.
+    Two ways it stays true. An IDENTICAL replay -- same document, same key, same
+    note -- is one assertion: the stored row comes back with a 200 and nothing
+    is appended. A replay that revises the note is a new assertion, so it is
+    appended, but the membership write is `INSERT OR IGNORE` and the record says
+    `already_joined` rather than claiming a second join.
     """
     client = _signed_in(tmp_path)
     try:
         created = _create_dir(client, 0, "CTOU.567.16")
-        first = _join_by_key(client, query_id=1, key="CTOU.567.16")
-        replay = _join_by_key(client, query_id=1, key="CTOU.567.16")
-        assert replay["id"] != first["id"]
-        assert replay["ccl_key_action"] == "joined_reviewer_dir"
+        first = _join_by_key(client, query_id=1, key="CTOU.567.16", notes="the same")
+
+        identical = client.post(
+            "/api/feedback",
+            json={
+                "query_id": 1,
+                "model_slug": "bowphs/LaTa",
+                "outcome": "none_of_top_k",
+                "correct_rank": 0,
+                "ccl_key": "CTOU.567.16",
+                "notes": "the same",
+            },
+        )
+        assert identical.status_code == 200, identical.text
+        assert identical.json()["id"] == first["id"]
+
+        revised = _join_by_key(
+            client, query_id=1, key="CTOU.567.16", notes="same key, fuller note"
+        )
+        assert revised["id"] != first["id"]
+        assert revised["ccl_key_action"] == "already_joined"
 
         members = client.get(f"/api/reviewer_dirs/{created['dir_id']}").json()
         assert sorted(members["member_query_ids"]) == [0, 1]

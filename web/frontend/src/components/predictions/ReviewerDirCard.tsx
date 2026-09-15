@@ -36,6 +36,9 @@ interface ReviewerDirCardProps {
 function ReviewerDirCardInner({ card, isActive, onClick }: ReviewerDirCardProps) {
   const title = card.label || card.dir_id
   const memberCount = card.dir_files.length
+  // The key joins it; a pre-#196 group has none, and its label is the handle
+  // the server falls back to (`_reviewer_dir_for_key`).
+  const joinHandle = card.ccl_key || card.label || card.dir_id
 
   return (
     <button
@@ -85,6 +88,21 @@ function ReviewerDirCardInner({ card, isActive, onClick }: ReviewerDirCardProps)
           {memberCount === 1
             ? '1 originally unlabeled document'
             : `${memberCount} originally unlabeled documents`}
+        </div>
+
+        {/* How to file this document here, spelled out (review finding 2).
+            Filing is by name now, and the name that works is the directory's
+            CCL key -- or, for a group made before issue #196 and named after a
+            siglum, the label above. Without this line an evaluator looking at
+            `New directory from BN2123.89r.5` has no way to know that typing it
+            joins the group rather than starting a second one. */}
+        <div
+          data-testid={`reviewer-dir-join-${card.dir_id}`}
+          className="font-ui text-[11px] leading-snug text-stone-500 dark:text-stone-400 mt-1"
+        >
+          To file this document here, type{' '}
+          <span className="font-mono break-all">{joinHandle}</span> in the CCL key
+          box.
         </div>
       </div>
     </button>

@@ -295,11 +295,16 @@ class CclKeyAction(StrEnum):
     MATCHED_LABELLED_DIR = "matched_labelled_dir"
     #: The key names a directory a reviewer made earlier; this query joined it.
     JOINED_REVIEWER_DIR = "joined_reviewer_dir"
+    #: ... and this query was already one of its members, so nothing was
+    #: written. Its own value rather than a join, because "this document joined
+    #: the group" is not true of a document that has been in it since last week.
+    ALREADY_JOINED = "already_joined"
     #: No directory carried the key, so one was created and named by it.
     CREATED_REVIEWER_DIR = "created_reviewer_dir"
     #: No directory carried the key, but this query already seeds another one
     #: and one directory per seed is a standing invariant. The key is recorded
-    #: with the assessment; nothing was created.
+    #: with the assessment; nothing was created, and `ccl_key_dir` stays NULL --
+    #: the directory that blocked the write is not the one the key names.
     SEED_TAKEN = "seed_taken"
 
 
@@ -531,8 +536,15 @@ class FeedbackEntry(BaseModel):
     ccl_key: Optional[str] = None
     ccl_key_action: Optional[CclKeyAction] = None
     #: The directory the action resolved to: a labelled directory name for
-    #: `matched_labelled_dir`, a reviewer `dir_id` otherwise.
+    #: `matched_labelled_dir`, a reviewer `dir_id` for the join/create branches,
+    #: and NULL for `seed_taken`, where the key resolved to nothing.
     ccl_key_dir: Optional[str] = None
+    #: Where that directory stood in the ranking this assessment was made
+    #: against, when the key named one of its candidates -- resolved from the
+    #: same server-side snapshot the rest of the save uses. NULL otherwise,
+    #: which is the ordinary case: the key exists to name a source the ten did
+    #: not offer.
+    ccl_key_rank: Optional[int] = None
     schema_version: int = 2
 
 

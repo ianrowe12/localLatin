@@ -11,6 +11,7 @@ from web.exceptions import (
     InvalidModelError,
     QueryNotFoundError,
     ReviewerDirLimitError,
+    UnscorableSeedError,
     VariantUnavailableError,
 )
 from web.models import (
@@ -131,18 +132,41 @@ async def create_feedback(
     assert body.outcome is not None
 
     # --- None of the top N, with an optional CCL key (issue #196) -----------
-    # One write for the assessment AND whatever the key implies. The labelled
-    # corpus is consulted here, where the DataStore is, and the answer is passed
-    # into the transaction; everything that touches the database happens inside
-    # it, so a reviewer never ends up with an assessment citing a directory that
-    # was never written, or a directory nobody's assessment refers to.
+    # One write for the assessment AND whatever the key implies. Everything the
+    # transaction needs from outside the database is resolved here, where the
+    # DataStore and the candidate snapshot are, and passed in; everything that
+    # touches the database happens inside it, so a reviewer never ends up with
+    # an assessment citing a directory that was never written, or a directory
+    # nobody's assessment refers to.
     if body.outcome == FeedbackOutcome.NONE_OF_TOP_K:
         key = ccl_keys.normalize_ccl_key(body.ccl_key)
         labelled_dir = (
             ccl_keys.find_labelled_dir(key, store.labelled_dir_files) if key else None
         )
+        # Whether the key names something the reviewer was already being shown.
+        # Resolved from the SAME snapshot this save is validated against, rather
+        # than re-read afterwards, so the recorded rank is the one that was on
+        # screen. Normally None -- the key exists to name a source the ten did
+        # not offer -- and when it is not, the receipt says so instead of
+        # claiming "not in the shortlist" about a directory at rank 1.
+        labelled_rank = None
+        if labelled_dir is not None:
+            match = next(
+                (
+                    candidate
+                    for candidate in candidates.values()
+                    if candidate.dir_name == labelled_dir
+                ),
+                None,
+            )
+            labelled_rank = match.rank if match is not None else None
+        # The one guard #165's create route makes that this path would otherwise
+        # skip: a query the degenerate-source guard excluded has no row in the
+        # q-q matrix, so a directory seeded there could never be matched.
+        qq = await store.ensure_qq_async(slug)
+        seed_scorable = qq is None or qq.row_of(body.query_id) is not None
         try:
-            row = await db.insert_none_of_top_k(
+            row, appended = await db.insert_none_of_top_k(
                 query_id=body.query_id,
                 model_slug=slug,
                 variant=variant,
@@ -151,6 +175,8 @@ async def create_feedback(
                 reviewer_account_id=current_user.id,
                 ccl_key=key,
                 labelled_dir=labelled_dir,
+                labelled_rank=labelled_rank,
+                seed_scorable=seed_scorable,
                 max_per_account=reviewer_dirs_svc.MAX_REVIEWER_DIRS_PER_ACCOUNT,
             )
         except ReviewerDirLimitError as exc:
@@ -164,7 +190,22 @@ async def create_feedback(
                 f"{exc.message} Your assessment was not recorded. "
                 "Save it again without a key, and tell the PI which key it needed.",
             )
-        return FeedbackEntry(**row)
+        except UnscorableSeedError as exc:
+            return _feedback_error(
+                422,
+                "UNSCORABLE_SEED",
+                f"{exc.message} Your assessment was not recorded. "
+                "Record it without a key, and say in your notes which key it needed.",
+            )
+        # 200, not 201, when the row already existed: an identical repeat of
+        # this reviewer's own last answer returns that answer rather than
+        # appending a second one saying the same thing. The body is the stored
+        # row either way, so a client that ignores the status still shows the
+        # truth.
+        return JSONResponse(
+            status_code=201 if appended else 200,
+            content=FeedbackEntry(**row).model_dump(),
+        )
 
     row = await db.insert(
         query_id=body.query_id,
@@ -308,7 +349,22 @@ async def export_feedback(
 
 #: The reviewer's answer, as opposed to their prose. Never inherited from
 #: another reviewer's row -- see `latest_feedback`.
-_DECISION_FIELDS = ("outcome", "correct_rank", "correct_dir", "selected_ranks")
+#:
+#: The CCL key is part of the ANSWER, not part of the note (issue #196): it
+#: names the source this reviewer says the document belongs to, and the panel
+#: now renders it back as "you recorded this". Inheriting a colleague's key
+#: would show one reviewer's identification as another's own record, which is
+#: exactly what the note/decision split exists to prevent.
+_DECISION_FIELDS = (
+    "outcome",
+    "correct_rank",
+    "correct_dir",
+    "selected_ranks",
+    "ccl_key",
+    "ccl_key_action",
+    "ccl_key_dir",
+    "ccl_key_rank",
+)
 
 
 def _merge_shared_note_with_own_decision(
@@ -348,6 +404,10 @@ def _merge_shared_note_with_own_decision(
                 "correct_rank": None,
                 "correct_dir": None,
                 "selected_ranks": None,
+                "ccl_key": None,
+                "ccl_key_action": None,
+                "ccl_key_dir": None,
+                "ccl_key_rank": None,
             }
         )
     return merged

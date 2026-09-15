@@ -18,7 +18,6 @@ from web.tests.test_reviewer_dirs import (
     _create_dir,
     _join_by_key,
     _reviewer_card,
-    _reviewer_cards,
     _signed_in,
 )
 

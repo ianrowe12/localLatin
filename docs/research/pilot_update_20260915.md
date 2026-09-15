@@ -34,11 +34,21 @@ which is the part that used to be impossible to express:
   is its first member.
 
 Whichever happens, the app says so in one sentence after you press Record, and
-the answer and the grouping are saved together or not at all.
+that sentence stays on screen. The answer and the grouping are saved together or
+not at all.
+
+**Your answer is shown back when you return.** Come back to a fragment you have
+already answered this way and the app shows what you recorded, with the key and
+what it did, and a "Change this answer" button. It does not re-open an empty box
+over an answer you already gave. Recording again adds a new answer rather than
+replacing the old one, and the app says so; pressing Record twice on an
+unchanged answer records it once.
 
 **Groups are named by key, not by siglum.** A group started from the key field
 is called by the key. Groups that already exist keep the names they were given;
-none of them was renamed.
+none of them was renamed. To file a fragment into one of those older groups,
+type its name into the key box: each card in the reviewer block says which words
+to type.
 
 **Reviewer-made directories left the shortlist.** They are no longer numbered
 11 and 12 beside the model's ten. If any are related to the fragment you are
@@ -71,7 +81,7 @@ notes box and the Save/Skip buttons are the whole panel now.
 
 One fragment can start only one group. If you press Record with a key on a
 fragment that already starts a group of its own, the app records your answer and
-the key, tells you that no second group was created, and names the group that is
-already there. Tell us if you hit that and think the two really are different
-sources; merging or splitting groups is not something the app can do, so it
-needs a decision rather than a click.
+the key and tells you that no second group was started for it. The group that
+fragment already starts is shown in the left-hand panel. Tell us if you hit that
+and think the two really are different sources; merging or splitting groups is
+not something the app can do, so it needs a decision rather than a click.

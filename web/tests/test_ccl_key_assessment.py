@@ -218,36 +218,370 @@ def test_a_directory_created_by_the_old_route_is_joinable_by_its_key(
         client.__exit__(None, None, None)
 
 
-def test_a_non_key_label_is_never_matched_by_a_typed_key(tmp_path: Path) -> None:
-    """`New directory from query-0` is a filename, not a citation.
+def test_a_non_key_label_is_a_second_handle_on_the_same_directory(
+    tmp_path: Path,
+) -> None:
+    """A pre-#196 directory is joinable by the label the card shows.
 
-    Matching it would attach a key to a directory nobody ever gave one, so a
-    reviewer typing that text gets a new directory rather than joining it.
+    Its `ccl_key` is empty -- `New directory from query-0` is a filename, not a
+    citation, and the migration refuses to invent a key from one. With the rank
+    route gone, a key-only lookup would leave it permanently unjoinable while
+    the unranked block kept showing its label, and typing that label would mint
+    a SECOND directory for the same grouping. So the label joins; only the key
+    column ever names a new one.
     """
     client = _signed_in(tmp_path)
     try:
         created = _create_dir(client, 0)
-        saved = _none(client, 1, ccl_key=created["label"])
-        assert saved["ccl_key_action"] == "created_reviewer_dir"
-        assert saved["ccl_key_dir"] != created["dir_id"]
+        assert created["label"] == "New directory from query-0"
+        saved = _none(client, 1, ccl_key="  new directory FROM query-0 ")
+        assert saved["ccl_key_action"] == "joined_reviewer_dir"
+        assert saved["ccl_key_dir"] == created["dir_id"]
+        assert len(client.get("/api/reviewer_dirs").json()) == 1
+        members = client.get(f"/api/reviewer_dirs/{created['dir_id']}").json()
+        assert members["member_query_ids"] == [0, 1]
+        # The label is a handle, never a name: the directory keeps the label it
+        # was created with, and gains no key.
+        assert members["label"] == "New directory from query-0"
     finally:
         client.__exit__(None, None, None)
 
 
-def test_a_document_that_already_seeds_a_directory_creates_no_second_one(
-    tmp_path: Path,
-) -> None:
-    """One directory per seed is a standing invariant; the answer is still kept."""
+def test_the_key_column_wins_over_a_coincidental_label(tmp_path: Path) -> None:
     client = _signed_in(tmp_path)
     try:
-        existing = _create_dir(client, 1, "Unattested homily")
+        by_key = _create_dir(client, 0, KEY)
+        by_label = _create_dir(client, 2, f"About {KEY}")
         saved = _none(client, 1, ccl_key=KEY)
-        assert saved["ccl_key"] == KEY
-        assert saved["ccl_key_action"] == "seed_taken"
-        assert saved["ccl_key_dir"] == existing["dir_id"]
-        assert [d["dir_id"] for d in client.get("/api/reviewer_dirs").json()] == [
-            existing["dir_id"]
-        ]
+        assert saved["ccl_key_dir"] == by_key["dir_id"]
+        assert saved["ccl_key_dir"] != by_label["dir_id"]
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_a_repeat_join_reports_a_no_op_rather_than_a_join(tmp_path: Path) -> None:
+    """The membership write is idempotent; the record says which it was.
+
+    A second reviewer submitting the same key for a document that is already a
+    member adds nothing, and a row reading "this document joined the group"
+    would be a small untruth in a log nobody can correct.
+    """
+    client = _signed_in(tmp_path)
+    try:
+        created = _create_dir(client, 0, KEY)
+        first = _none(client, 1, ccl_key=KEY, notes="first look")
+        assert first["ccl_key_action"] == "joined_reviewer_dir"
+
+        again = _none(client, 1, ccl_key=KEY, notes="second look, same answer")
+        assert again["ccl_key_action"] == "already_joined"
+        assert again["ccl_key_dir"] == created["dir_id"]
+        assert again["id"] != first["id"]
+
+        members = client.get(f"/api/reviewer_dirs/{created['dir_id']}").json()
+        assert members["member_query_ids"] == [0, 1]
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_the_seed_of_a_directory_re_naming_its_own_key_is_a_no_op(
+    tmp_path: Path,
+) -> None:
+    client = _signed_in(tmp_path)
+    try:
+        created = _create_dir(client, 1, KEY)
+        saved = _none(client, 1, ccl_key=KEY)
+        assert saved["ccl_key_action"] == "already_joined"
+        assert saved["ccl_key_dir"] == created["dir_id"]
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_an_identical_repeat_returns_the_stored_row_and_appends_nothing(
+    tmp_path: Path,
+) -> None:
+    """Pressing Record twice on an unchanged answer is one assertion.
+
+    The panel shows a recorded answer with a "Change" action, so opening it,
+    changing nothing and pressing again means "yes, that". The log is still
+    append-only -- nothing is updated or removed -- this simply declines to add
+    a row that would say exactly what the last one says.
+    """
+    client = _signed_in(tmp_path)
+    try:
+        first = client.post(
+            "/api/feedback",
+            json={
+                "query_id": 1,
+                "model_slug": "bowphs/LaTa",
+                "outcome": "none_of_top_k",
+                "correct_rank": 0,
+                "ccl_key": KEY,
+                "notes": "not one of the ten",
+            },
+        )
+        assert first.status_code == 201, first.text
+
+        repeat = client.post(
+            "/api/feedback",
+            json={
+                "query_id": 1,
+                "model_slug": "bowphs/LaTa",
+                "outcome": "none_of_top_k",
+                "correct_rank": 0,
+                # Same assertion, typed differently.
+                "ccl_key": f"  {KEY.lower()} ",
+                "notes": "not one of the ten",
+            },
+        )
+        assert repeat.status_code == 200, repeat.text
+        assert repeat.json()["id"] == first.json()["id"]
+        assert repeat.json()["ccl_key"] == KEY
+        assert client.get("/api/stats").json()["feedback_count"] == 1
+        assert len(client.get("/api/reviewer_dirs").json()) == 1
+
+        # A revised note is a new assertion and is appended.
+        revised = _none(client, 1, ccl_key=KEY, notes="on reflection, the same key")
+        assert revised["id"] != first.json()["id"]
+        assert revised["ccl_key_action"] == "already_joined"
+        assert client.get("/api/stats").json()["feedback_count"] == 2
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_a_repeat_without_a_key_is_also_a_single_assertion(tmp_path: Path) -> None:
+    client = _signed_in(tmp_path)
+    try:
+        first = _none(client, 1, notes="nothing here fits")
+        repeat = client.post(
+            "/api/feedback",
+            json={
+                "query_id": 1,
+                "model_slug": "bowphs/LaTa",
+                "outcome": "none_of_top_k",
+                "correct_rank": 0,
+                "notes": "nothing here fits",
+            },
+        )
+        assert repeat.status_code == 200, repeat.text
+        assert repeat.json()["id"] == first["id"]
+        assert client.get("/api/stats").json()["feedback_count"] == 1
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_another_reviewer_saying_the_same_thing_is_a_second_assertion(
+    tmp_path: Path,
+) -> None:
+    """Two reviewers agreeing is two facts, not a duplicate.
+
+    The no-op rule is scoped to the caller's OWN newest row, exactly as the
+    shared-note prefill is (issue #96): a colleague's identical answer is
+    independent evidence and is appended.
+    """
+    client = _signed_in(tmp_path)
+    try:
+        first = _none(client, 1, ccl_key=KEY, notes="agreed")
+
+        client.post(
+            "/api/auth/register",
+            json={
+                "username": "scholar",
+                "display_name": "Scholar",
+                "password": "correct horse battery staple",
+            },
+        )
+        pending = next(
+            account
+            for account in client.get("/api/auth/accounts?status=pending").json()
+            if account["username"] == "scholar"
+        )
+        approved = client.post(
+            f"/api/auth/accounts/{pending['id']}/approve", json={"note": ""}
+        )
+        assert approved.status_code == 200, approved.text
+        signin = client.post(
+            "/api/auth/signin",
+            json={"username": "scholar", "password": "correct horse battery staple"},
+        )
+        assert signin.status_code == 200, signin.text
+
+        second = _none(client, 1, ccl_key=KEY, notes="agreed")
+        assert second["id"] != first["id"]
+        assert second["reviewer"] == "Scholar"
+        # Two rows, one directory, and the second reviewer's document was
+        # already a member.
+        assert second["ccl_key_action"] == "already_joined"
+        connection = sqlite3.connect(
+            tmp_path / "runs" / "active" / "resubmit" / "webapp" / "feedback.db"
+        )
+        try:
+            assert connection.execute(
+                "SELECT COUNT(*) FROM feedback WHERE query_id = 1"
+            ).fetchone()[0] == 2
+        finally:
+            connection.close()
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_a_key_naming_a_shortlisted_directory_records_its_rank(
+    tmp_path: Path,
+) -> None:
+    """The copy claims "not in the shortlist", so the record has to know.
+
+    Resolved from the same candidate snapshot the save is already validated
+    against, rather than re-read afterwards, so the rank stored is the one that
+    was on screen.
+    """
+    client = _signed_in(tmp_path)
+    try:
+        # candidate-a is rank 1 for every query in the fixture.
+        shortlisted = _none(client, 1, ccl_key="candidate-a")
+        assert shortlisted["ccl_key_action"] == "matched_labelled_dir"
+        assert shortlisted["ccl_key_rank"] == 1
+
+        elsewhere = _none(client, 2, ccl_key="candidate-b")
+        assert elsewhere["ccl_key_rank"] == 2
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_a_key_outside_the_shortlist_records_no_rank(tmp_path: Path) -> None:
+    client = _signed_in(tmp_path)
+    try:
+        saved = _none(client, 1, ccl_key=KEY)
+        assert saved["ccl_key_action"] == "created_reviewer_dir"
+        assert saved["ccl_key_rank"] is None
+        assert _none(client, 2)["ccl_key_rank"] is None
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_a_group_is_never_seeded_from_an_unscorable_document(
+    tmp_path: Path,
+) -> None:
+    """The one guard from #165's create route this path would otherwise skip.
+
+    q3 is the fixture's blank-source query: no row in the q-q matrix, so a
+    directory seeded there could never be offered and never leave
+    `awaiting_match`. Unreachable through the UI today, because an excluded
+    ranking already refuses an assessment, so the guard is asserted directly
+    against the storage call rather than through a request that cannot get here.
+    """
+    import asyncio
+
+    from web.exceptions import UnscorableSeedError
+    from web.services.feedback_db import FeedbackDB
+
+    client = _signed_in(tmp_path)
+    db_path = tmp_path / "runs" / "active" / "resubmit" / "webapp" / "feedback.db"
+    client.__exit__(None, None, None)
+
+    async def run() -> None:
+        db = FeedbackDB(db_path)
+        await db.connect()
+        try:
+            with pytest.raises(UnscorableSeedError):
+                await db.insert_none_of_top_k(
+                    query_id=3,
+                    model_slug="bowphs_LaTa",
+                    variant="sif_abtt",
+                    notes="",
+                    reviewer="PI",
+                    reviewer_account_id=1,
+                    ccl_key=KEY,
+                    labelled_dir=None,
+                    labelled_rank=None,
+                    seed_scorable=False,
+                    max_per_account=50,
+                )
+            # Nothing at all was written: not the directory, not the assessment.
+            assert await db.list_reviewer_dirs() == []
+            assert await db.get_feedback_for_query(3) == []
+
+            # The same submission on a scorable document goes through.
+            row, appended = await db.insert_none_of_top_k(
+                query_id=1,
+                model_slug="bowphs_LaTa",
+                variant="sif_abtt",
+                notes="",
+                reviewer="PI",
+                reviewer_account_id=1,
+                ccl_key=KEY,
+                labelled_dir=None,
+                labelled_rank=None,
+                seed_scorable=True,
+                max_per_account=50,
+            )
+            assert appended is True
+            assert row["ccl_key_action"] == "created_reviewer_dir"
+        finally:
+            await db.close()
+
+    asyncio.run(run())
+
+
+def test_a_colleagues_key_is_never_prefilled_as_your_own(tmp_path: Path) -> None:
+    """The key is part of the ANSWER, so it follows the note/decision split.
+
+    `/api/feedback/latest` merges the team's newest NOTE with the caller's own
+    newest DECISION (issue #96). A key identifies the source this reviewer says
+    the document belongs to, and the panel renders it back as "you recorded
+    this", so inheriting a colleague's key would show one reviewer's
+    identification as another's own record.
+    """
+    client = _signed_in(tmp_path)
+    try:
+        _none(client, 1, ccl_key=KEY, notes="I think this is the one")
+        client.post(
+            "/api/auth/register",
+            json={
+                "username": "scholar",
+                "display_name": "Scholar",
+                "password": "correct horse battery staple",
+            },
+        )
+        pending = next(
+            account
+            for account in client.get("/api/auth/accounts?status=pending").json()
+            if account["username"] == "scholar"
+        )
+        client.post(f"/api/auth/accounts/{pending['id']}/approve", json={"note": ""})
+        client.post(
+            "/api/auth/signin",
+            json={"username": "scholar", "password": "correct horse battery staple"},
+        )
+
+        latest = client.get(
+            "/api/feedback/latest",
+            params={"query_id": 1, "model": "bowphs/LaTa"},
+        ).json()
+        # The colleague's prose arrives, attributed...
+        assert latest["notes"] == "I think this is the one"
+        assert latest["reviewer"] == "PI"
+        # ...and none of their answer does.
+        assert latest["outcome"] == "legacy_unresolved"
+        assert latest["ccl_key"] is None
+        assert latest["ccl_key_action"] is None
+        assert latest["ccl_key_dir"] is None
+        assert latest["ccl_key_rank"] is None
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_your_own_key_comes_back_on_a_revisit(tmp_path: Path) -> None:
+    """What the panel renders as "you recorded this" (issue #196 blocking fix)."""
+    client = _signed_in(tmp_path)
+    try:
+        saved = _none(client, 1, ccl_key=KEY, notes="not in the ten")
+        latest = client.get(
+            "/api/feedback/latest",
+            params={"query_id": 1, "model": "bowphs/LaTa"},
+        ).json()
+        assert latest["outcome"] == "none_of_top_k"
+        assert latest["ccl_key"] == KEY
+        assert latest["ccl_key_action"] == "created_reviewer_dir"
+        assert latest["ccl_key_dir"] == saved["ccl_key_dir"]
     finally:
         client.__exit__(None, None, None)
 
@@ -494,7 +828,14 @@ def test_migration_keeps_every_name_and_only_backfills_real_keys(
             found = await db.get_reviewer_dir_by_key("ctou.567.16")
             assert found is not None and found["dir_id"] == "reviewer-dir-key"
             assert await db.get_reviewer_dir_by_key("carl.501?.18") is not None
-            assert await db.get_reviewer_dir_by_key("New directory from BN2123.89r.5") is None
+            # A non-key label is not a KEY, but it is still a handle: with the
+            # rank route gone it is the only way these rows can gain a member.
+            by_label = await db.get_reviewer_dir_by_key(
+                "new directory from BN2123.89r.5"
+            )
+            assert by_label is not None
+            assert by_label["dir_id"] == "reviewer-dir-old"
+            assert by_label["ccl_key"] == ""
             assert await db.get_reviewer_dir_by_key("") is None
 
             # The reviewer's own history is preserved verbatim, including a

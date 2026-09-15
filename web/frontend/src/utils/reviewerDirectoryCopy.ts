@@ -57,23 +57,65 @@ export const CCL_KEY_COPY = {
     'If the key is already in the collection, your answer is recorded against it. If a colleague has grouped documents under it, this one joins them. Otherwise the key starts a group and this document is its first member.',
   submit: 'Record this answer',
   submitting: 'Recording…',
-  /** The receipt, per branch. `target` is a key or a directory label. */
-  recorded: {
-    none: 'Recorded: none of the ranked candidates match.',
-    matched_labelled_dir: (key: string) =>
-      `Recorded: matches directory ${key} (not in the shortlist). Nothing new was created.`,
-    joined_reviewer_dir: (key: string) =>
-      `Recorded, and this document joined the group under ${key}.`,
-    created_reviewer_dir: (key: string) =>
-      `Recorded, and a group under ${key} now holds this document.`,
-    seed_taken: (key: string) =>
-      `Recorded with the key ${key}. This document already starts a group of its own, and one document can start only one, so no second group was created.`,
-  },
+  /** Heading over the answer already recorded for this document. */
+  recordedHeading: 'Your recorded answer',
+  /** Reopens the form. Recording again replaces nothing; it adds a new row. */
+  change: 'Change this answer',
+  changeNote:
+    'Recording again adds a new answer to the log. It does not replace this one, and it cannot remove a group.',
   failed:
     'Nothing was recorded. Your answer and the key are still here, so you can try again.',
   uncertain:
     'The app did not get an answer it can trust, so it cannot tell whether this was recorded. Reload the document and check before recording it again.',
 } as const
+
+/** What the server did with a key, as the wire reports it. */
+export type CclKeyActionName =
+  | 'matched_labelled_dir'
+  | 'joined_reviewer_dir'
+  | 'already_joined'
+  | 'created_reviewer_dir'
+  | 'seed_taken'
+
+/**
+ * The recorded answer, in one sentence, naming the branch the server took.
+ *
+ * Six sentences because there are six outcomes and they are not the same fact:
+ * a permanent group was created, an existing one was joined, the document was
+ * already in it, the key names corpus data that the ranking did or did not
+ * offer, or no group could be started. This is the ONLY place the distinction
+ * is expressed to the evaluator, which is why the whole set lives here and is
+ * rendered from the stored row rather than from what the client hoped for.
+ *
+ * `rank` is `ccl_key_rank`: where the labelled directory stood in the ranking
+ * this answer was recorded against, resolved server-side. It is what lets the
+ * shortlist clause be true rather than assumed -- the parenthetical used to say
+ * "not in the shortlist" about a directory sitting at rank 1.
+ */
+export function recordedSentence(
+  action: CclKeyActionName | null,
+  key: string,
+  rank: number | null,
+): string {
+  if (action === null || key === '') {
+    return 'Recorded: none of the ranked candidates match.'
+  }
+  if (action === 'matched_labelled_dir') {
+    return rank === null
+      ? `Recorded: matches directory ${key}, which the ranking did not offer. Nothing new was created.`
+      : `Recorded: matches directory ${key}, which is in the shortlist at #${rank}. Nothing new was created.`
+  }
+  if (action === 'joined_reviewer_dir') {
+    return `Recorded, and this document joined the group under ${key}.`
+  }
+  if (action === 'already_joined') {
+    return `Recorded. This document was already in the group under ${key}, so nothing was added to it.`
+  }
+  if (action === 'created_reviewer_dir') {
+    return `Recorded, and a group under ${key} now holds this document.`
+  }
+  return `Recorded with the key ${key}. This document already starts a group of its own, and one document can start only one, so no group was started for this key.`
+}
 
 /**
  * Attribution for a grouping this reviewer is being shown rather than one they

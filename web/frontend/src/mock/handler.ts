@@ -546,9 +546,12 @@ function handleCreateReviewerDir(init?: RequestInit): Response {
  * that would succeed in production.
  *
  * The branch rule mirrors `web/routers/feedback.py` closely enough to exercise
- * the UI: a key that names one of the mock labelled directories matches it, a
- * key already used by a mock reviewer directory joins it, anything else creates
- * one.
+ * the UI, including the parts that are easy to get wrong on screen: a key that
+ * names one of the mock labelled directories matches it and reports the rank it
+ * held in the ranking, a key already used by a mock reviewer directory joins it
+ * (or reports `already_joined` when this document is in it), a document that
+ * already starts a group gets `seed_taken` with NO directory, and anything else
+ * creates one.
  */
 function handleFeedbackPost(init: RequestInit): Record<string, unknown> {
   const body = JSON.parse(String(init.body ?? '{}')) as {
@@ -571,29 +574,43 @@ function handleFeedbackPost(init: RequestInit): Record<string, unknown> {
     ccl_key: key || null,
     ccl_key_action: null as string | null,
     ccl_key_dir: null as string | null,
+    ccl_key_rank: null as number | null,
   }
   if (!key) return base
 
   const fold = (value: string) => value.replace(/\s+/g, ' ').trim().toLowerCase()
   const labelled = MOCK_LABELLED_DIRS.find((name) => fold(name) === fold(key))
   if (labelled) {
-    return { ...base, ccl_key_action: 'matched_labelled_dir', ccl_key_dir: labelled }
+    const ranked = MOCK_PREDICTIONS.get(queryId)?.predictions.find(
+      (candidate) => fold(candidate.dir_name) === fold(key),
+    )
+    return {
+      ...base,
+      ccl_key_action: 'matched_labelled_dir',
+      ccl_key_dir: labelled,
+      ccl_key_rank: ranked ? ranked.rank : null,
+    }
   }
-  const existing = mockReviewerDirs.find((dir) => fold(dir.label) === fold(key))
+  // Key first, then label: a group made before issue #196 is joinable by the
+  // label its card shows, which is the only handle it has.
+  const existing =
+    mockReviewerDirs.find((dir) => fold(dir.label) === fold(key)) ?? null
   if (existing) {
-    if (!existing.member_query_ids.includes(queryId)) {
+    const alreadyIn = existing.member_query_ids.includes(queryId)
+    if (!alreadyIn) {
       existing.member_query_ids.push(queryId)
       existing.status = 'matched'
     }
     return {
       ...base,
-      ccl_key_action: 'joined_reviewer_dir',
+      ccl_key_action: alreadyIn ? 'already_joined' : 'joined_reviewer_dir',
       ccl_key_dir: existing.dir_id,
     }
   }
   if (mockReviewerDirs.some((dir) => dir.seed_query_id === queryId)) {
-    const seeded = mockReviewerDirs.find((dir) => dir.seed_query_id === queryId)!
-    return { ...base, ccl_key_action: 'seed_taken', ccl_key_dir: seeded.dir_id }
+    // No directory: the key resolved to nothing, and the group that blocked the
+    // write is not the group the key names.
+    return { ...base, ccl_key_action: 'seed_taken', ccl_key_dir: null }
   }
   const created: ReviewerDir = {
     dir_id: `reviewer-dir-${mockReviewerDirs.length + 1}`,

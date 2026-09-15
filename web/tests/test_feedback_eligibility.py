@@ -387,8 +387,8 @@ def test_a_repeated_key_join_cannot_reassign_the_next_directory(
     A reviewer who retried a save at rank 11 used to hit a *different*
     directory, because their own first save had removed the original from the
     list and shifted everything up. A key names one directory whatever else has
-    happened, so the replay reaches the same one, adds no membership and simply
-    appends a second assessment to an append-only log.
+    happened: the identical replay returns the stored row with a 200, appends
+    nothing and moves no membership.
     """
     first = _create_dir(ranked_client, 0, "CTOU.567.0")["dir_id"]
     if another_directory:
@@ -399,13 +399,18 @@ def test_a_repeated_key_join_cannot_reassign_the_next_directory(
         "outcome": "none_of_top_k",
         "correct_rank": 0,
         "ccl_key": "CTOU.567.0",
+        "notes": "the source is elsewhere",
     }
-    assert ranked_client.post("/api/feedback", json=payload).status_code == 201
+    saved = ranked_client.post("/api/feedback", json=payload)
+    assert saved.status_code == 201, saved.text
+    assert saved.json()["ccl_key_dir"] == first
     before = ranked_client.get("/api/reviewer_dirs").json()
+
     retry = ranked_client.post("/api/feedback", json=payload)
-    assert retry.status_code == 201, retry.text
+    assert retry.status_code == 200, retry.text
+    assert retry.json()["id"] == saved.json()["id"]
     assert retry.json()["ccl_key_dir"] == first
-    assert ranked_client.get("/api/stats").json()["feedback_count"] == 2
+    assert ranked_client.get("/api/stats").json()["feedback_count"] == 1
     assert ranked_client.get("/api/reviewer_dirs").json() == before
 
 
