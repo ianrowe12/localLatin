@@ -12,9 +12,10 @@ subscript, so the test numbers are never selected on test.
 Below the six model rows sits a reference block (issue #118): the supervised
 fine-tuning ceilings, scored on the same split, the same held-out test set and
 the same evaluation code, so a reader does not have to leave the headline table
-to see what supervision achieves. By default the block holds both committed
-ceilings, LaTa and Qwen3-0.6B (issue #208: a bare run must reproduce the
-committed tables). A fine-tuned row fills only the Base and ABTT columns.
+to see what supervision achieves. By default the block holds every committed
+ceiling, LaTa, Qwen3-0.6B and KaLM-mini (issue #208: a bare run must reproduce
+the committed tables; issue #210: it must also carry every model that was run).
+A fine-tuned row fills only the Base and ABTT columns.
 
 The three lexical baselines (BM25, character 3-5-gram TF-IDF, Levenshtein)
 left the paper by decision (issue #197, 2026-09-15) and are rebuttal material.
@@ -26,7 +27,7 @@ no lexical sentence.
 per ceiling, and every caption claim about a ceiling is derived from that
 model's own cells. A second model that beat a zero-shot cell where the first
 did not has to change the sentence, not inherit it. Passing the flag replaces
-the default pair, so a one-model table is still one ``--finetune_csv``.
+the defaults, so a one-model table is still one ``--finetune_csv``.
 
     python scripts/resubmit/build_headline_tables.py
     python scripts/resubmit/build_headline_tables.py \
@@ -112,14 +113,19 @@ def _and_list(parts: Sequence[str]) -> str:
 
 DEFAULT_RESULTS_CSV = "runs/active/resubmit/results/phase_resubmit_results.csv"
 
-# The committed reference block, in row order: LaTa first, then Qwen3-0.6B.
+# The committed reference block, in row order: LaTa, Qwen3-0.6B, KaLM-mini.
+# Every ceiling that was run is a default (issue #210): the paper reports all of
+# them, and a bare run that named a subset is how a model gets dropped for its
+# result rather than by decision.
 DEFAULT_FINETUNE_CSVS = [
     "runs/active/resubmit/results/finetune/finetune_lata_ceiling_comparison.csv",
     "runs/active/resubmit/results/finetune/finetune_qwen3_0.6b_ceiling_comparison.csv",
+    "runs/active/resubmit/results/finetune/finetune_kalm_mini_ceiling_comparison.csv",
 ]
 DEFAULT_FINETUNE_RUN_INFOS = [
     "runs/active/resubmit/finetune/run_info.json",
     "runs/active/resubmit/finetune/qwen3_0.6b/run_info.json",
+    "runs/active/resubmit/finetune/kalm_mini/run_info.json",
 ]
 
 # Overleaf receives these files, so the header says nothing about the repo.
@@ -145,7 +151,7 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Comparison CSV of a fine-tuning ceiling. Repeat once per model; "
             "the reference block gets a row per model in the order given. "
-            "Default: the two committed ceilings, LaTa then Qwen3-0.6B."
+            "Default: the committed ceilings, LaTa, Qwen3-0.6B then KaLM-mini."
         ),
     )
     p.add_argument(

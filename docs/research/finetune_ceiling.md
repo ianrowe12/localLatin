@@ -1,33 +1,42 @@
-# Supervised fine-tuning reference ceiling (LaTa and Qwen3-0.6B)
+# Supervised fine-tuning reference ceiling (LaTa, Qwen3-0.6B and KaLM-mini)
 
-Issues #123, #138 and #194, epic #109. **This is a reference ceiling, not a
-proposed method.** The paper's pipeline is zero-shot: it never sees a labelled
+Issues #123, #138, #194 and #210, epic #109. **This is a reference ceiling, not
+a proposed method.** The paper's pipeline is zero-shot: it never sees a labelled
 pair. This experiment asks the complementary question a reviewer will ask
 anyway, namely how much of the gap to a perfect system is left once a model is
 allowed to train on the task's own supervision. The answer bounds what
 post-processing on frozen representations can be expected to achieve, and it is
 reported as a bound, never as a system we advocate.
 
-**Two models, because one was not defensible.** #123 fine-tuned LaTa alone, on
+**Three models, because one was not defensible.** #123 fine-tuned LaTa alone, on
 the grounds that it was the strongest model. Siddique's objection on 2026-09-14
 was that this is a property of the pick, not an argument: a ceiling measured on
 the one Latin-pretrained encoder says nothing about whether the finding is about
 supervision or about Latin pre-training. #194 therefore runs the identical
 recipe on Qwen3-Embedding-0.6B, which never saw Latin as a pre-training target
-and is a decoder rather than a T5 encoder. Same objective, optimiser, schedule,
-batch size, seed, dev carve, early stopping and evaluator; the two ceilings are
-comparable by construction.
+and is a decoder rather than a T5 encoder. #210 adds KaLM-mini, which owns the
+paper's best zero-shot ABTT cell (91.7 assignment accuracy, and 89.4 directory
+accuracy at rank 1 tied with Qwen3-0.6B), so the recipe is measured against the
+hardest zero-shot row it has to clear. Same objective, optimiser, schedule,
+batch size, seed, dev carve, early stopping and evaluator; the three ceilings
+are comparable by construction.
+
+**Every ceiling that was run is reported.** The table carries all three models
+whichever side of its own zero-shot row each lands on, and the main-text
+sentence is derived per model from the cells. A model is never dropped for its
+result.
 
 **The answer is that they do not agree, and the disagreement is the result.**
-On LaTa the label-free correction reaches the supervised ceiling; on
-Qwen3-0.6B supervision goes 1.8 points past it and past every zero-shot ABTT
-cell in the paper. The ceiling is a property of the model, not of the pipeline.
-Full reading in *Do the two models agree?* below.
+On LaTa the label-free correction reaches the supervised ceiling; on Qwen3-0.6B
+supervision goes 1.8 points past it and on KaLM-mini 2.1 points past it, in both
+cases past every zero-shot ABTT cell in the paper. One model of three matches,
+two do not. The ceiling is a property of the model, not of the pipeline. Full
+reading in *Do the three models agree?* below.
 
 Every LaTa number below comes from **benchmark v1** (`benchmark_v1.md`),
 re-trained and re-scored end to end on the corrected labels under #138. What
 that changed is in *Benchmark v1 re-run* below; the verdict did not move. The
-Qwen3-0.6B run is benchmark v1 from the start.
+Qwen3-0.6B and KaLM-mini runs are benchmark v1 from the start.
 
 Everything here is fine-tuned and selected on the TRAIN split only. The test
 split is untouched until the final evaluation, which uses the paper's own
@@ -39,7 +48,7 @@ The recipe is one recipe. Only the encoder changes.
 
 | Item | Value |
 |---|---|
-| Models | `bowphs/LaTa` (T5 encoder stack, 12 blocks) and `Qwen/Qwen3-Embedding-0.6B` (decoder stack, 28 blocks), both mean-pooled |
+| Models | `bowphs/LaTa` (T5 encoder stack, 12 blocks, 110M), `Qwen/Qwen3-Embedding-0.6B` (decoder stack, 28 blocks, 596M) and `KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5` (decoder-shaped stack, 24 blocks, 494M), all mean-pooled |
 | Objective | Symmetric InfoNCE over positive pairs with in-batch negatives (the objective behind sentence-transformers' MultipleNegativesRankingLoss, implemented here because the environment has no `sentence_transformers`) |
 | Temperature | 0.05 |
 | Training pairs | all within-directory pairs from train directories with >= 2 files, minus the dev carve |
@@ -49,17 +58,30 @@ The recipe is one recipe. Only the encoder changes.
 | Epochs | up to 8, early stop after 3 epochs without dev improvement |
 | Seed | 42 (Python, NumPy, Torch; also the dev carve and the batch order) |
 | Tokenisation | max_length 512, `tokenizer_empty` token filter, identical to the paper's extraction |
-| Memory | LaTa trains as is; Qwen3-0.6B needs gradient checkpointing (see *Recipe delta* below) |
+| Memory | LaTa trains as is; Qwen3-0.6B and KaLM-mini use gradient checkpointing (see *Recipe delta* below) |
 
-**Pooling parity matters and is not automatic.** The paper reports Qwen3-0.6B on
-hidden-state **mean** pooling with the `tokenizer_empty` filter, not on the
-last-token pooling a decoder embedding model is usually used with
-(`runs/active/resubmit_bases/phase9_bases/Qwen_Qwen3-Embedding-0.6B/hidden_mean_tokempty/config.json`).
-Fine-tuning and extraction here use mean pooling for exactly that reason: a
-ceiling pooled differently from the zero-shot row it is compared against is not
-a comparison. `scripts/resubmit/finetune_ceiling.py` loads a non-seq2seq
-checkpoint with `AutoModel` and trains on `hidden_states[-1]`, which is what
-`extract_encoder_cli.py` writes as `hidden_layer28_embeddings.npy`.
+**Pooling parity matters and is not automatic.** The paper reports both decoder
+models on hidden-state **mean** pooling with the `tokenizer_empty` filter, not on
+the last-token pooling a decoder embedding model is usually used with
+(`runs/active/resubmit_bases/phase9_bases/Qwen_Qwen3-Embedding-0.6B/hidden_mean_tokempty/config.json`
+and the same file under
+`KaLM-Embedding_KaLM-embedding-multilingual-mini-instruct-v2.5/`; both caches
+also hold a `hidden_lasttok_tokempty/` sibling, which is not what the headline
+tables use). Fine-tuning and extraction here use mean pooling for exactly that
+reason: a ceiling pooled differently from the zero-shot row it is compared
+against is not a comparison. `scripts/resubmit/finetune_ceiling.py` loads a
+non-seq2seq checkpoint with `AutoModel` and trains on `hidden_states[-1]`, which
+is what `extract_encoder_cli.py` writes as `hidden_layer28_embeddings.npy` for
+Qwen3-0.6B and `hidden_layer24_embeddings.npy` for KaLM-mini.
+
+**KaLM-mini needs `--trust_remote_code`, and that is a correctness requirement
+rather than a convenience.** Its config maps `AutoModel` to its own
+`modeling.Qwen2Model` with `is_causal: false`, so the stack attends
+bidirectionally. Loading it without the remote code would build a causal stack
+and a different representation from the one the paper's KaLM-mini rows were
+extracted with. `src/extract_encoder_cli.py` is invoked with the same flag for
+those rows (`slurm/resubmit/resubmit_extract_kalm.sbatch`), and the parity check
+below is what proves the two agree.
 
 ### The dev carve
 
@@ -77,8 +99,8 @@ train and dev would leak the exact supervision being measured.
   extracted from; epoch 0 in the dev curve is the pre-trained encoder, so the
   curve shows what training actually bought.
 
-Both models draw the same 28 dev directories and train on the same 499 pairs:
-the carve is a function of the split and the seed, not of the model.
+All three models draw the same 28 dev directories and train on the same 499
+pairs: the carve is a function of the split and the seed, not of the model.
 
 ### LaTa's dev curve
 
@@ -109,9 +131,9 @@ below is a ceiling **at this training budget**, not an asymptote.
 
 ## Evaluation
 
-Both models are evaluated the same way. Fine-tuned mean-pooled embeddings are
-extracted for all 1,705 labelled files at every encoder layer (1-12 for LaTa,
-1-28 for Qwen3-0.6B) and written in the canonical
+All three models are evaluated the same way. Fine-tuned mean-pooled embeddings
+are extracted for all 1,705 labelled files at every encoder layer (1-12 for
+LaTa, 1-28 for Qwen3-0.6B, 1-24 for KaLM-mini) and written in the canonical
 `phase9_bases/<slug>/hidden_mean_tokempty/` layout, so the paper's evaluators
 read them unchanged:
 
@@ -139,7 +161,7 @@ against the wrong labels without an error.
 
 **Extraction parity.** The same script re-extracts with the *pre-trained*
 weights and diffs against that model's cached embeddings, loaded through the
-same resolver. Agreement is at float32 rounding noise in both models.
+same resolver. Agreement is at float32 rounding noise in every model.
 
 | Model | Layer | max abs. diff | mean cosine | Source |
 |---|---|---|---|---|
@@ -147,6 +169,8 @@ same resolver. Agreement is at float32 rounding noise in both models.
 | LaTa | 12 | 1.4e-06 | 1.000000 | job 21847379 |
 | Qwen3-0.6B | 1 | 2.325e-06 | 1.000000 | job 22080571 |
 | Qwen3-0.6B | 28 | 4.625e-05 | 1.000000 | job 22080571 |
+| KaLM-mini | 1 | 9.537e-06 | 1.000000 | job 22099472 |
+| KaLM-mini | 24 | 2.074e-05 | 1.000000 | job 22099472 |
 
 Each row is what that job's own parity stage logged over all 1,705 files, and
 the same values sit in the `parity` block of its `run_info.json`. The absolute
@@ -243,8 +267,8 @@ going higher, and `abtt_optimal` is therefore numerically identical to
 
 The practical consequence for the paper: on LaTa, fine-tuning and ABTT are not
 additive. They arrive at the same place, and the correction gets there without
-labels. *That is a statement about LaTa.* Qwen3-0.6B behaves differently; see
-*Do the two models agree?*
+labels. *That is a statement about LaTa.* Qwen3-0.6B and KaLM-mini behave
+differently; see *Do the three models agree?*
 
 ### Why the ceiling is, if anything, overstated
 
@@ -266,8 +290,8 @@ reported here.
 One GPU job, `slurm/resubmit/finetune_qwen_ceiling.sbatch`: parity check,
 contrastive fine-tuning, extraction of all 28 layers. Everything except the
 encoder matches LaTa, and the dev carve is a function of the split and the
-seed, so both models train on the same 499 pairs from the same 162 directories
-and hold out the same 28.
+seed, so every model trains on the same 499 pairs from the same 162 directories
+and holds out the same 28.
 
 **Pooling.** Mean pooling with the `tokenizer_empty` filter at max_length 512,
 because that is what the paper's Qwen3-0.6B rows use, not the last-token
@@ -280,7 +304,10 @@ parameters against LaTa's 110M encoder, and 32 sequences of 512 tokens through
 28 blocks does not fit beside fp32 AdamW state on one A100-40GB. Activations
 are recomputed in the backward pass instead of stored, so the gradients are
 identical and only the memory bill changes. It is recorded as
-`grad_checkpointing` in `run_info.json` and printed in the job log.
+`grad_checkpointing` in `run_info.json` and printed in the job log. KaLM-mini
+runs with the same flag for the same reason: at 494M parameters it is in
+Qwen3-0.6B's size class rather than LaTa's, and the flag buys memory headroom at
+no cost to the objective, the schedule or the batch.
 
 ### Qwen3-0.6B's dev curve
 
@@ -330,44 +357,147 @@ fewer components removed, which is consistent with contrastive training having
 already flattened most of the common direction: the fine-tuned cosine gap at
 layer 28 is 0.684 before ABTT, against 0.024 for the pre-trained encoder.
 
-## Do the two models agree?
+## KaLM-mini: the same recipe on the best zero-shot row in the paper
 
-**No, and that is the finding.** The two ceilings sit on opposite sides of
-their own zero-shot ABTT rows.
+One GPU job, `slurm/resubmit/finetune_kalm_ceiling.sbatch`: parity check,
+contrastive fine-tuning, extraction of all 24 layers. Everything except the
+encoder matches the other two, and the dev carve is a function of the split and
+the seed, so all three models train on the same 499 pairs from the same 162
+directories and hold out the same 28.
 
-| | LaTa | Qwen3-0.6B |
-|---|---|---|
-| Zero-shot + ABTT, dir. acc.@1 | 86.1 | 89.4 |
-| Fine-tuned + ABTT, dir. acc.@1 | 85.2 | **91.4** |
-| Five-seed, zero-shot + ABTT | 0.877 ± 0.004 | 0.905 ± 0.004 |
-| Five-seed, fine-tuned + ABTT | 0.877 ± 0.008 | **0.923 ± 0.002** |
+**Why this model.** LaTa answers "does supervision beat the correction on the
+Latin-pretrained encoder" and Qwen3-0.6B answers "is that about Latin
+pre-training". Neither answers "can supervision beat the paper's *best*
+zero-shot cell", because neither owns it. KaLM-mini does: 91.7 assignment
+accuracy at layer 3 under ABTT, and 89.4 directory accuracy at rank 1, the top
+of the headline table on the first and tied with Qwen3-0.6B on the second. A
+ceiling on that row is the one a reviewer would ask for.
+
+**Pooling.** Mean pooling with the `tokenizer_empty` filter at max_length 512,
+because that is what the paper's KaLM-mini rows use, not the last-token pooling
+its `hidden_lasttok_tokempty/` sibling cache holds. The parity check confirms
+it: re-extracting with the pre-trained weights reproduces the paper's cache to a
+max absolute difference of 9.537e-06 at layer 1 and 2.074e-05 at layer 24, mean
+cosine 1.000000 at both, which is what job 22099472 logged over all 1,705 files
+and what the `parity` block of `run_info.json` holds.
+
+**Recipe delta: gradient checkpointing and `--trust_remote_code`, and nothing
+else.** The checkpointing argument is Qwen's argument at 494M parameters rather
+than 596M. The remote code is a correctness requirement: the checkpoint maps
+`AutoModel` to its own `modeling.Qwen2Model` with `is_causal: false`, so the
+stack attends bidirectionally, and the flag is what makes these weights the
+weights the paper's KaLM-mini rows were extracted from. Both are recorded in
+`run_info.json`.
+
+### KaLM-mini's dev curve
+
+| Epoch | Train loss | Dev dir. acc.@1 | Dev AUROC |
+|---|---|---|---|
+| 0 (pre-trained) | | 0.972 (69/71) | 0.9567 |
+| **1 (selected)** | **0.1716** | **1.000 (71/71)** | **0.9997** |
+| 2 | 0.0035 | 0.986 (70/71) | 0.9994 |
+| 3 | 0.0001 | 0.986 | 0.9995 |
+| 4 | 0.00003 | 0.986 | 0.9995 |
+
+Patience fired after epoch 4 and epoch 1 was selected. Unlike Qwen3-0.6B, this
+model's pre-trained encoder does *not* start at the top of the pool: it misses
+two dev files, so one epoch of training is a measurable gain and the selector
+has something to select. Epochs 2 to 4 sit one file below epoch 1, which is
+inside the `1/n_dev` tie window, so AUROC decides between them and epoch 1 wins
+on 0.9997 against 0.9994. The window is doing work here too, just in the other
+direction: it makes those three epochs *eligible* rather than vetoed, and they
+still lose.
+
+Train loss is 3e-05 by epoch 4, so the 499 pairs are memorised, as on
+Qwen3-0.6B. Whatever supervision buys is bounded by what those pairs can teach.
+
+### Results
+
+| System | Task A AUROC | Cosine gap | Assignment acc. | Dir. acc.@1 |
+|---|---|---|---|---|
+| KaLM-mini (pre-trained) | 0.972₂₃ | 0.056₂₃ | 87.5₂₃ | 85.9₂₃ |
+| KaLM-mini (pre-trained) + ABTT | 0.981₁ | 0.568₁ | 91.7₃ | 89.4₃ |
+| KaLM-mini (fine-tuned) | **0.997₂₄** | 0.636₂₄ | 92.4₂₄ | 91.7₂₄ |
+| KaLM-mini (fine-tuned) + ABTT | 0.994₂₄ | **0.651₂₄** | **93.4₂₄** | **92.5₂₄** |
+
+Five-seed Task B, seeds 42 to 46, at each system's selected layer:
+
+| System | Layer | Dir. acc.@1 | Existing | New |
+|---|---|---|---|---|
+| KaLM-mini (pre-trained) | 23 | 0.873 ± 0.007 | 0.811 | 0.953 |
+| KaLM-mini (pre-trained) + ABTT | 3 | 0.909 ± 0.006 | 0.874 | 0.954 |
+| KaLM-mini (fine-tuned) | 24 | 0.926 ± 0.008 | 0.879 | 0.987 |
+| KaLM-mini (fine-tuned) + ABTT | 24 | **0.930 ± 0.005** | 0.893 | 0.978 |
+
+**ABTT still adds after fine-tuning, and by less than it adds anywhere else.**
+Single-seed it lifts routing 91.7 to 92.5 (+0.8 points) and assignment accuracy
+92.4 to 93.4; over five seeds 0.926 to 0.930 (+0.4 points, under one standard
+deviation of either estimate). Compare LaTa's +3.6 single-seed and Qwen's +0.6.
+The fine-tuned cosine gap at layer 24 is already 0.636 before ABTT, against
+0.056 for the pre-trained encoder at its own best layer, so contrastive training
+has done most of the flattening that ABTT would otherwise do. As on LaTa, Task A
+AUROC moves the other way, 0.997 to 0.994.
+
+**The $D$ sweep is a partial boundary hit.** Across the 24 fine-tuned layers
+`abtt_optimal` selects $D=10$ nineteen times and $D \in \{2,3,5,7\}$ five times,
+including the selected Task B layer, which takes $D=10$. That is between LaTa
+(10 everywhere) and Qwen3-0.6B (12 of 28). The generated caption states the
+count rather than the verdict, so the reader can see which it is.
+
+## Do the three models agree?
+
+**No, and that is the finding.** One ceiling lands on its own zero-shot ABTT
+row and two land above theirs.
+
+| | LaTa | Qwen3-0.6B | KaLM-mini |
+|---|---|---|---|
+| Zero-shot + ABTT, dir. acc.@1 | 86.1 | 89.4 | 89.4 |
+| Fine-tuned + ABTT, dir. acc.@1 | 85.2 | **91.4** | **92.5** |
+| Five-seed, zero-shot + ABTT | 0.877 ± 0.004 | 0.905 ± 0.004 | 0.909 ± 0.006 |
+| Five-seed, fine-tuned + ABTT | 0.877 ± 0.008 | **0.923 ± 0.002** | **0.930 ± 0.005** |
+| Five-seed margin | -0.01 pts | **+1.8 pts** | **+2.1 pts** |
 
 For LaTa, supervision lands where the label-free correction already is: 0.8767
-against 0.8766 over five seeds. For Qwen3-0.6B it goes 1.8 points past it
-(0.9227 against 0.9051), which is 4.9 standard deviations of the zero-shot
-estimate (9.9 of the tighter fine-tuned one, 4.4 pooled), and past every
-zero-shot ABTT cell in the headline table (the best is
-91.7 assignment accuracy and 89.4 directory accuracy at rank 1; fine-tuned
-Qwen3-0.6B with ABTT reaches 92.1 and 91.4).
+against 0.8766 over five seeds, which is one ten-thousandth apart. For
+Qwen3-0.6B it goes 1.8 points past it (0.9227 against 0.9051), which is 4.9
+standard deviations of the zero-shot estimate, 9.9 of the tighter fine-tuned one
+and 4.4 of the difference. For KaLM-mini it goes 2.1 points past it (0.9296
+against 0.9088), 3.5 standard deviations of the zero-shot estimate, 4.1 of the
+fine-tuned one and 2.7 of the difference. Both of the latter also clear every
+zero-shot ABTT cell in the headline table, whose best is 91.7 assignment
+accuracy and 89.4 directory accuracy at rank 1: Qwen3-0.6B reaches 92.1 and
+91.4, KaLM-mini 93.4 and 92.5.
 
-So the honest one-sentence answer to Siddique's question is: **the ceiling is
-not a property of the pipeline, it is a property of the model.** On the
-Latin-pretrained encoder the parameter-free correction reaches what supervision
-buys; on the stronger, non-Latin encoder supervision still has room above it.
-The paper's claim has to be stated for LaTa rather than as a general fact about
-post-processing, and #194 is what turned that from an assumption into a
-measurement.
+**The pattern is one model out of three, and the one is LaTa.** KaLM-mini
+matters most to the reading, because it removes the remaining escape route.
+Qwen3-0.6B could be dismissed as a stronger model beating a weaker model's
+correction; KaLM-mini owns the *best zero-shot ABTT cell in the paper*, and
+supervision still clears it by more than Qwen's margin. So the honest
+one-sentence answer to Siddique's question is: **the ceiling is not a property
+of the pipeline, it is a property of the model.** On the Latin-pretrained
+encoder the parameter-free correction reaches what supervision buys; on both
+multilingual encoders supervision still has room above it, including above the
+best cell the correction produces anywhere in the paper. The paper's claim has
+to be stated for LaTa rather than as a general fact about post-processing, and
+#194 and #210 are what turned that from an assumption into a measurement.
+
+**No model is dropped for its result.** Two of these three ceilings sit above
+the zero-shot rows the paper advertises, which is the uncomfortable direction,
+and all three are in the table. `build_headline_tables.py` derives each model's
+verdict clause from that model's own cells, so a model that clears a cell cannot
+inherit another model's "below everything", and the bare defaults name all three
+runs so a re-run cannot quietly ship a two-model block.
 
 Two caveats belong next to that reading, and both cut the same way:
 
-- **The ceiling is flattered.** 206 of the 535 test query files (38.5%) sit in
+- **The ceilings are flattered.** 206 of the 535 test query files (38.5%) sit in
   a directory that supplied training pairs, and witnesses inside a directory
   are near-duplicate hand copies. No test file was trained on, but Qwen's
-  1.8-point margin over its own ABTT row is an upper bound on that margin, not
-  an estimate of it.
-- **499 pairs are memorised by epoch 4.** This is a ceiling at this training
-  budget in the literal sense: more epochs will not help, and the interesting
-  question of what more *data* would buy is untouched.
+  1.8-point and KaLM's 2.1-point margins over their own ABTT rows are upper
+  bounds on those margins, not estimates of them.
+- **499 pairs are memorised within four epochs on both decoder models.** This is
+  a ceiling at this training budget in the literal sense: more epochs will not
+  help, and the interesting question of what more *data* would buy is untouched.
 
 ### A dev pool at its resolution limit
 
@@ -395,6 +525,13 @@ first run read 70/71: at a train loss of 6e-04 one borderline dev file flips
 under ordinary GPU non-determinism. That is one more reason to treat a 71-file
 dev pool as the weak link in this protocol, and it is worth a line in the
 paper's limitations whichever model is being discussed.
+
+**KaLM-mini exercises the same window from the other side, and needed no
+re-run.** Its pre-trained encoder misses two of the 71 dev files, so epoch 1 is
+a two-file gain and wins on accuracy outright; epochs 2 to 4 then sit one file
+below it, which the window makes a tie rather than a loss, and AUROC keeps epoch
+1 because 0.9997 beats 0.9994. The rule therefore decides this run at the
+tiebreak in both directions and lands on the trained checkpoint either way.
 
 ## Benchmark v1 re-run (LaTa)
 
@@ -464,7 +601,7 @@ system than the correction does.
 
 ## Reproducing
 
-Four jobs, two per model. Only the training halves need a GPU. Scoring reads
+Six jobs, two per model. Only the training halves need a GPU. Scoring reads
 cached `.npy` files, which the repo's budget rule sends to the CPU partition,
 so it must not sit inside the GPU reservation.
 
@@ -472,23 +609,27 @@ so it must not sit inside the GPU reservation.
 # GPU: fine-tune, extract every layer, parity-check against the paper's cache.
 sbatch slurm/resubmit/finetune_lata_ceiling.sbatch
 sbatch slurm/resubmit/finetune_qwen_ceiling.sbatch
+sbatch slurm/resubmit/finetune_kalm_ceiling.sbatch
 
 # CPU: Task A, Task B, 5-seed Task B, comparison CSVs.
 sbatch slurm/resubmit/finetune_lata_ceiling_eval.sbatch
-# ... then this one, which also writes the generated table.
 sbatch slurm/resubmit/finetune_qwen_ceiling_eval.sbatch
+# ... then this one, which also writes the generated table.
+sbatch slurm/resubmit/finetune_kalm_ceiling_eval.sbatch
 ```
 
 **Order matters, because `tables/finetune_ceiling.tex` has exactly one
-writer.** The table carries both ceilings, so the Qwen eval job renders it: its
-`--tex_extra_run LaTa:finetune_lata:<lata out dir>` reads LaTa's comparison CSV
-and saved caption facts back off disk and prints them above its own rows. The
-LaTa eval job writes CSVs only. That is what stops a LaTa-only re-run from
-silently dropping Qwen from the table.
+writer.** The table carries every ceiling, so the job for the last model added
+renders it. Since #210 that is the KaLM eval job: its two `--tex_extra_run`
+specs read LaTa's and Qwen3-0.6B's comparison CSVs and saved caption facts back
+off disk and print them above its own rows. The LaTa and Qwen eval jobs write
+CSVs only. That is what stops a re-run of one model from silently dropping the
+others from the table; when a fourth model is added, the writer role moves to
+its eval job the same way.
 
-All four accept `CODE_ROOT` (scripts, `src/`, `data/`) and `REPO_ROOT` (the
+All six accept `CODE_ROOT` (scripts, `src/`, `data/`) and `REPO_ROOT` (the
 `runs/` tree) as environment overrides; they are the same path in a normal
-checkout and differ only when submitting from a git worktree. The Qwen eval job
+checkout and differ only when submitting from a git worktree. The KaLM eval job
 also accepts `TEX_OUT`, for rendering the table somewhere other than
 `overleaf_drafts/`.
 
@@ -508,11 +649,15 @@ runs on a clean CI checkout instead of being skipped for want of torch.
 `scripts/resubmit/finetune_ceiling.py` (named `finetune_lata_ceiling.py` until
 #194) takes the model as a parameter. `--model_name` picks the encoder and the
 cache the parity check diffs against, `--display_name` names the rows
-("LaTa", "Qwen3-0.6B"), and `--results_prefix` keeps two models' CSVs apart in
-one results directory. A seq2seq checkpoint contributes its encoder stack; any
-other checkpoint is loaded with `AutoModel`, the way `extract_encoder_cli.py`
-loads the decoder-only models, so the fine-tuned vectors live in the same space
-as the zero-shot rows they are compared against.
+("LaTa", "Qwen3-0.6B", "KaLM-mini"), `--trust_remote_code` is passed through to
+both loaders for a checkpoint that ships its own modelling code, and
+`--results_prefix` keeps the models' CSVs apart in one results directory. A
+seq2seq checkpoint contributes its encoder stack; any other checkpoint is loaded
+with `AutoModel`, the way `extract_encoder_cli.py` loads the decoder-only
+models, so the fine-tuned vectors live in the same space as the zero-shot rows
+they are compared against. `count_blocks` finds the block list by attribute
+rather than by model name, which is why a third architecture needed no code
+change.
 
 ### The generated table's caption
 
@@ -527,21 +672,22 @@ terminal, whether the $D$ sweep hit the top of its grid, and the near-duplicate
 overlap statistic. `tests/test_finetune_ceiling_caption.py` changes each input
 and asserts the caption follows.
 
-With two ceilings in one table the same rule applies per model. Each
+With several ceilings in one table the same rule applies per model. Each
 `CeilingSection` carries its own facts, so the caption says "ABTT rows for LaTa
 ... select $D=10$ everywhere" and "ABTT rows for Qwen3-0.6B ... 12 of 28 layer
-rows select the top of the grid" rather than one model's claim standing for
-both, and the epoch sentence is named the same way. The pair count is the one
-statement made jointly, and only because both carves come from one split and
+rows select the top of the grid" rather than one model's claim standing for the
+rest, and the epoch sentence is named the same way. The pair count is the one
+statement made jointly, and only because every carve comes from one split and
 one seed; if two runs ever disagree on it, the clause drops the number instead
-of quoting one model's count for the other.
+of quoting one model's count for the others.
 
 Outputs:
 
 LaTa writes into `runs/active/resubmit/finetune/`; Qwen3-0.6B writes into
-`runs/active/resubmit/finetune/qwen3_0.6b/`. Result CSVs share
+`runs/active/resubmit/finetune/qwen3_0.6b/`; KaLM-mini writes into
+`runs/active/resubmit/finetune/kalm_mini/`. Result CSVs share
 `runs/active/resubmit/results/finetune/` and are kept apart by their prefix,
-`finetune_lata` and `finetune_qwen3_0.6b`.
+`finetune_lata`, `finetune_qwen3_0.6b` and `finetune_kalm_mini`.
 
 | Path | Contents |
 |---|---|
@@ -563,7 +709,7 @@ Nothing under `runs/` is committed.
 Until #194 both jobs dumped `run_info.json` wholesale, so the scoring job
 deleted the GPU job's `parity` report, its `selection`, its `train_seconds` and
 its `grad_checkpointing` flag, leaving a file that looked complete and read
-`grad_checkpointing: false, parity_check: false` for both models.
+`grad_checkpointing: false, parity_check: false` for both models of the day.
 `merge_run_info` in the CLI now folds each job's record into the file and drops
 nothing; a scoring job's own `config` and `total_seconds` land under
 `report_config` and `report_total_seconds` so the training job's stay the record
@@ -579,6 +725,25 @@ guessed**, and a `restored` block in each file names every source and lists what
 could not be recovered. Re-running the GPU job would regenerate all of it
 first-hand; that is the right fix whenever the checkpoints are retrained, and
 not worth an A100 to recover a JSON file.
+
+KaLM-mini's record never needed restoring: it was written under the merge rules
+from the start. Its file carries `train_seconds` (60.9), `parity`, `selection`,
+`grad_checkpointing`, `n_blocks` and `device` from the GPU job, and
+`caption_facts` beside the namespaced `report_config`, `report_total_seconds`
+and `report_device` from the scoring job, with no `restored` block.
+`caption_facts` belongs to the scoring job and not to the GPU job, because it is
+written only on the `--tex_out` branch, which only the eval job takes. That is
+what the two rebuilt files are approximating.
+
+**`device` is job-scoped too, and learned that the hard way.** It was merged
+rather than namespaced until #210, so the scoring job, which the budget rule
+sends to the CPU partition, rewrote every finished record to say the weights
+were trained on `cpu`, next to a `parity` block and a `train_seconds` that could
+only have come from a GPU. `JOB_SCOPED_KEYS` in the CLI now covers `config`,
+`total_seconds` and `device`, and `tests/test_finetune_run_info.py` pins that a
+second and third scoring pass still leave the training job's values in place.
+The one record already damaged was repaired in place from the two job logs and
+carries a `repaired` block naming each source.
 
 ## Compute
 
@@ -627,5 +792,24 @@ left to hit a 20-minute wall. The evaluate stage writes its CSV only once all 28
 layers are done, so a timeout loses the whole sweep; the reservation is sized
 for the slow node, not the fast one.
 
+KaLM-mini, 2026-09-15, from `sacct`:
+
+| Job | Partition | Elapsed | Reserved | State |
+|---|---|---|---|---|
+| 22099472 `ft_kalm_ceiling` | `gpuA100x4`, 1x A100-40GB | **00:02:39** | 00:15:00 | COMPLETED |
+| 22099517 `ft_kalm_eval` | `cpu`, 8 cores | 00:04:37 | 00:40:00 | COMPLETED |
+
+**GPU cost: 159 seconds of A100 wall time**, against a 900-second reservation,
+which is what SLURM charges. `run_info.json` splits that into 61 seconds of
+training (4 epochs of 32 steps before patience fired) and 126 seconds for the
+whole GPU stage including both extraction passes over 1,705 files. It landed
+between LaTa's 89 s and Qwen3-0.6B's 307 s, as its parameter count and layer
+count predict, and the run needed no retry: the dev carve gave the selector
+headroom at epoch 0, so the failure mode of #194's first Qwen job did not arise.
+
+The CPU eval's 40-minute reservation is the one sized for Qwen's slow node. This
+24-layer sweep took 00:04:37 on `cn099`, so the margin is 8.7x on this node and
+the reservation stays where it is until a node is measured that needs more.
+
 Seeds: 42 throughout (dev carve, batch order, Torch/NumPy/Python RNGs), and
-42 to 46 for the multi-seed Task B protocol, for both models.
+42 to 46 for the multi-seed Task B protocol, for every model.

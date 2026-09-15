@@ -1,4 +1,4 @@
-"""Supervised fine-tuning REFERENCE CEILING (issues #123, #138, #194).
+"""Supervised fine-tuning REFERENCE CEILING (issues #123, #138, #194, #210).
 
 This is not a proposed method. It is an upper reference point: how far does the
 retrieval task move when the encoder is allowed to see supervision that the
@@ -9,11 +9,14 @@ selection, and the TEST split is untouched until the final evaluation.
 **The model is a parameter.** #123 ran one ceiling, on LaTa, and "it is the best
 model" is not a reason a reviewer accepts for fine-tuning exactly one of six.
 #194 therefore runs the identical recipe on a second, non-Latin-pretrained
-encoder (Qwen3-Embedding-0.6B). Same objective, optimiser, schedule, batch size,
-seed, dev carve and early stopping; only ``--model_name`` and the labels change.
-The two model families the paper uses are shaped differently -- a T5 seq2seq
-whose *encoder stack* is extracted, and a decoder-only stack that IS the model
--- so :class:`Encoder` dispatches on the config rather than assuming T5.
+encoder (Qwen3-Embedding-0.6B), and #210 on a third (KaLM-mini), which owns the
+paper's best zero-shot ABTT cell. Same objective, optimiser, schedule, batch
+size, seed, dev carve and early stopping; only ``--model_name`` and the labels
+change. Every ceiling that is run is reported, whichever side of its own
+zero-shot row it lands on. The model families the paper uses are shaped
+differently -- a T5 seq2seq whose *encoder stack* is extracted, and a
+decoder-only stack that IS the model -- so :class:`Encoder` dispatches on the
+config rather than assuming T5.
 
 Pipeline
 --------
@@ -917,6 +920,12 @@ class CeilingFacts:
 TEX_HEADER = "% generated table"
 
 
+# Keys that describe the job that ran rather than the artifacts on disk. A job
+# that did not load the encoder has these namespaced under "report_<key>" so it
+# cannot overwrite the training job's account of how the weights were made.
+JOB_SCOPED_KEYS = ("config", "total_seconds", "device")
+
+
 def merge_run_info(
     existing: Dict[str, object], new: Dict[str, object], touched_model: bool
 ) -> Dict[str, object]:
@@ -930,15 +939,18 @@ def merge_run_info(
     appendix asserting a record that no longer existed on disk. Every key the
     current job did not produce is now carried through untouched.
 
-    Two keys describe the *job* rather than the artifacts, so they are
-    namespaced rather than merged: a scoring job's ``config`` and
-    ``total_seconds`` land under ``report_config`` and ``report_total_seconds``,
-    leaving the training job's as the record of how the weights were made.
+    Three keys describe the *job* rather than the artifacts, so they are
+    namespaced rather than merged: a scoring job's ``config``, ``total_seconds``
+    and ``device`` land under ``report_config``, ``report_total_seconds`` and
+    ``report_device``, leaving the training job's as the record of how the
+    weights were made. ``device`` joined them in #210: scoring runs on the CPU
+    partition by budget rule, so without namespacing it a scoring job rewrote
+    the record to say the weights were trained on ``cpu``.
     ``touched_model`` is true exactly when this job loaded the encoder.
     """
     merged = dict(existing)
     for key, value in new.items():
-        if key in ("config", "total_seconds") and not touched_model and key in merged:
+        if key in JOB_SCOPED_KEYS and not touched_model and key in merged:
             merged[f"report_{key}"] = value
         else:
             merged[key] = value

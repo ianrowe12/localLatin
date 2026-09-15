@@ -18,9 +18,14 @@ Qwen3-0.6B (pre-trained) & 0.966\,\textsubscript{26} & 0.024\,\textsubscript{26}
 Qwen3-0.6B (pre-trained) + ABTT & 0.973\,\textsubscript{2} & 0.553\,\textsubscript{2} & 91.5\,\textsubscript{5} & 89.4\,\textsubscript{5} \\
 Qwen3-0.6B (fine-tuned) & 0.996\,\textsubscript{28} & 0.684\,\textsubscript{28} & 91.4\,\textsubscript{28} & 90.8\,\textsubscript{28} \\
 Qwen3-0.6B (fine-tuned) + ABTT & 0.994\,\textsubscript{27} & 0.716\,\textsubscript{27} & 92.1\,\textsubscript{27} & 91.4\,\textsubscript{27} \\
+\midrule
+KaLM-mini (pre-trained) & 0.972\,\textsubscript{23} & 0.056\,\textsubscript{23} & 87.5\,\textsubscript{23} & 85.9\,\textsubscript{23} \\
+KaLM-mini (pre-trained) + ABTT & 0.981\,\textsubscript{1} & 0.568\,\textsubscript{1} & 91.7\,\textsubscript{3} & 89.4\,\textsubscript{3} \\
+KaLM-mini (fine-tuned) & 0.997\,\textsubscript{24} & 0.636\,\textsubscript{24} & 92.4\,\textsubscript{24} & 91.7\,\textsubscript{24} \\
+KaLM-mini (fine-tuned) + ABTT & 0.994\,\textsubscript{24} & 0.651\,\textsubscript{24} & 93.4\,\textsubscript{24} & 92.5\,\textsubscript{24} \\
 \bottomrule
 \end{tabular}
-\caption{Supervised fine-tuning reference ceiling on LaTa and Qwen3-0.6B. The fine-tuned encoders are trained contrastively on 499 of the 565 positive train pairs (in-batch negatives, symmetric InfoNCE), with a dev slice carved out of train by directory for model selection; the test split is untouched until this evaluation. Task A columns are test AUROC and cosine gap at the layer chosen by train AUROC; Task B columns are test assignment accuracy and directory accuracy at rank 1, in percent, at the layer chosen by train directory accuracy, with $\tau$ learned on train. Layer indices are subscripts. ABTT rows for LaTa sweep $D$ per layer on train and select $D=10$ everywhere, which is the top of the grid $\{1,2,3,5,7,10\}$, so the tuned and fixed variants coincide. The selected checkpoint for LaTa is epoch 7, the terminal epoch of the sweep under the 8-epoch budget, so this is a ceiling at this training budget rather than an asymptote. ABTT rows for Qwen3-0.6B sweep $D$ per layer on train over the grid $\{1,2,3,5,7,10\}$; 12 of 28 layer rows select the top of the grid. The selected checkpoint for Qwen3-0.6B is epoch 3 of 6 run under the 8-epoch budget, so this is a ceiling at this training budget rather than an asymptote. This is a reference ceiling, not a proposed method: it consumes supervision the zero-shot pipeline never sees.}
+\caption{Supervised fine-tuning reference ceiling on LaTa, Qwen3-0.6B and KaLM-mini. The fine-tuned encoders are trained contrastively on 499 of the 565 positive train pairs (in-batch negatives, symmetric InfoNCE), with a dev slice carved out of train by directory for model selection; the test split is untouched until this evaluation. Task A columns are test AUROC and cosine gap at the layer chosen by train AUROC; Task B columns are test assignment accuracy and directory accuracy at rank 1, in percent, at the layer chosen by train directory accuracy, with $\tau$ learned on train. Layer indices are subscripts. ABTT rows for LaTa sweep $D$ per layer on train and select $D=10$ everywhere, which is the top of the grid $\{1,2,3,5,7,10\}$, so the tuned and fixed variants coincide. The selected checkpoint for LaTa is epoch 7, the terminal epoch of the sweep under the 8-epoch budget, so this is a ceiling at this training budget rather than an asymptote. ABTT rows for Qwen3-0.6B sweep $D$ per layer on train over the grid $\{1,2,3,5,7,10\}$; 12 of 28 layer rows select the top of the grid. The selected checkpoint for Qwen3-0.6B is epoch 3 of 6 run under the 8-epoch budget, so this is a ceiling at this training budget rather than an asymptote. ABTT rows for KaLM-mini sweep $D$ per layer on train over the grid $\{1,2,3,5,7,10\}$; 19 of 24 layer rows select the top of the grid. The selected checkpoint for KaLM-mini is epoch 1 of 4 run under the 8-epoch budget, so this is a ceiling at this training budget rather than an asymptote. This is a reference ceiling, not a proposed method: it consumes supervision the zero-shot pipeline never sees.}
 \label{tab:finetune_ceiling}
 \end{table}
 
@@ -48,6 +53,17 @@ Qwen3-0.6B (fine-tuned) + ABTT & 0.994\,\textsubscript{27} & 0.716\,\textsubscri
 %     training pairs. No test file was trained on, but the ceiling is if
 %     anything overstated, so read any margin it holds over a zero-shot row as
 %     an upper bound on that margin.
+%   - KaLM-mini: Epoch 1 of 4 run was selected on dev directory accuracy.
+%   - KaLM-mini: abtt_optimal sweeps the D grid {1,2,3,5,7,10} and selects its
+%     top value in 19 of 24 layer rows.
+%   - KaLM-mini: The pre-trained rows are COPIED from the paper's results CSV,
+%     not rescored here; only the fine-tuned bases pass through
+%     evaluate_layers.
+%   - KaLM-mini: Witnesses in one directory are near-duplicates, and 206 of the
+%     535 test query files (38.5%) sit in a directory that supplied training
+%     pairs. No test file was trained on, but the ceiling is if anything
+%     overstated, so read any margin it holds over a zero-shot row as an upper
+%     bound on that margin.
 
 % 5-seed Task B (mean +/- std over seeds 42-46), same protocol as the
 % multi-seed appendix table:
@@ -59,3 +75,7 @@ Qwen3-0.6B (fine-tuned) + ABTT & 0.994\,\textsubscript{27} & 0.716\,\textsubscri
 %   Qwen/Qwen3-Embedding-0.6B L28 baseline: dir_acc@1 = 0.824 +/- 0.010
 %   Qwen/Qwen3-Embedding-0.6B-ft L27 abtt_optimal: dir_acc@1 = 0.923 +/- 0.002
 %   Qwen/Qwen3-Embedding-0.6B-ft L28 baseline: dir_acc@1 = 0.917 +/- 0.006
+%   KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5 L3 abtt_optimal: dir_acc@1 = 0.909 +/- 0.006
+%   KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5 L23 baseline: dir_acc@1 = 0.873 +/- 0.007
+%   KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5-ft L24 abtt_optimal: dir_acc@1 = 0.930 +/- 0.005
+%   KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5-ft L24 baseline: dir_acc@1 = 0.926 +/- 0.008
