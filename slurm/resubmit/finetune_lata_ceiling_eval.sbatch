@@ -7,6 +7,12 @@
 # 5-seed Task B protocol at the selected layers for both the fine-tuned and the
 # pre-trained encoder. It also emits the comparison CSV and the LaTeX rows.
 #
+# The generated table carries BOTH ceilings (#194), so it has exactly one
+# writer: slurm/resubmit/finetune_qwen_ceiling_eval.sbatch, which renders the
+# LaTa rows from this job's CSVs and its own rows underneath. This job
+# therefore writes CSVs only; re-run the Qwen eval job after it to refresh
+# overleaf_drafts/tables/finetune_ceiling.tex.
+#
 # No GPU: this only reads cached embeddings, which the repo's budget rule sends
 # to the CPU partition. The runtime is dominated by the per-layer ABTT D sweep,
 # whose directory-assignment scoring is a Python loop over 847 train files x 513
@@ -42,22 +48,22 @@ BASELINE_RESULTS="$REPO_ROOT/runs/active/resubmit/results/phase_resubmit_results
 OUT_DIR="$REPO_ROOT/runs/active/resubmit/finetune"
 BASES_ROOT="$REPO_ROOT/runs/active/resubmit_finetune_bases"
 RESULTS_DIR="$REPO_ROOT/runs/active/resubmit/results/finetune"
-TEX_OUT="$CODE_ROOT/overleaf_drafts/tables/finetune_ceiling.tex"
 
 mkdir -p "$RESULTS_DIR"
 
 echo "=== Scoring the fine-tuning ceiling (CPU) ==="
-conda run --no-capture-output -n localLatin python scripts/resubmit/finetune_lata_ceiling.py \
+conda run --no-capture-output -n localLatin python scripts/resubmit/finetune_ceiling.py \
   --split_csv "$SPLIT_CSV" \
   --data_root "$CODE_ROOT" \
   --model_name "bowphs/LaTa" \
   --ft_model_label "bowphs/LaTa-ft" \
+  --display_name "LaTa" \
+  --results_prefix "finetune_lata" \
   --out_dir "$OUT_DIR" \
   --bases_root "$BASES_ROOT" \
   --baseline_bases_root "$BASELINE_BASES" \
   --baseline_results_csv "$BASELINE_RESULTS" \
   --results_dir "$RESULTS_DIR" \
-  --tex_out "$TEX_OUT" \
   --stages evaluate,report,mseed \
   --seed 42 \
   --dev_dir_frac 0.15 \
@@ -73,7 +79,6 @@ for f in finetune_lata_layer_results.csv \
   [ -f "$RESULTS_DIR/$f" ] || { echo "ERROR: $RESULTS_DIR/$f was not created!" >&2; exit 1; }
   echo "OK: $f ($(wc -l < "$RESULTS_DIR/$f") lines)"
 done
-[ -f "$TEX_OUT" ] && echo "OK: $(basename "$TEX_OUT")"
 
 echo "=== Accounting ==="
 sacct -j "${SLURM_JOB_ID}" --format=JobID,JobName%22,State,Elapsed,AllocTRES%50,TotalCPU || true

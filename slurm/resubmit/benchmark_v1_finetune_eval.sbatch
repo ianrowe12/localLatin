@@ -13,6 +13,10 @@
 # Rescore the fine-tuning reference ceiling (#123) on the corrected benchmark v1
 # split (#113). Scoring only: the fine-tuned encoder and its cached embeddings
 # are unchanged, so no GPU and no retraining. Measured at 3m18s on a cpu node.
+#
+# CSVs only. Since #194 the generated table carries two ceilings and is written
+# by slurm/resubmit/finetune_qwen_ceiling_eval.sbatch, which reads this job's
+# LaTa CSVs back off disk.
 
 set -euo pipefail
 
@@ -26,17 +30,18 @@ mkdir -p slurm/logs
 PY="${PY:-/u/irowerojas/.conda/envs/localLatin/bin/python}"
 export PYTHONUNBUFFERED=1
 
-$PY scripts/resubmit/finetune_lata_ceiling.py \
+$PY scripts/resubmit/finetune_ceiling.py \
   --split_csv "$DATA_ROOT/runs/active/resubmit/data/phase_resubmit_split.csv" \
   --data_root "$CODE_ROOT" \
   --model_name "bowphs/LaTa" \
   --ft_model_label "bowphs/LaTa-ft" \
+  --display_name "LaTa" \
+  --results_prefix "finetune_lata" \
   --out_dir "$DATA_ROOT/runs/active/resubmit/finetune" \
   --bases_root "$DATA_ROOT/runs/active/resubmit_finetune_bases" \
   --baseline_bases_root "$DATA_ROOT/runs/active/resubmit_bases" \
   --baseline_results_csv "$DATA_ROOT/runs/active/resubmit/results/phase_resubmit_results.csv" \
   --results_dir "$DATA_ROOT/runs/active/resubmit/results/finetune" \
-  --tex_out "$CODE_ROOT/overleaf_drafts/tables/finetune_ceiling.tex" \
   --stages evaluate,report,mseed \
   --seed 42 \
   --dev_dir_frac 0.15 \
