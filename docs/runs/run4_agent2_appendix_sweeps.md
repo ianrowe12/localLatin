@@ -45,6 +45,13 @@ auditable rather than fabricating values.
 
 ## Generation Commands
 
+> Historical run 3 log. Since #201 the bare invocation below regenerates from the
+> run of record, `runs/active/ig_examples_200pos_v1/` (see
+> `scripts/ig/attribution_run_of_record.py`), not from the run 3 summary this
+> log describes. To rebuild the run 3 tables, pass
+> `--summary_csv runs/active/ig_examples_200pos_run3_operational/attribution_metrics/summary_v2.csv`
+> and redirect every output path (tables, long CSV, completeness report); the stamped committed tables refuse a different run.
+
 ```bash
 python -m py_compile scripts/ig/package_attribution_sweep_appendix.py
 python scripts/ig/package_attribution_sweep_appendix.py

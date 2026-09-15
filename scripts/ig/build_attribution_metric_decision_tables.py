@@ -12,6 +12,12 @@ Nothing here decides anything: the selection argument lives in the memo. This
 script exists so every number in that memo is regenerable from one command and
 traceable to one CSV.
 
+Superseded for paper numbers. The memo records the metric selection as it was
+made on the run 3 sample, so the default below stays on run 3 on purpose: it
+renders the historical decision, not the paper. The paper's tables come from the
+benchmark v1 re-sample (``attribution_run_of_record.RUN_OF_RECORD``), and
+``docs/research/attribution_v1_resample.md`` re-checks the selection there.
+
 Usage:
   python scripts/ig/build_attribution_metric_decision_tables.py \\
       --summary runs/active/ig_examples_200pos_run3_operational/attribution_metrics/summary_v2.csv \\
@@ -27,6 +33,8 @@ import pandas as pd
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
+# Run 3 on purpose: this renders the historical decision memo, see the docstring.
+# The paper's run of record is attribution_run_of_record.RUN_OF_RECORD.
 DEFAULT_SUMMARY = (
     REPO_ROOT
     / "runs/active/ig_examples_200pos_run3_operational/attribution_metrics/summary_v2.csv"
