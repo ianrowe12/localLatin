@@ -265,7 +265,8 @@ corrected split rather than left stale;
 minutes. Its embedding cache had no per-run manifest, so this pass wrote a
 `row_order.csv` at `runs/active/resubmit_finetune_bases/phase9_bases/` from the
 frozen extraction-time order and wired the resolver into
-`scripts/resubmit/finetune_lata_ceiling.py`. Without that, a re-run there would
+`scripts/resubmit/finetune_ceiling.py` (then named `finetune_lata_ceiling.py`;
+#194 made the model a parameter). Without that, a re-run there would
 have hit exactly the misalignment this issue exists to prevent.
 
 The rescore is an interim, not a promotion. The checkpoint itself was trained on

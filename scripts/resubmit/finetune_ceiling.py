@@ -1,4 +1,4 @@
-"""Supervised fine-tuning REFERENCE CEILING for LaTa (issue #123).
+"""Supervised fine-tuning REFERENCE CEILING (issues #123, #138, #194).
 
 This is not a proposed method. It is an upper reference point: how far does the
 retrieval task move when the encoder is allowed to see supervision that the
@@ -6,12 +6,23 @@ zero-shot + post-processing pipeline never gets? Everything is trained on the
 TRAIN split only, with a DEV slice carved out of train by DIRECTORY for model
 selection, and the TEST split is untouched until the final evaluation.
 
+**The model is a parameter.** #123 ran one ceiling, on LaTa, and "it is the best
+model" is not a reason a reviewer accepts for fine-tuning exactly one of six.
+#194 therefore runs the identical recipe on a second, non-Latin-pretrained
+encoder (Qwen3-Embedding-0.6B). Same objective, optimiser, schedule, batch size,
+seed, dev carve and early stopping; only ``--model_name`` and the labels change.
+The two model families the paper uses are shaped differently -- a T5 seq2seq
+whose *encoder stack* is extracted, and a decoder-only stack that IS the model
+-- so :class:`Encoder` dispatches on the config rather than assuming T5.
+
 Pipeline
 --------
 1. ``pairs``    Build positive pairs from train directories with >= 2 files.
-                A fixed fraction of those directories is held out as DEV.
-2. ``train``    Contrastive fine-tuning of the LaTa T5 encoder with mean pooling
-                and in-batch negatives (symmetric InfoNCE, i.e. the objective
+                A fixed fraction of those directories is held out as DEV. The
+                carve depends only on the split and the seed, so every model
+                trains on exactly the same pairs.
+2. ``train``    Contrastive fine-tuning of the encoder with mean pooling and
+                in-batch negatives (symmetric InfoNCE, i.e. the objective
                 behind sentence-transformers MultipleNegativesRankingLoss).
                 Model selection on DEV directory accuracy@1 each epoch.
 3. ``extract``  Mean-pooled embeddings for all 1,705 labelled files at every
@@ -28,18 +39,18 @@ Pipeline
 
 Pooling, token filtering (``tokenizer_empty``), max_length and row order all
 match the paper's extraction exactly; ``--parity_check`` proves it by re-running
-extraction with the *pre-trained* weights and diffing against the cached
-baseline embeddings.
+extraction with the *pre-trained* weights and diffing against that model's
+cached baseline embeddings.
 """
 from __future__ import annotations
 
 import argparse
 import json
-import math
 import random
 import sys
 import textwrap
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -47,7 +58,7 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
-from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
+from transformers import AutoConfig, AutoModel, AutoModelForSeq2SeqLM, AutoTokenizer
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "src"))
@@ -61,9 +72,11 @@ from canon_retrieval import (  # noqa: E402
     upper_triangle_labels,
 )
 from finetune_pairs import (  # noqa: E402
+    DevPoint,
     PairData,
     batch_pairs_by_round,
     build_pairs,
+    is_better_checkpoint,
 )
 from embedding_alignment import AlignmentResolver  # noqa: E402
 from pair_evaluation import safe_auc_roc  # noqa: E402
@@ -82,12 +95,26 @@ STAGES = ("pairs", "train", "extract", "evaluate", "mseed", "report")
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="LaTa supervised fine-tuning reference ceiling.")
+    p = argparse.ArgumentParser(description="Supervised fine-tuning reference ceiling.")
     p.add_argument("--split_csv", required=True, help="phase_resubmit_split.csv (row order = embedding row order).")
     p.add_argument("--data_root", default=str(REPO_ROOT), help="Root the split CSV 'path' column resolves against.")
-    p.add_argument("--model_name", default="bowphs/LaTa")
+    p.add_argument("--model_name", default="bowphs/LaTa",
+                   help="HuggingFace id of the encoder to fine-tune; also names the "
+                        "pre-trained comparison rows and the parity-check cache.")
     p.add_argument("--ft_model_label", default="bowphs/LaTa-ft",
                    help="Label used for the fine-tuned model in result rows and the bases slug.")
+    p.add_argument("--display_name", default="LaTa",
+                   help="Short name used in the comparison CSV's 'system' column and the "
+                        "generated table, e.g. 'LaTa' or 'Qwen3-0.6B'.")
+    p.add_argument("--results_prefix", default="finetune_lata",
+                   help="Filename stem for this model's result CSVs, so two ceilings "
+                        "can share one results directory without overwriting each other.")
+    p.add_argument("--trust_remote_code", action="store_true",
+                   help="Pass trust_remote_code to the tokenizer and model loaders.")
+    p.add_argument("--grad_checkpointing", action="store_true",
+                   help="Trade compute for activation memory during training. The "
+                        "gradients are identical, so this changes the memory footprint "
+                        "and nothing about the recipe; it is recorded in run_info.json.")
 
     p.add_argument("--out_dir", required=True, help="Run outputs (checkpoint, dev curve, configs).")
     p.add_argument("--bases_root", required=True,
@@ -128,6 +155,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--mseed_M", type=int, default=5)
     p.add_argument("--mseed_base_seed", type=int, default=42)
 
+    p.add_argument("--tex_extra_run", action="append", default=[], metavar="SPEC",
+                   help="Another finished ceiling to print ABOVE this one in --tex_out, "
+                        "as '<display_name>:<results_prefix>:<out_dir>'. Its comparison "
+                        "and 5-seed CSVs are read from --results_dir and its caption "
+                        "facts from <out_dir>/run_info.json. Repeatable.")
     p.add_argument("--parity_check", action="store_true",
                    help="Re-extract with pre-trained weights and diff against the cached baseline embeddings.")
     p.add_argument("--cpu", action="store_true", help="Force CPU (for the evaluate/mseed stages).")
@@ -153,19 +185,76 @@ def model_slug(name: str) -> str:
 # Encoding
 # --------------------------------------------------------------------------- #
 
-class Encoder:
-    """LaTa's T5 encoder with the paper's mean pooling and token filter."""
+def count_blocks(module) -> int:
+    """How many transformer blocks a loaded stack has.
 
-    def __init__(self, model_name: str, token_filter: str, max_length: int, device: str):
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
-        self.encoder = model.get_encoder() if hasattr(model, "get_encoder") else model.encoder
+    The paper's models are three shapes and each hides its block list somewhere
+    different: a T5 encoder stack in ``.block``, a decoder-only stack in
+    ``.layers``, a BERT encoder in ``.encoder.layer``. Counting them is what
+    turns ``--layers "1-N"`` and the "train on the last layer" rule into
+    something the caller does not have to restate per model.
+    """
+    blocks = getattr(module, "block", None)          # T5Stack
+    if blocks is None:
+        blocks = getattr(module, "layers", None)     # Llama/Qwen-style stack
+    if blocks is None:
+        inner = getattr(module, "encoder", None)     # BertModel
+        blocks = getattr(inner, "layer", None) if inner is not None else None
+    if blocks is None:
+        inner = getattr(module, "model", None)       # a wrapped decoder
+        blocks = getattr(inner, "layers", None) if inner is not None else None
+    if blocks is None:
+        raise ValueError(
+            f"Cannot find the transformer block list on {type(module).__name__}; "
+            "add its attribute path to count_blocks()."
+        )
+    return len(blocks)
+
+
+class Encoder:
+    """One model's encoder stack with the paper's mean pooling and token filter.
+
+    Dispatch is on the config, not on the model name. A seq2seq checkpoint
+    (LaTa, PhilTa, mT5) contributes only its encoder, which is what the paper
+    extracts from; every other checkpoint IS the stack, and ``AutoModel``
+    already drops the LM head, which is how ``extract_encoder_cli`` loads the
+    decoder-only models whose zero-shot rows these numbers are compared against.
+    """
+
+    def __init__(self, model_name: str, token_filter: str, max_length: int, device: str,
+                 trust_remote_code: bool = False, grad_checkpointing: bool = False):
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            model_name, trust_remote_code=trust_remote_code
+        )
+        config = AutoConfig.from_pretrained(model_name, trust_remote_code=trust_remote_code)
+        if getattr(config, "is_encoder_decoder", False):
+            model = AutoModelForSeq2SeqLM.from_pretrained(
+                model_name, trust_remote_code=trust_remote_code
+            )
+            self.encoder = model.get_encoder() if hasattr(model, "get_encoder") else model.encoder
+            self.family = "seq2seq_encoder"
+        else:
+            self.encoder = AutoModel.from_pretrained(
+                model_name, trust_remote_code=trust_remote_code
+            )
+            self.family = "single_stack"
+            # A decoder stack would otherwise build a KV cache it never reads,
+            # and refuse to checkpoint its activations.
+            if hasattr(self.encoder, "config"):
+                self.encoder.config.use_cache = False
+        self.grad_checkpointing = bool(grad_checkpointing)
+        if self.grad_checkpointing:
+            # Recompute activations in the backward pass instead of storing
+            # them. The gradients are identical; only the memory bill changes.
+            self.encoder.gradient_checkpointing_enable(
+                gradient_checkpointing_kwargs={"use_reentrant": False}
+            )
         self.encoder.to(device)
         self.device = device
         self.max_length = max_length
         keep = build_token_keep_lookup(self.tokenizer, token_filter)
         self.token_keep_lookup = keep
-        self.n_blocks = len(self.encoder.block)
+        self.n_blocks = count_blocks(self.encoder)
 
     def tokenize(self, texts: Sequence[str]) -> Dict[str, torch.Tensor]:
         enc = self.tokenizer(
@@ -340,8 +429,10 @@ def train_contrastive(
         emb = enc.encode_layers(dev_texts, [enc.n_blocks], args.eval_batch_size)[enc.n_blocks]
         m = dev_metrics(emb, dev_fids)
         history.append({"epoch": epoch, "train_loss": mean_loss, **m})
-        improved = (m["dev_dir_acc_at_1"] > best_score) or (
-            math.isclose(m["dev_dir_acc_at_1"], best_score) and m["dev_aucroc"] > best_tiebreak
+        improved = is_better_checkpoint(
+            DevPoint(epoch, m["dev_dir_acc_at_1"], m["dev_aucroc"]),
+            DevPoint(best_epoch, best_score, best_tiebreak),
+            len(pair_data.dev_rows),
         )
         print(f"  epoch {epoch}: loss={mean_loss:.4f} dev_acc@1={m['dev_dir_acc_at_1']:.4f} "
               f"dev_auroc={m['dev_aucroc']:.4f}{'  *' if improved else ''}", flush=True)
@@ -432,6 +523,7 @@ def extract_and_save(
 def parity_check(
     enc_pre: Encoder, texts: Sequence[str], layers: Sequence[int],
     baseline_bases_root: Path, batch_size: int, aligner: AlignmentResolver,
+    model_name: str = "bowphs/LaTa",
 ) -> Dict[str, float]:
     """Confirm this script's extraction reproduces the paper's cached embeddings.
 
@@ -440,8 +532,11 @@ def parity_check(
     one and not the other, so the reference is loaded through ``aligner``
     (built on the same split as ``texts``) rather than with ``np.load``:
     otherwise a pure re-ordering would show up as a parity failure.
+
+    ``model_name`` picks which cached matrix to diff against, so a second
+    ceiling is checked against its own zero-shot rows rather than LaTa's.
     """
-    ref_dir = bases_dir(baseline_bases_root, "bowphs/LaTa")
+    ref_dir = bases_dir(baseline_bases_root, model_name)
     probe = [l for l in layers if (ref_dir / f"hidden_layer{l}_embeddings.npy").exists()]
     probe = probe[-1:] + probe[:1]  # last and first available layer
     if not probe:
@@ -574,22 +669,31 @@ def run_mseed(
 # Reporting
 # --------------------------------------------------------------------------- #
 
-SYSTEM_ORDER = [
-    ("LaTa (pre-trained)", "baseline", False),
-    ("LaTa (pre-trained) + ABTT", "abtt_optimal", False),
-    ("LaTa (fine-tuned)", "baseline", True),
-    ("LaTa (fine-tuned) + ABTT", "abtt_optimal", True),
-]
+def system_order(display_name: str) -> List[Tuple[str, str, bool]]:
+    """The four comparison rows, named after the model under test.
+
+    The names are what ``build_headline_tables`` and the generated table match
+    on, so they are derived from one ``--display_name`` rather than repeated as
+    literals per model.
+    """
+    return [
+        (f"{display_name} (pre-trained)", "baseline", False),
+        (f"{display_name} (pre-trained) + ABTT", "abtt_optimal", False),
+        (f"{display_name} (fine-tuned)", "baseline", True),
+        (f"{display_name} (fine-tuned) + ABTT", "abtt_optimal", True),
+    ]
 
 
-def build_comparison(ft_df: pd.DataFrame, base_df: pd.DataFrame) -> pd.DataFrame:
+def build_comparison(
+    ft_df: pd.DataFrame, base_df: pd.DataFrame, display_name: str = "LaTa"
+) -> pd.DataFrame:
     """One row per system, with Task A and Task B each at their own selected layer.
 
     Layer selection follows the paper's headline tables: Task A by train AUROC,
     Task B by train directory accuracy at rank 1.
     """
     rows = []
-    for system, method, is_ft in SYSTEM_ORDER:
+    for system, method, is_ft in system_order(display_name):
         df = ft_df if is_ft else base_df
         a = select_layer(df, method, "train_aucroc")
         b = select_layer(df, method, "train_dir_acc_at_1")
@@ -632,7 +736,12 @@ class CeilingFacts:
         selection: Optional[Dict[str, object]],
         epoch_budget: Optional[int],
         ft_results: pd.DataFrame,
+        display_name: str = "",
     ):
+        # Empty when one model owns the table: the sentences then read as they
+        # always did. Set it when the table carries more than one ceiling, so
+        # every claim says which model it is about.
+        self.display_name = display_name
         self.n_all_train_pairs = pair_data.n_all_train_pairs
         self.n_fit_pairs = len(pair_data.train_pairs)
         self.n_fit_dirs = len(pair_data.fit_dirs)
@@ -674,6 +783,23 @@ class CeilingFacts:
                     and np.allclose(merged["dir_acc_at_1_o"], merged["dir_acc_at_1_f"])
                 )
 
+    @classmethod
+    def from_dict(cls, facts: Dict[str, object], display_name: str = "") -> "CeilingFacts":
+        """Rebuild the facts of a run that finished in another job.
+
+        A two-model table is rendered by whichever run reports last, and the
+        other model's pair counts, epoch and $D$ sweep are already on disk in
+        its ``run_info.json``. Reading them back beats recomputing them from a
+        checkpoint this process does not have.
+        """
+        obj = cls.__new__(cls)
+        obj.__dict__.update(facts)
+        obj.display_name = display_name
+        return obj
+
+    def _who(self, lead: str = " for ") -> str:
+        return f"{lead}{self.display_name}" if self.display_name else ""
+
     def d_grid_tex(self) -> str:
         return r"\{" + ",".join(str(d) for d in self.D_values) + r"\}"
 
@@ -687,14 +813,14 @@ class CeilingFacts:
                 else " so $D$ was never free to go higher."
             )
             return (
-                f" ABTT rows sweep $D$ per layer on train and select $D={max(self.D_values)}$ "
-                f"everywhere, which is the top of the grid ${self.d_grid_tex()}$,"
-                + tail
+                f" ABTT rows{self._who()} sweep $D$ per layer on train and select "
+                f"$D={max(self.D_values)}$ everywhere, which is the top of the grid "
+                f"${self.d_grid_tex()}$," + tail
             )
         return (
-            f" ABTT rows sweep $D$ per layer on train over the grid ${self.d_grid_tex()}$; "
-            f"{self.n_optimal_at_max_D} of {self.n_optimal_rows} layer rows select the top "
-            f"of the grid."
+            f" ABTT rows{self._who()} sweep $D$ per layer on train over the grid "
+            f"${self.d_grid_tex()}$; {self.n_optimal_at_max_D} of {self.n_optimal_rows} "
+            f"layer rows select the top of the grid."
         )
 
     def epoch_caption_sentence(self) -> str:
@@ -702,24 +828,28 @@ class CeilingFacts:
             return ""
         if self.selected_epoch == 0:
             return (
-                " Model selection kept the pre-trained encoder (epoch 0): no training "
-                "epoch improved dev directory accuracy."
+                f" Model selection{self._who()} kept the pre-trained encoder (epoch 0): "
+                "no training epoch improved dev directory accuracy."
             )
         budget = f"{self.epoch_budget}-epoch budget" if self.epoch_budget else "epoch budget"
         if self.epochs_run is not None and self.selected_epoch == self.epochs_run:
             return (
-                f" The selected checkpoint is epoch {self.selected_epoch}, the terminal "
-                f"epoch of the sweep under the {budget}, so this is a ceiling at this "
-                f"training budget rather than an asymptote."
+                f" The selected checkpoint{self._who()} is epoch {self.selected_epoch}, "
+                f"the terminal epoch of the sweep under the {budget}, so this is a ceiling "
+                f"at this training budget rather than an asymptote."
             )
         return (
-            f" The selected checkpoint is epoch {self.selected_epoch} of "
+            f" The selected checkpoint{self._who()} is epoch {self.selected_epoch} of "
             f"{self.epochs_run} run under the {budget}, so this is a ceiling at this "
             f"training budget rather than an asymptote."
         )
 
     def notes(self) -> List[str]:
-        """Bullet notes, one paragraph each, wrapped into LaTeX comment lines."""
+        """This run's bullet notes, wrapped into LaTeX comment lines.
+
+        Bullets only: the section header is written once by ``write_tex``, so a
+        two-model table does not repeat it.
+        """
         bullets: List[str] = []
         if self.selected_epoch == 0:
             bullets.append(
@@ -758,23 +888,74 @@ class CeilingFacts:
             "The pre-trained rows are COPIED from the paper's results CSV, not rescored "
             "here; only the fine-tuned bases pass through evaluate_layers."
         )
+        # Which way this cuts depends on the model: for LaTa the ceiling sits
+        # below the zero-shot ABTT cells, so overstating it makes that reading
+        # conservative; for Qwen3-0.6B it sits above them, so overstating it
+        # weakens that reading instead. The note therefore states the fact and
+        # leaves the direction to the row it annotates.
         bullets.append(
             f"Witnesses in one directory are near-duplicates, and "
             f"{self.n_test_queries_touched} of the {self.n_test_queries} test query files "
             f"({self.pct_test_queries_touched:.1f}%) sit in a directory that supplied "
             f"training pairs. No test file was trained on, but the ceiling is if anything "
-            f"overstated, which makes the 'ABTT already reaches it' reading conservative."
+            f"overstated, so read any margin it holds over a zero-shot row as an upper "
+            f"bound on that margin."
         )
 
-        out = ["% Notes for whoever moves these rows into the paper:"]
+        prefix = f"{self.display_name}: " if self.display_name else ""
+        out: List[str] = []
         for bullet in bullets:
             out += textwrap.wrap(
-                bullet, width=79, initial_indent="%   - ", subsequent_indent="%     "
+                prefix + bullet,
+                width=79,
+                initial_indent="%   - ",
+                subsequent_indent="%     ",
             )
         return out
 
 
 TEX_HEADER = "% generated table"
+
+
+def merge_run_info(
+    existing: Dict[str, object], new: Dict[str, object], touched_model: bool
+) -> Dict[str, object]:
+    """Fold one job's record into ``run_info.json`` without dropping another's.
+
+    The stages run in separate jobs: training, extraction and the parity check
+    need a GPU, scoring does not. Both used to dump this file wholesale, so the
+    scoring job silently deleted the GPU job's ``parity`` report, its
+    ``selection``, its ``train_seconds`` and its ``grad_checkpointing`` flag.
+    That is the provenance the paper's appendix quotes, and losing it left the
+    appendix asserting a record that no longer existed on disk. Every key the
+    current job did not produce is now carried through untouched.
+
+    Two keys describe the *job* rather than the artifacts, so they are
+    namespaced rather than merged: a scoring job's ``config`` and
+    ``total_seconds`` land under ``report_config`` and ``report_total_seconds``,
+    leaving the training job's as the record of how the weights were made.
+    ``touched_model`` is true exactly when this job loaded the encoder.
+    """
+    merged = dict(existing)
+    for key, value in new.items():
+        if key in ("config", "total_seconds") and not touched_model and key in merged:
+            merged[f"report_{key}"] = value
+        else:
+            merged[key] = value
+    return merged
+
+
+def write_run_info(path: Path, new: Dict[str, object], touched_model: bool) -> None:
+    """Merge ``new`` into the record at ``path`` and write it back."""
+    existing: Dict[str, object] = {}
+    if path.exists():
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            print(f"  {path} is not valid JSON; replacing it", file=sys.stderr)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(merge_run_info(existing, new, touched_model), f, indent=2, default=str)
 
 
 def load_selection(out_dir: Path) -> Optional[Dict[str, object]]:
@@ -786,19 +967,93 @@ def load_selection(out_dir: Path) -> Optional[Dict[str, object]]:
         return json.load(f)
 
 
-def write_tex(
-    comparison: pd.DataFrame,
-    mseed_agg: Optional[pd.DataFrame],
-    path: Path,
-    facts: Optional[CeilingFacts] = None,
-) -> None:
+@dataclass
+class CeilingSection:
+    """One model's block of the generated table.
+
+    The table carries a ceiling per fine-tuned model (issue #194), and every
+    caption claim -- pair count, selected epoch, whether the $D$ sweep hit its
+    boundary -- is a property of one run, not of the table. Keeping them
+    together in a section is what stops the second model inheriting the first
+    model's prose.
+    """
+
+    display_name: str
+    comparison: pd.DataFrame
+    facts: Optional[CeilingFacts] = None
+    mseed_agg: Optional[pd.DataFrame] = None
+
+
+def _row_tex(row: pd.Series) -> str:
+    def fmt(x: float, nd: int = 3) -> str:
+        return f"{x:.{nd}f}"
+
+    name = str(row["system"]).replace("_", r"\_")
+    return (
+        f"{name} & {fmt(row['taskA_aucroc'])}\\,\\textsubscript{{{row['taskA_layer']}}} "
+        f"& {fmt(row['taskA_cosine_gap'])}\\,\\textsubscript{{{row['taskA_layer']}}} "
+        f"& {fmt(100 * row['taskB_assignment_acc'], 1)}\\,\\textsubscript{{{row['taskB_layer']}}} "
+        f"& {fmt(100 * row['taskB_dir_acc_at_1'], 1)}\\,\\textsubscript{{{row['taskB_layer']}}} \\\\"
+    )
+
+
+def _pairs_clause(sections: Sequence[CeilingSection]) -> str:
+    """The shared pair count, phrased for the caption, or nothing.
+
+    Both ceilings are carved from the same split with the same seed, so they
+    see the same pairs; if a future run breaks that, the caption drops the
+    number rather than quoting one model's count for both.
+    """
+    counts = {sec.facts.n_all_train_pairs for sec in sections if sec.facts is not None}
+    if len(counts) != 1:
+        return ""
+    return f"the {counts.pop()} "
+
+
+def load_extra_section(spec: str, results_dir: Path) -> CeilingSection:
+    """Build a section from a ceiling that ran in an earlier job.
+
+    ``spec`` is ``<display_name>:<results_prefix>:<out_dir>``. Everything the
+    section needs is already on disk, so a two-model table does not require
+    re-scoring the first model.
+    """
+    parts = spec.split(":")
+    if len(parts) != 3:
+        raise SystemExit(
+            f"--tex_extra_run expects '<display_name>:<results_prefix>:<out_dir>', got {spec!r}"
+        )
+    display_name, prefix, out_dir = (part.strip() for part in parts)
+    comp_path = results_dir / f"{prefix}_ceiling_comparison.csv"
+    if not comp_path.exists():
+        raise SystemExit(f"--tex_extra_run {spec!r}: no comparison CSV at {comp_path}")
+    comparison = pd.read_csv(comp_path)
+
+    facts = None
+    info_path = Path(out_dir) / "run_info.json"
+    if info_path.exists():
+        saved = json.loads(info_path.read_text(encoding="utf-8")).get("caption_facts")
+        if saved:
+            facts = CeilingFacts.from_dict(saved, display_name)
+    if facts is None:
+        print(f"  {spec}: no caption_facts in {info_path}; its caption sentences are omitted",
+              file=sys.stderr)
+
+    mseed_path = results_dir / f"{prefix}_mseed_aggregated.csv"
+    mseed = pd.read_csv(mseed_path) if mseed_path.exists() else None
+    return CeilingSection(display_name, comparison, facts, mseed)
+
+
+def write_tex(sections: Sequence[CeilingSection], path: Path) -> None:
     """Emit the table body. Generated file: edit the generator, not this.
 
     The header names no repository path: this directory ships to Overleaf
     (issue #117).
     """
-    def fmt(x: float, nd: int = 3) -> str:
-        return f"{x:.{nd}f}"
+    sections = [sec for sec in sections if not sec.comparison.empty]
+    if not sections:
+        raise ValueError("write_tex needs at least one non-empty comparison")
+    names = [sec.display_name for sec in sections]
+    subject = names[0] if len(names) == 1 else ", ".join(names[:-1]) + f" and {names[-1]}"
 
     lines = [
         TEX_HEADER,
@@ -814,19 +1069,18 @@ def write_tex(
         r"& \makecell{Dir.\\acc.@1} \\",
         r"\midrule",
     ]
-    for _, r in comparison.iterrows():
-        name = r["system"].replace("_", r"\_")
-        lines.append(
-            f"{name} & {fmt(r['taskA_aucroc'])}\\,\\textsubscript{{{r['taskA_layer']}}} "
-            f"& {fmt(r['taskA_cosine_gap'])}\\,\\textsubscript{{{r['taskA_layer']}}} "
-            f"& {fmt(100 * r['taskB_assignment_acc'], 1)}\\,\\textsubscript{{{r['taskB_layer']}}} "
-            f"& {fmt(100 * r['taskB_dir_acc_at_1'], 1)}\\,\\textsubscript{{{r['taskB_layer']}}} \\\\"
-        )
+    for i, sec in enumerate(sections):
+        if i:
+            lines.append(r"\midrule")
+        for _, row in sec.comparison.iterrows():
+            lines.append(_row_tex(row))
 
-    n_pairs = "" if facts is None else f"the {facts.n_all_train_pairs} "
+    encoder = "encoder is" if len(sections) == 1 else "encoders are"
     caption = (
-        r"\caption{Supervised fine-tuning reference ceiling on LaTa. The fine-tuned "
-        r"encoder is trained contrastively on " + n_pairs + r"positive pairs available in "
+        r"\caption{Supervised fine-tuning reference ceiling on " + subject +
+        r". The fine-tuned " + encoder + r" trained contrastively on "
+        + _pairs_clause(sections) +
+        r"positive pairs available in "
         r"the train split (in-batch negatives, symmetric InfoNCE), with a dev slice carved "
         r"out of train by directory for model selection; the test split is untouched "
         r"until this evaluation. Task A columns are test AUROC and cosine gap at the "
@@ -835,9 +1089,10 @@ def write_tex(
         r"directory accuracy, with $\tau$ learned on train. Layer indices are "
         r"subscripts."
     )
-    if facts is not None:
-        caption += facts.abtt_caption_sentence()
-        caption += facts.epoch_caption_sentence()
+    for sec in sections:
+        if sec.facts is not None:
+            caption += sec.facts.abtt_caption_sentence()
+            caption += sec.facts.epoch_caption_sentence()
     caption += (
         r" This is a reference ceiling, not a proposed method: it consumes supervision "
         r"the zero-shot pipeline never sees.}"
@@ -850,17 +1105,25 @@ def write_tex(
         r"\label{tab:finetune_ceiling}",
         r"\end{table}",
     ]
-    if facts is not None:
-        lines += [""] + facts.notes()
-    if mseed_agg is not None and not mseed_agg.empty:
+    notes: List[str] = []
+    for sec in sections:
+        if sec.facts is not None:
+            notes += sec.facts.notes()
+    if notes:
+        lines += ["", "% Notes for whoever moves these rows into the paper:"] + notes
+    mseed_lines = []
+    for sec in sections:
+        if sec.mseed_agg is not None and not sec.mseed_agg.empty:
+            for _, r in sec.mseed_agg.iterrows():
+                mseed_lines.append(
+                    f"%   {r['model']} L{int(r['layer'])} {r['method']}: "
+                    f"dir_acc@1 = {r['dir_acc_at_1_mean']:.3f} +/- {r['dir_acc_at_1_std']:.3f}"
+                )
+    if mseed_lines:
         lines.append("")
         lines.append(r"% 5-seed Task B (mean +/- std over seeds 42-46), same protocol as the")
         lines.append(r"% multi-seed appendix table:")
-        for _, r in mseed_agg.iterrows():
-            lines.append(
-                f"%   {r['model']} L{int(r['layer'])} {r['method']}: "
-                f"dir_acc@1 = {r['dir_acc_at_1_mean']:.3f} +/- {r['dir_acc_at_1_std']:.3f}"
-            )
+        lines += mseed_lines
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(f"  wrote {path}", flush=True)
@@ -920,15 +1183,24 @@ def main() -> None:
     needs_model = bool({"train", "extract"} & stages) or args.parity_check
     if needs_model:
         texts = load_texts(paths)
-        enc = Encoder(args.model_name, args.token_filter, args.max_length, device)
+        enc = Encoder(
+            args.model_name, args.token_filter, args.max_length, device,
+            trust_remote_code=args.trust_remote_code,
+            grad_checkpointing=args.grad_checkpointing,
+        )
         layers = parse_layer_spec(args.layers, enc.n_blocks)
-        print(f"Model {args.model_name}: {enc.n_blocks} encoder blocks; extracting layers {layers}")
+        run_info["model_family"] = enc.family
+        run_info["n_blocks"] = enc.n_blocks
+        run_info["grad_checkpointing"] = enc.grad_checkpointing
+        print(f"Model {args.model_name} ({enc.family}): {enc.n_blocks} blocks; "
+              f"extracting layers {layers}"
+              + ("; gradient checkpointing ON" if enc.grad_checkpointing else ""))
 
         if args.parity_check:
-            print("Parity check against the paper's cached LaTa embeddings...")
+            print(f"Parity check against the paper's cached {args.model_name} embeddings...")
             run_info["parity"] = parity_check(
                 enc, texts, layers, Path(args.baseline_bases_root),
-                args.eval_batch_size, aligner,
+                args.eval_batch_size, aligner, model_name=args.model_name,
             )
 
     # ---- train ------------------------------------------------------------ #
@@ -963,7 +1235,7 @@ def main() -> None:
 
     # ---- evaluate --------------------------------------------------------- #
     ft_results = pd.DataFrame()
-    ft_results_path = results_dir / "finetune_lata_layer_results.csv"
+    ft_results_path = results_dir / f"{args.results_prefix}_layer_results.csv"
     if "evaluate" in stages:
         eval_layers = layers or sorted(
             int(p.stem.split("_layer")[1].split("_")[0])
@@ -980,22 +1252,31 @@ def main() -> None:
 
     # ---- report ----------------------------------------------------------- #
     comparison = pd.DataFrame()
-    if "report" in stages and not ft_results.empty:
+    if "report" in stages and ft_results.empty:
+        # Reporting used to skip silently here, which looks exactly like a
+        # successful no-op run: it writes no comparison, no table, and a
+        # run_info.json with no caption_facts, overwriting the one the real run
+        # left behind.
+        raise SystemExit(
+            f"report stage: no layer results at {ft_results_path}. Run the evaluate "
+            "stage first, or point --results_dir at the run that produced them."
+        )
+    if "report" in stages:
         base_all = pd.read_csv(args.baseline_results_csv)
         base_df = base_all[
             (base_all["model"] == args.model_name)
             & (base_all["pooling"] == "mean")
             & (base_all["repr"] == "hidden")
         ].copy()
-        comparison = build_comparison(ft_results, base_df)
-        comp_path = results_dir / "finetune_lata_ceiling_comparison.csv"
+        comparison = build_comparison(ft_results, base_df, args.display_name)
+        comp_path = results_dir / f"{args.results_prefix}_ceiling_comparison.csv"
         comparison.to_csv(comp_path, index=False)
         print(f"  wrote {comp_path}")
         print(comparison.to_string(index=False))
 
     # ---- mseed ------------------------------------------------------------ #
     mseed_agg = pd.DataFrame()
-    mseed_agg_path = results_dir / "finetune_lata_mseed_aggregated.csv"
+    mseed_agg_path = results_dir / f"{args.results_prefix}_mseed_aggregated.csv"
     if "mseed" in stages and not comparison.empty:
         configs = []
         for _, r in comparison.iterrows():
@@ -1012,7 +1293,9 @@ def main() -> None:
             split_meta, configs, args.mseed_M, args.mseed_base_seed, D_values, aligner
         )
         if not mseed_all.empty:
-            mseed_all.to_csv(results_dir / "finetune_lata_mseed_all_seeds.csv", index=False)
+            mseed_all.to_csv(
+                results_dir / f"{args.results_prefix}_mseed_all_seeds.csv", index=False
+            )
             mseed_agg.to_csv(mseed_agg_path, index=False)
             print(mseed_agg.to_string(index=False))
     elif mseed_agg_path.exists():
@@ -1032,6 +1315,10 @@ def main() -> None:
         if selection is None:
             print("  no selection.json; caption will omit the checkpoint sentence",
                   file=sys.stderr)
+        extra = [load_extra_section(spec, results_dir) for spec in args.tex_extra_run]
+        # Name every claim only when more than one ceiling shares the table;
+        # a single-model table reads as it always did.
+        named = args.display_name if extra else ""
         facts = CeilingFacts(
             pair_data=pair_data,
             split_meta=split_meta,
@@ -1039,18 +1326,21 @@ def main() -> None:
             selection=selection,
             epoch_budget=args.epochs,
             ft_results=ft_results,
+            display_name=named,
         )
-        run_info["caption_facts"] = vars(facts)
-        write_tex(
+        run_info["caption_facts"] = {
+            k: v for k, v in vars(facts).items() if k != "display_name"
+        }
+        mine = CeilingSection(
+            args.display_name,
             comparison,
-            mseed_agg if not mseed_agg.empty else None,
-            Path(args.tex_out),
             facts,
+            mseed_agg if not mseed_agg.empty else None,
         )
+        write_tex(extra + [mine], Path(args.tex_out))
 
     run_info["total_seconds"] = time.time() - t0
-    with open(out_dir / "run_info.json", "w", encoding="utf-8") as f:
-        json.dump(run_info, f, indent=2, default=str)
+    write_run_info(out_dir / "run_info.json", run_info, needs_model)
     print(f"Done in {run_info['total_seconds'] / 60:.1f} min.")
 
 

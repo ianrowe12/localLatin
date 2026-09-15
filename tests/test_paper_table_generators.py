@@ -66,22 +66,29 @@ def _lexical_frame() -> pd.DataFrame:
     )
 
 
-def _finetune_frame() -> pd.DataFrame:
-    return pd.DataFrame(
-        [
-            {
-                "system": label,
-                "method": method,
-                "taskA_layer": 12,
-                "taskA_aucroc": 0.98,
-                "taskA_cosine_gap": 0.38,
-                "taskB_layer": 12,
-                "taskB_assignment_acc": 0.83,
-                "taskB_dir_acc_at_1": 0.81,
-            }
-            for label, method in bht.FINETUNE_VARIANTS
-        ]
-    )
+FT_LATA = "LaTa (fine-tuned)"
+FT_QWEN = "Qwen3-0.6B (fine-tuned)"
+
+
+def _finetune_frame(*labels: str, assignment: float = 0.83,
+                    dir_acc: float = 0.81) -> pd.DataFrame:
+    """One ceiling per label, each with its baseline and ABTT row."""
+    rows = []
+    for label in labels or (FT_LATA,):
+        for csv_label, method in bht.finetune_variants(label):
+            rows.append(
+                {
+                    "system": csv_label,
+                    "method": method,
+                    "taskA_layer": 12,
+                    "taskA_aucroc": 0.98,
+                    "taskA_cosine_gap": 0.38,
+                    "taskB_layer": 12,
+                    "taskB_assignment_acc": assignment,
+                    "taskB_dir_acc_at_1": dir_acc,
+                }
+            )
+    return pd.DataFrame(rows)
 
 
 def _render_task_a(lexical: pd.DataFrame | None = None) -> str:
@@ -97,7 +104,7 @@ def _render_task_a(lexical: pd.DataFrame | None = None) -> str:
         right_col="gap",
         fmt=".3f",
         scale=1.0,
-        caption=bht.task_a_caption(best, lexical, _finetune_frame()),
+        caption=bht.task_a_caption(best, lexical, _finetune_frame(), []),
         label="tab:taskA_headline",
         reference_lines=bht.reference_rows(
             lexical,
@@ -118,7 +125,7 @@ def test_reference_block_sits_below_the_six_model_rows():
     lines = tex.splitlines()
     model_row = next(i for i, line in enumerate(lines) if line.startswith("KaLM-mini &"))
     ceiling_row = next(
-        i for i, line in enumerate(lines) if line.startswith(bht.FINETUNE_ROW_LABEL)
+        i for i, line in enumerate(lines) if line.startswith(FT_LATA)
     )
     assert model_row < ceiling_row
 
@@ -134,7 +141,7 @@ def test_lexical_rows_and_clauses_are_off_by_default():
     # The reference block is still there and still holds the ceiling.
     assert r"\midrule" in tex
     assert any(
-        line.startswith(bht.FINETUNE_ROW_LABEL + " &") for line in tex.splitlines()
+        line.startswith(FT_LATA + " &") for line in tex.splitlines()
     )
 
 
@@ -157,9 +164,7 @@ def test_lexical_rows_span_their_metric_block_when_opted_in():
 def test_finetune_row_leaves_the_sif_columns_empty():
     tex = _render_task_a()
     row = next(
-        line
-        for line in tex.splitlines()
-        if line.startswith(bht.FINETUNE_ROW_LABEL + " &")
+        line for line in tex.splitlines() if line.startswith(FT_LATA + " &")
     )
     cells = [cell.strip() for cell in row.rstrip("\\ ").split("&")]
     # Model, then Base SIF ABTT SIF+ABTT twice.
@@ -218,8 +223,8 @@ def test_both_headline_captions_share_the_finetune_pairs_clause():
     best_a = bht.best_rows(results, "hidden", "train_aucroc")
     best_b = bht.best_rows(results, "hidden", "train_dir_acc_at_1")
     for facts in (
-        None,
-        {"n_fit_pairs": 499, "n_all_train_pairs": 565, "n_dev_dirs": 28},
+        [],
+        [{"n_fit_pairs": 499, "n_all_train_pairs": 565, "n_dev_dirs": 28}],
     ):
         clause = bht.finetune_pairs_clause(facts)
         cap_a = bht.task_a_caption(best_a, None, finetune, facts)
@@ -252,7 +257,7 @@ def test_main_writes_the_pairs_clause_into_both_headline_captions(tmp_path, monk
         ],
     )
     bht.main()
-    clause = bht.finetune_pairs_clause(facts)
+    clause = bht.finetune_pairs_clause([facts])
     assert "499 of the 565" in clause
     for name in ("taskA_headline.tex", "taskB_headline.tex"):
         tex = (tmp_path / "out" / name).read_text()
@@ -286,6 +291,123 @@ def test_main_adds_lexical_rows_only_when_the_csv_is_passed(tmp_path, monkeypatc
         for key, display in bht.LEXICAL_SYSTEMS:
             assert any(line.startswith(display + " &") for line in tex.splitlines()), (name, key)
         assert "three lexical baselines" in tex, name
+
+
+# --- two fine-tuning ceilings in the reference block (#194) ----------------
+
+
+def _two_model_finetune() -> pd.DataFrame:
+    """LaTa below every zero-shot ABTT cell; Qwen3-0.6B above every one of them.
+
+    The fixture's ABTT cells are 0.91 assignment / 0.90 dir@1, so 0.83/0.81 is
+    below all of them and 0.95/0.94 is above all of them. If the caption were
+    still written once and reused, the two rows would get the same verdict.
+    """
+    return pd.concat(
+        [
+            _finetune_frame(FT_LATA),
+            _finetune_frame(FT_QWEN, assignment=0.95, dir_acc=0.94),
+        ],
+        ignore_index=True,
+    )
+
+
+def test_reference_block_gets_one_row_per_fine_tuned_model():
+    lines = bht.reference_rows(
+        _lexical_frame(),
+        _two_model_finetune(),
+        lexical_left_col="aucroc",
+        lexical_right_col="gap",
+        finetune_left_col="taskA_aucroc",
+        finetune_right_col="taskA_cosine_gap",
+        finetune_layer_col="taskA_layer",
+        fmt=".3f",
+        scale=1.0,
+    )
+    starts = [line.split(" &")[0] for line in lines if "&" in line]
+    assert starts[0] == FT_LATA
+    assert starts[1] == FT_QWEN
+
+
+def test_each_ceiling_gets_its_own_verdict_from_its_own_cells():
+    best = bht.best_rows(_results_frame(), "hidden", "train_dir_acc_at_1")
+    sentence = bht.task_b_comparison(best, _lexical_frame(), _two_model_finetune())
+    assert "below every zero-shot ABTT cell for LaTa (83.0 and 81.0)" in sentence
+    assert "above every zero-shot ABTT cell for Qwen3-0.6B (95.0 and 94.0)" in sentence
+    assert "encoders with ABTT sit" in sentence
+
+
+def test_reference_caption_names_every_fine_tuned_model():
+    best = bht.best_rows(_results_frame(), "hidden", "train_aucroc")
+    facts = [{"n_fit_pairs": 499, "n_all_train_pairs": 565, "n_dev_dirs": 28}] * 2
+    caption = bht.task_a_caption(best, None, _two_model_finetune(), facts)
+    assert "LaTa and Qwen3-0.6B fine-tuned contrastively on 499 of the 565" in caption
+    assert "Below the rule, reference systems on the same split" in caption
+    assert "encoders' AUROC 0.980 to 0.980 for LaTa" in caption
+    assert "for Qwen3-0.6B" in caption
+
+
+def test_a_single_ceiling_keeps_the_published_wording():
+    """Adding the second-model machinery must not rewrite a shipped caption."""
+    best_a = bht.best_rows(_results_frame(), "hidden", "train_aucroc")
+    best_b = bht.best_rows(_results_frame(), "hidden", "train_dir_acc_at_1")
+    one = _finetune_frame(FT_LATA)
+    assert (
+        "ABTT moves the fine-tuned encoder's AUROC from 0.980 to 0.980 while "
+        "moving its gap from 0.380 to 0.380."
+    ) in bht.task_a_comparison(best_a, _lexical_frame(), one)
+    assert (
+        "the fine-tuned encoder with ABTT (83.0 and 81.0) is below every "
+        "zero-shot ABTT cell (91.0 to 91.0 and 90.0 to 90.0)."
+    ) in bht.task_b_comparison(best_b, _lexical_frame(), one)
+
+
+def test_pairs_clause_drops_the_numbers_when_the_runs_disagree():
+    """One split, one seed, so the counts must agree; if they do not, say less."""
+    agreeing = [{"n_fit_pairs": 499, "n_all_train_pairs": 565, "n_dev_dirs": 28}] * 2
+    assert "499 of the 565" in bht.finetune_pairs_clause(agreeing)
+    disagreeing = [
+        {"n_fit_pairs": 499, "n_all_train_pairs": 565, "n_dev_dirs": 28},
+        {"n_fit_pairs": 480, "n_all_train_pairs": 565, "n_dev_dirs": 30},
+    ]
+    assert bht.finetune_pairs_clause(disagreeing) == (
+        "the positive train pairs left by a directory-level dev carve"
+    )
+
+
+def test_main_accepts_one_finetune_csv_per_model(tmp_path, monkeypatch):
+    _results_frame().to_csv(tmp_path / "r.csv", index=False)
+    _lexical_frame().to_csv(tmp_path / "l.csv", index=False)
+    _finetune_frame(FT_LATA).to_csv(tmp_path / "lata.csv", index=False)
+    _finetune_frame(FT_QWEN, assignment=0.95, dir_acc=0.94).to_csv(
+        tmp_path / "qwen.csv", index=False
+    )
+    facts = {"n_fit_pairs": 499, "n_all_train_pairs": 565, "n_dev_dirs": 28}
+    for name in ("lata_info.json", "qwen_info.json"):
+        (tmp_path / name).write_text(json.dumps({"caption_facts": facts}))
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "build_headline_tables.py",
+            "--results_csv", str(tmp_path / "r.csv"),
+            "--lexical_csv", str(tmp_path / "l.csv"),
+            "--finetune_csv", str(tmp_path / "lata.csv"),
+            "--finetune_run_info", str(tmp_path / "lata_info.json"),
+            "--finetune_csv", str(tmp_path / "qwen.csv"),
+            "--finetune_run_info", str(tmp_path / "qwen_info.json"),
+            "--out_dir", str(tmp_path / "out"),
+        ],
+    )
+    bht.main()
+    for name in ("taskA_headline.tex", "taskB_headline.tex"):
+        tex = (tmp_path / "out" / name).read_text()
+        assert FT_LATA + " &" in tex, name
+        assert FT_QWEN + " &" in tex, name
+        assert "LaTa and Qwen3-0.6B fine-tuned contrastively" in tex, name
+    task_b = (tmp_path / "out" / "taskB_headline.tex").read_text()
+    assert "below every zero-shot ABTT cell for LaTa" in task_b
+    assert "above every zero-shot ABTT cell for Qwen3-0.6B" in task_b
 
 
 def _attribution_summary() -> pd.DataFrame:

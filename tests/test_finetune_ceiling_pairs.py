@@ -10,6 +10,11 @@ number is wrong in the direction that flatters the ceiling.
   batch a negative. Two pairs from the same directory in one batch make the
   objective push apart texts that belong together, which shows up as a worse
   ceiling rather than as an error.
+* **A dev pool too small to choose with.** Model selection reads directory
+  accuracy at rank 1 over 71 files, where one file is 1.4 points. Issue #194
+  found the exact-equality tie-break silently returning the PRE-TRAINED encoder
+  for a model that starts at 71 of 71, so the last group of tests replays both
+  runs' measured dev curves.
 
 Both functions live in ``src/finetune_pairs.py``, which imports nothing heavier
 than pandas, so every test here runs in CI rather than being skipped for want of
@@ -23,6 +28,7 @@ import sys
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
@@ -31,6 +37,7 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 # clean CI checkout. Importing them from the training CLI would drag in torch
 # and transformers, and the whole module would be skipped -- which is exactly
 # the failure these tests exist to prevent going unnoticed.
+import finetune_pairs as fp  # noqa: E402
 from finetune_pairs import build_pairs, batch_pairs_by_round  # noqa: E402
 
 
@@ -173,3 +180,87 @@ def test_a_single_pair_yields_no_batch() -> None:
     assert batch_pairs_by_round(
         pairs.train_pairs, pairs.train_pair_dirs, 16, random.Random(0)
     ) == []
+
+
+# --- checkpoint selection on a small dev pool (#194) ------------------------
+
+# The two runs' measured dev curves, as (epoch, dir_acc@1, AUROC). They are
+# literals because runs/ is gitignored, and they are the whole point of these
+# tests: the selection rule has to be checked against what actually happened,
+# not against a curve invented to suit it.
+N_DEV_FILES = 71
+
+LATA_DEV_CURVE = [
+    (0, 0.9295774647887324, 0.9467598682150151),
+    (1, 0.9295774647887324, 0.9629323411878187),
+    (2, 0.9436619718309859, 0.9744948451025343),
+    (3, 0.9718309859154930, 0.9794242549513322),
+    (4, 0.9859154929577465, 0.9813596903303393),
+    (5, 0.9859154929577465, 0.9825748180440202),
+    (6, 0.9859154929577465, 0.9834391872424117),
+    (7, 0.9859154929577465, 0.9836584113144675),
+]
+
+# Qwen3-0.6B starts at 71 of 71: the pool has no headroom left to measure in.
+QWEN_DEV_CURVE = [
+    (0, 1.0000000000000000, 0.9659952146516843),
+    (1, 0.9859154929577465, 0.9991043130770291),
+    (2, 0.9859154929577465, 0.9996241873050471),
+    (3, 0.9859154929577465, 0.9997807759279441),
+    (4, 0.9859154929577465, 0.9997619852931966),
+]
+
+
+def points(curve):
+    return [fp.DevPoint(*row) for row in curve]
+
+
+def test_dev_resolution_is_one_file():
+    assert fp.dev_resolution(71) == pytest.approx(1 / 71)
+
+
+def test_lata_selection_is_unchanged_by_the_wider_tie_window():
+    """The published LaTa ceiling must not move when the rule is relaxed.
+
+    Its curve climbs by two files at epoch 3, which is a real gain either way,
+    and its last four epochs are exact ties that AUROC already decided.
+    """
+    assert fp.select_checkpoint(points(LATA_DEV_CURVE), N_DEV_FILES).epoch == 7
+
+
+def test_a_saturated_dev_pool_no_longer_vetoes_a_trained_checkpoint():
+    """Qwen3-0.6B's run selected epoch 0, the pre-trained encoder, under the
+    exact-equality rule: one dev file out of 71 moved the wrong way, and that
+    1.4-point difference outranked an AUROC gain from 0.966 to 0.9998. One file
+    is the pool's whole resolution, so it is a tie, and AUROC decides."""
+    assert fp.select_checkpoint(points(QWEN_DEV_CURVE), N_DEV_FILES).epoch == 3
+
+
+def test_a_difference_larger_than_one_file_still_wins_outright():
+    """The window must not turn accuracy into a tie-break of its own."""
+    worse_acc_better_auroc = fp.DevPoint(1, 69 / 71, 0.999)
+    best = fp.DevPoint(0, 71 / 71, 0.900)
+    assert not fp.is_better_checkpoint(worse_acc_better_auroc, best, 71)
+    better_acc_worse_auroc = fp.DevPoint(1, 71 / 71, 0.900)
+    assert fp.is_better_checkpoint(better_acc_worse_auroc, fp.DevPoint(0, 69 / 71, 0.999), 71)
+
+
+def test_epoch_zero_stays_selectable_when_training_helps_nothing():
+    """If no trained epoch beats the pre-trained encoder, keeping it is the
+    honest answer, and the generated caption has a branch that says so."""
+    curve = points([
+        (0, 0.90, 0.95),
+        (1, 0.90, 0.94),
+        (2, 0.88, 0.93),
+    ])
+    assert fp.select_checkpoint(curve, N_DEV_FILES).epoch == 0
+
+
+def test_ties_go_to_the_earlier_epoch():
+    curve = points([(0, 0.90, 0.95), (1, 0.90, 0.95)])
+    assert fp.select_checkpoint(curve, N_DEV_FILES).epoch == 0
+
+
+def test_select_checkpoint_refuses_an_empty_curve():
+    with pytest.raises(ValueError, match="at least one dev point"):
+        fp.select_checkpoint([], N_DEV_FILES)

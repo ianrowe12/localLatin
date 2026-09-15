@@ -28,12 +28,12 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 sys.path.insert(0, str(REPO_ROOT / "scripts" / "resubmit"))
 
-pytest.importorskip("torch", reason="finetune_lata_ceiling imports torch")
-pytest.importorskip("transformers", reason="finetune_lata_ceiling imports transformers")
+pytest.importorskip("torch", reason="finetune_ceiling imports torch")
+pytest.importorskip("transformers", reason="finetune_ceiling imports transformers")
 
 from embedding_alignment import AlignmentResolver  # noqa: E402
 
-import finetune_lata_ceiling as ceiling  # noqa: E402
+import finetune_ceiling as ceiling  # noqa: E402
 
 # The cache was written before the relabelling; the split is sorted by
 # (folder_id, filename) after it, so c and d swap places.

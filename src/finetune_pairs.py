@@ -8,6 +8,9 @@ torch or transformers. Both are pure pandas/NumPy/stdlib:
   positive pairs, so model selection never sees the supervision it measures.
 * :func:`batch_pairs_by_round` guarantees no batch repeats a directory, so
   in-batch negatives are always true negatives.
+* :func:`is_better_checkpoint` decides which epoch the run extracts from, and
+  knows that the dev pool cannot measure accuracy differences smaller than one
+  file (issue #194).
 
 The training CLI imports both from here; ``tests/test_finetune_ceiling_pairs.py``
 imports them too, and runs on a clean CI checkout that has no torch.
@@ -21,7 +24,15 @@ from typing import Dict, List, Sequence, Tuple
 import numpy as np
 import pandas as pd
 
-__all__ = ["PairData", "build_pairs", "batch_pairs_by_round"]
+__all__ = [
+    "PairData",
+    "DevPoint",
+    "build_pairs",
+    "batch_pairs_by_round",
+    "dev_resolution",
+    "is_better_checkpoint",
+    "select_checkpoint",
+]
 
 
 @dataclass
@@ -119,3 +130,69 @@ def batch_pairs_by_round(
         batches.append(batch)
     rng.shuffle(batches)
     return batches
+
+
+@dataclass
+class DevPoint:
+    """One epoch's dev measurement, as the checkpoint selector sees it."""
+
+    epoch: int
+    dir_acc_at_1: float
+    aucroc: float
+
+
+def dev_resolution(n_dev_files: int) -> float:
+    """The smallest accuracy difference the dev pool can express: one file."""
+    return 1.0 / max(1, int(n_dev_files))
+
+
+# Floating point: 70/71 and 71/71 differ by exactly 1/71 in exact arithmetic
+# and by 1/71 plus a few ulps in binary64.
+_EPS = 1e-9
+
+
+def is_better_checkpoint(
+    candidate: DevPoint, best: DevPoint, n_dev_files: int
+) -> bool:
+    """Is ``candidate`` a better checkpoint than ``best`` on the dev pool?
+
+    Directory accuracy at rank 1 leads and AUROC breaks ties, as in #123. What
+    changed in #194 is what counts as a tie. The rule used to demand exact
+    equality before consulting AUROC, and that makes the tie-break unreachable
+    whenever the pre-trained encoder already tops the pool out: Qwen3-0.6B
+    starts at 71 of 71, training moves one file the wrong way, and a 1.4-point
+    accuracy difference then vetoed an AUROC gain from 0.966 to 0.9998, so the
+    run selected epoch 0 and extracted the pre-trained weights.
+
+    One file is the pool's entire resolution. Differences at or below it are
+    not measurements, so they are ties and AUROC decides. Differences above it
+    are real and accuracy still wins outright.
+
+    This does not move LaTa's published selection: its dev curve climbs by two
+    files at epoch 3 and its last four epochs are already exact ties, so epoch
+    7 is selected either way. ``tests/test_finetune_ceiling_pairs.py`` replays
+    both measured curves and asserts exactly that.
+    """
+    window = dev_resolution(n_dev_files) + _EPS
+    delta = candidate.dir_acc_at_1 - best.dir_acc_at_1
+    if delta > window:
+        return True
+    if delta < -window:
+        return False
+    return candidate.aucroc > best.aucroc
+
+
+def select_checkpoint(curve: Sequence[DevPoint], n_dev_files: int) -> DevPoint:
+    """Replay a dev curve and return the epoch the run would extract from.
+
+    Epoch 0 is the pre-trained encoder and is selectable: if no training epoch
+    beats it, keeping it is the honest answer. The curve is walked in order, so
+    an earlier epoch wins a tie against a later one.
+    """
+    if not curve:
+        raise ValueError("select_checkpoint needs at least one dev point")
+    best = curve[0]
+    for point in curve[1:]:
+        if is_better_checkpoint(point, best, n_dev_files):
+            best = point
+    return best

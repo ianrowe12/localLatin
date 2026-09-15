@@ -64,11 +64,13 @@ echo "=== Fine-tune + extract (parity-checked) ==="
 # --no-capture-output: plain `conda run` buffers everything until the process
 # exits, which hides progress and makes the SLURM watchdog's log-staleness
 # check fire on a perfectly healthy job.
-conda run --no-capture-output -n localLatin python scripts/resubmit/finetune_lata_ceiling.py \
+conda run --no-capture-output -n localLatin python scripts/resubmit/finetune_ceiling.py \
   --split_csv "$SPLIT_CSV" \
   --data_root "$CODE_ROOT" \
   --model_name "bowphs/LaTa" \
   --ft_model_label "bowphs/LaTa-ft" \
+  --display_name "LaTa" \
+  --results_prefix "finetune_lata" \
   --out_dir "$OUT_DIR" \
   --bases_root "$BASES_ROOT" \
   --baseline_bases_root "$BASELINE_BASES" \
