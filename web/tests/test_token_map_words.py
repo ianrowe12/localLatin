@@ -261,6 +261,47 @@ def test_the_original_text_supplies_the_words_when_the_store_has_it(tmp_path: Pa
     assert top_word(resp) == "Episcopus"
 
 
+def test_the_word_grids_stop_where_the_model_stopped_reading(tmp_path: Path) -> None:
+    """A long file keeps all its words; the matrices keep only the read ones.
+
+    The frontend walks the whole word list against the text on screen, so the
+    list must stay whole. The grids are a different matter: a model truncates
+    at its maximum length, and sizing a word x word square by the file's word
+    count fills it with zeros. On the deployed example 1002908 that was 1,151
+    query words for 256 pieces, and 8.23 MB of response for 161 scored words.
+    """
+    npz = tmp_path / "sentence-transformers_LaBSE" / "example001_pair_example.npz"
+    _write(npz)
+    store = _store(npz, with_texts=True)
+    tail = " ".join(f"filler{i:03d}" for i in range(500))
+    store.labelled_texts["Can.apost.7"] = {
+        "q.txt": f"Episcopus aut presbiter {tail}",
+        "c.txt": f"sacerdotes et ministri {tail}",
+    }
+
+    resp = token_map_svc.load_token_map(store, 1, method="ig", variant="abtt")
+
+    # Whole, so `alignWordsToTokens` can still walk it.
+    assert resp.word_segmentation == "text"
+    assert len(resp.query_words) == 503
+    assert len(resp.candidate_words) == 503
+    # Cut at the last word carrying a piece.
+    assert resp.query_words_scored == 3
+    assert resp.candidate_words_scored == 3
+    assert all(not w.piece_indices for w in resp.query_words[3:])
+
+    grids = [resp.word_similarity_matrix, resp.word_pair_matrices["ig"]["abtt"]]
+    for grid in grids:
+        assert len(grid) == resp.query_words_scored
+        assert all(len(row) == resp.candidate_words_scored for row in grid)
+
+    # Nothing the highlights point at falls off the end of the grids. A
+    # special token belongs to no word at all and says so with None.
+    named = [h.word_idx for h in resp.auto_highlights or [] if h.word_idx is not None]
+    assert named
+    assert all(idx < resp.query_words_scored for idx in named)
+
+
 def test_artifacts_are_never_written(tmp_path: Path) -> None:
     """The aggregation is a display step: the NPZ on disk must not change."""
     npz = tmp_path / "sentence-transformers_LaBSE" / "example001_pair_example.npz"

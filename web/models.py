@@ -292,6 +292,13 @@ class TokenMapResponse(BaseModel):
     # --- Word-level display (issue #211) ---
     query_words: List[WordSpan] = Field(default_factory=list)
     candidate_words: List[WordSpan] = Field(default_factory=list)
+    # How many leading words the word grids below actually cover. The word
+    # lists are the whole file, because the client lines them up against the
+    # text on screen; the grids stop at the last word the model read, since a
+    # model truncates and everything past that point is a row of zeros. A word
+    # at or beyond this index carries no highlight.
+    query_words_scored: int = 0
+    candidate_words_scored: int = 0
     # How the pieces were grouped, reported at the weaker of the two sides:
     # "text" (aligned to the original file), "markers" (the tokenizer's own
     # boundary markers) or "pieces" (no boundary evidence; one word per piece).

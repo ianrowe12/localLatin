@@ -190,6 +190,30 @@ class Segmentation:
         return max((len(w.piece_indices) for w in self.words), default=0)
 
 
+def scored_word_count(seg: Segmentation, n_pieces: int | None = None) -> int:
+    """How many leading words the model actually read.
+
+    The word list is the whole file, because the frontend lines it up against
+    the text on screen and a hole in the middle would break the walk. The
+    matrices are a different matter: a model truncates at its maximum length,
+    so on a long manuscript the great majority of the words carry no piece and
+    their rows are zeros. Example 1002908 has 1,151 query words for 256 pieces
+    and 161 scored words; serialising the full square costs megabytes of
+    nothing.
+
+    This is the bound the matrices are cut at: one past the last word carrying
+    a piece the model read. Words after it get no row and therefore no
+    highlight, which is what they deserve, having never been seen.
+    """
+    last = -1
+    for word in seg.words:
+        for pi in word.piece_indices:
+            if n_pieces is None or 0 <= pi < n_pieces:
+                last = max(last, word.idx)
+                break
+    return last + 1
+
+
 def segment_by_markers(pieces: list[str], scheme: str | None = None) -> Segmentation:
     """Group pieces using the tokenizer's own boundary convention.
 
@@ -387,11 +411,16 @@ def aggregate_matrix(
     attribution matrix whose cells are additive contributions to one score.
     ``max`` keeps the largest-magnitude cell, which is the right reading for a
     cosine grid, where adding cells would reward a long word for being long.
+
+    Truncated at ``scored_word_count`` on both axes: the words past the model's
+    maximum length carry no piece, so their rows and columns are zeros, and on
+    a long manuscript they are nearly the whole grid.
     """
     arr = np.asarray(matrix, dtype=np.float32)
     if arr.ndim != 2:
         return []
-    n_rows, n_cols = len(row_seg.words), len(col_seg.words)
+    n_rows = scored_word_count(row_seg, arr.shape[0])
+    n_cols = scored_word_count(col_seg, arr.shape[1])
     out = np.zeros((n_rows, n_cols), dtype=np.float32)
     if n_rows == 0 or n_cols == 0 or arr.size == 0:
         return out.tolist()

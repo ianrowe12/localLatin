@@ -655,6 +655,12 @@ def load_token_map(
         (q_seg.method, c_seg.method), key=lambda m: _SEGMENTATION_RANK.get(m, 0)
     )
     q_word_of_piece = q_seg.word_of_piece
+    # The word lists stay whole -- the frontend walks them against the text on
+    # screen -- but the grids stop at the last word the model actually read.
+    # Past that point every row is zeros, and on a long manuscript that is most
+    # of the square: example 1002908 has 1,151 query words and 161 scored ones.
+    query_words_scored = wordseg.scored_word_count(q_seg, q_len)
+    candidate_words_scored = wordseg.scored_word_count(c_seg, c_len)
 
     # Cosine is aggregated by largest magnitude: summing it would make a
     # four-piece word look more similar than a one-piece word saying the same.
@@ -721,6 +727,8 @@ def load_token_map(
         candidate_attribution=[] if c_attr is None else c_attr.tolist(),
         query_words=query_words,
         candidate_words=candidate_words,
+        query_words_scored=query_words_scored,
+        candidate_words_scored=candidate_words_scored,
         word_segmentation=word_segmentation,
         word_aggregation=aggregation,
         word_similarity_matrix=word_similarity_matrix,
