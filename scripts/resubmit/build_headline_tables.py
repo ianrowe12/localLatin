@@ -405,8 +405,9 @@ def selected_layers_caption() -> str:
         "the highest training-set directory accuracy at rank 1; the test scores in "
         "those tables are read at these layers, so no layer is chosen on test. "
         "Layer 1 is the first transformer block. The fine-tuned rows below the rule "
-        "have no SIF setting, and Table~\\ref{tab:finetune_ceiling} reads each of "
-        "its rows at the layer given here."
+        "have no SIF setting. Table~\\ref{tab:finetune_ceiling} reads its pre-trained "
+        "rows at the Base and ABTT layers above the rule and its fine-tuned rows at "
+        "the layers below it."
     )
 
 

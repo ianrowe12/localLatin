@@ -21,6 +21,6 @@ Qwen3-0.6B (fine-tuned) & 28 & -- & 27 & -- & 28 & -- & 27 & -- \\
 KaLM-mini (fine-tuned) & 24 & -- & 24 & -- & 24 & -- & 24 & -- \\
 \bottomrule
 \end{tabular}
-\caption{Train-selected layer behind every cell of Tables~\ref{tab:taskA_headline} and~\ref{tab:taskB_headline}. For each model and post-processing setting, the Task A layer has the highest training-set AUROC and the Task B layer the highest training-set directory accuracy at rank 1; the test scores in those tables are read at these layers, so no layer is chosen on test. Layer 1 is the first transformer block. The fine-tuned rows below the rule have no SIF setting, and Table~\ref{tab:finetune_ceiling} reads each of its rows at the layer given here.}
+\caption{Train-selected layer behind every cell of Tables~\ref{tab:taskA_headline} and~\ref{tab:taskB_headline}. For each model and post-processing setting, the Task A layer has the highest training-set AUROC and the Task B layer the highest training-set directory accuracy at rank 1; the test scores in those tables are read at these layers, so no layer is chosen on test. Layer 1 is the first transformer block. The fine-tuned rows below the rule have no SIF setting. Table~\ref{tab:finetune_ceiling} reads its pre-trained rows at the Base and ABTT layers above the rule and its fine-tuned rows at the layers below it.}
 \label{tab:selected_layers}
 \end{table}

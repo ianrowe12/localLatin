@@ -593,9 +593,10 @@ def _selected_layer_caption(method_label: str, task: str) -> str:
     }[task]
     return (
         rf"Rows in bold mark the layer chosen on the train split, the layer with the highest "
-        rf"training-set {metric_phrase} under {method_label}; Table~\ref{{{HEADLINE_LABEL[task]}}} "
-        rf"scores its {method_label} cell there, and Table~\ref{{tab:selected_layers}} lists it. "
-        rf"It is not always the layer with the highest test score in this table."
+        rf"training-set {metric_phrase} under {method_label}. It is the layer behind the "
+        rf"{method_label} cell of Table~\ref{{{HEADLINE_LABEL[task]}}} (listed in "
+        rf"Table~\ref{{tab:selected_layers}}), and not always the layer with the highest "
+        rf"test score in this table."
     )
 
 

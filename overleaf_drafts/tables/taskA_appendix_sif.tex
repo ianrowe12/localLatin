@@ -2,7 +2,7 @@
 \small
 \setlength{\tabcolsep}{4pt}
 \begin{longtable}{llcccc}
-\caption{Per-layer Task~A AUROC across the SIF-conditioned post-processing suite for all six models. \texttt{sif\_only} replaces mean pooling with SIF-weighted pooling; \texttt{sif\_abtt\_fixed} adds ABTT with fixed $D{=}10$; \texttt{sif\_abtt\_optimal} tunes $D$ per layer on the train split. Gap is omitted to keep the table narrow; the pure-ABTT comparison (not SIF-conditioned) is in Tables~\ref{tab:taskA_main} and~\ref{tab:taskA_appendix}. Rows in bold mark the layer chosen on the train split, the layer with the highest training-set AUROC under SIF+ABTT; Table~\ref{tab:taskA_headline} scores its SIF+ABTT cell there, and Table~\ref{tab:selected_layers} lists it. It is not always the layer with the highest test score in this table.}
+\caption{Per-layer Task~A AUROC across the SIF-conditioned post-processing suite for all six models. \texttt{sif\_only} replaces mean pooling with SIF-weighted pooling; \texttt{sif\_abtt\_fixed} adds ABTT with fixed $D{=}10$; \texttt{sif\_abtt\_optimal} tunes $D$ per layer on the train split. Gap is omitted to keep the table narrow; the pure-ABTT comparison (not SIF-conditioned) is in Tables~\ref{tab:taskA_main} and~\ref{tab:taskA_appendix}. Rows in bold mark the layer chosen on the train split, the layer with the highest training-set AUROC under SIF+ABTT. It is the layer behind the SIF+ABTT cell of Table~\ref{tab:taskA_headline} (listed in Table~\ref{tab:selected_layers}), and not always the layer with the highest test score in this table.}
 \label{tab:taskA_appendix_sif} \\
 \toprule
 \multicolumn{2}{c}{} & \multicolumn{4}{c}{\textbf{Task A: SIF-suite AUROC (appendix)}} \\
