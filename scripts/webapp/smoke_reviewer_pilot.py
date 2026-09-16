@@ -5,6 +5,7 @@ import argparse
 import json
 import sys
 import time
+from collections.abc import Sequence
 from http.cookiejar import CookieJar, DefaultCookiePolicy
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlsplit
@@ -426,7 +427,10 @@ def check_token_map_per_variant(client: SmokeClient, example_id: int, variants: 
 
 
 def check_token_map_word_highlights(
-    client: SmokeClient, example_id: int, variant: str
+    client: SmokeClient,
+    example_ids: Sequence[int],
+    variant: str,
+    max_examples: int = 10,
 ) -> None:
     """Read-only: the token map serves the variant asked for, grouped into words.
 
@@ -440,41 +444,60 @@ def check_token_map_word_highlights(
     * at least one word on the query side spans more than one model piece, which
       is what proves the deployed artifact's pieces were actually grouped rather
       than passed through one per word.
+
+    Neither is a property of one particular artifact. Asserting them on the
+    first row of the gallery CSV made the deploy gate depend on that row's
+    identity: a model whose artifacts carry no IG for the deployed variant, or
+    a one-piece-per-word pair, would fail the deploy over nothing. So this
+    scans the gallery in order and passes on the first example that shows both,
+    failing only if none of the first ``max_examples`` does -- which would mean
+    the property is gone, not that the CSV was reordered.
     """
     attribution = ATTRIBUTION_VARIANT.get(variant, variant)
     params = urlencode({"method": "ig", "variant": attribution})
-    token_map = client.json("GET", f"/api/token_map/{example_id}?{params}")
+    scanned = list(example_ids)[:max_examples]
+    if not scanned:
+        raise RuntimeError("no token-map examples to check word highlights on")
 
-    served = token_map.get("variant_served")
-    if token_map.get("variant_requested") != attribution:
-        raise RuntimeError(
-            f"token_map {example_id} echoed variant_requested "
-            f"{token_map.get('variant_requested')!r}, asked for {attribution!r}"
-        )
-    if served != attribution:
-        raise RuntimeError(
-            f"token_map {example_id} served the {served!r} attribution for a "
-            f"{attribution!r} request — the highlights would describe another "
-            "pipeline than the ranking on screen"
-        )
+    skipped: list[str] = []
+    for example_id in scanned:
+        token_map = client.json("GET", f"/api/token_map/{example_id}?{params}")
 
-    words = token_map.get("query_words") or []
-    if not words:
-        raise RuntimeError(
-            f"token_map {example_id} carries no query_words: the highlights "
-            "would still be per subword piece"
+        if token_map.get("variant_requested") != attribution:
+            raise RuntimeError(
+                f"token_map {example_id} echoed variant_requested "
+                f"{token_map.get('variant_requested')!r}, asked for {attribution!r}"
+            )
+        served = token_map.get("variant_served")
+        if served != attribution:
+            # A fallback is reported rather than silent, which is the #216
+            # behaviour working; this artifact simply cannot answer the
+            # question, so try the next one.
+            skipped.append(f"{example_id}: served {served!r}")
+            continue
+
+        words = token_map.get("query_words") or []
+        multi = [w for w in words if len(w.get("piece_indices") or []) > 1]
+        if not multi:
+            skipped.append(
+                f"{example_id}: no word of more than one piece among "
+                f"{len(words)} words over "
+                f"{len(token_map.get('query_tokens') or [])} pieces"
+            )
+            continue
+
+        print(
+            f"  word highlights OK for example {example_id}: served {served!r}, "
+            f"{len(multi)}/{len(words)} query words span several pieces "
+            f"(segmentation: {token_map.get('word_segmentation')!r})"
+            + (f"; skipped {len(skipped)} earlier example(s)" if skipped else "")
         )
-    multi = [w for w in words if len(w.get("piece_indices") or []) > 1]
-    if not multi:
-        raise RuntimeError(
-            f"token_map {example_id} grouped no word from more than one piece "
-            f"({len(words)} words over {len(token_map.get('query_tokens') or [])} "
-            "pieces) — the deployed artifact's pieces are not being grouped"
-        )
-    print(
-        f"  word highlights OK for example {example_id}: served {served!r}, "
-        f"{len(multi)}/{len(words)} query words span several pieces "
-        f"(segmentation: {token_map.get('word_segmentation')!r})"
+        return
+
+    raise RuntimeError(
+        f"none of the first {len(scanned)} token-map examples served the "
+        f"{attribution!r} attribution grouped into multi-piece words: "
+        + "; ".join(skipped)
     )
 
 
@@ -829,7 +852,9 @@ def main() -> int:
         raise RuntimeError("/api/token_map_examples returned no token-map artifacts")
     example_id = examples[0]["example_id"]
     check_token_map_per_variant(client, example_id, variants)
-    check_token_map_word_highlights(client, example_id, default_variant)
+    check_token_map_word_highlights(
+        client, [item["example_id"] for item in examples], default_variant
+    )
 
     csv_body, csv_headers = client.request("GET", "/api/feedback/export")
     if "text/csv" not in csv_headers.get("Content-Type", ""):
