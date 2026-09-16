@@ -1,4 +1,9 @@
-import type { TokenMapResponse, TokenEntry, TopMatch } from '../api/tokenMap'
+import type {
+  TokenMapResponse,
+  TokenEntry,
+  TopMatch,
+  WordSpan,
+} from '../api/tokenMap'
 
 // ---------------------------------------------------------------------------
 // Helper: generate a similarity matrix with realistic structure
@@ -249,6 +254,51 @@ const SIM_Q3_C1 = makeSimilarityMatrix(Q3_TOKENS, C3_TOKENS)
 const TOP_Q3_C1 = deriveTopMatches(SIM_Q3_C1, Q3_TOKENS)
 
 // ---------------------------------------------------------------------------
+// Helper: the word-level view (issue #211)
+// ---------------------------------------------------------------------------
+//
+// The real backend groups the model's subword pieces into the words of the
+// original text. These fixtures were written before that existed and their
+// "pieces" are already whole words, so the grouping here is one word per
+// content piece -- enough for `npm run dev:mock` to exercise the word view and
+// the "Show pieces" toggle, which otherwise never appear outside the tests.
+//
+// Added to ONE pair on purpose. The other two keep the pre-#211 shape, so the
+// piece-only path a bulk artifact takes stays reachable in the mock too.
+
+function makeWordSpans(tokens: TokenEntry[]): WordSpan[] {
+  const words: WordSpan[] = []
+  for (const token of tokens) {
+    if (!token.is_content) continue // punctuation joins no word
+    words.push({
+      idx: words.length,
+      text: token.text,
+      piece_indices: [token.idx],
+      score: 0,
+      score_pos: 0,
+      score_neg: 0,
+      is_content: true,
+    })
+  }
+  return words
+}
+
+/** The piece grid re-indexed onto those words. One piece each, so a lookup. */
+function makeWordMatrix(
+  matrix: number[][],
+  queryWords: WordSpan[],
+  candidateWords: WordSpan[],
+): number[][] {
+  return queryWords.map((qw) =>
+    candidateWords.map((cw) => matrix[qw.piece_indices[0]][cw.piece_indices[0]]),
+  )
+}
+
+const Q1_WORDS = makeWordSpans(Q1_TOKENS)
+const C1_WORDS = makeWordSpans(C1_TOKENS)
+const WORD_SIM_Q1_C1 = makeWordMatrix(SIM_Q1_C1, Q1_WORDS, C1_WORDS)
+
+// ---------------------------------------------------------------------------
 // Export
 // ---------------------------------------------------------------------------
 
@@ -273,6 +323,14 @@ export const MOCK_TOKEN_MAPS: Map<string, TokenMapResponse> = new Map([
       candidate_ig_baseline: makeIgScores(C1_TOKENS),
       candidate_ig_abtt: makeIgScores(C1_TOKENS),
       auto_highlights: null,
+      // The word view, on this pair only (see makeWordSpans above).
+      query_words: Q1_WORDS,
+      candidate_words: C1_WORDS,
+      query_words_scored: Q1_WORDS.length,
+      candidate_words_scored: C1_WORDS.length,
+      word_segmentation: 'text',
+      word_aggregation: 'sum',
+      word_similarity_matrix: WORD_SIM_Q1_C1,
     },
   ],
   [
