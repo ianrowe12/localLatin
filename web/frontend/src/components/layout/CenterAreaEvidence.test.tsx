@@ -9,6 +9,7 @@ import { TokenProvider } from '../../contexts/TokenContext'
 import AttributionMethodSelector from '../common/AttributionMethodSelector'
 import ModelSelector from '../predictions/ModelSelector'
 import CenterArea from './CenterArea'
+import { wordSpans } from '../../test/fixtures/wordSpans'
 
 // Formerly CenterAreaVariant.test.tsx (issue #73). Issue #94 removed the
 // post-processing picker, so the switch these tests drive is now the one a
@@ -46,6 +47,12 @@ function cosineMatrix(dir: string): number[][] {
   const hot = QUERY_TOKENS.indexOf(`${dir}__cosine`)
   return QUERY_TOKENS.map((_, qi) => (qi === hot ? [1, 1] : [0, 0]))
 }
+
+// Every real response carries the word grouping (issue #211), and the panels
+// shade the word grid, not the piece grid.
+const QUERY_WORDS = wordSpans(QUERY_TOKENS)
+// `cand one`, the candidate text the predictions fixture below serves.
+const CANDIDATE_WORDS = wordSpans(['cand', 'one'])
 
 function dirForModel(model: string): string {
   return model === MODEL_A ? DIR_A : DIR_B
@@ -136,6 +143,23 @@ function installFetch(): void {
         // attribution at all". `available_methods` is what separates them.
         available_methods: preAttribution ? [] : METHODS,
         pair_matrices:
+          preAttribution || methodsWithoutMatrices.has(method)
+            ? {}
+            : {
+                [method]: {
+                  [VARIANT]: QUERY_TOKENS.map((_, qi) =>
+                    qi === hot ? [1, 1] : [0, 0],
+                  ),
+                },
+              },
+        query_words: QUERY_WORDS,
+        candidate_words: CANDIDATE_WORDS,
+        query_words_scored: QUERY_WORDS.length,
+        candidate_words_scored: CANDIDATE_WORDS.length,
+        word_segmentation: 'text',
+        word_aggregation: 'sum',
+        word_similarity_matrix: cosineMatrix(dir),
+        word_pair_matrices:
           preAttribution || methodsWithoutMatrices.has(method)
             ? {}
             : {

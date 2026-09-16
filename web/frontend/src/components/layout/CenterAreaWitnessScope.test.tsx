@@ -7,6 +7,7 @@ import { SavedDirectoryProvider } from '../../contexts/SavedDirectoryContext'
 import { TokenProvider, useTokens } from '../../contexts/TokenContext'
 import AttributionMethodSelector from '../common/AttributionMethodSelector'
 import CenterArea from './CenterArea'
+import { wordSpans, wordsOf } from '../../test/fixtures/wordSpans'
 
 /**
  * Everything downstream of the member selector, mounted (issue #163).
@@ -176,6 +177,19 @@ function installFetch(): void {
           available_methods: ['ig', 'ot'],
           available_variants: ['sif_abtt'],
           pair_matrices:
+            sparseOtCell && method === 'ot'
+              ? {}
+              : { [method]: { sif_abtt: [[1, 0]] } },
+          // The same grid as words (issue #211): the panels shade the word
+          // grid, and here one piece is one word on both sides.
+          query_words: wordSpans(['ALPHA']),
+          candidate_words: wordSpans(wordsOf(witness?.text ?? '')),
+          query_words_scored: 1,
+          candidate_words_scored: 2,
+          word_segmentation: 'text',
+          word_aggregation: 'sum',
+          word_similarity_matrix: [[1, 0]],
+          word_pair_matrices:
             sparseOtCell && method === 'ot'
               ? {}
               : { [method]: { sif_abtt: [[1, 0]] } },

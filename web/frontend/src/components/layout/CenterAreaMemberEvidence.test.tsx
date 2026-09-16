@@ -11,6 +11,7 @@ import { SavedDirectoryProvider } from '../../contexts/SavedDirectoryContext'
 import { TokenProvider } from '../../contexts/TokenContext'
 import ModelSelector from '../predictions/ModelSelector'
 import CenterArea from './CenterArea'
+import { wordSpans, wordsOf } from '../../test/fixtures/wordSpans'
 
 /**
  * The member selector, mounted (issue #163).
@@ -164,6 +165,31 @@ function installFetch(): void {
           available_methods: ['ig'],
           // Lights query token 0 and candidate token 0.
           pair_matrices: {
+            ig: {
+              sif_abtt: [
+                [1, 0],
+                [0, 0],
+              ],
+            },
+          },
+          // The same grid as words (issue #211): the panels shade the word
+          // grid, and the artifact's own witness supplies the candidate words.
+          query_words: wordSpans(QUERY_TOKENS),
+          candidate_words: wordSpans(
+            wordsOf(
+              (files[dir] ?? []).find((f) => f.filename === artifactWitness[dir])
+                ?.text ?? '',
+            ),
+          ),
+          query_words_scored: QUERY_TOKENS.length,
+          candidate_words_scored: 2,
+          word_segmentation: 'text',
+          word_aggregation: 'sum',
+          word_similarity_matrix: [
+            [0, 0],
+            [0, 0],
+          ],
+          word_pair_matrices: {
             ig: {
               sif_abtt: [
                 [1, 0],

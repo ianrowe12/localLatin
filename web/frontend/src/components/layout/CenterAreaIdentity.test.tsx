@@ -8,6 +8,7 @@ import { TokenProvider } from '../../contexts/TokenContext'
 import { REVIEWER_DIRS_UPDATED_EVENT } from '../../api/reviewerDirs'
 import ModelSelector from '../predictions/ModelSelector'
 import CenterArea from './CenterArea'
+import { wordSpans, wordsOf } from '../../test/fixtures/wordSpans'
 
 /**
  * What is on the candidate panel RIGHT NOW (issue #156).
@@ -29,6 +30,18 @@ const QUERY_ID = 7
 const OTHER_QUERY_ID = 8
 const GALLERY_DIR = 'GALLERY.DIR'
 const GALLERY_DIR_2 = 'OTHER.GALLERY.DIR'
+
+/** The candidate file text the panel will render for a directory. */
+function candidateTextFor(dir: string | null): string {
+  if (!dir) return ''
+  const fromGallery = galleryDirs[dir]?.[0]?.text
+  if (fromGallery !== undefined) return fromGallery
+  for (const list of Object.values(candidates)) {
+    const found = list.find((c) => c.dir === dir)
+    if (found) return found.files[0]?.text ?? ''
+  }
+  return ''
+}
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -139,6 +152,21 @@ function installFetch(): void {
           // is the honest whole story and CenterArea uses it directly.
           available_methods: [],
           pair_matrices: {},
+          // The same grid as words (issue #211): the panels shade the word
+          // grid, so a fixture without word spans is shaded not at all.
+          query_words: wordSpans([`QUERYWORD${queryId}`, 'uerba']),
+          candidate_words: wordSpans(
+            wordsOf(candidateTextFor(params.get('candidate_dir'))).slice(0, 2),
+          ),
+          query_words_scored: 2,
+          candidate_words_scored: 2,
+          word_segmentation: 'text',
+          word_aggregation: 'sum',
+          word_similarity_matrix: [
+            [1, 0],
+            [0, 0],
+          ],
+          word_pair_matrices: {},
         })
       }
       if (url.includes('/candidate_dir/')) {

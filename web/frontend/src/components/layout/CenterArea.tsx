@@ -25,6 +25,11 @@ import AwaitingMatchBadge from '../predictions/AwaitingMatchBadge'
 import type { ReviewerDir } from '../../api/reviewerDirs'
 import DraggableDivider from './DraggableDivider'
 import { buildWordMatchMap } from '../../utils/wordSimilarity'
+import {
+  alignWordsToTokens,
+  matrixOverTokens,
+  pieceTokens,
+} from '../../utils/wordHighlights'
 import { useTokenMap, type TokenMapResponse, type TopMatch } from '../../api/tokenMap'
 import { toAttributionVariant } from '../../api/variants'
 import { useTokens, WitnessTokenScope } from '../../contexts/TokenContext'
@@ -40,6 +45,16 @@ const NO_SEEDED_DIRS: readonly ReviewerDir[] = []
 
 export default function CenterArea() {
   const [splitPercent, setSplitPercent] = useState(50)
+  /**
+   * Highlight whole words, or the model's subword pieces (issue #211).
+   *
+   * Words by default. Under the deployed variant 41 to 88 percent of the
+   * highlighted PIECES are fragments of a longer word, and summing each word's
+   * pieces moves the top five from 5 to 56 percent whole distinctive words to
+   * 85 to 97 (docs/research/prefix_attribution_analysis.md). The pieces stay
+   * one click away, because they are what the model actually read.
+   */
+  const [showPieces, setShowPieces] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const queryScrollRef = useRef<HTMLDivElement>(null)
   const candidateScrollRef = useRef<HTMLDivElement>(null)
@@ -513,6 +528,12 @@ export default function CenterArea() {
     announceDisplayedPair,
   ])
 
+  // A pin names a token INDEX, and the index means a word in one view and a
+  // piece in the other, so switching units invalidates every pin on screen.
+  useEffect(() => {
+    clearAllPins()
+  }, [showPieces, clearAllPins])
+
   // Clear any leftover pins so each new pair starts with hover-only behavior
   // (no sticky lines from stale state). Kept on its own triggers: a ranking
   // refresh underneath an open gallery example moves the regime above without
@@ -639,9 +660,141 @@ export default function CenterArea() {
   const lexicalHighlighting =
     effectiveTokenMap !== null && effectiveTokenMap === wordMatchMap
 
+  /**
+   * The model's own units, for the "show pieces" view (issue #211).
+   *
+   * Rendered instead of the file's words when the toggle is on, because the
+   * piece grids are indexed by piece: painting them over the reader's words is
+   * what put `##scop` and `cura` where `Episcopus` and `curas` belong.
+   */
+  const piecePair = useMemo(() => {
+    const data = witnessArtifact
+    if (!data?.query_tokens?.length || !data?.candidate_tokens?.length) return null
+    return {
+      query: pieceTokens(data.query_tokens),
+      candidate: pieceTokens(data.candidate_tokens),
+    }
+  }, [witnessArtifact])
+
+  /**
+   * Which word of the artifact each displayed token belongs to.
+   *
+   * Two tokenisations meet here and neither is the model's: the query panel
+   * renders `latin_tokenize`, the candidate panel a whitespace split, and the
+   * artifact stops at the model's maximum length. The alignment is monotone and
+   * partial, so anything it cannot pair simply carries no highlight.
+   */
+  const wordAlignment = useMemo(() => {
+    const data = witnessArtifact
+    const qTokens = queryDetail.data?.tokens
+    if (!data?.query_words?.length || !data?.candidate_words?.length) return null
+    if (!qTokens?.length || !candidateTokens?.length) return null
+    return {
+      query: alignWordsToTokens(
+        data.query_words,
+        qTokens,
+        data.query_words_scored,
+      ),
+      candidate: alignWordsToTokens(
+        data.candidate_words,
+        candidateTokens,
+        data.candidate_words_scored,
+      ),
+    }
+  }, [witnessArtifact, queryDetail.data?.tokens, candidateTokens])
+
+  /**
+   * The map the panels actually shade.
+   *
+   * In the default word view this is the word x word grid re-indexed onto the
+   * displayed tokens, so a word split into four pieces is one span at one
+   * shade. Turning the toggle on hands back the piece grid, over piece spans.
+   * Word overlap (the lexical fallback) passes straight through: it is already
+   * about the words on screen and is compared by identity below.
+   */
+  const wordDisplay = useMemo(() => {
+    const data = witnessArtifact
+    if (!effectiveTokenMap || effectiveTokenMap === wordMatchMap) return null
+    if (!data || !wordAlignment) return null
+    const wordMatrix =
+      (selectedMethod
+        ? data.word_pair_matrices?.[selectedMethod]?.[attributionVariant]
+        : undefined) ?? data.word_similarity_matrix
+    if (!wordMatrix?.length) return null
+
+    // Same |value| / max normalisation the piece path uses, so the colour scale
+    // and every threshold downstream keep meaning what they meant.
+    let absMax = 0
+    for (const row of wordMatrix) {
+      if (!row) continue
+      for (const v of row) {
+        const a = Math.abs(v)
+        if (a > absMax) absMax = a
+      }
+    }
+    const denom = absMax > 1e-12 ? absMax : 1
+    const normalized = wordMatrix.map((row) =>
+      row ? row.map((v) => Math.abs(v) / denom) : [],
+    )
+    const overTokens = matrixOverTokens(
+      normalized,
+      wordAlignment.query,
+      wordAlignment.candidate,
+    )
+    const topMatches: Record<string, TopMatch[]> = {}
+    for (let qi = 0; qi < overTokens.length; qi++) {
+      const row = overTokens[qi]
+      if (!row) continue
+      const indexed: TopMatch[] = row.map((s, ci) => ({ candidate_idx: ci, score: s }))
+      indexed.sort((a, b) => b.score - a.score)
+      topMatches[String(qi)] = indexed.slice(0, 3)
+    }
+    return {
+      ...effectiveTokenMap,
+      similarity_matrix: overTokens,
+      top_matches: topMatches,
+    } as TokenMapResponse
+  }, [
+    effectiveTokenMap,
+    wordMatchMap,
+    witnessArtifact,
+    wordAlignment,
+    selectedMethod,
+    attributionVariant,
+  ])
+
+  /**
+   * The toggle appears only where both views exist.
+   *
+   * An artifact with no word spans (anything served before this shipped, and
+   * two of the three mock pairs) offers no control, rather than a switch one of
+   * whose positions has nothing behind it.
+   */
+  const pieceViewAvailable = piecePair !== null && wordDisplay !== null
+  // Pieces only where the reviewer asked for them AND both views exist. A pair
+  // with no word view never flips to pieces on its own: the panels are the
+  // manuscript, and swapping the reader's text for `Epi ##scop ##us` because an
+  // artifact happens to carry no word spans is not a fallback, it is a
+  // different document. That state is real -- a method change refetches, and
+  // the bulk artifacts carry IG only -- and it is transient.
+  const showingPieces = showPieces && pieceViewAvailable
+  const queryPanelTokens =
+    showingPieces && piecePair ? piecePair.query : queryDetail.data?.tokens
+  const candidatePanelTokens =
+    showingPieces && piecePair ? piecePair.candidate : candidateTokens
+  // What may be painted over those tokens. Word overlap is lexical and already
+  // indexed by the displayed tokens, so it passes through. The artifact's grids
+  // are indexed by PIECE, and painting them over the reader's words by index is
+  // exactly the bug this change removes, so without a word view they are simply
+  // not painted: no highlight beats a highlight on the wrong word.
+  const panelTokenMap = showingPieces
+    ? effectiveTokenMap
+    : (wordDisplay ?? (lexicalHighlighting ? effectiveTokenMap : null))
+
   // The scope note belongs beside the marks it qualifies, so it is withheld
-  // when the panels are shading nothing at all.
-  const shownAttributionScope = effectiveTokenMap !== null ? attributionScope : null
+  // when the panels are shading nothing at all -- including the case above,
+  // where an artifact with no word spans leaves its piece grids unpainted.
+  const shownAttributionScope = panelTokenMap !== null ? attributionScope : null
 
   // The bar prints the number with a label that says what it covers. The
   // document header prints the same figure as a bare "Similarity", which for a
@@ -690,8 +843,8 @@ export default function CenterArea() {
         }
         rank={overrideCandidateDir ? undefined : activePredictionRank}
         provenance={candidateProvenance}
-        tokens={candidateTokens}
-        tokenMap={effectiveTokenMap}
+        tokens={candidatePanelTokens}
+        tokenMap={panelTokenMap}
         loading={candidateLoading}
         scrollRef={candidateScrollRef}
         evidenceOwner={witnessScope}
@@ -721,6 +874,24 @@ export default function CenterArea() {
             )}
           </div>
         )}
+        {pieceViewAvailable && (
+          <div className="px-3 py-1 bg-stone-50 dark:bg-stone-900 border-b border-stone-200 dark:border-stone-700 flex items-center justify-end gap-2 flex-shrink-0">
+            <span className="text-[11px] text-stone-500 dark:text-stone-400">
+              {showPieces
+                ? 'Highlighting the model\u2019s subword pieces'
+                : 'Highlighting whole words'}
+            </span>
+            <label className="flex items-center gap-1.5 text-xs text-stone-600 dark:text-stone-300 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={showPieces}
+                onChange={(event) => setShowPieces(event.target.checked)}
+                className="accent-accent cursor-pointer"
+              />
+              Show pieces
+            </label>
+          </div>
+        )}
         <div
           ref={containerRef}
           className="relative flex-1 flex overflow-hidden"
@@ -738,8 +909,8 @@ export default function CenterArea() {
               <DocumentPanel
                 side="query"
                 filename={queryDetail.data?.filename}
-                tokens={queryDetail.data?.tokens}
-                tokenMap={effectiveTokenMap}
+                tokens={queryPanelTokens}
+                tokenMap={panelTokenMap}
                 loading={queryDetail.loading}
                 scrollRef={queryScrollRef}
                 evidenceOwner={witnessScope}

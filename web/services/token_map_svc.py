@@ -9,7 +9,15 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from web.models import AutoHighlight, TokenEntry, TokenMapExampleSummary, TokenMapResponse, TopMatch
+from web.models import (
+    AutoHighlight,
+    TokenEntry,
+    TokenMapExampleSummary,
+    TokenMapResponse,
+    TopMatch,
+    WordSpan,
+)
+from web.services import word_segmentation as wordseg
 from web.services.data_store import DataStore, normalize_slug
 
 logger = logging.getLogger(__name__)
@@ -96,6 +104,156 @@ def _optional_vector(data: dict[str, np.ndarray], key: str, count: int) -> list[
     if arr is None:
         return None
     return np.asarray(arr, dtype=np.float32).ravel()[:count].tolist()
+
+
+# Vectors the auto-highlights can be drawn from, best first *within* a variant.
+# IG is preferred because every bulk artifact carries it; MaRC exists only on
+# the gallery pairs and only for `baseline` / `abtt`.
+ATTRIBUTION_SOURCES = (
+    ("ig", "query_ig_{v}", "candidate_ig_{v}"),
+    ("retrieval_mark", "q_mask_retrieval_mark_{v}", "c_mask_retrieval_mark_{v}"),
+)
+# Consulted only when the requested variant has no usable vector: closest
+# pipeline to the deployed one first. Every fallback is reported in
+# `variant_served`, so a client can always tell it happened.
+VARIANT_FALLBACK_ORDER = ("sif_abtt", "abtt", "sif", "baseline")
+
+
+def _usable_vector(arr, count: int) -> np.ndarray | None:
+    """A finite, non-degenerate attribution vector, or None.
+
+    Two rejections matter. A vector that is mostly NaN cannot be ranked: the
+    deployed Qwen3-0.6B gallery MaRC masks are NaN at 87 to 97 percent of
+    positions (issue #216), and `np.argsort` would silently sort the NaNs to the
+    top. A vector that is all but zero carries no highlight either.
+    """
+    a = np.asarray(arr, dtype=np.float32).ravel()[:count]
+    if a.size == 0:
+        return None
+    finite = np.isfinite(a)
+    if float(finite.mean()) < 0.5:
+        return None
+    a = np.where(finite, a, 0.0).astype(np.float32)
+    if float(np.max(np.abs(a))) <= 1e-6:
+        return None
+    return a
+
+
+def select_attribution(
+    data: dict[str, np.ndarray],
+    variant: str | None,
+    q_len: int,
+    c_len: int,
+) -> tuple[str, str, np.ndarray, np.ndarray] | None:
+    """Pick the attribution vectors for the variant the reviewer selected.
+
+    Returns ``(source, variant_served, query_vector, candidate_vector)``.
+
+    Until issue #216 this was a fixed preference order with `abtt` first,
+    whatever the reviewer had chosen, and on the artifacts carrying both, the
+    `abtt` and `sif_abtt` top five highlights agree on only 44 to 78 percent of
+    slots. The requested variant now wins outright; a fallback still happens
+    when the artifact does not carry it, but it is reported rather than hidden.
+    """
+    order: list[str] = []
+    if variant:
+        order.append(variant)
+    order += [v for v in VARIANT_FALLBACK_ORDER if v != variant]
+    for v in order:
+        for source, q_key, c_key in ATTRIBUTION_SOURCES:
+            q_raw = data.get(q_key.format(v=v))
+            c_raw = data.get(c_key.format(v=v))
+            if q_raw is None or c_raw is None:
+                continue
+            q_vec = _usable_vector(q_raw, q_len)
+            c_vec = _usable_vector(c_raw, c_len)
+            if q_vec is None or c_vec is None:
+                continue
+            return source, v, q_vec, c_vec
+    return None
+
+
+def _text_for_side(store: DataStore, row, side: str) -> str | None:
+    """The original file text for one side of a pair, if the store holds it.
+
+    Word boundaries come from the text ("with the word boundary from the
+    original text", issue #211), so this is what turns `Epi` + `##scop` + `##us`
+    into `Episcopus` rather than into a guess. Absent, the tokenizer's own
+    markers still group the pieces.
+
+    Paths recorded in the artifact CSV are not used to read from disk: the
+    gallery rows carry absolute paths from the machine that wrote them. Only the
+    identifiers are used, against the texts the store already has in memory.
+    """
+    if row is None:
+        return None
+    try:
+        if side == "query":
+            source = _cell(row, "query_source").strip().lower()
+            folder = _cell(row, "query_folder_id").strip()
+            filename = Path(_cell(row, "query_path")).name
+            if source == "unlabelled" or not folder:
+                try:
+                    fid = int(row.get("query_file_id", -1))
+                except (TypeError, ValueError):
+                    return None
+                return store.unlabelled_texts.get(fid) or None
+        else:
+            folder = _cell(row, "candidate_folder_id").strip()
+            filename = Path(_cell(row, "candidate_path")).name
+        files = store.labelled_texts.get(folder)
+        if not files:
+            return None
+        if filename in files:
+            return files[filename] or None
+        if len(files) == 1:
+            return next(iter(files.values())) or None
+    except Exception as e:  # noqa: BLE001 -- a display aid must never 500
+        logger.warning("Could not resolve %s text for the token map: %s", side, e)
+    return None
+
+
+_SEGMENTATION_RANK = {
+    wordseg.SEGMENTATION_PIECES: 0,
+    wordseg.SEGMENTATION_MARKERS: 1,
+    wordseg.SEGMENTATION_TEXT: 2,
+}
+
+
+def build_word_spans(
+    seg: wordseg.Segmentation,
+    attribution: np.ndarray | None,
+    aggregation: str,
+) -> list[WordSpan]:
+    values = [] if attribution is None else [float(v) for v in attribution]
+    score, pos, neg = wordseg.aggregate_vector(values, seg, mode=aggregation)
+    spans: list[WordSpan] = []
+    for word in seg.words:
+        spans.append(WordSpan(
+            idx=word.idx,
+            text=word.text,
+            piece_indices=list(word.piece_indices),
+            score=score[word.idx],
+            score_pos=pos[word.idx],
+            score_neg=neg[word.idx],
+            is_content=len(wordseg.normalise_word(word.text)) > 2,
+        ))
+    return spans
+
+
+@lru_cache(maxsize=64)
+def _segment_cached(
+    pieces: tuple[str, ...], text: str | None
+) -> wordseg.Segmentation:
+    """Group one side's pieces into words, memoised.
+
+    The character diff against the file text costs about 0.15 s on a
+    640-piece side, and the answer depends on nothing but these two arguments:
+    a reviewer switching method or aggregation on the same pair asks the same
+    question again. Keyed by value rather than by artifact path so a re-indexed
+    artifact can never return another pair's grouping.
+    """
+    return wordseg.segment(list(pieces), text=text)
 
 
 def _try_decode_tokens(input_ids: np.ndarray, model_slug: str) -> list[str] | None:
@@ -303,6 +461,7 @@ def load_token_map(
     example_id: int,
     method: str | None = None,
     variant: str | None = None,
+    word_aggregation: str = wordseg.AGGREGATION_SUM,
 ) -> TokenMapResponse | None:
     """Build the token-map payload for one example.
 
@@ -313,6 +472,13 @@ def load_token_map(
     of that grid. ``available_methods`` / ``available_variants`` always report
     the artifact's full contents regardless of the filters, so a client can
     still discover what else it may request (issue #72).
+
+    ``variant`` also decides which attribution vector the highlights come from,
+    and the response says which one it got (``variant_served``, issue #216).
+
+    ``word_aggregation`` is a display option, "sum" or "max", over the word
+    groupings the response carries alongside the pieces (issue #211). Artifacts
+    are read, never written.
     """
     if example_id not in store.ig_artifact_paths:
         return None
@@ -335,13 +501,14 @@ def load_token_map(
     bucket = ""
     query_path = ""
     candidate_path = ""
+    csv_row = None
     if store.ig_examples is not None:
         match = store.ig_examples[store.ig_examples["example_id"] == example_id]
         if len(match) > 0:
-            row = match.iloc[0]
-            bucket = _cell(row, "bucket")
-            query_path = _cell(row, "query_path")
-            candidate_path = _cell(row, "candidate_path")
+            csv_row = match.iloc[0]
+            bucket = _cell(csv_row, "bucket")
+            query_path = _cell(csv_row, "query_path")
+            candidate_path = _cell(csv_row, "candidate_path")
 
     # Token-token cosine similarity. Artifacts from the full-corpus run (issue
     # #84) store it directly and omit the raw hidden states it was derived from:
@@ -438,36 +605,6 @@ def load_token_map(
             for ci in top_idx
         ]
 
-    # Auto-highlights: top K=5 query tokens by |IG score|. Prefer the ABTT
-    # vector, but a bulk artifact only carries the variants deployed at its
-    # layer, so an artifact built for `sif` alone has no `query_ig_abtt`. Take
-    # whichever IG vector it does have rather than dropping the highlights.
-    auto_highlights = None
-    ig_source = next(
-        (
-            f"query_ig_{v}"
-            for v in ("abtt", "sif_abtt", "baseline", "sif")
-            if f"query_ig_{v}" in data
-        ),
-        None,
-    )
-    if ig_source is not None:
-        abs_ig = np.abs(np.asarray(data[ig_source], dtype=np.float32)[:q_len])
-        if abs_ig.size and abs_ig.max() > 1e-6:
-            K = 5
-            top_k_idx = np.argsort(abs_ig)[-K:][::-1]
-            auto_highlights = []
-            for qi in top_k_idx:
-                qi = int(qi)
-                row = sim_arr[qi]
-                n_matches = min(2, c_len)
-                top_ci = np.argsort(row)[-n_matches:][::-1]
-                auto_highlights.append(AutoHighlight(
-                    query_idx=qi,
-                    ig_score=float(abs_ig[qi]),
-                    matches=[TopMatch(candidate_idx=int(ci), score=float(row[ci])) for ci in top_ci],
-                ))
-
     # Tokens: prefer the strings persisted into the artifact (issue #47), fall
     # back to decoding the ids with a tokenizer, and finally to "[i]" markers.
     query_input_ids = data.get("query_input_ids")
@@ -487,6 +624,76 @@ def load_token_map(
             is_content = len(text.strip().lstrip("▁##Ġ")) > 2
             entries.append(TokenEntry(idx=i, text=text, is_content=is_content))
         return entries
+
+    # The attribution vector the highlights describe: the requested variant's,
+    # or an explicitly reported fallback (issue #216).
+    picked = select_attribution(data, variant, q_len, c_len)
+    attribution_source = variant_served = None
+    q_attr = c_attr = None
+    if picked is not None:
+        attribution_source, variant_served, q_attr, c_attr = picked
+
+    # Word grouping: a display step over the pieces the artifact already holds
+    # (issue #211). Aligned to the original file text where the store has it,
+    # so the words are the reviewer's words, punctuation and all.
+    aggregation = (
+        wordseg.AGGREGATION_MAX
+        if word_aggregation == wordseg.AGGREGATION_MAX
+        else wordseg.AGGREGATION_SUM
+    )
+    q_seg = _segment_cached(
+        tuple(q_token_strs or ()), _text_for_side(store, csv_row, "query")
+    )
+    c_seg = _segment_cached(
+        tuple(c_token_strs or ()), _text_for_side(store, csv_row, "candidate")
+    )
+    query_words = build_word_spans(q_seg, q_attr, aggregation)
+    candidate_words = build_word_spans(c_seg, c_attr, aggregation)
+    # Reported at the weaker of the two sides: the pair is only as trustworthy
+    # as the side that could not be grouped.
+    word_segmentation = min(
+        (q_seg.method, c_seg.method), key=lambda m: _SEGMENTATION_RANK.get(m, 0)
+    )
+    q_word_of_piece = q_seg.word_of_piece
+    # The word lists stay whole -- the frontend walks them against the text on
+    # screen -- but the grids stop at the last word the model actually read.
+    # Past that point every row is zeros, and on a long manuscript that is most
+    # of the square: example 1002908 has 1,151 query words and 161 scored ones.
+    query_words_scored = wordseg.scored_word_count(q_seg, q_len)
+    candidate_words_scored = wordseg.scored_word_count(c_seg, c_len)
+
+    # Cosine is aggregated by largest magnitude: summing it would make a
+    # four-piece word look more similar than a one-piece word saying the same.
+    word_similarity_matrix = wordseg.aggregate_matrix(
+        sim_arr, q_seg, c_seg, mode=wordseg.AGGREGATION_MAX
+    )
+    word_pair_matrices: dict[str, dict[str, list[list[float]]]] = {}
+    for m, by_variant in pair_matrices.items():
+        for v, mat in by_variant.items():
+            word_pair_matrices.setdefault(m, {})[v] = wordseg.aggregate_matrix(
+                mat, q_seg, c_seg, mode=aggregation
+            )
+
+    # Auto-highlights: the top K=5 query tokens by |attribution|, from the
+    # variant the reviewer selected, each carrying the word it belongs to.
+    auto_highlights = None
+    if q_attr is not None:
+        abs_attr = np.abs(q_attr)
+        if abs_attr.size and abs_attr.max() > 1e-6:
+            K = 5
+            top_k_idx = np.argsort(abs_attr)[-K:][::-1]
+            auto_highlights = []
+            for qi in top_k_idx:
+                qi = int(qi)
+                row = sim_arr[qi]
+                n_matches = min(2, c_len)
+                top_ci = np.argsort(row)[-n_matches:][::-1]
+                auto_highlights.append(AutoHighlight(
+                    query_idx=qi,
+                    ig_score=float(abs_attr[qi]),
+                    word_idx=q_word_of_piece.get(qi),
+                    matches=[TopMatch(candidate_idx=int(ci), score=float(row[ci])) for ci in top_ci],
+                ))
 
     return TokenMapResponse(
         example_id=example_id,
@@ -513,4 +720,17 @@ def load_token_map(
         top_highlights=top_highlights,
         query_sif_weights=_optional_vector(data, "query_sif_weights", q_len),
         candidate_sif_weights=_optional_vector(data, "candidate_sif_weights", c_len),
+        variant_requested=variant,
+        variant_served=variant_served,
+        attribution_source=attribution_source,
+        query_attribution=[] if q_attr is None else q_attr.tolist(),
+        candidate_attribution=[] if c_attr is None else c_attr.tolist(),
+        query_words=query_words,
+        candidate_words=candidate_words,
+        query_words_scored=query_words_scored,
+        candidate_words_scored=candidate_words_scored,
+        word_segmentation=word_segmentation,
+        word_aggregation=aggregation,
+        word_similarity_matrix=word_similarity_matrix,
+        word_pair_matrices=word_pair_matrices,
     )

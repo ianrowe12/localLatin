@@ -27,6 +27,8 @@ export interface AutoHighlight {
   query_idx: number
   ig_score: number
   matches: TopMatch[]
+  /** The word this piece belongs to, or null when grouping was not possible. */
+  word_idx?: number | null
 }
 
 export type AttributionMethod =
@@ -41,6 +43,23 @@ export type AttributionMethod =
 export interface AttributionTopHighlights {
   query: number[]
   candidate: number[]
+}
+
+/**
+ * One word of the original text, with the model pieces behind it (issue #211).
+ *
+ * `piece_indices` index `query_tokens` / `candidate_tokens`, so the "show
+ * pieces" toggle needs no second request.
+ */
+export interface WordSpan {
+  idx: number
+  text: string
+  piece_indices: number[]
+  /** Aggregated attribution under the response's `word_aggregation`. */
+  score: number
+  score_pos: number
+  score_neg: number
+  is_content: boolean
 }
 
 export interface TokenMapResponse {
@@ -78,6 +97,40 @@ export interface TokenMapResponse {
       AttributionMethod,
       Partial<Record<AttributionVariant, AttributionTopHighlights>>
     >
+  >
+  /** Echo of `?variant=`; null on an unfiltered fetch. */
+  variant_requested?: AttributionVariant | null
+  /**
+   * The variant whose attribution actually backs the highlights (issue #216).
+   * Equal to `variant_requested` unless the artifact does not carry it, and the
+   * two disagree loudly rather than silently: `abtt` and `sif_abtt` agree on
+   * only 44 to 78 percent of the top five slots per model.
+   */
+  variant_served?: AttributionVariant | null
+  /** "ig" or "retrieval_mark". */
+  attribution_source?: string | null
+  query_attribution?: number[]
+  candidate_attribution?: number[]
+  // --- Word-level display (issue #211) ---
+  query_words?: WordSpan[]
+  candidate_words?: WordSpan[]
+  /**
+   * How many leading words the word grids below cover.
+   *
+   * The word lists are the whole file, so they can be walked against the text
+   * on screen; the grids stop at the last word the model read, because a model
+   * truncates and everything past that point would be a row of zeros. A word
+   * at or beyond this index carries no highlight.
+   */
+  query_words_scored?: number
+  candidate_words_scored?: number
+  /** "text" | "markers" | "pieces" — how the pieces were grouped. */
+  word_segmentation?: string | null
+  /** "sum" (default) or "max". */
+  word_aggregation?: string
+  word_similarity_matrix?: number[][] | null
+  word_pair_matrices?: Partial<
+    Record<AttributionMethod, Partial<Record<AttributionVariant, number[][]>>>
   >
 }
 
