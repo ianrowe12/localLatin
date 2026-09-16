@@ -85,8 +85,9 @@ def _bold_layers(tex: str) -> dict[str, int]:
     return out
 
 
-def _headline_subscripts(frame: pd.DataFrame, method: str, metric: str) -> dict[str, int]:
-    """The layer the headline generator prints as the subscript of ``method``."""
+def _headline_layers(frame: pd.DataFrame, method: str, metric: str) -> dict[str, int]:
+    """The layer the headline generator selects for ``method``, the one it lists
+    in the selected-layers appendix table (issue #219 moved it out of the cells)."""
     best = bht.best_rows(frame, "hidden", metric)
     return {
         bplt.MODEL_DISPLAY[row["_model_id"]]: int(row["layer"])
@@ -109,7 +110,7 @@ def _headline_subscripts(frame: pd.DataFrame, method: str, metric: str) -> dict[
     ],
 )
 @pytest.mark.parametrize("float_table", [False, True])
-def test_bold_row_is_the_headline_subscript(
+def test_bold_row_is_the_headline_selected_layer(
     tmp_path: Path, emit, select_method, metric, metrics, float_table
 ):
     frame = _results_frame()
@@ -130,9 +131,9 @@ def test_bold_row_is_the_headline_subscript(
         float_table=float_table,
     )
     bold = _bold_layers(out.read_text())
-    subscripts = _headline_subscripts(frame, select_method, metric)
+    selected = _headline_layers(frame, select_method, metric)
     assert len(bold) == len(MODELS)
-    assert bold == subscripts
+    assert bold == selected
     j = METHODS.index(select_method)
     for i, model in enumerate(MODELS):
         assert bold[bplt.MODEL_DISPLAY[model]] != _test_best(i, j)  # never the test argmax
@@ -242,7 +243,7 @@ def test_cluster_figures_take_the_train_selected_abtt_layer():
     frame = _results_frame()
     names = [bplt.MODEL_DISPLAY[m] for m in MODELS]
     layers = vc.select_layers(frame, names)
-    expected = _headline_subscripts(frame, "abtt_optimal", "train_dir_acc_at_1")
+    expected = _headline_layers(frame, "abtt_optimal", "train_dir_acc_at_1")
     assert layers == expected
     with pytest.raises(SystemExit):
         vc.select_layers(frame, names, metric="overall_assignment_acc")

@@ -16,10 +16,11 @@ Inputs:
 
 Bold rows (issue #184): every table bolds the layer the headline tables
 report, chosen on the train split through `train_selected_layers`: the
-argmax of `train_aucroc` for the Task A tables (the subscript in
+argmax of `train_aucroc` for the Task A tables (the layer behind the cell in
 `tables/taskA_headline.tex`) and of `train_dir_acc_at_1` for the Task B
-tables (the subscript in `tables/taskB_headline.tex`), under the table's
-ABTT method. No table takes an argmax over a test column.
+tables (the layer behind the cell in `tables/taskB_headline.tex`), under the
+table's ABTT method; both are listed in `tables/selected_layers.tex` (issue
+#219). No table takes an argmax over a test column.
 
 Outputs (tex + audit CSVs):
   tables/taskA_main.tex                      — 3 models, base vs ABTT
@@ -577,13 +578,14 @@ CAP_RANK_SINGLE_METHOD = CAP_BASE_ABTT + (
 
 
 def _selected_layer_caption(method_label: str, task: str) -> str:
-    """The bold-row sentence: the train-only rule, tied to the headline subscript.
+    """The bold-row sentence: the train-only rule, tied to the headline cell.
 
     ``task`` is ``"taskA"`` (selection by training-set AUROC, the rule of
     Table~tab:taskA_headline) or ``"taskB"`` (training-set directory accuracy
     at rank 1, Table~tab:taskB_headline). ``method_label`` must be the
     headline column name (``ABTT`` or ``SIF+ABTT``) so the reader can find
-    the subscript.
+    the cell, and its layer in the selected-layers table (``tab:selected_layers``,
+    issue #219; the headline cells no longer carry the layer as a subscript).
     """
     metric_phrase = {
         "taskA": "AUROC",
@@ -591,9 +593,9 @@ def _selected_layer_caption(method_label: str, task: str) -> str:
     }[task]
     return (
         rf"Rows in bold mark the layer chosen on the train split, the layer with the highest "
-        rf"training-set {metric_phrase} under {method_label}; it is the {method_label} "
-        rf"subscript in Table~\ref{{{HEADLINE_LABEL[task]}}}, and not always the layer with "
-        rf"the highest test score in this table."
+        rf"training-set {metric_phrase} under {method_label}; Table~\ref{{{HEADLINE_LABEL[task]}}} "
+        rf"scores its {method_label} cell there, and Table~\ref{{tab:selected_layers}} lists it. "
+        rf"It is not always the layer with the highest test score in this table."
     )
 
 

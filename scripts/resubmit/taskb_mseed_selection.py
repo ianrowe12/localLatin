@@ -13,8 +13,9 @@ the headline tables report.
 Both generators now import this module and apply the headline rule: for each
 model, report ``sif_abtt_optimal`` at the layer with the highest *training-set*
 directory accuracy at rank 1 in the single-seed run
-(``runs/active/resubmit/results/phase_resubmit_results.csv``), the layer that
-appears as the SIF+ABTT subscript in ``tables/taskB_headline.tex``. The five-seed
+(``runs/active/resubmit/results/phase_resubmit_results.csv``), the layer behind
+the SIF+ABTT cell of ``tables/taskB_headline.tex`` and listed in
+``tables/selected_layers.tex`` (issue #219). The five-seed
 CSV carries no train metric of its own, which is why the layer comes from the
 single-seed CSV. Ties go to the lowest layer.
 """
@@ -30,7 +31,8 @@ DEFAULT_REPR = "hidden"
 SELECTION_RULE_CAPTION = (
     r"For each model the reported layer is chosen on the train split: the layer with the "
     r"highest training-set directory accuracy at rank~1 for SIF+ABTT in the single-seed run, "
-    r"the same layer as the SIF+ABTT subscript in Table~\ref{tab:taskB_headline}. "
+    r"the layer at which Table~\ref{tab:taskB_headline} scores its SIF+ABTT cell "
+    r"(listed in Table~\ref{tab:selected_layers}). "
     r"$D$ is tuned per layer on the train split. "
     r"This is not always the layer with the highest five-seed mean."
 )

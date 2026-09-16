@@ -114,7 +114,6 @@ def _render_task_a(lexical: pd.DataFrame | None = None) -> str:
             lexical_right_col="gap",
             finetune_left_col="taskA_aucroc",
             finetune_right_col="taskA_cosine_gap",
-            finetune_layer_col="taskA_layer",
             fmt=".3f",
             scale=1.0,
         ),
@@ -321,7 +320,6 @@ def test_reference_block_gets_one_row_per_fine_tuned_model():
         lexical_right_col="gap",
         finetune_left_col="taskA_aucroc",
         finetune_right_col="taskA_cosine_gap",
-        finetune_layer_col="taskA_layer",
         fmt=".3f",
         scale=1.0,
     )
@@ -467,7 +465,6 @@ def test_three_ceilings_are_all_named_and_all_get_a_row():
         lexical_right_col="gap",
         finetune_left_col="taskA_aucroc",
         finetune_right_col="taskA_cosine_gap",
-        finetune_layer_col="taskA_layer",
         fmt=".3f",
         scale=1.0,
     )
@@ -674,7 +671,7 @@ def test_bare_headline_run_reproduces_the_committed_tables(tmp_path: Path, monke
     monkeypatch.setattr(sys, "argv", ["build_headline_tables.py",
                                       "--out_dir", str(tmp_path)])
     bht.main()
-    for name in ("taskA_headline.tex", "taskB_headline.tex"):
+    for name in ("taskA_headline.tex", "taskB_headline.tex", "selected_layers.tex"):
         assert (tmp_path / name).read_bytes() == (TABLES_DIR / name).read_bytes(), name
 
 
@@ -693,3 +690,122 @@ def test_bare_generator_run_reproduces_the_committed_main_tables(tmp_path: Path,
         assert (tmp_path / out).read_bytes() == (TABLES_DIR / name).read_bytes(), name
     assert (tmp_path / "fig_attribution_rho_loo_main.tex").read_bytes() == (
         REPO_ROOT / "overleaf_drafts/figures/fig_attribution_rho_loo_main.tex").read_bytes()
+
+
+# --- the selected-layers appendix table (#219) -----------------------------
+#
+# The headline and fine-tuning tables used to carry the train-selected layer as
+# a subscript on every cell. Issue #219 moved every one of those layers into one
+# appendix table, ``tab:selected_layers``, written by the headline generator in
+# the same run. These tests pin the plain cells, the new table's layout, and
+# that the committed files carry no subscript.
+
+
+def _split_selection_frame() -> pd.DataFrame:
+    """Task A selects layer 2 and Task B selects layer 1, so a row that printed
+    one task's layers under the other's banner would be caught."""
+    frame = _results_frame()
+    frame["train_dir_acc_at_1"] = np.where(frame["layer"] == 1, 0.90, 0.60)
+    return frame
+
+
+def _finetune_frame_with_layers() -> pd.DataFrame:
+    """One ceiling whose Base and ABTT variants select different layers."""
+    frame = _finetune_frame(FT_QWEN, assignment=0.95, dir_acc=0.94)
+    frame.loc[frame["method"] == "baseline", ["taskA_layer", "taskB_layer"]] = [28, 28]
+    frame.loc[frame["method"] == "abtt_optimal", ["taskA_layer", "taskB_layer"]] = [27, 5]
+    return frame
+
+
+def _selected_rows(tex: str) -> dict[str, list[str]]:
+    rows = {}
+    for line in tex.splitlines():
+        if " & " in line and not line.startswith("&") and not line.startswith(r"\textbf"):
+            cells = [c.strip() for c in line.rstrip(" \\").split("&")]
+            rows[cells[0]] = cells[1:]
+    return rows
+
+
+def test_headline_cells_print_plain_numbers():
+    tex = _render_task_a()
+    assert r"\textsubscript" not in tex
+    row = next(line for line in tex.splitlines() if line.startswith("LaTa &"))
+    cells = [cell.strip() for cell in row.rstrip("\\ ").split("&")][1:]
+    # Bold survives; nothing else decorates a cell.
+    assert all(cell.startswith(r"\textbf{0.") or cell.startswith("0.") for cell in cells)
+    assert "Table~\\ref{tab:selected_layers}" in tex[tex.index(r"\caption{"):]
+    assert "subscript" not in tex
+
+
+def test_selected_layers_table_lists_every_headline_layer():
+    results = _split_selection_frame()
+    best_a = bht.best_rows(results, "hidden", "train_aucroc")
+    best_b = bht.best_rows(results, "hidden", "train_dir_acc_at_1")
+    finetune = pd.concat([_finetune_frame(FT_LATA), _finetune_frame_with_layers()],
+                         ignore_index=True)
+    tex = bht.render_selected_layers_table(best_a, best_b, finetune)
+    rows = _selected_rows(tex)
+    for _, display in bht.MODELS:
+        assert rows[display] == ["2"] * 4 + ["1"] * 4, display
+    # Fine-tuned rows: Base and ABTT only, SIF empty, per task.
+    assert rows[FT_LATA] == ["12", "--", "12", "--", "12", "--", "12", "--"]
+    assert rows[FT_QWEN] == ["28", "--", "27", "--", "28", "--", "5", "--"]
+    # Same row order as the headline tables: six models, a rule, the ceilings.
+    assert list(rows) == [display for _, display in bht.MODELS] + [FT_LATA, FT_QWEN]
+    assert tex.count(r"\midrule") == 2
+    assert r"\label{tab:selected_layers}" in tex
+    assert r"\textsubscript" not in tex
+    caption = tex[tex.index(r"\caption{"):]
+    for ref in ("tab:taskA_headline", "tab:taskB_headline", "tab:finetune_ceiling"):
+        assert ref in caption, ref
+    assert tex.splitlines()[0] == "% generated table"
+
+
+def test_selected_layers_table_is_the_layers_behind_the_headline_frames():
+    """The layer printed for a cell is the layer the headline table scored at."""
+    results = _split_selection_frame()
+    best_a = bht.best_rows(results, "hidden", "train_aucroc")
+    best_b = bht.best_rows(results, "hidden", "train_dir_acc_at_1")
+    rows = _selected_rows(
+        bht.render_selected_layers_table(best_a, best_b, _finetune_frame())
+    )
+    for model_id, display in bht.MODELS:
+        for j, (method, _) in enumerate(bht.METHODS):
+            a = best_a[(best_a["_model_id"] == model_id) & (best_a["_method"] == method)]
+            b = best_b[(best_b["_model_id"] == model_id) & (best_b["_method"] == method)]
+            assert rows[display][j] == str(int(a.iloc[0]["layer"]))
+            assert rows[display][4 + j] == str(int(b.iloc[0]["layer"]))
+
+
+def test_main_writes_the_selected_layers_table(tmp_path, monkeypatch):
+    _split_selection_frame().to_csv(tmp_path / "r.csv", index=False)
+    _finetune_frame().to_csv(tmp_path / "f.csv", index=False)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "build_headline_tables.py",
+            "--results_csv", str(tmp_path / "r.csv"),
+            "--finetune_csv", str(tmp_path / "f.csv"),
+            "--finetune_run_info", str(tmp_path / "absent.json"),
+            "--out_dir", str(tmp_path / "out"),
+        ],
+    )
+    bht.main()
+    tex = (tmp_path / "out" / "selected_layers.tex").read_text()
+    assert r"\label{tab:selected_layers}" in tex
+    for name in ("taskA_headline.tex", "taskB_headline.tex"):
+        assert r"\textsubscript" not in (tmp_path / "out" / name).read_text(), name
+
+
+def test_committed_tables_carry_no_layer_subscript():
+    """Committed files, so this holds on CI without ``runs/``."""
+    for name in ("taskA_headline.tex", "taskB_headline.tex", "finetune_ceiling.tex",
+                 "selected_layers.tex"):
+        tex = (TABLES_DIR / name).read_text()
+        assert r"\textsubscript" not in tex, name
+        assert "subscript" not in tex, name
+    assert r"\label{tab:selected_layers}" in (TABLES_DIR / "selected_layers.tex").read_text()
+    for name in ("taskA_headline.tex", "taskB_headline.tex", "finetune_ceiling.tex"):
+        caption = (TABLES_DIR / name).read_text().split(r"\caption{", 1)[1]
+        assert r"\ref{tab:selected_layers}" in caption, name

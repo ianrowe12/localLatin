@@ -220,7 +220,7 @@ In t-SNE \citep{vandermaaten2008tsne} and UMAP \citep{mcinnes2018umap} projectio
 
 In Table~\ref{tab:taskB_headline}, directory accuracy at rank 1 spans 39.3 points under the baseline, from 46.6 for mT5-base to 85.9 for KaLM-mini, so the model choice dominates. ABTT compresses that to 3.3 points, from 86.1 to 89.4. Assignment accuracy tracks it, moving from a 40.3-point spread to the range 88.5 to 91.7, with every ABTT cell above every baseline cell.
 
-Tables~\ref{tab:taskb} and~\ref{tab:taskB_ranking_appendix_mseed} in Appendix~\ref{app:sif_variants} repeat the top-1 comparison under five query and reference reseedings at each method's own train-selected layer (the Base and SIF+ABTT subscripts of Table~\ref{tab:taskB_headline}), so the compression is not an artifact of one draw. The baseline spread of 36.6 points, from 50.7 for mT5-base to 87.3 for KaLM-mini, falls to 1.7 points under SIF+ABTT, from 88.9 for LaTa to 90.6 for LaBSE, with standard deviations of at most 1.0. Table~\ref{tab:taskb} gives the shortlist view (per-layer: Appendix~\ref{app:per_layer_headline}): every model exceeds 95\% by Top-2 and gains little after Top-3.
+Tables~\ref{tab:taskb} and~\ref{tab:taskB_ranking_appendix_mseed} in Appendix~\ref{app:sif_variants} repeat the top-1 comparison under five query and reference reseedings at each method's own train-selected layer (the Task B Base and SIF+ABTT layers of Table~\ref{tab:selected_layers}), so the compression is not an artifact of one draw. The baseline spread of 36.6 points, from 50.7 for mT5-base to 87.3 for KaLM-mini, falls to 1.7 points under SIF+ABTT, from 88.9 for LaTa to 90.6 for LaBSE, with standard deviations of at most 1.0. Table~\ref{tab:taskb} gives the shortlist view (per-layer: Appendix~\ref{app:per_layer_headline}): every model exceeds 95\% by Top-2 and gains little after Top-3.
 
 \paragraph{The parameter-free repair matches contrastive fine-tuning on LaTa routing, but supervision clears it on Qwen3-0.6B and KaLM-mini.}
 Fine-tuning LaTa on the positive train pairs (499 after a directory-level dev carve; setup in Appendix~\ref{app:reference_systems}) gives an uncorrected Task A AUROC of 0.984, above every zero-shot baseline row (0.838 to 0.972), and 83.4 assignment accuracy; with ABTT on top it reaches 87.8 assignment accuracy and 85.2 directory accuracy at rank 1, below every zero-shot ABTT cell (88.5 to 91.7 and 86.1 to 89.4). ABTT also lowers that row's AUROC from 0.984 to 0.970 while widening its cosine gap from 0.387 to 0.548, consistent with fine-tuning having already removed part of the common component: the repair is not free on every row, and it matches what the available supervision buys on routing at this training budget. The same recipe on the two encoders we also fine-tuned does not land in the same place. Qwen3-0.6B reaches 92.1 assignment accuracy and 91.4 directory accuracy at rank 1 with ABTT, and KaLM-mini 93.4 and 92.5, both above every zero-shot ABTT cell. Over five reseedings of the Task B query and reference assignment the fine-tuned encoder with ABTT beats its own zero-shot ABTT row by 1.8 points on Qwen3-0.6B ($0.923 \pm 0.002$ against $0.905 \pm 0.004$) and by 2.1 points on KaLM-mini ($0.930 \pm 0.005$ against $0.909 \pm 0.006$), while on LaTa the two are 0.877 and 0.877. So the match is a statement about LaTa, not about post-processing in general, and it does not survive on the model that owns the best zero-shot cell in Table~\ref{tab:taskB_headline}. All three ceilings are also flattered, because 206 of the 535 test queries whose directory already exists (38.5 percent) sit in a directory that supplied a training pair, and witnesses inside a directory are near-duplicates, so read each margin as an upper bound on itself.
@@ -328,9 +328,10 @@ Figure~\ref{fig:density} restates the collapse and the repair as score distribut
 \section{Expanded Per-Layer Results for T5 Encoders}
 \label{app:per_layer_headline}
 
-The main text compresses the headline retrieval results into Tables~\ref{tab:taskA_headline} and~\ref{tab:taskB_headline}, which report one train-selected layer per model and method. This appendix provides the expanded per-layer Task A duplicate-detection, Task B autonomous-routing, and Task B top-$k$ ranking tables for LaTa, PhilTa, and mT5-base; Appendix~\ref{app:per_layer_extra} gives the same view for the other three models.
+The main text compresses the headline retrieval results into Tables~\ref{tab:taskA_headline} and~\ref{tab:taskB_headline}, which report one train-selected layer per model and method; Table~\ref{tab:selected_layers} lists those layers. This appendix provides the expanded per-layer Task A duplicate-detection, Task B autonomous-routing, and Task B top-$k$ ranking tables for LaTa, PhilTa, and mT5-base; Appendix~\ref{app:per_layer_extra} gives the same view for the other three models.
 
 \onecolumn
+\input{tables/selected_layers}
 \input{tables/taskA_main}
 \input{tables/taskB_routing_main}
 \input{tables/taskB_ranking_main}
@@ -423,12 +424,12 @@ This appendix keeps the example-level views for one PhilTa retrieval pair. Figur
 \section{Cluster Geometry}
 \label{app:cluster_geometry}
 
-Figures~\ref{fig:tsne} and~\ref{fig:umap} give the t-SNE and UMAP panels for LaTa, PhilTa, and mT5-base, and Figures~\ref{fig:tsne_appendix} and~\ref{fig:umap_appendix} extend them to LaBSE, Qwen3-0.6B, and KaLM-mini. All four draw all 1,705 witnesses, color the same six largest directories, and compare baseline mean pooling with ABTT-only at $D=10$; each model sits at the layer chosen on the train split by directory accuracy at rank~1 under ABTT, the ABTT subscript of Table~\ref{tab:taskB_headline}.
+Figures~\ref{fig:tsne} and~\ref{fig:umap} give the t-SNE and UMAP panels for LaTa, PhilTa, and mT5-base, and Figures~\ref{fig:tsne_appendix} and~\ref{fig:umap_appendix} extend them to LaBSE, Qwen3-0.6B, and KaLM-mini. All four draw all 1,705 witnesses, color the same six largest directories, and compare baseline mean pooling with ABTT-only at $D=10$; each model sits at the layer chosen on the train split by directory accuracy at rank~1 under ABTT, the Task B ABTT layer of Table~\ref{tab:selected_layers}.
 
 \begin{figure*}[!t]
 \centering
 \includegraphics[width=\textwidth]{fig_tsne_main.pdf}
-\caption{t-SNE projections of all 1,705 manuscript witnesses for LaTa, PhilTa, and mT5-base, each at the layer chosen on the train split: the layer with the highest training-set directory accuracy at rank~1 under ABTT, printed in each panel as L and equal to the ABTT subscript in Table~\ref{tab:taskB_headline}. Columns compare baseline mean pooling with ABTT-only using $D=10$, fit on the training embeddings. Colors mark the six largest directories; other witnesses of directories with at least two witnesses are mid gray, and singletons light gray. The silhouette scores in Section~\ref{sec:results} are computed in these two-dimensional coordinates over the 1,160 winnable witnesses, those whose directory has at least two witnesses.}
+\caption{t-SNE projections of all 1,705 manuscript witnesses for LaTa, PhilTa, and mT5-base, each at the layer chosen on the train split: the layer with the highest training-set directory accuracy at rank~1 under ABTT, printed in each panel as L and equal to the Task B ABTT layer in Table~\ref{tab:selected_layers}. Columns compare baseline mean pooling with ABTT-only using $D=10$, fit on the training embeddings. Colors mark the six largest directories; other witnesses of directories with at least two witnesses are mid gray, and singletons light gray. The silhouette scores in Section~\ref{sec:results} are computed in these two-dimensional coordinates over the 1,160 winnable witnesses, those whose directory has at least two witnesses.}
 \label{fig:tsne}
 \end{figure*}
 
@@ -442,7 +443,7 @@ Figures~\ref{fig:tsne} and~\ref{fig:umap} give the t-SNE and UMAP panels for LaT
 \begin{figure*}[!t]
 \centering
 \includegraphics[width=\textwidth]{fig_tsne_appendix.pdf}
-\caption{t-SNE projections of all 1,705 manuscript witnesses for LaBSE, Qwen3-0.6B, and KaLM-mini under the layer rule of Figure~\ref{fig:tsne}: the layer with the highest training-set directory accuracy at rank~1 under ABTT, printed in each panel and equal to the ABTT subscript in Table~\ref{tab:taskB_headline}. Columns compare baseline mean pooling with ABTT-only using $D=10$. Colors mark the same six largest directories as Figure~\ref{fig:tsne}.}
+\caption{t-SNE projections of all 1,705 manuscript witnesses for LaBSE, Qwen3-0.6B, and KaLM-mini under the layer rule of Figure~\ref{fig:tsne}: the layer with the highest training-set directory accuracy at rank~1 under ABTT, printed in each panel and equal to the Task B ABTT layer in Table~\ref{tab:selected_layers}. Columns compare baseline mean pooling with ABTT-only using $D=10$. Colors mark the same six largest directories as Figure~\ref{fig:tsne}.}
 \label{fig:tsne_appendix}
 \end{figure*}
 

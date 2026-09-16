@@ -6,8 +6,13 @@ pure functions of ``phase_resubmit_results.csv``, so this recovers them.
 
 Layout, shared by both tables: six models down the side, four post-processing
 settings across, twice over for two metrics. One layer is chosen per (model,
-setting) cell by the training-set criterion for that task, and printed as a
-subscript, so the test numbers are never selected on test.
+setting) cell by the training-set criterion for that task, so the test numbers
+are never selected on test. The cells print the plain test score; the layer
+behind every cell goes to a third table, ``tab:selected_layers``, written in
+the same run from the same CSVs (issue #219 removed the per-cell layer
+subscripts). That appendix table also lists the layers of the fine-tuned
+reference rows, read from the same comparison CSVs, so the fine-tuning ceiling
+table (``finetune_ceiling.py``) prints plain cells too and points here.
 
 Below the six model rows sits a reference block (issue #118): the supervised
 fine-tuning ceilings, scored on the same split, the same held-out test set and
@@ -194,9 +199,7 @@ def best_rows(
     return pd.DataFrame(rows)
 
 
-def format_cells(
-    values: Sequence[float], layers: Sequence[int], fmt: str
-) -> List[str]:
+def format_cells(values: Sequence[float], fmt: str) -> List[str]:
     """Format one metric block of a row, bolding every cell at the block maximum.
 
     Ties are bolded together. mT5-base reaches exactly the same assignment
@@ -205,46 +208,36 @@ def format_cells(
     """
     best = max(values)
     cells = []
-    for value, layer in zip(values, layers):
+    for value in values:
         text = format(value, fmt)
         if value == best:
             text = f"\\textbf{{{text}}}"
-        cells.append(f"{text}\\,\\textsubscript{{{int(layer)}}}")
+        cells.append(text)
     return cells
 
 
-def finetune_cells(
-    values: Sequence[float], layers: Sequence[float], fmt: str
-) -> List[str]:
+def finetune_cells(values: Sequence[float], fmt: str) -> List[str]:
     """Format a fine-tuning ceiling block, with empty cells where SIF has no run."""
     present = [v for v in values if not math.isnan(v)]
     best = max(present) if present else float("nan")
     cells = []
-    for value, layer in zip(values, layers):
+    for value in values:
         if math.isnan(value):
             cells.append("--")
             continue
         text = format(value, fmt)
         if value == best:
             text = f"\\textbf{{{text}}}"
-        cells.append(f"{text}\\,\\textsubscript{{{int(layer)}}}")
+        cells.append(text)
     return cells
 
 
 NAN = float("nan")
 
 
-def _finetune_row(
-    finetune: pd.DataFrame,
-    label: str,
-    left_col: str,
-    right_col: str,
-    layer_col: str,
-    fmt: str,
-    scale: float,
-) -> str:
-    """One table row for the ceiling, its base value under Base and ABTT under ABTT."""
-    left_values, right_values, layers = [], [], []
+def _finetune_variant_rows(finetune: pd.DataFrame, label: str) -> List[pd.Series]:
+    """The Base and ABTT CSV rows of one ceiling, in that order, checked."""
+    out = []
     for csv_label, method in finetune_variants(label):
         rows = finetune[finetune["system"] == csv_label]
         if rows.empty:
@@ -254,16 +247,29 @@ def _finetune_row(
             raise SystemExit(
                 f"{csv_label!r} is method {row['method']!r}, expected {method!r}"
             )
+        out.append(row)
+    return out
+
+
+def _finetune_row(
+    finetune: pd.DataFrame,
+    label: str,
+    left_col: str,
+    right_col: str,
+    fmt: str,
+    scale: float,
+) -> str:
+    """One table row for the ceiling, its base value under Base and ABTT under ABTT."""
+    left_values, right_values = [], []
+    for row in _finetune_variant_rows(finetune, label):
         left_values.append(float(row[left_col]) * scale)
         right_values.append(float(row[right_col]) * scale)
-        layers.append(float(row[layer_col]))
 
     # Column order is Base, SIF, ABTT, SIF+ABTT; the ceiling has no SIF run.
     order = [left_values[0], NAN, left_values[1], NAN]
     order_right = [right_values[0], NAN, right_values[1], NAN]
-    cell_layers = [layers[0], NAN, layers[1], NAN]
-    left = finetune_cells(order, cell_layers, fmt)
-    right = finetune_cells(order_right, cell_layers, fmt)
+    left = finetune_cells(order, fmt)
+    right = finetune_cells(order_right, fmt)
     return " & ".join([label] + left + right) + r" \\"
 
 
@@ -274,7 +280,6 @@ def reference_rows(
     lexical_right_col: str,
     finetune_left_col: str,
     finetune_right_col: str,
-    finetune_layer_col: str,
     fmt: str,
     scale: float,
 ) -> List[str]:
@@ -296,7 +301,6 @@ def reference_rows(
                 label,
                 finetune_left_col,
                 finetune_right_col,
-                finetune_layer_col,
                 fmt,
                 scale,
             )
@@ -359,9 +363,8 @@ def render_table(
             best[(best["_model_id"] == model_id) & (best["_method"] == method)].iloc[0]
             for method, _ in METHODS
         ]
-        layers = [r["layer"] for r in rows]
-        left = format_cells([r[left_col] * scale for r in rows], layers, fmt)
-        right = format_cells([r[right_col] * scale for r in rows], layers, fmt)
+        left = format_cells([r[left_col] * scale for r in rows], fmt)
+        right = format_cells([r[right_col] * scale for r in rows], fmt)
         lines.append(" & ".join([display] + left + right) + r" \\")
 
     lines += list(reference_lines)
@@ -372,6 +375,86 @@ def render_table(
         f"\\caption{{{caption}}}",
         f"\\label{{{label}}}",
         r"\end{table*}",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+# --- the selected-layers appendix table (issue #219) ------------------------
+
+
+def _model_layers(best: pd.DataFrame, model_id: str) -> List[str]:
+    """The train-selected layer of each setting for one zero-shot model."""
+    return [
+        str(int(best[(best["_model_id"] == model_id) & (best["_method"] == method)]
+                .iloc[0]["layer"]))
+        for method, _ in METHODS
+    ]
+
+
+def _finetune_layers(finetune: pd.DataFrame, label: str, layer_col: str) -> List[str]:
+    """Base and ABTT layers of one ceiling in the four-column order, SIF empty."""
+    base, abtt = _finetune_variant_rows(finetune, label)
+    return [str(int(base[layer_col])), "--", str(int(abtt[layer_col])), "--"]
+
+
+def selected_layers_caption() -> str:
+    return (
+        "Train-selected layer behind every cell of Tables~\\ref{tab:taskA_headline} "
+        "and~\\ref{tab:taskB_headline}. For each model and post-processing setting, "
+        "the Task A layer has the highest training-set AUROC and the Task B layer "
+        "the highest training-set directory accuracy at rank 1; the test scores in "
+        "those tables are read at these layers, so no layer is chosen on test. "
+        "Layer 1 is the first transformer block. The fine-tuned rows below the rule "
+        "have no SIF setting, and Table~\\ref{tab:finetune_ceiling} reads each of "
+        "its rows at the layer given here."
+    )
+
+
+def render_selected_layers_table(
+    best_a: pd.DataFrame, best_b: pd.DataFrame, finetune: pd.DataFrame
+) -> str:
+    """One compact table of the layer behind every headline cell.
+
+    Same row order as the headline tables (six models, a rule, the fine-tuned
+    ceilings), and the same four settings across, once per task. ``best_a``
+    and ``best_b`` are the frames the two headline tables are rendered from,
+    so the layers here are the layers there by construction; the fine-tuned
+    layers come from the same comparison CSVs as the reference rows.
+    """
+    lines = [
+        HEADER.rstrip("\n"),
+        r"\begin{table}[t]",
+        r"\centering",
+        r"\small",
+        r"\setlength{\tabcolsep}{5pt}",
+        r"\begin{tabular}{lrrrrrrrr}",
+        r"\toprule",
+        r"& \multicolumn{4}{c}{\textbf{Task A layer}} "
+        r"& \multicolumn{4}{c}{\textbf{Task B layer}} \\",
+        r"\cmidrule(lr){2-5}\cmidrule(lr){6-9}",
+        r"\textbf{Model} & "
+        + " & ".join(label for _, label in METHODS)
+        + " & "
+        + " & ".join(label for _, label in METHODS)
+        + r" \\",
+        r"\midrule",
+    ]
+    for model_id, display in MODELS:
+        cells = _model_layers(best_a, model_id) + _model_layers(best_b, model_id)
+        lines.append(" & ".join([display] + cells) + r" \\")
+    lines.append(r"\midrule")
+    for label in finetune_labels(finetune):
+        cells = (
+            _finetune_layers(finetune, label, "taskA_layer")
+            + _finetune_layers(finetune, label, "taskB_layer")
+        )
+        lines.append(" & ".join([label] + cells) + r" \\")
+    lines += [
+        r"\bottomrule",
+        r"\end{tabular}",
+        f"\\caption{{{selected_layers_caption()}}}",
+        r"\label{tab:selected_layers}",
+        r"\end{table}",
     ]
     return "\n".join(lines) + "\n"
 
@@ -615,8 +698,8 @@ def task_a_caption(
     return (
         "Task A pairwise duplicate detection for all six models under four "
         "post-processing settings. Each cell is a test-set score at the layer "
-        "chosen by training-set AUROC, given as the subscript; ABTT uses $D$ "
-        "tuned on train. Baseline AUROC spans "
+        "chosen by training-set AUROC, listed in Table~\\ref{tab:selected_layers}; "
+        "ABTT uses $D$ tuned on train. Baseline AUROC spans "
         f"{base.min():.3f} to {base.max():.3f}, and ABTT lifts every model into a "
         f"{abtt.min():.3f} to {abtt.max():.3f} band. Cosine gap is defined in "
         "Figure~\\ref{fig:gap}. Per-layer "
@@ -643,7 +726,8 @@ def task_b_caption(
     return (
         "Task B autonomous routing for all six models under four post-processing "
         "settings, in percent. Each cell is a test-set score at the layer chosen "
-        "by training-set directory accuracy at rank 1, given as the subscript. "
+        "by training-set directory accuracy at rank 1, listed in "
+        "Table~\\ref{tab:selected_layers}. "
         "Assignment accuracy scores the existing-versus-new decision alone, "
         "comparing each file's maximum cosine against the train-fit threshold "
         "$\\tau$; a degenerate threshold that routes everything as existing "
@@ -694,7 +778,6 @@ def main() -> None:
             lexical_right_col="gap",
             finetune_left_col="taskA_aucroc",
             finetune_right_col="taskA_cosine_gap",
-            finetune_layer_col="taskA_layer",
             fmt=".3f",
             scale=1.0,
         ),
@@ -720,13 +803,16 @@ def main() -> None:
             lexical_right_col="dir_acc_at_1",
             finetune_left_col="taskB_assignment_acc",
             finetune_right_col="taskB_dir_acc_at_1",
-            finetune_layer_col="taskB_layer",
             fmt=".1f",
             scale=100.0,
         ),
     )
     (out_dir / "taskB_headline.tex").write_text(task_b)
     print(f"Wrote {out_dir / 'taskB_headline.tex'}")
+
+    layers = render_selected_layers_table(best_a, best_b, finetune)
+    (out_dir / "selected_layers.tex").write_text(layers)
+    print(f"Wrote {out_dir / 'selected_layers.tex'}")
 
 
 if __name__ == "__main__":

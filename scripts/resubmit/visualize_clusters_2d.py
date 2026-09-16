@@ -7,7 +7,8 @@ layer with the highest ``--layer_select_metric`` (default ``train_dir_acc_at_1``
 under ``--layer_select_method`` (default ``abtt_optimal``) in
 ``runs/active/resubmit/results/phase_resubmit_results.csv``, through the same
 ``train_selected_layers`` helper as the headline tables, so the panels sit at the
-ABTT subscript of ``tables/taskB_headline.tex``. The old ``--best_layer_csv`` input,
+layer behind the ABTT cell of ``tables/taskB_headline.tex`` (the Task B ABTT
+column of ``tables/selected_layers.tex``). The old ``--best_layer_csv`` input,
 ``taskA_per_model_summary.csv``, was the test-set argmax across methods and is gone.
 
 Pipeline per (model, method):

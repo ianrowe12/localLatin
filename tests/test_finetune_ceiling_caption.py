@@ -364,3 +364,17 @@ def test_load_extra_section_reads_the_csvs_and_the_saved_facts(tmp_path):
 def test_load_extra_section_refuses_a_malformed_spec(tmp_path):
     with pytest.raises(SystemExit, match="display_name"):
         ceiling.load_extra_section("LaTa:finetune_lata", tmp_path)
+
+
+# --- plain cells; layers live in the appendix table (#219) ------------------
+
+
+def test_cells_are_plain_and_the_caption_points_at_the_selected_layers_table(tmp_path):
+    facts, _, _ = build_facts({"selected_epoch": 7, "epochs_run": 7})
+    tex = render(tmp_path, facts)
+    assert r"\textsubscript" not in tex
+    assert "subscript" not in tex
+    row = next(line for line in tex.splitlines() if line.startswith("LaTa (fine-tuned) &"))
+    assert row == r"LaTa (fine-tuned) & 0.984 & 0.384 & 82.6 & 80.8 \\"
+    caption = tex.split(r"\caption{", 1)[1]
+    assert "The selected layers are listed in Table~\\ref{tab:selected_layers}." in caption
