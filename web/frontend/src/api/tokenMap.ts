@@ -114,6 +114,16 @@ export interface TokenMapResponse {
   // --- Word-level display (issue #211) ---
   query_words?: WordSpan[]
   candidate_words?: WordSpan[]
+  /**
+   * How many leading words the word grids below cover.
+   *
+   * The word lists are the whole file, so they can be walked against the text
+   * on screen; the grids stop at the last word the model read, because a model
+   * truncates and everything past that point would be a row of zeros. A word
+   * at or beyond this index carries no highlight.
+   */
+  query_words_scored?: number
+  candidate_words_scored?: number
   /** "text" | "markers" | "pieces" — how the pieces were grouped. */
   word_segmentation?: string | null
   /** "sum" (default) or "max". */

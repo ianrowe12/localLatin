@@ -60,6 +60,26 @@ describe('alignWordsToTokens', () => {
   it('returns no pairing at all when there are no words', () => {
     expect(alignWordsToTokens([], tokens(['Episcopus']))).toEqual([-1])
   })
+
+  it('withholds the highlight past the words the grids cover', () => {
+    // The response keeps the whole word list so the walk still lines up, and
+    // reports how far the matrices actually reach: the model read two words of
+    // this file. The third is a word on screen with no row behind it.
+    const map = alignWordsToTokens(
+      words(['Episcopus', 'aut', 'presbiter', 'aut']),
+      tokens(['Episcopus', 'aut', 'presbiter', 'aut']),
+      2,
+    )
+    expect(map).toEqual([0, 1, -1, -1])
+  })
+
+  it('leaves the pairing alone when no bound is given', () => {
+    const map = alignWordsToTokens(
+      words(['Episcopus', 'aut']),
+      tokens(['Episcopus', 'aut']),
+    )
+    expect(map).toEqual([0, 1])
+  })
 })
 
 describe('matrixOverTokens', () => {

@@ -56,10 +56,16 @@ export function normalizeWord(text: string): string {
  * highlight backwards. Unmatched on either side is normal and harmless —
  * punctuation tokens on the query side, and every word past the model's
  * truncation point — and shows up as no highlight rather than a wrong one.
+ *
+ * `scoredWords` is the response's `query_words_scored` / `candidate_words_scored`:
+ * the word grids stop there, because the model stopped reading there. A word at
+ * or beyond it still takes part in the walk, so the words after it keep lining
+ * up, but carries no highlight.
  */
 export function alignWordsToTokens(
   words: WordSpanLike[],
   tokens: DisplayTokenLike[],
+  scoredWords?: number,
 ): number[] {
   const out = new Array<number>(tokens.length).fill(-1)
   if (words.length === 0) return out
@@ -80,7 +86,8 @@ export function alignWordsToTokens(
       }
     }
     if (found < 0) continue
-    out[ti] = found
+    // The walk advances either way; only the highlight is withheld.
+    out[ti] = scoredWords !== undefined && found >= scoredWords ? -1 : found
     wi = found + 1
   }
   return out
