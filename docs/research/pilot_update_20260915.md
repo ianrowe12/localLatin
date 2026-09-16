@@ -86,7 +86,7 @@ fragment already starts is shown in the left-hand panel. Tell us if you hit that
 and think the two really are different sources; merging or splitting groups is
 not something the app can do, so it needs a decision rather than a click.
 
-## Highlighting (issue #211)
+## Highlighting
 
 The highlighting now marks whole words instead of the pieces a model cuts them
 into, so a match on `Episcopus` is shown as `Episcopus` rather than as `Epi` and
