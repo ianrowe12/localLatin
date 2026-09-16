@@ -52,6 +52,7 @@ jobs:
             src
             tests
             web
+            overleaf_drafts/tables
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v6

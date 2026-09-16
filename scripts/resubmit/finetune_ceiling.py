@@ -997,15 +997,19 @@ class CeilingSection:
 
 
 def _row_tex(row: pd.Series) -> str:
+    """One plain-number row. The train-selected layers behind the cells
+    (``taskA_layer``, ``taskB_layer``) are not printed here: since issue #219
+    they live in the appendix table ``tab:selected_layers`` that
+    ``build_headline_tables.py`` builds from the same comparison CSV."""
     def fmt(x: float, nd: int = 3) -> str:
         return f"{x:.{nd}f}"
 
     name = str(row["system"]).replace("_", r"\_")
     return (
-        f"{name} & {fmt(row['taskA_aucroc'])}\\,\\textsubscript{{{row['taskA_layer']}}} "
-        f"& {fmt(row['taskA_cosine_gap'])}\\,\\textsubscript{{{row['taskA_layer']}}} "
-        f"& {fmt(100 * row['taskB_assignment_acc'], 1)}\\,\\textsubscript{{{row['taskB_layer']}}} "
-        f"& {fmt(100 * row['taskB_dir_acc_at_1'], 1)}\\,\\textsubscript{{{row['taskB_layer']}}} \\\\"
+        f"{name} & {fmt(row['taskA_aucroc'])} "
+        f"& {fmt(row['taskA_cosine_gap'])} "
+        f"& {fmt(100 * row['taskB_assignment_acc'], 1)} "
+        f"& {fmt(100 * row['taskB_dir_acc_at_1'], 1)} \\\\"
     )
 
 
@@ -1103,8 +1107,8 @@ def write_tex(sections: Sequence[CeilingSection], path: Path) -> None:
         r"until this evaluation. Task A columns are test AUROC and cosine gap at the "
         r"layer chosen by train AUROC; Task B columns are test assignment accuracy and "
         r"directory accuracy at rank 1, in percent, at the layer chosen by train "
-        r"directory accuracy, with $\tau$ learned on train. Layer indices are "
-        r"subscripts."
+        r"directory accuracy, with $\tau$ learned on train. The selected layers "
+        r"are listed in Table~\ref{tab:selected_layers}."
     )
     for sec in sections:
         if sec.facts is not None:

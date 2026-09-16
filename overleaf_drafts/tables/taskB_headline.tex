@@ -9,18 +9,18 @@
 \cmidrule(lr){2-5}\cmidrule(lr){6-9}
 \textbf{Model} & Base & SIF & ABTT & SIF+ABTT & Base & SIF & ABTT & SIF+ABTT \\
 \midrule
-LaTa & 73.8\,\textsubscript{1} & 83.2\,\textsubscript{1} & 88.5\,\textsubscript{8} & \textbf{90.2}\,\textsubscript{12} & 72.1\,\textsubscript{1} & 81.8\,\textsubscript{1} & 86.1\,\textsubscript{8} & \textbf{88.2}\,\textsubscript{12} \\
-PhilTa & 70.9\,\textsubscript{1} & 79.0\,\textsubscript{1} & 91.1\,\textsubscript{1} & \textbf{91.4}\,\textsubscript{1} & 69.3\,\textsubscript{1} & 77.7\,\textsubscript{1} & 88.3\,\textsubscript{1} & \textbf{88.9}\,\textsubscript{1} \\
-mT5-base & 47.2\,\textsubscript{12} & 54.5\,\textsubscript{1} & \textbf{90.3}\,\textsubscript{1} & \textbf{90.3}\,\textsubscript{2} & 46.6\,\textsubscript{12} & 54.1\,\textsubscript{1} & \textbf{88.5}\,\textsubscript{1} & 87.5\,\textsubscript{2} \\
-LaBSE & 83.3\,\textsubscript{11} & 83.4\,\textsubscript{12} & \textbf{90.8}\,\textsubscript{11} & 89.6\,\textsubscript{11} & 81.5\,\textsubscript{11} & 81.9\,\textsubscript{12} & \textbf{88.5}\,\textsubscript{11} & 86.9\,\textsubscript{11} \\
-Qwen3-0.6B & 82.3\,\textsubscript{28} & 76.0\,\textsubscript{27} & \textbf{91.5}\,\textsubscript{5} & 90.8\,\textsubscript{5} & 80.3\,\textsubscript{28} & 74.2\,\textsubscript{27} & \textbf{89.4}\,\textsubscript{5} & 88.6\,\textsubscript{5} \\
-KaLM-mini & 87.5\,\textsubscript{23} & 85.7\,\textsubscript{22} & \textbf{91.7}\,\textsubscript{3} & 90.8\,\textsubscript{1} & 85.9\,\textsubscript{23} & 84.0\,\textsubscript{22} & \textbf{89.4}\,\textsubscript{3} & 88.0\,\textsubscript{1} \\
+LaTa & 73.8 & 83.2 & 88.5 & \textbf{90.2} & 72.1 & 81.8 & 86.1 & \textbf{88.2} \\
+PhilTa & 70.9 & 79.0 & 91.1 & \textbf{91.4} & 69.3 & 77.7 & 88.3 & \textbf{88.9} \\
+mT5-base & 47.2 & 54.5 & \textbf{90.3} & \textbf{90.3} & 46.6 & 54.1 & \textbf{88.5} & 87.5 \\
+LaBSE & 83.3 & 83.4 & \textbf{90.8} & 89.6 & 81.5 & 81.9 & \textbf{88.5} & 86.9 \\
+Qwen3-0.6B & 82.3 & 76.0 & \textbf{91.5} & 90.8 & 80.3 & 74.2 & \textbf{89.4} & 88.6 \\
+KaLM-mini & 87.5 & 85.7 & \textbf{91.7} & 90.8 & 85.9 & 84.0 & \textbf{89.4} & 88.0 \\
 \midrule
-LaTa (fine-tuned) & 83.4\,\textsubscript{12} & -- & \textbf{87.8}\,\textsubscript{12} & -- & 81.6\,\textsubscript{12} & -- & \textbf{85.2}\,\textsubscript{12} & -- \\
-Qwen3-0.6B (fine-tuned) & 91.4\,\textsubscript{28} & -- & \textbf{92.1}\,\textsubscript{27} & -- & 90.8\,\textsubscript{28} & -- & \textbf{91.4}\,\textsubscript{27} & -- \\
-KaLM-mini (fine-tuned) & 92.4\,\textsubscript{24} & -- & \textbf{93.4}\,\textsubscript{24} & -- & 91.7\,\textsubscript{24} & -- & \textbf{92.5}\,\textsubscript{24} & -- \\
+LaTa (fine-tuned) & 83.4 & -- & \textbf{87.8} & -- & 81.6 & -- & \textbf{85.2} & -- \\
+Qwen3-0.6B (fine-tuned) & 91.4 & -- & \textbf{92.1} & -- & 90.8 & -- & \textbf{91.4} & -- \\
+KaLM-mini (fine-tuned) & 92.4 & -- & \textbf{93.4} & -- & 91.7 & -- & \textbf{92.5} & -- \\
 \bottomrule
 \end{tabular}
-\caption{Task B autonomous routing for all six models under four post-processing settings, in percent. Each cell is a test-set score at the layer chosen by training-set directory accuracy at rank 1, given as the subscript. Assignment accuracy scores the existing-versus-new decision alone, comparing each file's maximum cosine against the train-fit threshold $\tau$; a degenerate threshold that routes everything as existing already attains the 62.4 percent class prior. Directory accuracy at rank 1 requires the correct directory, so read the two columns together. Per-layer grids: Appendix Tables~\ref{tab:taskB_routing_main}, \ref{tab:taskB_routing_appendix}, and~\ref{tab:taskB_routing_appendix_sif}. Below the rule, reference systems on the same split with the same evaluation code: LaTa, Qwen3-0.6B, and KaLM-mini fine-tuned contrastively on 499 of the 565 positive train pairs (a 28-directory dev carve takes the rest), a ceiling at this training budget (setup: Appendix~\ref{app:reference_systems}). The fine-tuned encoders with ABTT sit below every zero-shot ABTT cell for LaTa (87.8 and 85.2), above every zero-shot ABTT cell for Qwen3-0.6B (92.1 and 91.4), and above every zero-shot ABTT cell for KaLM-mini (93.4 and 92.5), against cells spanning 88.5 to 91.7 and 86.1 to 89.4.}
+\caption{Task B autonomous routing for all six models under four post-processing settings, in percent. Each cell is a test-set score at the layer chosen by training-set directory accuracy at rank 1, listed in Table~\ref{tab:selected_layers}. Assignment accuracy scores the existing-versus-new decision alone, comparing each file's maximum cosine against the train-fit threshold $\tau$; a degenerate threshold that routes everything as existing already attains the 62.4 percent class prior. Directory accuracy at rank 1 requires the correct directory, so read the two columns together. Per-layer grids: Appendix Tables~\ref{tab:taskB_routing_main}, \ref{tab:taskB_routing_appendix}, and~\ref{tab:taskB_routing_appendix_sif}. Below the rule, reference systems on the same split with the same evaluation code: LaTa, Qwen3-0.6B, and KaLM-mini fine-tuned contrastively on 499 of the 565 positive train pairs (a 28-directory dev carve takes the rest), a ceiling at this training budget (setup: Appendix~\ref{app:reference_systems}). The fine-tuned encoders with ABTT sit below every zero-shot ABTT cell for LaTa (87.8 and 85.2), above every zero-shot ABTT cell for Qwen3-0.6B (92.1 and 91.4), and above every zero-shot ABTT cell for KaLM-mini (93.4 and 92.5), against cells spanning 88.5 to 91.7 and 86.1 to 89.4.}
 \label{tab:taskB_headline}
 \end{table*}
