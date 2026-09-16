@@ -185,6 +185,7 @@ fine-tuning, not by the harness.
 
 Test-set scores. Layer index is the subscript; Task A and Task B select layers
 independently, both on train metrics. Task B figures are percentages.
+(The paper's `tables/finetune_ceiling.tex` prints plain cells since issue #219; its layers are listed in `tables/selected_layers.tex`, `tab:selected_layers`.)
 
 | System | Task A AUROC | Cosine gap | Assignment acc. | Dir. acc.@1 |
 |---|---|---|---|---|

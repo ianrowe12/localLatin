@@ -173,6 +173,8 @@ the five-seed test mean over every method and layer, which landed on `sif_abtt_f
 five-seed SIF+ABTT top-1 cells are 88.9 / 89.8 / 89.3 / 90.6 / 89.3 / 89.3, a 1.7-point spread.
 `tests/test_taskb_mseed_selection.py` fails if either generator drifts back to a test-set rule.
 
+Note (issue #219): the headline tables and `tables/finetune_ceiling.tex` no longer print the layer as a cell subscript; the same layers are listed in `tables/selected_layers.tex` (`tab:selected_layers`), written by `build_headline_tables.py` in the same run, so "subscript" below means that table's cell.
+
 ## Appendix selection rule (issue #184)
 
 Three appendix artefacts still selected layers on the test split after #175, against the
