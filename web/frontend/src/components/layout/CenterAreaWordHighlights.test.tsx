@@ -55,7 +55,7 @@ function oneHotRows(rows: number, cols: number, hot: number): number[][] {
 
 let served: URL[] = []
 
-function installFetch(): void {
+function installFetch({ words = true }: { words?: boolean } = {}): void {
   served = []
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input)
@@ -122,20 +122,27 @@ function installFetch(): void {
           },
         },
         // The display half of the fix: words, the pieces behind them, and the
-        // same grid aggregated to word x word.
-        query_words: [
-          { idx: 0, text: 'Episcopus', piece_indices: [0, 1, 2], score: 1, score_pos: 1, score_neg: 0, is_content: true },
-          { idx: 1, text: 'aut', piece_indices: [3], score: 0, score_pos: 0, score_neg: 0, is_content: true },
-          { idx: 2, text: 'presbiter', piece_indices: [4, 5], score: 0, score_pos: 0, score_neg: 0, is_content: true },
-        ],
-        candidate_words: [
-          { idx: 0, text: 'sacerdotes', piece_indices: [0, 1], score: 1, score_pos: 1, score_neg: 0, is_content: true },
-          { idx: 1, text: 'ministri', piece_indices: [2], score: 0, score_pos: 0, score_neg: 0, is_content: true },
-        ],
-        word_segmentation: 'text',
-        word_aggregation: 'sum',
-        word_similarity_matrix: oneHotRows(3, 2, HOT_WORD),
-        word_pair_matrices: { ig: { [VARIANT]: oneHotRows(3, 2, HOT_WORD) } },
+        // same grid aggregated to word x word. Omitted entirely when `words`
+        // is false, which is the artifact a bulk gallery row serves.
+        ...(words
+          ? {
+              query_words: [
+                { idx: 0, text: 'Episcopus', piece_indices: [0, 1, 2], score: 1, score_pos: 1, score_neg: 0, is_content: true },
+                { idx: 1, text: 'aut', piece_indices: [3], score: 0, score_pos: 0, score_neg: 0, is_content: true },
+                { idx: 2, text: 'presbiter', piece_indices: [4, 5], score: 0, score_pos: 0, score_neg: 0, is_content: true },
+              ],
+              candidate_words: [
+                { idx: 0, text: 'sacerdotes', piece_indices: [0, 1], score: 1, score_pos: 1, score_neg: 0, is_content: true },
+                { idx: 1, text: 'ministri', piece_indices: [2], score: 0, score_pos: 0, score_neg: 0, is_content: true },
+              ],
+              query_words_scored: 3,
+              candidate_words_scored: 2,
+              word_segmentation: 'text',
+              word_aggregation: 'sum',
+              word_similarity_matrix: oneHotRows(3, 2, HOT_WORD),
+              word_pair_matrices: { ig: { [VARIANT]: oneHotRows(3, 2, HOT_WORD) } },
+            }
+          : {}),
       })
     }
 
@@ -280,6 +287,27 @@ describe('word-level highlighting (issue #211)', () => {
     await waitFor(() =>
       expect((togglePieces() as HTMLInputElement).checked).toBe(true),
     )
+  })
+
+  it('keeps the manuscript on screen when the artifact carries no words', async () => {
+    // A bulk gallery artifact, and every `dev:mock` session: pieces, no word
+    // spans. The panels are the reviewer's document, so they stay the
+    // reviewer's document -- and the piece grid, which is indexed by piece, is
+    // not painted over them by index, which is the bug this change removes.
+    installFetch({ words: false })
+    renderApp()
+
+    await waitFor(() => expect(screen.getByText('presbiter')).toBeTruthy())
+
+    expect(screen.getByText('Episcopus')).toBeTruthy()
+    expect(screen.queryByText('##scop')).toBeNull()
+    expect(screen.queryByText('Epi')).toBeNull()
+    // Not `aut`, which merely shares an index with the hot piece, and not
+    // anything else either.
+    expect(highlightedQueryWords()).toEqual([])
+    // One view, so no switch: two positions that looked identical would be
+    // worse than none.
+    expect(screen.queryByLabelText('Show pieces')).toBeNull()
   })
 
   it('asks for the attribution of the variant on screen', async () => {

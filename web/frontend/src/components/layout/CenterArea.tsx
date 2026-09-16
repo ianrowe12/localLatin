@@ -690,8 +690,16 @@ export default function CenterArea() {
     if (!data?.query_words?.length || !data?.candidate_words?.length) return null
     if (!qTokens?.length || !candidateTokens?.length) return null
     return {
-      query: alignWordsToTokens(data.query_words, qTokens),
-      candidate: alignWordsToTokens(data.candidate_words, candidateTokens),
+      query: alignWordsToTokens(
+        data.query_words,
+        qTokens,
+        data.query_words_scored,
+      ),
+      candidate: alignWordsToTokens(
+        data.candidate_words,
+        candidateTokens,
+        data.candidate_words_scored,
+      ),
     }
   }, [witnessArtifact, queryDetail.data?.tokens, candidateTokens])
 
@@ -759,23 +767,34 @@ export default function CenterArea() {
    * The toggle appears only where both views exist.
    *
    * An artifact with no word spans (anything served before this shipped, and
-   * the mock fixtures) keeps the piece behaviour and offers no control, rather
-   * than a switch whose two positions look identical.
+   * two of the three mock pairs) offers no control, rather than a switch one of
+   * whose positions has nothing behind it.
    */
   const pieceViewAvailable = piecePair !== null && wordDisplay !== null
-  // A pair with no pieces to show keeps the word view even if the toggle was
-  // left on by the previous pair, rather than silently reverting to a grid
-  // indexed by units that are not on screen.
-  const showingPieces = wordDisplay === null || (showPieces && piecePair !== null)
-  const panelTokenMap = showingPieces ? effectiveTokenMap : wordDisplay
+  // Pieces only where the reviewer asked for them AND both views exist. A pair
+  // with no word view never flips to pieces on its own: the panels are the
+  // manuscript, and swapping the reader's text for `Epi ##scop ##us` because an
+  // artifact happens to carry no word spans is not a fallback, it is a
+  // different document. That state is real -- a method change refetches, and
+  // the bulk artifacts carry IG only -- and it is transient.
+  const showingPieces = showPieces && pieceViewAvailable
   const queryPanelTokens =
     showingPieces && piecePair ? piecePair.query : queryDetail.data?.tokens
   const candidatePanelTokens =
     showingPieces && piecePair ? piecePair.candidate : candidateTokens
+  // What may be painted over those tokens. Word overlap is lexical and already
+  // indexed by the displayed tokens, so it passes through. The artifact's grids
+  // are indexed by PIECE, and painting them over the reader's words by index is
+  // exactly the bug this change removes, so without a word view they are simply
+  // not painted: no highlight beats a highlight on the wrong word.
+  const panelTokenMap = showingPieces
+    ? effectiveTokenMap
+    : (wordDisplay ?? (lexicalHighlighting ? effectiveTokenMap : null))
 
   // The scope note belongs beside the marks it qualifies, so it is withheld
-  // when the panels are shading nothing at all.
-  const shownAttributionScope = effectiveTokenMap !== null ? attributionScope : null
+  // when the panels are shading nothing at all -- including the case above,
+  // where an artifact with no word spans leaves its piece grids unpainted.
+  const shownAttributionScope = panelTokenMap !== null ? attributionScope : null
 
   // The bar prints the number with a label that says what it covers. The
   // document header prints the same figure as a bare "Similarity", which for a
