@@ -108,4 +108,20 @@ describe('single-pipeline UI (issue #94)', () => {
       expect(targets).toContain('predictions')
     }
   })
+
+  it('describes only controls and blocks that are on the page', () => {
+    // The tour is reviewer-facing copy, and a step describing a retired control
+    // is a false instruction rather than dead code (issues #196, #221). The
+    // "source is not in the list" step now hangs off the pill grid that holds
+    // the blue None control, which is where the only remaining way to start a
+    // group lives.
+    const steps = getReviewTourSteps(false)
+    expect(steps.map((step) => step.target)).toContain('match-options')
+    const prose = steps.map((step) => step.description).join(' ')
+    // The reviewer-directory block is not drawn any more.
+    expect(prose).not.toContain('Reviewer-created directories')
+    // Neither is the red creation button, its naming form or its caption.
+    expect(prose).not.toContain('start a provisional directory')
+    expect(prose).not.toContain('name and confirm')
+  })
 })

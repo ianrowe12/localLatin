@@ -25,13 +25,19 @@ export const DIRECTORY_CREATION_COPY = {
 
   savedHeading: 'Directory saved',
   /**
-   * Deliberately conditional. A directory is scored from the model's q-q
-   * matrix, is never offered to its own members, cannot be scored for an
-   * excluded query, and only the closest few reach any one list, so
-   * "a candidate for every other document" was a promise the app cannot keep.
+   * What is true of a saved grouping, and nothing else.
+   *
+   * It used to end "It can be offered on other documents this model can score,
+   * not on every one" -- deliberately conditional, because a directory is
+   * scored from the model's q-q matrix and only the closest few reach any one
+   * list. Since issue #221 the reviewer-facing page does not draw those
+   * candidates at all, so a reviewer reading this after a key created a group
+   * would be promised something they can no longer see anywhere. What survives
+   * is the fact that actually matters to them, and the one that outlives any
+   * display decision: the group is permanent.
    */
   savedAvailability:
-    'Saved permanently and seeded with this document. It can be offered on other documents this model can score, not on every one.',
+    'Saved permanently under that key, with this document as its first member. It cannot be renamed or removed.',
   savedIndependence: 'Submitting or skipping your assessment does not undo it.',
 } as const
 
@@ -206,8 +212,10 @@ export const NO_MATCH_GUIDANCE =
  * component for a string would invert that. The drift guard is a test that
  * renders the real pill and compares, not a shared import.
  *
- * The count is the MODEL candidates only. A reviewer directory sits at the
- * anchored rank 11, and rejecting the model's answers says nothing about it.
+ * The count is the MODEL candidates only, which since issue #196 is also every
+ * candidate the ranking offers: reviewer directories are not ranked among them,
+ * and since issue #221 they are not drawn on this page at all. Rejecting the
+ * model's answers therefore says nothing about any grouping a colleague made.
  */
 export function noneOptionLabel(modelCandidateCount: number): string {
   return modelCandidateCount === 1
