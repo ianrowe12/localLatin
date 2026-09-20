@@ -33,6 +33,8 @@ import FeedbackPanel from './FeedbackPanel'
 
 const QUERY_ID = 7
 const NEXT_ID = 11
+/** A second fragment the reviewer can open by hand, mid-record. */
+const ELSEWHERE_ID = 9
 const MODEL = 'bowphs_LaTa'
 
 interface SavedRow {
@@ -51,6 +53,16 @@ let latest: SavedRow | null = null
 let nextQueryRequests: string[] = []
 let nextQueryFileId: number | null = NEXT_ID
 let nextQueryFails: Error | null = null
+/** Holds the record in flight, so a test can act while it is still pending. */
+let postGate: Promise<void> | null = null
+let releasePost: () => void = () => {}
+let postAttempts = 0
+
+function holdPost(): void {
+  postGate = new Promise<void>((resolve) => {
+    releasePost = resolve
+  })
+}
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -76,6 +88,8 @@ function installFetch(): void {
   nextQueryRequests = []
   nextQueryFileId = NEXT_ID
   nextQueryFails = null
+  postGate = null
+  postAttempts = 0
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -84,6 +98,8 @@ function installFetch(): void {
 
       if (init?.method === 'POST' && url.pathname === '/api/feedback') {
         const body = JSON.parse(String(init.body)) as Record<string, unknown>
+        postAttempts += 1
+        if (postGate) await postGate
         posted.push(body)
         if (body.outcome !== 'none_of_top_k') return jsonResponse({ success: true })
         const key = typeof body.ccl_key === 'string' ? body.ccl_key.trim() : ''
@@ -131,8 +147,11 @@ function installFetch(): void {
         ])
       }
       if (url.pathname === '/api/feedback/latest') {
+        // Per fragment, like the real route: an answer recorded on one is not
+        // a prefill for another.
+        const asked = Number(url.searchParams.get('query_id'))
         return jsonResponse(
-          latest === null
+          latest === null || asked !== QUERY_ID
             ? null
             : {
                 id: 99,
@@ -157,9 +176,10 @@ function installFetch(): void {
         return jsonResponse({ file_id: nextQueryFileId })
       }
       if (url.pathname.endsWith('/predictions')) {
+        const asked = Number(url.pathname.match(/\/api\/query\/(\d+)\//)?.[1])
         return jsonResponse({
-          file_id: QUERY_ID,
-          filename: 'query-7.txt',
+          file_id: Number.isFinite(asked) ? asked : QUERY_ID,
+          filename: `query-${asked}.txt`,
           model: MODEL,
           variant: 'sif_abtt',
           status: 'ok',
@@ -183,8 +203,19 @@ function SelectQuery() {
 }
 
 function QueryProbe() {
-  const { activeQueryId } = useApp()
-  return <span data-testid="active-query">{String(activeQueryId)}</span>
+  const { activeQueryId, setActiveQueryId } = useApp()
+  return (
+    <>
+      <span data-testid="active-query">{String(activeQueryId)}</span>
+      <button
+        type="button"
+        data-testid="go-elsewhere"
+        onClick={() => setActiveQueryId(ELSEWHERE_ID)}
+      >
+        open another fragment
+      </button>
+    </>
+  )
 }
 
 function renderPanel() {
@@ -378,6 +409,63 @@ describe('coming back to a fragment this reviewer already answered', () => {
   })
 })
 
+describe('the Skip hint', () => {
+  it('is not asked for over an answer that is already recorded', async () => {
+    renderPanel()
+    expect(screen.queryByTestId('skip-needs-note')).toBeTruthy()
+
+    await recordNone('CTOU.567.16')
+    await waitFor(() => expect(primaryAction().disabled).toBe(false))
+    // "Add a note ... so the PI can follow up" is what a deferral needs. Beside
+    // a finished answer and a live Next it reads as a demand for work already
+    // done.
+    expect(screen.queryByTestId('skip-needs-note')).toBeNull()
+  })
+
+  it('comes back if Skip is actually pressed there', async () => {
+    renderPanel()
+    await recordNone()
+    await waitFor(() => expect(primaryAction().disabled).toBe(false))
+
+    await userEvent.click(screen.getByRole('button', { name: 'Skip' }))
+    expect(screen.getByTestId('skip-needs-note')).toBeTruthy()
+    // Refusing the skip is not a save, and not a move.
+    expect(posted).toHaveLength(1)
+    expect(nextQueryRequests).toHaveLength(0)
+  })
+})
+
+describe('a record that answers after the reviewer has moved on', () => {
+  it('touches neither the new fragment\'s draft nor its button', async () => {
+    holdPost()
+    renderPanel()
+    await pressNone()
+    await userEvent.type(screen.getByTestId('ccl-key-input'), 'CTOU.567.16')
+    await userEvent.click(screen.getByTestId('none-of-top-k-submit'))
+    await waitFor(() => expect(postAttempts).toBe(1))
+
+    // The reviewer opens another fragment and starts typing there.
+    await userEvent.click(screen.getByTestId('go-elsewhere'))
+    await waitFor(() => expect(activeQuery()).toBe(String(ELSEWHERE_ID)))
+    const notes = screen.getByPlaceholderText(/note/i) as HTMLTextAreaElement
+    await userEvent.type(notes, 'hand B throughout')
+
+    releasePost()
+    await waitFor(() => expect(posted).toHaveLength(1))
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    // The answer belongs to the fragment it was made for. Here it must not
+    // clear the unsaved draft, and must not offer a Next for an answer nobody
+    // gave on this fragment.
+    expect((screen.getByPlaceholderText(/note/i) as HTMLTextAreaElement).value).toBe(
+      'hand B throughout',
+    )
+    expect(primaryAction().disabled).toBe(true)
+    expect(primaryAction().textContent).toContain('Submit')
+    expect(nextQueryRequests).toHaveLength(0)
+  })
+})
+
 describe('while the blue form is open', () => {
   it('keeps the button disabled and explains itself in one line', async () => {
     renderPanel()
@@ -387,6 +475,11 @@ describe('while the blue form is open', () => {
     // A disabled button with no explanation reads as a broken app.
     const hint = screen.getByTestId('assessment-primary-blocked')
     expect(hint.textContent).toContain('Record this answer')
+    // And the explanation reaches the control it is about, rather than only
+    // sitting near it on screen.
+    expect(hint.getAttribute('role')).toBe('status')
+    expect(primaryAction().getAttribute('aria-describedby')).toBe(hint.id)
+    expect(hint.id).toBeTruthy()
     expect(nextQueryRequests).toHaveLength(0)
   })
 
@@ -407,5 +500,6 @@ describe('while the blue form is open', () => {
 
     await waitFor(() => expect(primaryAction().disabled).toBe(false))
     expect(screen.queryByTestId('assessment-primary-blocked')).toBeNull()
+    expect(primaryAction().getAttribute('aria-describedby')).toBeNull()
   })
 })

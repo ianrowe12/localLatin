@@ -46,6 +46,11 @@ buttons after recording and the bottom button goes back to "Submit & Next" and
 writes that answer as an ordinary match. Both answers stay in the log; the
 second does not erase the first.
 
+**No more note request over a finished answer.** The line asking for a note
+"so the PI can follow up" belongs to Skip, which is a deferral. It is no longer
+shown once you have recorded an answer and "Next" is live. Skip still needs a
+note, so if you press it there, the line comes back.
+
 **A line of explanation while the blue box is open.** The bottom button is still
 switched off there, and now says why: use "Record this answer" above, or pick a
 candidate. A grey button with no explanation reads as a broken app.

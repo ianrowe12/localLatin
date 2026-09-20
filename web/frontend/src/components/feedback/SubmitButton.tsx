@@ -24,6 +24,15 @@ interface SubmitButtonProps {
    * exactly the receipt a reviewer would act on.
    */
   confirmsSave?: boolean
+  /**
+   * Element id explaining why the button cannot be pressed.
+   *
+   * Wired as `aria-describedby` so the reason reaches a screen reader with the
+   * control it is about: a disabled button whose explanation is only a nearby
+   * paragraph is, to anyone not reading the page by eye, a button that has
+   * simply stopped working.
+   */
+  describedById?: string
 }
 
 export default function SubmitButton({
@@ -33,6 +42,7 @@ export default function SubmitButton({
   skipDisabled,
   label = 'Submit & Next',
   confirmsSave = true,
+  describedById,
 }: SubmitButtonProps) {
   const [showCheck, setShowCheck] = useState(false)
 
@@ -50,6 +60,7 @@ export default function SubmitButton({
         data-testid="assessment-primary-action"
         onClick={handleSubmit}
         disabled={disabled}
+        aria-describedby={describedById}
         className="bg-accent hover:bg-accent-dark text-white px-4 py-2 rounded-lg
                    text-sm font-medium flex items-center gap-2 transition-all
                    disabled:opacity-50 disabled:cursor-not-allowed"

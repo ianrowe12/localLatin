@@ -189,6 +189,9 @@ function readNextQueryId(payload: unknown): number | null | undefined {
   return undefined
 }
 
+/** Ties the disabled primary button to the sentence saying why (issue #221). */
+const PRIMARY_BLOCKED_ID = 'assessment-primary-blocked'
+
 function issueCopy(issue: SelectionIssue): string {
   if (issue.kind === 'vanished') {
     return `Rank #${issue.rank}${
@@ -266,6 +269,10 @@ export default function FeedbackPanel() {
   // Always-current view of the draft map for use inside async callbacks.
   const draftsRef = useRef(drafts)
   draftsRef.current = drafts
+  // The assessment on screen right now, for callbacks that were handed out
+  // while a different one was.
+  const draftKeyRef = useRef(draftKey)
+  draftKeyRef.current = draftKey
 
   const visit = useMemo<AssessmentVisit>(
     () => ({
@@ -625,6 +632,14 @@ export default function FeedbackPanel() {
           // is never a colleague's identification shown as this reviewer's.
           recorded={recordedNoneAnswer}
           onRecorded={() => {
+            // A POST that answers after the reviewer has moved on belongs to
+            // the fragment it was made for and to no other. This closure was
+            // built while `draftKey` was current; `draftKeyRef` is whatever is
+            // current now, and `setNone`/`setNotes`/`recordedNoneHere` all act
+            // on THAT one. Without the comparison, a slow record would clear
+            // the next fragment's unsaved draft and offer a Next for an answer
+            // nobody gave there.
+            if (draftKeyRef.current !== draftKey) return
             // The answer and its prose are on the server now. Closing the form
             // leaves the receipt on screen -- the component keeps it -- and
             // clearing the draft is what the rank path's own save does; leaving
@@ -817,8 +832,16 @@ export default function FeedbackPanel() {
         </p>
       )}
 
-      {(skipNeedsNote || !draft.notes.trim()) && (
-        <p className="text-xs font-ui text-stone-500 dark:text-stone-400">
+      {/* Not shown over an answer that is already recorded (issue #221). The
+          sentence asks for a note "so the PI can follow up", which is what a
+          deferral needs; beside a finished answer and a live Next it reads as
+          a demand for work the reviewer has already done. Skip still needs its
+          note, so pressing it there brings the sentence back. */}
+      {(skipNeedsNote || (!advanceOnly && !draft.notes.trim())) && (
+        <p
+          data-testid="skip-needs-note"
+          className="text-xs font-ui text-stone-500 dark:text-stone-400"
+        >
           Add a note before skipping so the PI can follow up.
         </p>
       )}
@@ -848,6 +871,8 @@ export default function FeedbackPanel() {
           their own notice above. */}
       {noneSelected && (
         <p
+          id={PRIMARY_BLOCKED_ID}
+          role="status"
           data-testid="assessment-primary-blocked"
           className="text-xs font-ui text-stone-500 dark:text-stone-400"
         >
@@ -875,6 +900,7 @@ export default function FeedbackPanel() {
         // decision.
         label={advanceOnly ? 'Next' : undefined}
         confirmsSave={!advanceOnly}
+        describedById={noneSelected ? PRIMARY_BLOCKED_ID : undefined}
         disabled={advanceOnly ? false : !readiness.canSubmit || noneSelected}
         skipDisabled={!activeModel || draftKey === null}
       />
