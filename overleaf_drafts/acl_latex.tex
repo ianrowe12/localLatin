@@ -50,11 +50,41 @@
   Affiliation / Address line 3 \\
   \texttt{email@domain} \\}
 
+% ---------------------------------------------------------------------------
+% CAMERA-READY AUTHOR BLOCK (commented out; do NOT enable under [review]).
+% Under [review] acl.sty prints "Anonymous ACL submission" whatever \author
+% holds, so the placeholder above is what the anonymous PDF needs. When the
+% class option becomes [final] or [preprint], replace the placeholder with
+% the block below after resolving every TODO.
+%
+% TODO(camera-ready): author ORDER is not recorded anywhere in the repo. The
+%   order below is only the order in which issue #173 names people; Ian to
+%   confirm with Prof. Siddique and Prof. Firey.
+% TODO(camera-ready): James Wong attends the paper meetings and reviews the
+%   attribution and related-work sections (docs/meetings/meeting_20260914.md)
+%   but issue #173 does not list him as an author. Confirm whether he is an
+%   author; his line is left commented a second time.
+% TODO(camera-ready): affiliations and e-mail addresses. The only affiliation
+%   on record is Prof. Firey's (issue #173). Do not guess the others.
+%
+% \author{Ian Rowe Rojas \\
+%   TODO affiliation \\
+%   \texttt{TODO email} \\\And
+%   Abigail Firey \\
+%   Department of History \\
+%   University of Kentucky \\
+%   \texttt{TODO email} \\\And
+%   A. B. Siddique \\
+%   TODO affiliation \\
+%   \texttt{TODO email} \\}
+% %  \And James Wong \\ TODO affiliation \\ \texttt{TODO email}
+% ---------------------------------------------------------------------------
+
 \begin{document}
 \maketitle
 
 \begin{abstract}
-Medieval canon law before the twelfth century survives in many compilations, whose manuscripts differ in spelling and in the selection and arrangement of their elements. We introduce a Medieval Latin benchmark of 840 labelled canon-law fragments with 1,705 manuscript witnesses, and we define two tasks on it: pairwise duplicate detection and open-set directory routing. Our question is where inside a pre-trained encoder the retrieval signal lives, why it disappears, and what recovers it. A layerwise analysis of six pre-trained models from three architectures separates two effects that are easy to conflate. Anisotropy is universal across the six models: every model has a layer where the mean cosine between randomly selected passages reaches 0.23 to 0.95, and no baseline layer in any model separates equivalent from non-equivalent passages by more than 0.29 in mean cosine. A mid-depth collapse of retrieval is not universal: the Latin and multilingual T5 encoders fall to AUROC 0.496, 0.538, and 0.654 in their middle layers, while LaBSE, Qwen3-0.6B, and KaLM-mini improve close to monotonically with depth. All-but-the-Top post-processing, fit only on training embeddings, repairs all six. Best-layer AUROC moves into a 0.971 to 0.987 band, the cosine gap rises to between 0.525 and 0.611, and the spread in directory accuracy at rank 1 across models falls from 39.3 points to 3.3. Under the repair, integrated gradients and retrieval-adapted MaRC give a narrow answer: ABTT improves leave-one-out rank faithfulness in five of six LaTa, PhilTa, and mT5-base model-method cells, the sixth a tie, while ERASER-style rationale metrics show mixed effects.
+Medieval canon law before the twelfth century survives in many compilations, whose manuscripts differ in spelling and in the selection and arrangement of their elements. We introduce a Medieval Latin benchmark of 840 expert-labelled canon-law fragments with 1,705 manuscript witnesses, and we define two tasks on it: pairwise duplicate detection and open-set directory routing. Our question is where inside a pre-trained encoder the retrieval signal lives, why it disappears, and what recovers it. A layerwise analysis of six pre-trained models from three architectures separates two effects that are easy to conflate. Anisotropy is universal across the six models: every model has a layer where the mean cosine between randomly selected passages reaches 0.23 to 0.95, and no baseline layer in any model separates equivalent from non-equivalent passages by more than 0.29 in mean cosine. A mid-depth collapse of retrieval is not universal: the Latin and multilingual T5 encoders fall to AUROC 0.496, 0.538, and 0.654 in their middle layers, while LaBSE, Qwen3-0.6B, and KaLM-mini improve close to monotonically with depth. All-but-the-Top post-processing, fit only on training embeddings, repairs all six. Best-layer AUROC moves into a 0.971 to 0.987 band, the cosine gap rises to between 0.525 and 0.611, and the spread in directory accuracy at rank 1 across models falls from 39.3 points to 3.3. Under the repair, integrated gradients and retrieval-adapted MaRC give a narrow answer: ABTT improves leave-one-out rank faithfulness in five of six LaTa, PhilTa, and mT5-base model-method cells, the sixth a tie, while ERASER-style rationale metrics show mixed effects.
 \end{abstract}
 
 \section{Introduction}
@@ -68,7 +98,9 @@ Medieval canon law before the twelfth century survives in many compilations, who
 
 Medieval canon law preserves early records of legislation and judicial opinions in Western Europe. Before the twelfth century it survives not as one stable text but in many compilations, whose manuscripts differ in spelling, wording, fragment boundaries, and transmission history. Deciding whether two passages express the same legal content despite those surface changes drives editorial work: identifying duplicates, analyzing witnesses, and tracing how a text was transmitted.
 
-We study this problem as semantic matching on a benchmark of 840 labelled fragments of Medieval Latin canon law, each a canon or excerpt with one or more manuscript witnesses, 1,705 in all. Task A asks whether two passages express the same meaning. Task B turns the same embeddings into an open-set workflow: route a new passage to an existing directory, or mark it as new. Our question is where inside a pre-trained encoder the retrieval signal lives, why it disappears, and what recovers it.
+Identifying the source of such a passage is expert work. Scribes often left the source out or named the wrong one, so each passage has to be traced to the council, pope, ruler or church father it comes from, and that tracing relies on specialised reference works that few scholars command. The several hundred manuscripts behind the Carolingian Canon Law project \citep{firey2009ccl} still hold thousands of passages with no identified source (Appendix~\ref{app:corpus_provenance}). A system that ranks candidate sources leaves the identification to the expert and shortens the search that precedes it. Each passage identified this way becomes dated, located evidence for historians of law, theology and language.
+
+We study this problem as semantic matching on a benchmark of 840 expert-labelled fragments of Medieval Latin canon law, each a canon or excerpt with one or more manuscript witnesses, 1,705 in all. Task A asks whether two passages express the same meaning. Task B turns the same embeddings into an open-set workflow: route a new passage to an existing directory, or mark it as new. Our question is where inside a pre-trained encoder the retrieval signal lives, why it disappears, and what recovers it.
 
 A final-layer vector cannot answer that, so we work layer by layer, and the layerwise view of six models separates two effects that are often reported together. Anisotropy is universal on this corpus: every model has a layer where pooled passages crowd into a narrow cone, with mean cosine between randomly selected passages reaching 0.23 to 0.95, and no baseline layer of any model separates equivalent from non-equivalent passages by more than 0.29 in mean cosine (Figure~\ref{fig:gap}). A catastrophic mid-depth collapse of retrieval is not universal. LaTa and PhilTa fall to chance in their middle layers and mT5-base loses more than half of its above-chance separation, while LaBSE, Qwen3-0.6B, and KaLM-mini improve close to monotonically with depth.
 
@@ -79,7 +111,7 @@ Geometry diagnoses collapse and recovery but does not select the retrieval layer
 Finally, we compare local explanations of the score before and after the repair. Integrated gradients \citep{sundararajan2017axiomatic} gives a gradient view of token importance and retrieval-adapted MaRC \citep{brinnerzarriess2023marc} a learned-mask view, with MaRC's classification target replaced by the pairwise retrieval cosine; both explain a fixed query-candidate score and stay local diagnostics.
 
 This paper makes four contributions:
-(1) we introduce a benchmark for semantic matching in Medieval Latin canon law, together with a routing task that states the scholar's decision directly: file an unidentified witness under a known fragment, or flag it as new;
+(1) we introduce an expert-labelled benchmark for semantic matching in Medieval Latin canon law, built on the source keys that the Carolingian Canon Law project assigned and verified, together with a routing task that states the scholar's decision directly: file an unidentified witness under a known fragment, or flag it as new;
 (2) we separate, across six models, universal anisotropy from the mid-depth retrieval collapse that only the three T5 encoders show, measuring both with top-PC dominance, effective rank, and cosine concentration;
 (3) we show that ABTT repairs the anisotropy on this corpus without updating parameters, compressing a 39.3-point spread in directory accuracy at rank 1 to 3.3 points, with the largest gains on the T5 encoders; and
 (4) we adapt token attribution to bi-encoder retrieval, comparing a MaRC-style learned mask with integrated gradients at predeclared retrieval-selected layers; on present evidence ABTT improves leave-one-out rank faithfulness in five of six model-view cells, the sixth a tie, while ERASER-style rationale metrics stay mixed.
@@ -91,7 +123,7 @@ This paper makes four contributions:
 \subsection{Task Definition}
 \label{sec:tasks}
 
-The benchmark defines two tasks over the same witnesses and the same pooled embeddings. They differ in what the system has to decide.
+The benchmark defines two tasks over the same witnesses and the same pooled embeddings.
 
 \paragraph{Task A: pairwise duplicate detection.}
 Let $p_1$ and $p_2$ be two passages and let $\equiv$ denote semantic equivalence. The label is $y=1$ if $p_1 \equiv p_2$ and $y=0$ otherwise. The model scores the pair by $\cos(e_{p_1}, e_{p_2})$ over pooled embeddings. Task A uses no directory structure and no threshold at scoring time, and evaluation uses the test $n \times n$ cosine matrix.
@@ -102,7 +134,9 @@ Task B uses the same embeddings in a scholar-facing retrieval workflow: given a 
 \subsection{Dataset}
 \label{sec:dataset}
 
-The material comes from the Carolingian Canon Law project \citep[CCL;][]{firey2009ccl}, an open-access digital edition of early medieval canon-law manuscripts, most of them ninth-century and never edited to modern standards. The project transcribes the manuscripts, almost all by hand, and keys each transcribed canon or excerpt to its source where it is identified: a conciliar canon, a papal decretal, a royal capitulary or a patristic excerpt. We adapt that material into a benchmark. A directory is one labelled fragment, named by its CCL source key, and a file is one manuscript witness of that fragment (one manuscript's copy of it). The transcriptions and the key labels are the project's work; we derive the plain-text files from its TEI-P5 exports (the Text Encoding Initiative's XML standard for scholarly editions) with the labels as supplied, and the split and the two tasks are ours. Appendix~\ref{app:corpus_provenance} gives the transcription workflow, the label taxonomy and the derivation rule.
+The material comes from the Carolingian Canon Law project \citep[CCL;][]{firey2009ccl}, an open-access digital edition of early medieval canon-law manuscripts, most of them ninth-century and never edited to modern standards. The project transcribes the manuscripts, almost all by hand, and gives each transcribed canon or excerpt two identifiers: a location identifier (manuscript siglum, folium, position on the folium) and, where the source is identified, a source key naming the conciliar canon, papal decretal, royal capitulary or patristic excerpt that the unit copies. Keys are assigned by the project's director or by graduate students under the director's supervision, who check the manuscript text against the modern authoritative edition. They are verified in the project's parallel display of all units that share a key, where a misidentified unit stands out against the others.
+
+The labels are therefore expert-assigned and expert-verified, and they are the project's work, as are the transcriptions. The benchmark is ours: we take the units that carry a key, log the label corrections the project supplied, freeze the file set under a checksum manifest, and define the leak-free split and the two tasks. A directory is one labelled fragment, named by its source key, and a file is one manuscript witness of that fragment (one manuscript's copy of it), held as plain text derived from the project's TEI XML exports. Appendix~\ref{app:corpus_provenance} gives the transcription workflow, the identifier design, the label taxonomy and the derivation rule.
 
 The benchmark holds 1,705 witnesses in 840 directories, with directory sizes from one to ten. Witnesses of one fragment are free to vary from each other, so the benchmark asks whether an unidentified witness belongs to a known fragment: files in the same directory count as positive matches, files from different directories count as negatives, and singleton directories contribute no positive pairs.
 
@@ -254,15 +288,33 @@ The study covers one domain, medieval canon law, and one language, Latin. The 1,
 
 Task B simulates a human-in-the-loop workflow by counting a query as successful when its labelled directory appears in the shortlist. That measures ranking quality, not the full judgment load a working scholar carries. Our attribution analysis is also local to fixed query-candidate scores. It does not explain model behavior globally, and it does not replace expert reading of retrieved passages. The consistent attribution effect is improved leave-one-out rank faithfulness, in five of six cells with the sixth a tie; other rationale metrics remain threshold-dependent and should not be reported as a broad attribution-quality gain.
 
+The labels are expert-assigned, but by one project. Its director or supervised graduate students assigned the keys, and verification is by collation in the project's parallel display, not by independent double annotation, so no inter-annotator agreement figure exists for this benchmark.
+
+\section*{Ethical Considerations}
+
+The benchmark holds early medieval legal texts, transcribed from manuscripts and early printings, and contains no personal data. The Carolingian Canon Law project publishes its material under a Creative Commons Attribution-NonCommercial-ShareAlike 4.0 licence \citep{ccl2026about}. The project's director has confirmed in writing that the licence covers the transcriptions, annotations and markup in the exports we use and that, in the view of the project's Advisory Board, attribution to the project suffices; the project's interface credits the transcriber and proofreader of each unit. The project's corpus keeps growing and being corrected, so benchmark version 1 is a dated snapshot, fixed by a sha256 manifest of its 1,705 labelled files, and every number in this paper comes from it. We will release it under the same licence, in coordination with the project's periodic versioned exports, and later versions will follow those exports. The intended use is research on retrieval and on assisted source identification: the system ranks candidates for an expert to judge and does not identify sources on its own.
+
 % ---------------------------------------------------------------------------
-% ACKNOWLEDGMENTS placeholder. ACL/ARR: omit under [review], restore under
-% [final] or [preprint]. Uncomment the block below when de-anonymising.
+% ACKNOWLEDGMENTS placeholder (CAMERA-READY ONLY). ACL/ARR: omit under
+% [review], restore under [final] or [preprint]. Uncomment the block below
+% when de-anonymising, and at the same time:
+%   * replace the \author placeholder with the camera-ready block kept in
+%     comments above \begin{document};
+%   * Appendix A: drop the "written communication" footnote (its source is
+%     then an author) and name the director where the text says "the
+%     project's director".
 %
 % \section*{Acknowledgments}
 % The corpus in this paper is drawn from the Carolingian Canon Law project
-% (CCL), directed by Abigail Firey at the University of Kentucky. We thank
-% the CCL transcribers and proofreaders, credited individually in the CCL
-% interface, whose to-the-letter work makes this benchmark possible.
+% (CCL), which Abigail Firey, a co-author of this paper, directs at the
+% University of Kentucky. We thank the CCL transcribers and proofreaders, credited individually in the
+% CCL interface, whose to-the-letter work makes this benchmark possible, the
+% graduate students who assigned source keys under the director's
+% supervision, and the CCL developer for the TEI-P5 exports.
+% TODO(camera-ready): name the CCL developer with his consent and preferred
+% form of name; confirm with Prof. Firey who else must be thanked.
+% TODO(camera-ready): funding and compute acknowledgements (NCSA Delta
+% allocation, any grant numbers) are not recorded in this repo; ask Ian.
 %
 % ---------------------------------------------------------------------------
 
@@ -275,11 +327,15 @@ Task B simulates a human-in-the-loop workflow by counting a query as successful 
 
 This appendix records where the benchmark text comes from and how our files were derived from it, in the detail that Section~\ref{sec:dataset} leaves out.
 
-\paragraph{The project.} The Carolingian Canon Law project \citep[CCL;][]{firey2009ccl} is an open-access digital edition founded in 2009; \citet{eichbauer2014ccl} reviews it.\footnote{Founding year, pre-2019 workflow, proofreading standard and the one manuscript transcribed by handwritten text recognition (HTR): project director, personal communication, 2026.} Its texts are early medieval canon-law manuscripts, most of them ninth-century and never edited to modern standards. Each manuscript is identified by its siglum (Place-Library-Shelfmark), and a witness is one manuscript's copy of one unit (one transcribed canon or excerpt).
+\paragraph{The project.} The Carolingian Canon Law project \citep[CCL;][]{firey2009ccl} is an open-access digital edition founded in 2009; \citet{eichbauer2014ccl} reviews it.\footnote{Founding year, pre-2019 workflow, proofreading standard, the one manuscript transcribed by handwritten text recognition (HTR), the design of the identifiers, the assignment and verification of keys, and the extent of unidentified material: written communications from the project's director, 2026.} Its texts are early medieval canon-law manuscripts, most of them ninth-century and never edited to modern standards. Each manuscript is identified by its siglum (Place-Library-Shelfmark), and a witness is one manuscript's copy of one unit (one transcribed canon or excerpt).
 
 \paragraph{Transcription.} Transcription is manual, from manuscript images or, for some texts, eighteenth-century printings, with one exception: HTR has been attempted on one manuscript (Paris, BnF, lat.\ 1454; 142 of the 1,705 witnesses), and its transcription is still in proofreading. Before 2019 transcribers worked from purchased microfilm into word-processed files, which CCL contributors converted to TEI-P5 (the Text Encoding Initiative's XML standard for scholarly editions). Since 2019 they transcribe in the CCL Transcription Desk beside a IIIF image of the folio (a zoomable web-served scan of the manuscript leaf); an approved proofreader on the Proofreading Desk then checks the text against the image to the letter and adds TEI markup \citep{ccl2026desks}. That proofreading stage belongs to the post-2019 workflow. The interface credits the transcriber and proofreader of each unit \citep{ccl2026about}.
 
-\paragraph{Labels.} CCL keys every unit to its original source, such as a fourth-century council or a papal decretal, and our directories reuse that key as supplied. A key is a four-letter source code, a year and a canon or chapter number, as in \texttt{CTOU.567.16}; some labels carry a trailing annotation, as in \texttt{CTOU.567.16 (15)} or \texttt{CARL.501?.18}. Counting a directory as key-named when its label begins with a four-letter code, a period, a year and a period, whatever follows, 689 of the 840 directory labels are source keys. The other 151 are modern edition citations, the Apostolic Canons (\texttt{Can.apost.}$N$), references to other collections such as the Capitula Martini, biblical references, and a handful of unidentified sources; each unidentified source is a singleton directory and contributes no positive pairs. The assignment of witnesses to keys was carried out by the project; we report the keys as supplied and do not have a description of the annotators, their instructions or the verification applied.
+\paragraph{Identifiers.} The project has two identifier systems, both designed at its launch in 2009 by its director in consultation with a mathematician, a software developer and a second scholar of early medieval canon law. The first is a location identifier. Every manuscript is a unique object, so every unit has exactly one place in one manuscript, and the identifier records it as the manuscript siglum, the folium, and the unit's position on that folium. Our file names are these identifiers. The second is the source key. Many units in different manuscripts copy the same prescription issued by the same authority, and the key names that common source. It encodes the type of source (a church council, a papal decretal, a royal capitulary, a theologian, a penitential), the point of origin (a particular council, pope or author), the date of origin, and the item's reference in modern scholarship, such as a canon, letter or register number. The key is designed so that a researcher can find the modern authoritative edition of the source where one exists.
+
+\paragraph{Labels.} CCL keys a unit to its original source, such as a fourth-century council or a papal decretal, once that source is identified, and our directories reuse that key as supplied. In a label, a four-letter code carries the type of source and its point of origin, followed by the year and the canon or chapter number, as in \texttt{CTOU.567.16}; some labels carry a trailing annotation, as in \texttt{CTOU.567.16 (15)} or \texttt{CARL.501?.18}. Counting a directory as key-named when its label begins with a four-letter code, a period, a year and a period, whatever follows, 689 of the 840 directory labels are source keys. The other 151 are modern edition citations, the Apostolic Canons (\texttt{Can.apost.}$N$), references to other collections such as the Capitula Martini, biblical references, and a handful of unidentified sources; each unidentified source is a singleton directory and contributes no positive pairs.
+
+\paragraph{Assignment and verification.} Keys were assigned by the project's director, a specialist in early medieval canon law, or by graduate students working under the director's supervision, who had enough Latin to check a manuscript version against the modern authoritative version of the source. Verification, and occasional correction, runs through the project's parallel display, which sets side by side all units that share a key and shows how far their wording agrees. A misidentified unit stands out there as a text that cannot be a version of the others. This is verification by collation (see Limitations). The project supplied two key corrections during this study, and both are logged with the frozen benchmark. We assigned no label ourselves and changed only those two. What remains unidentified is large: across the several hundred manuscripts that contain the project's texts, thousands of units still carry no key, and they are the queries that Task B is meant to serve.
 
 \paragraph{Derivation.} We hold the witnesses as plain text derived from CCL TEI-P5 exports. The rule is one file per unit: the directory is the source key from the unit's \texttt{scholSource} division, which is stripped from the text so that no file carries its own label; the text is the manuscript rubric followed by the canon text, with inline markup flattened (editorial notes kept, deletions dropped) and layout whitespace collapsed; a unit without a source key receives no directory. The rule is scripted; checked against a current export of one manuscript (Paris, BnF, lat.\ 2123), it reproduces all 279 units present in both the export and the corpus, 100 percent after whitespace normalization with no character-level disagreement, and places every one of them in the same directory.
 
