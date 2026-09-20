@@ -130,16 +130,22 @@ function installFetch(createResponse?: () => Response): void {
   vi.stubGlobal('fetch', fetchMock)
 }
 
-function Harness() {
+function Harness({ showReviewerDirectories }: { showReviewerDirectories?: boolean }) {
   const { setActiveQueryId, setActiveModel } = useApp()
   useEffect(() => {
     setActiveQueryId(QUERY_ID)
     setActiveModel(MODEL)
   }, [setActiveQueryId, setActiveModel])
-  return <PredictionList />
+  return <PredictionList showReviewerDirectories={showReviewerDirectories} />
 }
 
-function renderList() {
+/**
+ * The list as the app mounts it: the reviewer-directory block hidden, which is
+ * the default since issue #221. A test that is about the block itself asks for
+ * it with `{ showReviewerDirectories: true }`, which is also the one line that
+ * brings it back to the reviewer-facing page.
+ */
+function renderList(options: { showReviewerDirectories?: boolean } = {}) {
   return render(
     <AppProvider>
       <SavedDirectoryProvider accountKey="test-account">
@@ -147,7 +153,7 @@ function renderList() {
           {/* App's own composition: the list renders the durable directory
               record and this is the one thing that feeds it (issue #161). */}
           <SavedDirectoryObservations />
-          <Harness />
+          <Harness showReviewerDirectories={options.showReviewerDirectories} />
         </PredictionProvider>
       </SavedDirectoryProvider>
     </AppProvider>,
@@ -172,7 +178,7 @@ describe('reviewer directory candidates', () => {
       seeded_dirs: [],
       reviewer_dir_candidates: [reviewerCard(0.62)],
     }
-    renderList()
+    renderList({ showReviewerDirectories: true })
 
     const card = await screen.findByTestId('reviewer-dir-card-reviewer-dir-1')
     // Distinct from a model card: its own testid, its own accessible name, and
@@ -201,7 +207,7 @@ describe('reviewer directory candidates', () => {
 
   it('shows no heading and no block when none is offered', async () => {
     predictions = { predictions: [modelCard(1, 0.91)], seeded_dirs: [] }
-    renderList()
+    renderList({ showReviewerDirectories: true })
     await screen.findByRole('button', { name: /^Prediction rank 1: candidate-1\./ })
     expect(screen.queryByTestId('reviewer-dirs-heading')).toBeNull()
   })
@@ -212,7 +218,7 @@ describe('reviewer directory candidates', () => {
       seeded_dirs: [],
       reviewer_dir_candidates: [reviewerCard(0.61)],
     }
-    renderList()
+    renderList({ showReviewerDirectories: true })
 
     await screen.findByTestId('reviewer-dir-card-reviewer-dir-1')
     // All ten model cards survive, and the reviewer directory displaces none.
@@ -230,7 +236,7 @@ describe('reviewer directory candidates', () => {
       seeded_dirs: [],
       reviewer_dir_candidates: [reviewerCard(0.62)],
     }
-    renderList()
+    renderList({ showReviewerDirectories: true })
     await screen.findByTestId('reviewer-dir-card-reviewer-dir-1')
 
     await userEvent.keyboard('{ArrowDown}{ArrowDown}{ArrowDown}')
@@ -254,7 +260,7 @@ describe('reviewer directory candidates', () => {
       seeded_dirs: [],
       reviewer_dir_candidates: [reviewerCard(0.62)],
     }
-    renderList()
+    renderList({ showReviewerDirectories: true })
 
     const card = await screen.findByTestId('reviewer-dir-card-reviewer-dir-1')
     expect(card.getAttribute('aria-pressed')).toBe('false')
@@ -273,6 +279,45 @@ describe('reviewer directory candidates', () => {
         .getByRole('button', { name: /^Prediction rank 1: candidate-1\./ })
         .getAttribute('aria-pressed'),
     ).toBe('false')
+  })
+})
+
+// --- hidden on the reviewer-facing page (issue #221) -----------------------
+
+describe('the reviewer-directory block, hidden by default', () => {
+  it('draws nothing at all, however many directories the API offers', async () => {
+    predictions = {
+      predictions: [modelCard(1, 0.44)],
+      seeded_dirs: [],
+      reviewer_dir_candidates: [reviewerCard(0.62), reviewerCard(0.55, 'reviewer-dir-2')],
+    }
+    renderList()
+
+    // The model's ranking is untouched: this hides one block, it does not
+    // change what the reviewer is asked to judge.
+    await screen.findByRole('button', { name: /^Prediction rank 1: candidate-1\./ })
+    expect(screen.queryByTestId('reviewer-dirs-heading')).toBeNull()
+    expect(screen.queryByTestId('reviewer-dir-card-reviewer-dir-1')).toBeNull()
+    expect(screen.queryByTestId('reviewer-dir-card-reviewer-dir-2')).toBeNull()
+    expect(document.body.textContent).not.toContain('Directories created by reviewers')
+  })
+
+  it('still asks the server for them, so nothing about the API changed', async () => {
+    predictions = {
+      predictions: [modelCard(1, 0.44)],
+      seeded_dirs: [],
+      reviewer_dir_candidates: [reviewerCard(0.62)],
+    }
+    renderList()
+    await screen.findByRole('button', { name: /^Prediction rank 1: candidate-1\./ })
+
+    // The response carrying `reviewer_dir_candidates` is requested and read as
+    // before; only the rendering is gone, which is what makes the block one
+    // prop away from coming back.
+    const fetchMock = globalThis.fetch as unknown as { mock: { calls: unknown[][] } }
+    expect(
+      fetchMock.mock.calls.some((call) => String(call[0]).includes('/predictions')),
+    ).toBe(true)
   })
 })
 

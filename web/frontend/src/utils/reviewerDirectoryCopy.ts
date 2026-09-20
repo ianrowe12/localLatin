@@ -51,10 +51,20 @@ export const DIRECTORY_CREATION_COPY = {
 export const CCL_KEY_COPY = {
   fieldLabel: 'CCL key of the source, if known',
   placeholder: 'e.g. CTOU.567.16',
+  /**
+   * The whole of what is said BEFORE the key is recorded (issue #221).
+   *
+   * It used to be followed by a second sentence spelling out the three things
+   * the server might do with a key: match a labelled directory, join a group a
+   * colleague started, or start one. Since issue #221 hides the
+   * reviewer-directory block, an evaluator can no longer see a group anywhere
+   * in this app, so that sentence described mechanics they have no way to
+   * observe. It is not lost: the receipt after Record still names the branch
+   * the server actually took, which is the sentence that was ever worth
+   * reading.
+   */
   optionalNote:
-    'Optional. Leave it blank to record only that none of the candidates match.',
-  outcomeNote:
-    'If the key is already in the collection, your answer is recorded against it. If a colleague has grouped documents under it, this one joins them. Otherwise the key starts a group and this document is its first member.',
+    'Optional. Leave it blank to record only that none of the candidates match. If you know the source, type its CCL key and it is saved with your answer.',
   submit: 'Record this answer',
   submitting: 'Recording…',
   /** Heading over the answer already recorded for this document. */

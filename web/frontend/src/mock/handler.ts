@@ -456,6 +456,24 @@ const MOCK_NOTED_QUERY_ID = 101
 
 function handleLatestFeedback(url: string): unknown {
   const queryId = Number(new URL(url, 'http://mock').searchParams.get('query_id'))
+  // An answer recorded in this session wins: it is the caller's own decision,
+  // which is exactly what the real merged view serves back (issue #96).
+  const recorded = mockRecordedNone.get(queryId)
+  if (recorded) {
+    return {
+      id: 9002,
+      query_id: queryId,
+      timestamp: new Date().toISOString(),
+      model_slug: 'bowphs_LaTa',
+      variant: DEFAULT_VARIANT,
+      selected_ranks: null,
+      reviewer: 'Scholar',
+      reviewer_account_id: 1,
+      reviewer_username: 'scholar',
+      schema_version: 2,
+      ...recorded,
+    }
+  }
   if (queryId !== MOCK_NOTED_QUERY_ID) return null
   return {
     id: 9001,
@@ -567,7 +585,33 @@ function handleCreateReviewerDir(init?: RequestInit): Response {
  * -- because `handleFeedbackPost` already returns `{ success: true }` for
  * anything that is not a None answer.
  */
+/**
+ * None answers recorded during this dev:mock session, by query (issue #221).
+ *
+ * Purely additive: the resolution below is untouched, and this only lets
+ * `/api/feedback/latest` serve back what the reviewer just recorded, which is
+ * what a revisit meets in production. Without it dev:mock could not show the
+ * receipt on return, nor the "Next" the receipt now enables.
+ */
+const mockRecordedNone = new Map<number, Record<string, unknown>>()
+
+/**
+ * The POST entry point. Kept under this name deliberately: the #172 note above
+ * names it as the one line the dispatcher will have to keep.
+ */
 function handleFeedbackPost(init: RequestInit): Record<string, unknown> {
+  const row = resolveFeedbackPost(init)
+  if (row.outcome === 'none_of_top_k' && typeof row.query_id === 'number') {
+    const body = JSON.parse(String(init.body ?? '{}')) as { notes?: string }
+    mockRecordedNone.set(row.query_id, {
+      ...row,
+      notes: typeof body.notes === 'string' ? body.notes : '',
+    })
+  }
+  return row
+}
+
+function resolveFeedbackPost(init: RequestInit): Record<string, unknown> {
   const body = JSON.parse(String(init.body ?? '{}')) as {
     query_id?: number
     outcome?: string

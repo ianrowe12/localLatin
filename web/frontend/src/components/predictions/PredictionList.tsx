@@ -88,7 +88,25 @@ function exclusionCopy(reason: ExclusionReason, raw: string | null): string {
   }. There is nothing here to assess.`
 }
 
-export default function PredictionList() {
+interface PredictionListProps {
+  /**
+   * Whether to draw the "Directories created by reviewers" block (issue #221).
+   *
+   * Hidden by default, at Prof. Firey's request: evaluators found the block
+   * mysterious, and nothing in the review flow needs it -- a fragment is filed
+   * into one of those directories by naming its CCL key beside "None of the
+   * top N", never by pressing a card here.
+   *
+   * ONLY the rendering is gone. The API still serves
+   * `reviewer_dir_candidates`, the shared prediction state still carries them,
+   * and their types are untouched, so restoring the block is this default.
+   */
+  showReviewerDirectories?: boolean
+}
+
+export default function PredictionList({
+  showReviewerDirectories = false,
+}: PredictionListProps = {}) {
   const {
     activeQueryId,
     activeModel,
@@ -365,8 +383,13 @@ export default function PredictionList() {
               a numbered slot beside the ten said they were. Choosing one is not
               a rank press either -- a document is filed here by naming the
               directory's CCL key beside "None of the top N" -- so clicking a
-              card only opens its documents for reading. */}
-          {reviewerDirs.length > 0 && (
+              card only opens its documents for reading.
+
+              NOT DRAWN by default since issue #221: evaluators read the block
+              as something they were meant to act on, and there is no act to
+              perform in it. The data and the block itself are kept exactly as
+              they are, behind `showReviewerDirectories`. */}
+          {showReviewerDirectories && reviewerDirs.length > 0 && (
             <div className="mt-3 pt-2 border-t border-stone-200 dark:border-stone-700">
               <div
                 data-testid="reviewer-dirs-heading"
