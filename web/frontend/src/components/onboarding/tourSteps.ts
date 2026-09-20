@@ -62,7 +62,12 @@ export const REVIEW_TOUR_STEPS: TourStep[] = [
   {
     target: 'candidate-panel',
     title: 'Candidate Match',
-    description: `This panel shows the candidate you have selected, and its second line says which kind it is: a ${PROVENANCE_TERMS.labeled_reference.toLowerCase()} is a text the labelled corpus already groups, while a ${PROVENANCE_TERMS.reviewer_group.toLowerCase()} is one a colleague grouped provisionally rather than one the corpus attests. Words that match the query highlight when you hover over the query panel.`,
+    // The reviewer-group half of this sentence went with issue #221: the only
+    // way to open such a candidate was the reviewer-directory block, which the
+    // reviewer-facing page no longer draws, so the tour stopped describing a
+    // caption nobody can reach. `PROVENANCE_TERMS` still carries the term for
+    // the components that caption one.
+    description: `This panel shows the candidate you have selected, and its second line says which kind it is: a ${PROVENANCE_TERMS.labeled_reference.toLowerCase()} is a text the labelled corpus already groups. Words that match the query highlight when you hover over the query panel.`,
     placement: 'left',
   },
   {
@@ -76,14 +81,18 @@ export const REVIEW_TOUR_STEPS: TourStep[] = [
     target: 'predictions',
     title: 'Predicted Sources',
     description:
-      'The model\u2019s top candidate sources for this fragment, ranked by similarity. The banner above the list tells you how much to trust the top hit: red means the model has no useful opinion here, amber means read the evidence carefully, and a plain note means it is a likely match to verify. A red banner is not evidence that the source is missing from the Carolingian Canon Law (CCL) collections, and you are not being asked to search the CCL by hand. Reviewer-created directories are listed after the model\u2019s ten and are marked as such.',
+      'The model\u2019s top candidate sources for this fragment, ranked by similarity. The banner above the list tells you how much to trust the top hit: red means the model has no useful opinion here, amber means read the evidence carefully, and a plain note means it is a likely match to verify. A red banner is not evidence that the source is missing from the Carolingian Canon Law (CCL) collections, and you are not being asked to search the CCL by hand.',
     placement: 'left',
   },
   {
-    target: 'predictions',
-    title: 'Starting a New Directory',
+    // Was "Starting a New Directory", hung off the list container because the
+    // red creation button came and went. That button, its naming form and the
+    // whole flow are retired (issue #196), so the step now describes the one
+    // control that can still start a group and points at it.
+    target: 'match-options',
+    title: 'When the source is not in the list',
     description:
-      'Below the list you can start a provisional directory for this fragment. Creating one is a permanent write: the directory and its name are saved the moment you confirm, there is no rename or removal, and submitting or skipping afterwards does not undo it. Create one only when a new grouping is warranted, then name and confirm it. It is separate from your assessment, so you can reject the ranked candidates with the None option and a note without creating anything. A directory reads as matched only once a reviewer files a second, distinct document into it, never because a similarity crossed a threshold.',
+      'The ranked list is the model’s answer and nothing else. If the right source is not in it, say so with the blue “None of the top” button and, if you know it, give the CCL key: the key is saved with your answer, and it may also start a permanent group for this fragment. A group cannot be renamed or removed, and submitting or skipping afterwards does not undo it.',
     placement: 'left',
   },
   {
@@ -125,7 +134,7 @@ export const REVIEW_TOUR_STEPS: TourStep[] = [
     target: 'submit-skip',
     title: 'Submit or Skip',
     description:
-      'Submit your assessment to save it and move to the next fragment, or skip if you can\u2019t decide. Skipping with a note records uncertainty, which is not the same judgement as recording that none of the candidates fits. Neither one undoes a directory you have already created.',
+      'Submit your assessment to save it and move to the next fragment, or skip if you can\u2019t decide. Once you have recorded an answer with the blue button, this one reads \u201cNext\u201d and only moves you on: nothing further is saved. Skipping with a note records uncertainty, which is not the same judgement as recording that none of the candidates fits. Neither one undoes a group that a CCL key has already started.',
     placement: 'left',
   },
 ]
@@ -135,11 +144,13 @@ export const REVIEW_TOUR_STEPS: TourStep[] = [
 // There is no post-processing step any more: the variant picker was removed
 // for every role in issue #94, and the tour must not point at a control that
 // is not on screen.
-// The directory step targets `predictions`, the list container, rather than the
-// creation button: that button is absent above the no-match band and absent
-// again once this document already seeds a directory, and TourOverlay skips a
-// step whose target it cannot find. The guidance has to be reachable in all
-// three states, so it hangs off the container that is always mounted.
+// The "source is not in the list" step targets `match-options`, the pill grid
+// that holds the blue None control: that is now the only control that can
+// start a group, and the grid is mounted whenever there is a ranking to judge.
+// It used to hang off `predictions` because the creation button it described
+// came and went with the confidence band; the button is retired (issue #196)
+// and the description went with it (issue #221). TourOverlay skips a step whose
+// target it cannot find, which is the floor if a ranking never arrives.
 export function getReviewTourSteps(isPiAdmin: boolean): TourStep[] {
   return REVIEW_TOUR_STEPS.filter(
     (step) => isPiAdmin || step.target !== 'attribution-controls',

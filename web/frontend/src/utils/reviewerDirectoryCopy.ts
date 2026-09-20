@@ -25,13 +25,19 @@ export const DIRECTORY_CREATION_COPY = {
 
   savedHeading: 'Directory saved',
   /**
-   * Deliberately conditional. A directory is scored from the model's q-q
-   * matrix, is never offered to its own members, cannot be scored for an
-   * excluded query, and only the closest few reach any one list, so
-   * "a candidate for every other document" was a promise the app cannot keep.
+   * What is true of a saved grouping, and nothing else.
+   *
+   * It used to end "It can be offered on other documents this model can score,
+   * not on every one" -- deliberately conditional, because a directory is
+   * scored from the model's q-q matrix and only the closest few reach any one
+   * list. Since issue #221 the reviewer-facing page does not draw those
+   * candidates at all, so a reviewer reading this after a key created a group
+   * would be promised something they can no longer see anywhere. What survives
+   * is the fact that actually matters to them, and the one that outlives any
+   * display decision: the group is permanent.
    */
   savedAvailability:
-    'Saved permanently and seeded with this document. It can be offered on other documents this model can score, not on every one.',
+    'Saved permanently under that name, and seeded with this document. It cannot be renamed or removed.',
   savedIndependence: 'Submitting or skipping your assessment does not undo it.',
 } as const
 
@@ -51,10 +57,20 @@ export const DIRECTORY_CREATION_COPY = {
 export const CCL_KEY_COPY = {
   fieldLabel: 'CCL key of the source, if known',
   placeholder: 'e.g. CTOU.567.16',
+  /**
+   * The whole of what is said BEFORE the key is recorded (issue #221).
+   *
+   * It used to be followed by a second sentence spelling out the three things
+   * the server might do with a key: match a labelled directory, join a group a
+   * colleague started, or start one. Since issue #221 hides the
+   * reviewer-directory block, an evaluator can no longer see a group anywhere
+   * in this app, so that sentence described mechanics they have no way to
+   * observe. It is not lost: the receipt after Record still names the branch
+   * the server actually took, which is the sentence that was ever worth
+   * reading.
+   */
   optionalNote:
-    'Optional. Leave it blank to record only that none of the candidates match.',
-  outcomeNote:
-    'If the key is already in the collection, your answer is recorded against it. If a colleague has grouped documents under it, this one joins them. Otherwise the key starts a group and this document is its first member.',
+    'Optional. Leave it blank to record only that none of the candidates match. If you know the source, type its CCL key and it is saved with your answer.',
   submit: 'Record this answer',
   submitting: 'Recording…',
   /** Heading over the answer already recorded for this document. */
@@ -196,8 +212,10 @@ export const NO_MATCH_GUIDANCE =
  * component for a string would invert that. The drift guard is a test that
  * renders the real pill and compares, not a shared import.
  *
- * The count is the MODEL candidates only. A reviewer directory sits at the
- * anchored rank 11, and rejecting the model's answers says nothing about it.
+ * The count is the MODEL candidates only, which since issue #196 is also every
+ * candidate the ranking offers: reviewer directories are not ranked among them,
+ * and since issue #221 they are not drawn on this page at all. Rejecting the
+ * model's answers therefore says nothing about any grouping a colleague made.
  */
 export function noneOptionLabel(modelCandidateCount: number): string {
   return modelCandidateCount === 1

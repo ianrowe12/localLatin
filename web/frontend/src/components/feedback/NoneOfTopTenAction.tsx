@@ -213,9 +213,6 @@ export default function NoneOfTopTenAction({
       <p className="font-ui text-xs leading-snug text-stone-500 dark:text-stone-400">
         {CCL_KEY_COPY.optionalNote}
       </p>
-      <p className="font-ui text-xs leading-snug text-stone-500 dark:text-stone-400">
-        {CCL_KEY_COPY.outcomeNote}
-      </p>
 
       {/* An answer already on the server, while the reviewer is typing another.
           It is not replaced by what they are about to record, so it stays

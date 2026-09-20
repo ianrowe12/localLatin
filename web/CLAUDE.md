@@ -179,6 +179,22 @@ The webapp reads these from `data_root`:
   `correctRank: null` -- because re-opening a live Record button over an answer already in an
   append-only log is how a document gets two. `NoneOfTopTenPanel.test.tsx` drives the real panel
   wiring; testing the component with `open` hard-coded is what hid this the first time.
+- The way OUT of a recorded None answer (issue #221): once this reviewer has one for the
+  document on screen (just recorded, or prefilled by `recordedKeyAnswer`) and no pending
+  selection, and the blue form is closed, the bottom button becomes a plain **"Next"** that
+  runs `advanceToNextActionable` and **posts nothing**. Before it, the withheld button had no
+  successor at all and the reviewer was stranded on an answered document. The rule is stated
+  on the caller's own recorded answer because Next is not a write: the worst a wrong answer
+  can do is offer a move nobody needed. Recording never auto-advances (the receipt is the
+  only place the key's outcome is stated), a pending selection keeps the ordinary
+  "Submit & Next", and with the form open the button stays disabled beside a one-line
+  `assessment-primary-blocked` explanation. `AssessmentNextAfterNone.test.tsx` pins label,
+  move and POST count together, since a "Next" that advanced by saving would pass the first two.
+- `PredictionList`'s reviewer-directory block ("Directories created by reviewers") is behind
+  `showReviewerDirectories`, **default false** since issue #221, at Prof. Firey's request:
+  evaluators read it as something to act on and there is no act to perform in it. Rendering
+  only. `reviewer_dir_candidates`, the shared state and every type are untouched, so the
+  block comes back by flipping that default.
 - Candidate provenance (issue #162): `src/utils/documentProvenance.ts` maps a candidate to
   `labeled_reference` (a witness the labelled corpus already groups) or `reviewer_group` (an
   originally unlabeled witness in a provisional reviewer directory), and

@@ -31,6 +31,7 @@ import NoneOfTopTenAction from './NoneOfTopTenAction'
 // and one import placed out of alphabetical order is cheaper than a merge
 // conflict in a file neither change needs to coordinate on.
 import { recordedKeyAnswer } from '../../api/cclKey'
+import { CCL_KEY_COPY } from '../../utils/reviewerDirectoryCopy'
 import NotesTextarea from './NotesTextarea'
 import { formatNoteAttribution } from './noteAttribution'
 import SubmitButton from './SubmitButton'
@@ -188,6 +189,9 @@ function readNextQueryId(payload: unknown): number | null | undefined {
   return undefined
 }
 
+/** Ties the disabled primary button to the sentence saying why (issue #221). */
+const PRIMARY_BLOCKED_ID = 'assessment-primary-blocked'
+
 function issueCopy(issue: SelectionIssue): string {
   if (issue.kind === 'vanished') {
     return `Rank #${issue.rank}${
@@ -244,6 +248,13 @@ export default function FeedbackPanel() {
     null,
   )
   const [saveError, setSaveError] = useState<SaveFailure | null>(null)
+  // Whether the blue action has recorded an answer during THIS visit. The
+  // server knows it too, but `latest` was fetched before the write and nothing
+  // refetches it here, so without this flag the reviewer's own answer would
+  // stop being visible to the panel the moment the component's receipt is the
+  // only trace of it. Cleared by the reset effect below, which runs on exactly
+  // the four changes that end a visit.
+  const [recordedNoneHere, setRecordedNoneHere] = useState(false)
   // Why the reviewer is still looking at the document they just answered, and
   // which visit that sentence is about. A message with no owner is a message
   // that can be shown over somebody else's work.
@@ -258,6 +269,10 @@ export default function FeedbackPanel() {
   // Always-current view of the draft map for use inside async callbacks.
   const draftsRef = useRef(drafts)
   draftsRef.current = drafts
+  // The assessment on screen right now, for callbacks that were handed out
+  // while a different one was.
+  const draftKeyRef = useRef(draftKey)
+  draftKeyRef.current = draftKey
 
   const visit = useMemo<AssessmentVisit>(
     () => ({
@@ -306,6 +321,7 @@ export default function FeedbackPanel() {
     setMultiSelectOverride(null)
     setSaveError(null)
     setSkipNeedsNote(false)
+    setRecordedNoneHere(false)
     setVisitSerial((serial) => serial + 1)
   }, [activeQueryId, activeModel, activeVariant, accountId])
 
@@ -449,6 +465,24 @@ export default function FeedbackPanel() {
     }, 500)
   }, [activeQueryId, advanceToNextActionable, reportSaveFailure, submitFeedback, visit])
 
+  /**
+   * Move on from an answer that is already recorded (issue #221).
+   *
+   * It SAVES NOTHING. The blue action wrote the row, with its optional key and
+   * its receipt, and the feedback log is append-only: a second write for the
+   * same decision is a second row, not a correction. So this is the save path's
+   * own read and nothing else -- same function, same visit ownership, same
+   * failure notice and same retry -- reached without a `submitFeedback()`.
+   *
+   * No 500ms wait either. That delay exists to let a save land and its tick be
+   * seen before the screen changes; here there is neither.
+   */
+  const handleAdvanceOnly = useCallback(() => {
+    if (activeQueryId === null) return
+    setSaveError(null)
+    void advanceToNextActionable(visit)
+  }, [activeQueryId, advanceToNextActionable, visit])
+
   const handleSkip = useCallback(async () => {
     if (activeQueryId === null) return
     if (!draft.notes.trim()) {
@@ -496,6 +530,33 @@ export default function FeedbackPanel() {
       ? formatNoteAttribution(latest.entry)
       : null
   const noneNotice = noneCopy(evidence.noneBlock)
+  // What THIS reviewer has recorded here through the blue action: the server's
+  // own prefill, which carries the caller's decision and never a colleague's
+  // (issue #96), or an answer recorded during this visit.
+  const recordedNoneAnswer =
+    latest !== null && draftKey !== null && latest.key === draftKey
+      ? recordedKeyAnswer(latest.entry)
+      : null
+  const hasOwnRecordedNone = recordedNoneHere || recordedNoneAnswer !== null
+  /**
+   * The bottom button moves on without writing anything (issue #221).
+   *
+   * The rule is the narrowest one that clears the dead end: this reviewer has
+   * an answer of their own recorded for the fragment on screen, they have no
+   * unsaved choice pending, and the blue form is not open. It is safe to state
+   * so plainly because Next writes NOTHING -- the worst a wrong answer to
+   * "have they answered?" can do here is offer a move the reviewer did not
+   * need, not record one they did not make.
+   *
+   * Each clause earns its place. `noneSelected` is the form being open, where
+   * the form's own Record button is the way forward and this one stays
+   * withheld so a single decision cannot be written twice. A pending selection
+   * means there is an unsaved draft to save or clear, and skipping past it as
+   * though it did not exist would silently discard it: that case keeps the
+   * ordinary Submit, enabled or blocked exactly as before.
+   */
+  const hasPendingSelection = selectionReview.selections.length > 0
+  const advanceOnly = hasOwnRecordedNone && !noneSelected && !hasPendingSelection
   // Ownership decides what is on screen, not just what was computed: a notice
   // left over from an assessment the reviewer has moved on from is never
   // rendered, whatever state still holds it.
@@ -569,18 +630,26 @@ export default function FeedbackPanel() {
           // prefill. `latest` is the merged view: the team's newest note with
           // the CALLER's own decision, and the key counts as decision, so this
           // is never a colleague's identification shown as this reviewer's.
-          recorded={
-            latest !== null && latest.key === draftKey
-              ? recordedKeyAnswer(latest.entry)
-              : null
-          }
+          recorded={recordedNoneAnswer}
           onRecorded={() => {
+            // A POST that answers after the reviewer has moved on belongs to
+            // the fragment it was made for and to no other. This closure was
+            // built while `draftKey` was current; `draftKeyRef` is whatever is
+            // current now, and `setNone`/`setNotes`/`recordedNoneHere` all act
+            // on THAT one. Without the comparison, a slow record would clear
+            // the next fragment's unsaved draft and offer a Next for an answer
+            // nobody gave there.
+            if (draftKeyRef.current !== draftKey) return
             // The answer and its prose are on the server now. Closing the form
             // leaves the receipt on screen -- the component keeps it -- and
             // clearing the draft is what the rank path's own save does; leaving
             // it would show the saved text back as "your unsaved draft".
             setNone(false)
             setNotes('')
+            // Deliberately NOT an advance (issue #221): the receipt names which
+            // branch the key took, and it is the only place that fact is ever
+            // stated, so the reviewer reads it and then presses Next.
+            setRecordedNoneHere(true)
           }}
           onChange={() => setNone(true)}
         />
@@ -763,8 +832,16 @@ export default function FeedbackPanel() {
         </p>
       )}
 
-      {(skipNeedsNote || !draft.notes.trim()) && (
-        <p className="text-xs font-ui text-stone-500 dark:text-stone-400">
+      {/* Not shown over an answer that is already recorded (issue #221). The
+          sentence asks for a note "so the PI can follow up", which is what a
+          deferral needs; beside a finished answer and a live Next it reads as
+          a demand for work the reviewer has already done. Skip still needs its
+          note, so pressing it there brings the sentence back. */}
+      {(skipNeedsNote || (!advanceOnly && !draft.notes.trim())) && (
+        <p
+          data-testid="skip-needs-note"
+          className="text-xs font-ui text-stone-500 dark:text-stone-400"
+        >
           Add a note before skipping so the PI can follow up.
         </p>
       )}
@@ -786,18 +863,45 @@ export default function FeedbackPanel() {
         </button>
       </div>
 
+      {/* Why the button below cannot be pressed, in one line. It is shown for
+          the one block a reviewer meets in normal work -- the blue form open
+          with nothing recorded yet -- because that is the state the button is
+          withheld in on purpose, and a disabled button with no explanation
+          reads as a broken app (issue #221). The other blocks already render
+          their own notice above. */}
+      {noneSelected && (
+        <p
+          id={PRIMARY_BLOCKED_ID}
+          role="status"
+          data-testid="assessment-primary-blocked"
+          className="text-xs font-ui text-stone-500 dark:text-stone-400"
+        >
+          Use &ldquo;{CCL_KEY_COPY.submit}&rdquo; above, or pick a candidate.
+        </p>
+      )}
+
       <SubmitButton
-        onSubmit={handleSubmit}
+        onSubmit={advanceOnly ? handleAdvanceOnly : handleSubmit}
         onSkip={handleSkip}
-        // Submit records an evaluation, so it needs a deliberate valid choice
-        // on a usable current ranking. Skip is a deferral with a note and stays
-        // available even when nothing loaded -- that is the whole point of it.
+        // Two buttons in one, and the difference is whether anything is
+        // written. `advanceOnly` is the move-on-only press (issue #221): the
+        // answer is already recorded, so it is labelled "Next", it flashes no
+        // saved-tick, and it is enabled without consulting `readiness`, which
+        // asks whether a NEW answer could be saved.
+        //
+        // Otherwise Submit records an evaluation, so it needs a deliberate
+        // valid choice on a usable current ranking. Skip is a deferral with a
+        // note and stays available even when nothing loaded -- that is the
+        // whole point of it.
         //
         // `noneSelected` is excluded (issue #196): the blue action records that
         // answer itself, with its optional key, and two buttons that both write
         // "none of the top N" is two rows in an append-only log for one
         // decision.
-        disabled={!readiness.canSubmit || noneSelected}
+        label={advanceOnly ? 'Next' : undefined}
+        confirmsSave={!advanceOnly}
+        describedById={noneSelected ? PRIMARY_BLOCKED_ID : undefined}
+        disabled={advanceOnly ? false : !readiness.canSubmit || noneSelected}
         skipDisabled={!activeModel || draftKey === null}
       />
     </div>

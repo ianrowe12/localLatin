@@ -6,6 +6,33 @@ interface SubmitButtonProps {
   onSkip: () => void
   disabled?: boolean
   skipDisabled?: boolean
+  /**
+   * What the primary button says. Default: the ordinary save.
+   *
+   * It is a prop rather than a constant because the same button sometimes only
+   * MOVES the reviewer on (issue #221): once a none-of-top-N answer is recorded
+   * by the blue action, pressing this writes nothing, and a button still
+   * reading "Submit" over an answer already in an append-only log is an
+   * invitation to record it twice.
+   */
+  label?: string
+  /**
+   * Whether pressing it is a save, and may therefore flash the tick.
+   *
+   * The tick is the app saying "recorded". On the move-only press nothing is
+   * recorded, so it stays an arrow: a confirmation of a write nobody made is
+   * exactly the receipt a reviewer would act on.
+   */
+  confirmsSave?: boolean
+  /**
+   * Element id explaining why the button cannot be pressed.
+   *
+   * Wired as `aria-describedby` so the reason reaches a screen reader with the
+   * control it is about: a disabled button whose explanation is only a nearby
+   * paragraph is, to anyone not reading the page by eye, a button that has
+   * simply stopped working.
+   */
+  describedById?: string
 }
 
 export default function SubmitButton({
@@ -13,11 +40,15 @@ export default function SubmitButton({
   onSkip,
   disabled,
   skipDisabled,
+  label = 'Submit & Next',
+  confirmsSave = true,
+  describedById,
 }: SubmitButtonProps) {
   const [showCheck, setShowCheck] = useState(false)
 
   const handleSubmit = () => {
     onSubmit()
+    if (!confirmsSave) return
     setShowCheck(true)
     setTimeout(() => setShowCheck(false), 500)
   }
@@ -26,13 +57,15 @@ export default function SubmitButton({
     <div data-tour="submit-skip" className="flex gap-2">
       <button
         type="button"
+        data-testid="assessment-primary-action"
         onClick={handleSubmit}
         disabled={disabled}
+        aria-describedby={describedById}
         className="bg-accent hover:bg-accent-dark text-white px-4 py-2 rounded-lg
                    text-sm font-medium flex items-center gap-2 transition-all
                    disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        Submit &amp; Next
+        {label}
         <AnimatePresence mode="wait" initial={false}>
           {showCheck ? (
             <motion.span

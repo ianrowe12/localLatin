@@ -127,13 +127,19 @@ describe('the blue action', () => {
     )
   })
 
-  it('says the field is optional and what a key will do', () => {
+  it('says the field is optional and what a key is for', () => {
     renderAction()
     const form = screen.getByTestId('none-of-top-k-form')
     expect(form.textContent).toContain('Optional')
-    expect(form.textContent).toContain('already in the collection')
+    expect(form.textContent).toContain('saved with your answer')
     // It never asks a general evaluator to go and search the CCL by hand.
     expect(form.textContent).not.toContain('search')
+    // And it no longer explains grouping mechanics (issue #221): an evaluator
+    // cannot see a group anywhere in this app, so the sentence described
+    // something they had no way to observe. The receipt after Record still
+    // names the branch the server took.
+    expect(form.textContent).not.toContain('joins them')
+    expect(form.textContent).not.toContain('first member')
   })
 
   it('cannot be submitted when the ranking cannot be rejected', () => {

@@ -257,15 +257,22 @@ function renderReview() {
   )
 }
 
-/** The list on its own, for the cases the other two views play no part in. */
-function renderList() {
+/**
+ * The list on its own, for the cases the other two views play no part in.
+ *
+ * `showReviewerDirectories` is off on the reviewer-facing page since issue
+ * #221; a case that is about those cards asks for them explicitly.
+ */
+function renderList(options: { showReviewerDirectories?: boolean } = {}) {
   return render(
     <AppProvider>
       <SavedDirectoryProvider accountKey="test-account">
         <PredictionProvider>
           <SelectQuery />
           <ModelSelector />
-          <PredictionList />
+          <PredictionList
+            showReviewerDirectories={options.showReviewerDirectories}
+          />
         </PredictionProvider>
       </SavedDirectoryProvider>
     </AppProvider>,
@@ -475,7 +482,9 @@ describe('excluded, empty and unknown are three different things', () => {
       predictions: [],
       reviewer_dir_candidates: [reviewerCard(0.6)],
     }
-    renderList()
+    // Drawn on purpose here: the question is whether the shared state keeps the
+    // two apart, so the block that would blur them has to be on screen.
+    renderList({ showReviewerDirectories: true })
 
     expect(await screen.findByTestId('predictions-empty')).toBeTruthy()
     // The card is offered, under its own heading and with the key that files a
