@@ -19,6 +19,35 @@ Directory size histogram (size: directories): 1: 545, 2: 108, 3: 32, 4: 25, 5: 7
 `BN2123` contributes 140 labelled and 148 unlabelled files (288 units). The two pools
 are disjoint by filename and by content sha256; no file appears in both.
 
+## Who assigned and checked the labels
+
+Source: project director, written communication, 2026-09-16 (unpublished; paraphrased
+here, the original is held outside this public repo and must not be committed verbatim).
+
+* CCL has carried two identifier systems since its launch in 2009. A location identifier
+  per unit (manuscript siglum, folium, position on the folium) is what our file names
+  are. A source key (type of source, point of origin, date, modern item reference) is
+  what our directory names are; it is built so that a researcher can find the modern
+  authoritative edition where one exists.
+* The director designed both, consulting a mathematician, a software developer and
+  a second canon-law scholar.
+* Keys were assigned by the director, or by graduate students under her supervision who
+  had enough Latin to check a manuscript version against the modern authoritative
+  version.
+* Verification and occasional correction run through CCL's parallel display of all units
+  sharing a key, where a misidentified unit stands out against the others. This is
+  collation, not independent double annotation: there is no inter-annotator agreement
+  figure, and the paper says so in Limitations.
+* Paper wording that follows from this (issue #222): the labels are expert-assigned by
+  the project and checked by collation in its parallel display; the benchmark (taking the keyed units, the corrections
+  log below, the freeze and manifest, the leak-free split, the two tasks) is ours. We
+  never say "we annotate". 689 of the 840 labels are key-named and 151 are not
+  (`scripts/data/label_taxonomy.py`); both kinds were assigned by the project.
+* Do not print an example location identifier with a folio gloss until the director
+  confirms the one in her note (open question in issue #222).
+
+Licence and release terms are recorded in `data_derivation.md` ("Licence").
+
 ## Corrections applied
 
 | File | Was | Now | Provenance |
