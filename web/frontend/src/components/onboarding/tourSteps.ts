@@ -125,7 +125,7 @@ export const REVIEW_TOUR_STEPS: TourStep[] = [
     target: 'submit-skip',
     title: 'Submit or Skip',
     description:
-      'Submit your assessment to save it and move to the next fragment, or skip if you can\u2019t decide. Skipping with a note records uncertainty, which is not the same judgement as recording that none of the candidates fits. Neither one undoes a directory you have already created.',
+      'Submit your assessment to save it and move to the next fragment, or skip if you can\u2019t decide. Once you have recorded an answer with the blue button, this one reads \u201cNext\u201d and only moves you on: nothing further is saved. Skipping with a note records uncertainty, which is not the same judgement as recording that none of the candidates fits. Neither one undoes a directory you have already created.',
     placement: 'left',
   },
 ]
