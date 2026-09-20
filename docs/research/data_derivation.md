@@ -10,9 +10,11 @@ Converter: `scripts/data/tei_to_canon.py`. Unit tests: `tests/test_tei_to_canon.
 
 Prof. Firey sent a TEI-P5 export of Paris, BnF, lat. 2123 (siglum `BN2123`) in
 September 2026. The working copy on the cluster is `/u/irowerojas/BN2123.xml`
-(199 KB, 508 unit divs). It is deliberately **not** committed: the repo is public and
-CCL licensing terms are still unconfirmed (open decision (b) of issue #39). Anyone
-re-running the verification below needs that file, or a fresh export.
+(199 KB, 508 unit divs). It is deliberately **not** committed. When this was written the
+CCL licensing terms were unconfirmed (open decision (b) of issue #39). They are now
+settled (see "Licence" below), but exports still stay out of the repo: public release of
+CCL material is coordinated with the project's own versioned exports, not pushed from
+here. Anyone re-running the verification below needs that file, or a fresh export.
 
 Export shape:
 
@@ -26,6 +28,20 @@ Export shape:
   </div>
 </div>
 ```
+
+## Licence
+
+Both public CCL pages (<https://ccl.rch.uky.edu/> and
+<https://ccl.rch.uky.edu/submission-desks>) carry a Creative Commons
+Attribution-NonCommercial-ShareAlike 4.0 International notice. The project director
+confirmed by email on 2026-09-15 (recorded in issue #173) that this licence covers all of
+the material, that is the transcriptions, annotations, code and markup protocols, and that
+the CCL Advisory Board considers attribution to the project sufficient for exports
+(per-transcriber credit stays visible on the CCL site). Release of the benchmark is to be
+coordinated with the CCL developer as part of the project's periodic versioned releases
+(public notice, version number, timestamp). Benchmark v1 is our dated, digest-stamped
+snapshot of that moving corpus (`benchmark_v1.md`); later versions should align with CCL's
+releases. TEI/XML exports are still never committed here.
 
 ## The derivation rule
 
