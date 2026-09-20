@@ -134,7 +134,7 @@ Our pipeline has three stages: pool token states from one layer into a passage v
 
 \subsection{Models}
 
-We evaluate six pre-trained models from three architectures. LaTa and PhilTa are T5-based models pre-trained on Latin, PhilTa with a philological orientation, each with 12 encoder layers \citep{riemenschneider2023lata}, and mT5-base is a multilingual T5 encoder-decoder, also with 12 encoder layers \citep{xue2021mt5}. LaBSE is a language-agnostic BERT sentence encoder covering 109 languages, with 12 encoder layers \citep{feng2022labse}. Qwen3-0.6B \citep{qwen3embedding2025} and KaLM-mini \citep{kalm2025embedding} are multilingual decoder-only embedding models with 28 and 24 layers.
+We evaluate six pre-trained models from three architectures. LaTa is a monolingual Latin T5 and PhilTa a trilingual (Ancient Greek, Latin, English) T5, both released by \citet{riemenschneider2023lata}, each with 12 encoder layers, and mT5-base is a multilingual T5 encoder-decoder, also with 12 encoder layers \citep{xue2021mt5}. LaBSE is a language-agnostic BERT sentence encoder covering 109 languages, with 12 encoder layers \citep{feng2022labse}. Qwen3-0.6B \citep{qwen3embedding2025} and KaLM-mini \citep{kalm2025embedding} are multilingual decoder-only embedding models with 28 and 24 layers.
 
 \subsection{Embedding Extraction}
 
@@ -145,7 +145,7 @@ The paper-facing pooling baseline removes only tokenizer artifacts with no lexic
 \subsection{Post-Processing}
 \label{sec:postproc}
 
-\paragraph{ABTT.} Our main post-processing method is All-but-the-Top (ABTT) \citep{mu2018allbutthetop}. For each model and layer, we center the pooled training embeddings, compute the top $D$ principal components by SVD, and remove those components from both train and test embeddings, a retrieval-specific repair for anisotropic Latin manuscript representations.
+\paragraph{ABTT.} Our main post-processing method is All-but-the-Top (ABTT) \citep{mu2018allbutthetop}. For each model and layer, we center the pooled training embeddings, compute the top $D$ principal components by SVD, and remove those components from both train and test embeddings.
 
 \paragraph{SIF.} The main comparison also includes SIF weighting \citep{arora2017sif}, which divides each token weight by its estimated corpus frequency and so down-weights high-frequency tokens before the passage vector is formed. SIF and ABTT act on the same problem at different stages: SIF reweights tokens before pooling, ABTT removes dominant directions after pooling.
 
