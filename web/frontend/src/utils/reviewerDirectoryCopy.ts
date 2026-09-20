@@ -37,7 +37,7 @@ export const DIRECTORY_CREATION_COPY = {
    * display decision: the group is permanent.
    */
   savedAvailability:
-    'Saved permanently under that key, with this document as its first member. It cannot be renamed or removed.',
+    'Saved permanently under that name, and seeded with this document. It cannot be renamed or removed.',
   savedIndependence: 'Submitting or skipping your assessment does not undo it.',
 } as const
 

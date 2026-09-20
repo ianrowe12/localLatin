@@ -14,11 +14,11 @@ interface DirectorySavedNoticeProps {
  * a durable saved-directory record, or after rehydrating one from the server on
  * reload, without rewriting a word of it.
  *
- * The wording is conditional on purpose. The old success line said the
- * directory "is now a candidate for every other document", which the scoring
- * cannot promise: members never see their own directory, an excluded query
- * cannot be scored at all, and only the closest few reviewer directories reach
- * any one ranked list.
+ * The wording says only what the stored record guarantees: the name is
+ * permanent and the group was seeded with this document. It makes no promise
+ * about where the group is offered (the reviewer-directories block is hidden
+ * since issue #221), and it says "seeded", not "member", because a preserved
+ * partial record may not list the seed among its members (see SEED_NOT_FILED).
  */
 export default function DirectorySavedNotice({
   label,
