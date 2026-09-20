@@ -113,6 +113,14 @@ Reviewer-directory checks (read-only, always run, issue #196):
 
 All three pass on a deployment with no reviewer directories at all, which is what a fresh host looks like.
 
+Since issue #221 the reviewer-facing page does not DRAW the reviewer-directory
+block at all (`PredictionList`'s `showReviewerDirectories`, default false), at
+Prof. Firey's request. These checks are deliberately unchanged: they are about
+what the API serves and how it is shaped, and the data is still served, still
+carried by the frontend's shared state, and one prop away from being displayed
+again. A backend that went back to numbering directories among the model's ten
+would still be wrong, whether or not anything on the page shows it.
+
 Per-variant checks (read-only, always run):
 
 - `/api/models` advertises all four variants (`raw`, `abtt`, `sif`, `sif_abtt`) for **every** model, and its `default_variant` is among them. A short list here means a predictions CSV never reached the host.
