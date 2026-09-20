@@ -19,7 +19,7 @@ Directory size histogram (size: directories): 1: 545, 2: 108, 3: 32, 4: 25, 5: 7
 `BN2123` contributes 140 labelled and 148 unlabelled files (288 units). The two pools
 are disjoint by filename and by content sha256; no file appears in both.
 
-## Who assigned and verified the labels
+## Who assigned and checked the labels
 
 Source: project director, written communication, 2026-09-16 (unpublished; paraphrased
 here, the original is held outside this public repo and must not be committed verbatim).
@@ -30,7 +30,7 @@ here, the original is held outside this public repo and must not be committed ve
   what our directory names are; it is built so that a researcher can find the modern
   authoritative edition where one exists.
 * The director designed both, consulting a mathematician, a software developer and
-  another scholar of early medieval canon law.
+  a second canon-law scholar.
 * Keys were assigned by the director, or by graduate students under her supervision who
   had enough Latin to check a manuscript version against the modern authoritative
   version.
@@ -38,8 +38,8 @@ here, the original is held outside this public repo and must not be committed ve
   sharing a key, where a misidentified unit stands out against the others. This is
   collation, not independent double annotation: there is no inter-annotator agreement
   figure, and the paper says so in Limitations.
-* Paper wording that follows from this (issue #222): the labels are expert-assigned and
-  expert-verified by the project; the benchmark (taking the keyed units, the corrections
+* Paper wording that follows from this (issue #222): the labels are expert-assigned by
+  the project and checked by collation in its parallel display; the benchmark (taking the keyed units, the corrections
   log below, the freeze and manifest, the leak-free split, the two tasks) is ours. We
   never say "we annotate". 689 of the 840 labels are key-named and 151 are not
   (`scripts/data/label_taxonomy.py`); both kinds were assigned by the project.
