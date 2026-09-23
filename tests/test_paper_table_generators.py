@@ -572,7 +572,12 @@ def test_shuffle_control_refuses_a_pair_whose_gaps_differ():
     the generator checks that on every summary instead of asserting it."""
     summary = bmaa.select_main_rows(_attribution_summary())
     _set_shuffle_gap(summary, "bowphs/LaTa", "ig", "abtt", (bmaa.AOPC_COMP_KEY,), 0.2, 0.01)
-    with pytest.raises(ValueError, match="identical by construction"):
+    with pytest.raises(ValueError, match="gap mean .* identical by construction"):
+        bmaa.check_shuffle_identities(summary)
+    # The table prints the first key's SE too, so a differing SE is also refused.
+    summary = bmaa.select_main_rows(_attribution_summary())
+    _set_shuffle_gap(summary, "bowphs/LaTa", "ig", "abtt", (bmaa.AOPC_SUFF_KEY,), 0.1, 0.05)
+    with pytest.raises(ValueError, match="gap se .* identical by construction"):
         bmaa.check_shuffle_identities(summary)
 
 

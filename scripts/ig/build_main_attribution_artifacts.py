@@ -582,6 +582,7 @@ def check_shuffle_identities(summary: pd.DataFrame,
     of the implementation in ``src/attribution_metrics.py``, so it is checked
     on every summary rather than asserted once.
     """
+    # The table prints the first key's mean and SE, so both must agree.
     for keys, label, _ in SHUFFLE_COLUMNS:
         if len(keys) < 2:
             continue
@@ -590,14 +591,16 @@ def check_shuffle_identities(summary: pd.DataFrame,
             for model, model_label in MODELS:
                 for method, method_label in METHODS:
                     for variant in ("baseline", "abtt"):
-                        a = _get(summary, model, method, variant, _shuffle_gap_col(first, "mean"))
-                        b = _get(summary, model, method, variant, _shuffle_gap_col(other, "mean"))
-                        if abs(a - b) > tol:
-                            raise ValueError(
-                                f"shuffle gaps for {first} and {other} differ by {abs(a - b):.3g} "
-                                f"in {_cell_label(model_label, method_label, variant)}; the "
-                                f"'{label}' column claims they are identical by construction"
-                            )
+                        for stat in ("mean", "se"):
+                            a = _get(summary, model, method, variant, _shuffle_gap_col(first, stat))
+                            b = _get(summary, model, method, variant, _shuffle_gap_col(other, stat))
+                            if abs(a - b) > tol:
+                                raise ValueError(
+                                    f"shuffle gap {stat} for {first} and {other} differ by "
+                                    f"{abs(a - b):.3g} in "
+                                    f"{_cell_label(model_label, method_label, variant)}; the "
+                                    f"'{label}' column claims they are identical by construction"
+                                )
 
 
 def _shuffle_cells(summary: pd.DataFrame, metric_key: str):
