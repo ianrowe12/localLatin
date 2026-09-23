@@ -1,0 +1,32 @@
+% generated table
+% source run: ig_examples_200pos_v1/attribution_metrics_draws20
+% Selection and wording follow the part B memo behind issue #120; the numbers come from the
+% run stamped above (issue #187 re-sample). Regenerate from that summary rather than
+% editing the numbers here.
+\begin{table*}[t]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lllrrrr}
+\toprule
+Model & Method & Variant & $\rho_{\text{LOO}}$ & $\tau_{\text{LOO}}$ & DelAUC gap, AOPC-Comp & InsAUC gap, AOPC-Suff \\
+\midrule
+LaTa & IG & base & +0.007 (0.018) & +0.010 (0.013) & +0.887 (0.071) & +0.300 (0.044) \\
+ &  & ABTT & +0.379 (0.014) & +0.268 (0.010) & +0.183 (0.009) & +0.064 (0.008) \\
+ & MaRC & base & +0.087 (0.021) & +0.070 (0.016) & +0.509 (0.082) & +0.073 (0.072) \\
+ &  & ABTT & +0.535 (0.018) & +0.398 (0.014) & +0.327 (0.010) & +0.140 (0.011) \\
+\addlinespace[2pt]
+PhilTa & IG & base & +0.327 (0.017) & +0.233 (0.012) & +0.113 (0.006) & +0.006 (0.003) \\
+ &  & ABTT & +0.614 (0.013) & +0.462 (0.010) & +0.406 (0.011) & +0.246 (0.010) \\
+ & MaRC & base & +0.466 (0.016) & +0.332 (0.012) & +0.202 (0.005) & +0.065 (0.004) \\
+ &  & ABTT & +0.446 (0.019) & +0.319 (0.014) & +0.316 (0.015) & +0.195 (0.016) \\
+\addlinespace[2pt]
+mT5-base & IG & base & +0.143 (0.025) & +0.101 (0.018) & +0.061 (0.003) & \textbf{-0.024 (0.001)} \\
+ &  & ABTT & +0.688 (0.013) & +0.517 (0.011) & +0.556 (0.020) & +0.397 (0.026) \\
+ & MaRC & base & +0.256 (0.021) & +0.180 (0.015) & +0.042 (0.001) & +0.003 (0.001) \\
+ &  & ABTT & +0.502 (0.017) & +0.357 (0.013) & +0.460 (0.022) & +0.323 (0.028) \\
+\bottomrule
+\end{tabular}
+\caption{Shuffled-attribution control for the six candidate metrics, on the same pairs, layers and erasure operator as Table~\ref{tab:attribution_metrics_main}. Each entry is the real metric minus its mean over five permutations of the same attribution's scores across the query tokens, with the standard error over pairs in parentheses: a positive gap means the real attribution beats a fake one drawn from its own score distribution, and a metric passes the control only when every cell is positive. DelAUC gap and AOPC-Comprehensiveness share one column, as do InsAUC gap and AOPC-Sufficiency, because the random-order reference and the constant trapezoid offset cancel in the difference, so each pair has the same gap to machine precision and one verdict. Boldface marks the one cell at or below zero: mT5-base IG baseline on InsAUC gap, at -0.024. Four further cells are positive but within two standard errors of zero: LaTa IG baseline on $\rho_{\text{LOO}}$, LaTa IG baseline on $\tau_{\text{LOO}}$, LaTa MaRC baseline on InsAUC gap and PhilTa IG baseline on InsAUC gap. The rank columns use 200 pairs per cell; the AUC columns, undefined below a full-query cosine of 0.05, average 195 to 199 ABTT pairs against 199 to 200 baseline pairs.}
+\label{tab:attribution_shuffle_control}
+\end{table*}
