@@ -49,6 +49,7 @@ jobs:
             .github
             deploy
             scripts
+            slurm/ig
             src
             tests
             web

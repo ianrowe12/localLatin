@@ -18,6 +18,7 @@ Outputs:
 
     overleaf_drafts/tables/attribution_metrics_main.tex
     overleaf_drafts/tables/attribution_metrics_secondary.tex
+    overleaf_drafts/tables/attribution_shuffle_control.tex
     overleaf_drafts/figures/fig_attribution_rho_loo_main.{pdf,png,tex}
 
 Selection (issue #120, from ``docs/research/attribution_metrics_decision.md``
@@ -31,10 +32,21 @@ table convention readers expect.
 Everything the old four-metric table used to carry in the main text moves to
 the secondary appendix table: ``tau_LOO`` (the tie-corrected twin of
 ``rho_LOO``, with which it correlates 0.9995, so it is not a second witness),
-``InsAUC gap`` (which fails the shuffled-attribution control in two baseline
-cells) and the three ERASER-style headline cells.
+``InsAUC gap`` (which fails the shuffled-attribution control in a baseline
+cell: two on the run 3 sample, one on v1) and the three ERASER-style headline
+cells.
 
-Both tables read one summary, so both describe the same erasure operator.
+The third table (issue #226) is the shuffled-attribution control itself: the
+per-cell gap between each metric and its mean over ``SHUFFLE_DRAWS_OF_RECORD``
+permutations of the same attribution vector, with its standard error, for the
+six candidate metrics over the twelve cells. The main text quotes the control
+as a validity statement; this table is where a reader checks it. DelAUC gap
+and AOPC-Comprehensiveness have the same shuffle gap to machine precision, as
+do InsAUC gap and AOPC-Sufficiency (memo A3: the random-order reference and the
+constant trapezoid offset cancel in the difference), so each pair shares one
+column and the generator verifies the identity before it claims it.
+
+All three tables read one summary, so all describe the same erasure operator.
 """
 from __future__ import annotations
 
@@ -57,6 +69,7 @@ sys.path.insert(0, str(REPO_ROOT / "scripts" / "ig"))
 
 from attribution_run_of_record import (  # noqa: E402
     DEFAULT_SUMMARY_CSV,
+    SHUFFLE_DRAWS_OF_RECORD,
     refuse_run_change,
     run_name,
     stamp_line,
@@ -66,6 +79,9 @@ DEFAULT_SUMMARY = DEFAULT_SUMMARY_CSV
 DEFAULT_TABLE_OUT = REPO_ROOT / "overleaf_drafts/tables/attribution_metrics_main.tex"
 DEFAULT_SECONDARY_OUT = (
     REPO_ROOT / "overleaf_drafts/tables/attribution_metrics_secondary.tex"
+)
+DEFAULT_SHUFFLE_OUT = (
+    REPO_ROOT / "overleaf_drafts/tables/attribution_shuffle_control.tex"
 )
 DEFAULT_FIG_OUT = REPO_ROOT / "overleaf_drafts/figures/fig_attribution_rho_loo_main"
 
@@ -88,13 +104,34 @@ SUFF_KEY = "suff@0.25_ratio"
 COMP_KEY = "comp@0.25_ratio"
 MINFRAC_KEY = "compactness@0.80"
 
-_NUMBER_WORDS = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five",
-                 6: "six", 7: "seven", 8: "eight", 9: "nine", 10: "ten",
-                 11: "eleven", 12: "twelve"}
+_NUMBER_WORDS = {0: "none", 1: "one", 2: "two", 3: "three", 4: "four",
+                 5: "five", 6: "six", 7: "seven", 8: "eight", 9: "nine",
+                 10: "ten", 11: "eleven", 12: "twelve"}
 
 MAIN_METRIC_KEYS = (RHO_KEY, DEL_GAP_KEY, DEL_RANDOM_KEY)
 SECONDARY_METRIC_KEYS = (TAU_KEY, INS_GAP_KEY, SUFF_KEY, COMP_KEY, MINFRAC_KEY)
 METRIC_KEYS = MAIN_METRIC_KEYS + SECONDARY_METRIC_KEYS
+
+# The shuffled-attribution control (memo A3): one column per metric or per pair
+# of metrics whose shuffle gaps are identical by construction. Each entry is
+# (summary keys sharing the column, column label, short label for the caption).
+AOPC_COMP_KEY = "aopc_comp_ratio"
+AOPC_SUFF_KEY = "aopc_suff_ratio"
+SHUFFLE_COLUMNS = (
+    ((RHO_KEY,), r"$\rho_{\text{LOO}}$", r"$\rho_{\text{LOO}}$"),
+    ((TAU_KEY,), r"$\tau_{\text{LOO}}$", r"$\tau_{\text{LOO}}$"),
+    ((DEL_GAP_KEY, AOPC_COMP_KEY), "DelAUC gap, AOPC-Comp", "DelAUC gap"),
+    ((INS_GAP_KEY, AOPC_SUFF_KEY), "InsAUC gap, AOPC-Suff", "InsAUC gap"),
+)
+SHUFFLE_KEYS = tuple(key for keys, _, _ in SHUFFLE_COLUMNS for key in keys)
+# Two shuffle gaps count as the same number at this tolerance; the memo
+# measured 2.2e-16 between the members of each pair.
+SHUFFLE_IDENTITY_TOL = 1e-9
+
+
+def _shuffle_gap_col(metric_key: str, stat: str) -> str:
+    return f"rand_{metric_key}_gap_{stat}"
+
 
 # Overleaf receives these files, so the header says nothing about the repo.
 HEADER = "% generated table"
@@ -146,6 +183,9 @@ def select_main_rows(df: pd.DataFrame, *, source: str = "summary") -> pd.DataFra
     required_cols = {"model", "method", "variant", "n", "full_cos_mean"}
     required_cols.update(_mean_col(k) for k in METRIC_KEYS)
     required_cols.update(f"{k}_n" for k in (DEL_GAP_KEY, INS_GAP_KEY))
+    required_cols.update(
+        _shuffle_gap_col(k, stat) for k in SHUFFLE_KEYS for stat in ("mean", "se", "n")
+    )
     missing = sorted(required_cols - set(df.columns))
     if missing:
         raise ValueError(f"{source} is missing required columns: {missing}")
@@ -464,8 +504,9 @@ def secondary_caption(summary: pd.DataFrame) -> str:
         rf"faithfulness favours ABTT in {ins_wins}/6 cells, and we do not "
         rf"report it in the main table because {fail_clause} the real "
         r"attribution does not beat a "
-        r"permutation of its own scores, so the measurement does not meet the "
-        r"validity bar we set for a headline column. The threshold-based "
+        r"permutation of its own scores "
+        r"(Table~\ref{tab:attribution_shuffle_control}), so the measurement "
+        r"does not meet the validity bar we set for a headline column. The threshold-based "
         r"ERASER metrics are reported for completeness: their "
         r"baseline-versus-ABTT verdict depends on the threshold and on the "
         r"erasure operator, which is why the main table uses threshold-free, "
@@ -528,8 +569,171 @@ def render_secondary_table(summary: pd.DataFrame, out_path: Path, *,
     out_path.write_text("\n".join(lines), encoding="utf-8")
 
 
-_NUMBER_WORDS = {0: "none", 1: "one", 2: "two", 3: "three", 4: "four",
-                 5: "five", 6: "six"}
+def _cell_label(model_label: str, method_label: str, variant: str) -> str:
+    return f"{model_label} {method_label} {variant}"
+
+
+def check_shuffle_identities(summary: pd.DataFrame,
+                             tol: float = SHUFFLE_IDENTITY_TOL) -> None:
+    """Fail if two metrics that share a control column do not share its numbers.
+
+    The caption says DelAUC gap and AOPC-Comp, and InsAUC gap and AOPC-Suff,
+    have identical shuffle gaps by construction (memo A3). That is a property
+    of the implementation in ``src/attribution_metrics.py``, so it is checked
+    on every summary rather than asserted once.
+    """
+    # The table prints the first key's mean and SE, so both must agree.
+    for keys, label, _ in SHUFFLE_COLUMNS:
+        if len(keys) < 2:
+            continue
+        first = keys[0]
+        for other in keys[1:]:
+            for model, model_label in MODELS:
+                for method, method_label in METHODS:
+                    for variant in ("baseline", "abtt"):
+                        for stat in ("mean", "se"):
+                            a = _get(summary, model, method, variant, _shuffle_gap_col(first, stat))
+                            b = _get(summary, model, method, variant, _shuffle_gap_col(other, stat))
+                            if abs(a - b) > tol:
+                                raise ValueError(
+                                    f"shuffle gap {stat} for {first} and {other} differ by "
+                                    f"{abs(a - b):.3g} in "
+                                    f"{_cell_label(model_label, method_label, variant)}; the "
+                                    f"'{label}' column claims they are identical by construction"
+                                )
+
+
+def _shuffle_cells(summary: pd.DataFrame, metric_key: str):
+    """(cell label, gap mean, gap se) over the twelve cells, in table order."""
+    for model, model_label in MODELS:
+        for method, method_label in METHODS:
+            for variant in ("baseline", "abtt"):
+                yield (
+                    _cell_label(model_label, method_label, variant),
+                    _get(summary, model, method, variant, _shuffle_gap_col(metric_key, "mean")),
+                    _get(summary, model, method, variant, _shuffle_gap_col(metric_key, "se")),
+                )
+
+
+def _shuffle_count_range(summary: pd.DataFrame, metric_key: str,
+                         variant: str) -> tuple[int, int]:
+    counts = [
+        int(_get(summary, model, method, variant, _shuffle_gap_col(metric_key, "n")))
+        for model, _ in MODELS
+        for method, _ in METHODS
+    ]
+    return min(counts), max(counts)
+
+
+def _fmt_signed(value: float) -> str:
+    return f"{value:+.3f}"
+
+
+def _join_names(names: list[str]) -> str:
+    if len(names) <= 1:
+        return "".join(names)
+    return ", ".join(names[:-1]) + " and " + names[-1]
+
+
+def shuffle_control_caption(summary: pd.DataFrame, shuffle_draws: int) -> str:
+    draws_word = _NUMBER_WORDS.get(shuffle_draws, str(shuffle_draws))
+    failing: list[str] = []
+    marginal: list[str] = []
+    for keys, _, short in SHUFFLE_COLUMNS:
+        for cell, mean, se in _shuffle_cells(summary, keys[0]):
+            if mean <= 0:
+                failing.append(f"{cell} on {short}, at {_fmt_signed(mean)}")
+            elif se > 0 and mean / se < 2.0:
+                marginal.append(f"{cell} on {short}")
+    if failing:
+        n_fail = len(failing)
+        fail_text = (
+            rf" Boldface marks the {_NUMBER_WORDS.get(n_fail, str(n_fail))} "
+            rf"cell{'s' if n_fail > 1 else ''} at or below zero: {_join_names(failing)}."
+        )
+    else:
+        fail_text = " Every cell is positive."
+    if marginal:
+        n_marg = len(marginal)
+        marginal_text = (
+            rf" {_NUMBER_WORDS.get(n_marg, str(n_marg)).capitalize()} further "
+            rf"cell{'s are' if n_marg > 1 else ' is'} positive but within two "
+            rf"standard errors of zero: {_join_names(marginal)}."
+        )
+    else:
+        marginal_text = ""
+    rho_lo, rho_hi = _shuffle_count_range(summary, RHO_KEY, "baseline")
+    rho_alo, rho_ahi = _shuffle_count_range(summary, RHO_KEY, "abtt")
+    auc_blo, auc_bhi = _shuffle_count_range(summary, DEL_GAP_KEY, "baseline")
+    auc_alo, auc_ahi = _shuffle_count_range(summary, DEL_GAP_KEY, "abtt")
+    rank_count = _count_phrase(min(rho_lo, rho_alo), max(rho_hi, rho_ahi))
+    return (
+        r"\caption{Shuffled-attribution control for the six candidate metrics, "
+        r"on the same pairs, layers and erasure operator as "
+        r"Table~\ref{tab:attribution_metrics_main}. Each entry is the real "
+        rf"metric minus its mean over {draws_word} permutations of the same "
+        r"attribution's scores across the query tokens, with the standard "
+        r"error over pairs in parentheses: a positive gap means the real "
+        r"attribution beats a fake one drawn from its own score distribution, "
+        r"and a metric passes the control only when every cell is positive. "
+        r"DelAUC gap and AOPC-Comprehensiveness share one column, as do InsAUC "
+        r"gap and AOPC-Sufficiency, because the random-order reference and the "
+        r"constant trapezoid offset cancel in the difference, so each pair has "
+        rf"the same gap to machine precision and one verdict.{fail_text}"
+        rf"{marginal_text} The rank columns use {rank_count} pairs per cell; "
+        r"the AUC columns, undefined below a full-query cosine of 0.05, "
+        rf"average {_count_phrase(auc_alo, auc_ahi)} ABTT pairs against "
+        rf"{_count_phrase(auc_blo, auc_bhi)} baseline pairs.}}"
+    )
+
+
+def render_shuffle_control_table(summary: pd.DataFrame, out_path: Path, *,
+                                 source_run: Optional[str] = None,
+                                 shuffle_draws: int = SHUFFLE_DRAWS_OF_RECORD) -> None:
+    check_shuffle_identities(summary)
+    n_cols = len(SHUFFLE_COLUMNS)
+    lines: list[str] = [
+        *_header_lines(source_run),
+        r"\begin{table*}[t]",
+        r"\centering",
+        r"\small",
+        r"\setlength{\tabcolsep}{4pt}",
+        r"\begin{tabular}{lll" + "r" * n_cols + "}",
+        r"\toprule",
+        r"Model & Method & Variant & " + " & ".join(label for _, label, _ in SHUFFLE_COLUMNS) + r" \\",
+        r"\midrule",
+    ]
+    for model, model_label in MODELS:
+        first_model_row = True
+        for method, method_label in METHODS:
+            first_method_row = True
+            for variant, variant_label in (("baseline", "base"), ("abtt", "ABTT")):
+                cells = [
+                    model_label if first_model_row else "",
+                    method_label if first_method_row else "",
+                    variant_label,
+                ]
+                for keys, _, _ in SHUFFLE_COLUMNS:
+                    mean = _get(summary, model, method, variant, _shuffle_gap_col(keys[0], "mean"))
+                    se = _get(summary, model, method, variant, _shuffle_gap_col(keys[0], "se"))
+                    text = f"{_fmt_signed(mean)} ({se:.3f})"
+                    cells.append(rf"\textbf{{{text}}}" if mean <= 0 else text)
+                lines.append(" & ".join(cells) + r" \\")
+                first_model_row = False
+                first_method_row = False
+        if model != MODELS[-1][0]:
+            lines.append(r"\addlinespace[2pt]")
+    lines += [
+        r"\bottomrule",
+        r"\end{tabular}",
+        shuffle_control_caption(summary, shuffle_draws),
+        r"\label{tab:attribution_shuffle_control}",
+        r"\end{table*}",
+        "",
+    ]
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text("\n".join(lines), encoding="utf-8")
+
 
 
 def rho_figure_caption(summary: pd.DataFrame,
@@ -697,6 +901,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--table_out", type=Path, default=DEFAULT_TABLE_OUT)
     parser.add_argument("--secondary_table_out", type=Path, default=DEFAULT_SECONDARY_OUT)
+    parser.add_argument("--shuffle_table_out", type=Path, default=DEFAULT_SHUFFLE_OUT)
     parser.add_argument("--fig_out_base", type=Path, default=DEFAULT_FIG_OUT)
     parser.add_argument(
         "--allow_run_change", action="store_true",
@@ -712,14 +917,16 @@ def main() -> None:
         args.pairs_root or args.summary_csv.parent / "v2_hidden"
     )
     run = run_name(args.summary_csv)
-    for out in (args.table_out, args.secondary_table_out):
+    for out in (args.table_out, args.secondary_table_out, args.shuffle_table_out):
         refuse_run_change(out, run, allow=args.allow_run_change)
     summary = _load_main_rows(args.summary_csv)
     render_table(summary, args.table_out, args.pairs_root, source_run=run)
     render_secondary_table(summary, args.secondary_table_out, source_run=run)
+    render_shuffle_control_table(summary, args.shuffle_table_out, source_run=run)
     render_rho_figure(summary, args.fig_out_base, args.pairs_root)
     print(f"Wrote {args.table_out}")
     print(f"Wrote {args.secondary_table_out}")
+    print(f"Wrote {args.shuffle_table_out}")
     print(f"Wrote {args.fig_out_base.with_suffix('.pdf')}")
     print(f"Wrote {args.fig_out_base.with_suffix('.png')}")
     print(f"Wrote {args.fig_out_base.with_suffix('.tex')}")

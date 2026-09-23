@@ -44,6 +44,16 @@ ATTRIBUTION_METRICS_DIR = (
 )
 DEFAULT_SUMMARY_CSV = ATTRIBUTION_METRICS_DIR / "summary_v2.csv"
 
+# Permutations of each attribution vector averaged by the shuffled-attribution
+# control (``rand_*_gap`` columns of the summary). The sbatch of record,
+# ``slurm/ig/attribution_metrics_200pos_v1_draws20.sbatch``, raises only
+# ``--random_order_draws`` (the deletion and insertion reference) to 20 and
+# leaves ``--shuffle_draws`` at ``DEFAULT_SHUFFLE_DRAWS`` in
+# ``src/attribution_metrics.py``. The summary does not record the count, so
+# the paper's control table takes it from here; a test pins it to both the
+# code default and the sbatch.
+SHUFFLE_DRAWS_OF_RECORD = 5
+
 STAMP_PREFIX = "% source run: "
 _STAMP_SEARCH_LINES = 8
 

@@ -305,6 +305,8 @@ Reading of the control table:
 
 ## A3. Shuffled-attribution control
 
+> **Note, 2026-09-22 (issue #226).** The numbers in this section are from the run 3 sample. For the benchmark v1 run of record (`attribution_metrics_draws20`) see the shuffled-control table in `docs/research/attribution_v1_resample.md` and the generated paper table `overleaf_drafts/tables/attribution_shuffle_control.tex`: one non-positive cell, mT5-base/IG baseline at -0.024, on InsAUC gap and AOPC-Suff only.
+
 Gap = real minus the mean of 5 permutations of the same attribution vector.
 Positive means the real attribution beats a fake one drawn from its own score
 distribution. Twelve cells: 3 models x 2 views x 2 variants.

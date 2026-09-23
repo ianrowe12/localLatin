@@ -485,14 +485,28 @@ def _attribution_summary() -> pd.DataFrame:
                     "full_cos_mean": 0.5,
                     f"{bmaa.DEL_GAP_KEY}_n": 200 if variant == "baseline" else 193,
                     f"{bmaa.INS_GAP_KEY}_n": 200 if variant == "baseline" else 193,
-                    # Criterion 5 is read off this column rather than asserted,
-                    # so the secondary caption needs it present.
-                    f"{bmaa.SHUFFLE_GAP_KEY}_mean": 0.1,
                 }
                 for key in bmaa.METRIC_KEYS:
                     row[f"{key}_mean"] = value
+                # Criterion 5 is read off these columns rather than asserted, so
+                # the secondary caption and the control table need them present.
+                # Metrics that share a control column share its numbers, as the
+                # real summary does (memo A3).
+                for key in bmaa.SHUFFLE_KEYS:
+                    row[bmaa._shuffle_gap_col(key, "mean")] = 0.1
+                    row[bmaa._shuffle_gap_col(key, "se")] = 0.01
+                    row[bmaa._shuffle_gap_col(key, "n")] = 200
                 rows.append(row)
     return pd.DataFrame(rows)
+
+
+def _set_shuffle_gap(summary: pd.DataFrame, model: str, method: str, variant: str,
+                     keys: tuple[str, ...], mean: float, se: float) -> None:
+    mask = ((summary["model"] == model) & (summary["method"] == method)
+            & (summary["variant"] == variant))
+    for key in keys:
+        summary.loc[mask, bmaa._shuffle_gap_col(key, "mean")] = mean
+        summary.loc[mask, bmaa._shuffle_gap_col(key, "se")] = se
 
 
 def test_main_attribution_table_has_no_arrow_cells(tmp_path: Path):
@@ -515,6 +529,81 @@ def test_secondary_attribution_table_carries_the_demoted_metrics(tmp_path: Path)
     for label in (r"\tau_{\text{LOO}}", "InsAUC gap", r"Suff@25\%", r"Comp@25\%",
                   "MinFrac@0.80"):
         assert label in tex
+
+
+# --- the shuffled-attribution control table (#226) ----------------------------
+
+
+def test_shuffle_control_table_bolds_only_the_failing_cell(tmp_path: Path):
+    """One row per cell, one column per identical-by-construction pair, and the
+    cell that does not beat its own shuffle named in the caption with its gap."""
+    summary = bmaa.select_main_rows(_attribution_summary())
+    _set_shuffle_gap(summary, "google/mt5-base", "ig", "baseline",
+                     (bmaa.INS_GAP_KEY, bmaa.AOPC_SUFF_KEY), -0.024, 0.001)
+    out = tmp_path / "attribution_shuffle_control.tex"
+    bmaa.render_shuffle_control_table(summary, out, source_run="run_x/metrics_y",
+                                      shuffle_draws=5)
+    tex = out.read_text()
+    assert tex.splitlines()[1] == aror.stamp_line("run_x/metrics_y")
+    assert tex.count(r"\textbf{") == 1
+    assert r"\textbf{-0.024 (0.001)}" in tex
+    assert "one cell at or below zero: mT5-base IG baseline on InsAUC gap, at -0.024" in tex
+    assert "five permutations" in tex
+    assert "DelAUC gap, AOPC-Comp" in tex and "InsAUC gap, AOPC-Suff" in tex
+    body = [line for line in tex.splitlines() if line.endswith(r" \\")]
+    assert len(body) == 1 + 12  # header row plus 3 models x 2 methods x 2 variants
+    assert r"\label{tab:attribution_shuffle_control}" in tex
+
+
+def test_shuffle_control_caption_reports_cells_inside_two_standard_errors():
+    summary = bmaa.select_main_rows(_attribution_summary())
+    _set_shuffle_gap(summary, "bowphs/PhilTa", "ig", "baseline",
+                     (bmaa.INS_GAP_KEY, bmaa.AOPC_SUFF_KEY), 0.006, 0.0034)
+    caption = bmaa.shuffle_control_caption(summary, shuffle_draws=5)
+    assert "Every cell is positive." in caption
+    assert ("One further cell is positive but within two standard errors of zero: "
+            "PhilTa IG baseline on InsAUC gap.") in caption
+    clean = bmaa.select_main_rows(_attribution_summary())
+    assert "standard errors of zero" not in bmaa.shuffle_control_caption(clean, 5)
+
+
+def test_shuffle_control_refuses_a_pair_whose_gaps_differ():
+    """The caption says the paired metrics have identical gaps by construction;
+    the generator checks that on every summary instead of asserting it."""
+    summary = bmaa.select_main_rows(_attribution_summary())
+    _set_shuffle_gap(summary, "bowphs/LaTa", "ig", "abtt", (bmaa.AOPC_COMP_KEY,), 0.2, 0.01)
+    with pytest.raises(ValueError, match="gap mean .* identical by construction"):
+        bmaa.check_shuffle_identities(summary)
+    # The table prints the first key's SE too, so a differing SE is also refused.
+    summary = bmaa.select_main_rows(_attribution_summary())
+    _set_shuffle_gap(summary, "bowphs/LaTa", "ig", "abtt", (bmaa.AOPC_SUFF_KEY,), 0.1, 0.05)
+    with pytest.raises(ValueError, match="gap se .* identical by construction"):
+        bmaa.check_shuffle_identities(summary)
+
+
+def test_shuffle_draws_of_record_match_the_code_default_and_the_sbatch():
+    """The paper states the permutation count; the summary does not record it.
+
+    It is pinned to the default in ``src/attribution_metrics.py`` and to the
+    sbatch of record not overriding it, which together are the run's record.
+    """
+    sys.path.insert(0, str(REPO_ROOT / "src"))
+    import attribution_metrics  # noqa: E402
+
+    assert aror.SHUFFLE_DRAWS_OF_RECORD == attribution_metrics.DEFAULT_SHUFFLE_DRAWS
+    sbatch = (REPO_ROOT / "slurm/ig/attribution_metrics_200pos_v1_draws20.sbatch").read_text()
+    assert "--shuffle_draws" not in sbatch
+    assert "--random_order_draws" in sbatch
+
+
+def test_shuffle_control_table_reproduces_the_committed_one(tmp_path: Path):
+    """Byte-identity from the run-of-record summary alone (no per-pair cache)."""
+    _skip_unless(aror.DEFAULT_SUMMARY_CSV, "run-of-record summary")
+    summary = bmaa._load_main_rows(aror.DEFAULT_SUMMARY_CSV)
+    out = tmp_path / "attribution_shuffle_control.tex"
+    bmaa.render_shuffle_control_table(summary, out,
+                                      source_run=aror.run_name(aror.DEFAULT_SUMMARY_CSV))
+    assert out.read_bytes() == (TABLES_DIR / "attribution_shuffle_control.tex").read_bytes()
 
 
 def test_caption_omits_ties_only_on_an_explicit_opt_out():
@@ -682,11 +771,13 @@ def test_bare_generator_run_reproduces_the_committed_main_tables(tmp_path: Path,
         "build_main_attribution_artifacts.py",
         "--table_out", str(tmp_path / "main.tex"),
         "--secondary_table_out", str(tmp_path / "secondary.tex"),
+        "--shuffle_table_out", str(tmp_path / "shuffle.tex"),
         "--fig_out_base", str(tmp_path / "fig_attribution_rho_loo_main"),
     ])
     bmaa.main()
     for name, out in (("attribution_metrics_main.tex", "main.tex"),
-                      ("attribution_metrics_secondary.tex", "secondary.tex")):
+                      ("attribution_metrics_secondary.tex", "secondary.tex"),
+                      ("attribution_shuffle_control.tex", "shuffle.tex")):
         assert (tmp_path / out).read_bytes() == (TABLES_DIR / name).read_bytes(), name
     assert (tmp_path / "fig_attribution_rho_loo_main.tex").read_bytes() == (
         REPO_ROOT / "overleaf_drafts/figures/fig_attribution_rho_loo_main.tex").read_bytes()
