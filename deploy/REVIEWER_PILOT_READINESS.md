@@ -75,6 +75,13 @@ After the sync, `deploy.sh` runs `scripts/webapp/export_webapp_data.sh <root> --
 
 ## Smoke Checks
 
+**The smoke script is not read-only, even without `--write-check`.** It signs in,
+registers an account, and approves/rejects account requests. For diagnosis without
+creating sessions or reviewer records, use the separate
+[read-only six-model readiness diagnostic](READ_ONLY_REVIEWER_READINESS.md)
+with an explicitly supplied existing authorized session. Its GET requests can
+still update normal session `last_seen_at` bookkeeping.
+
 After deployment, run:
 
 ```bash
