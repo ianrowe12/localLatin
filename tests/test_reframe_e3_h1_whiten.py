@@ -128,6 +128,23 @@ def test_planted_nuisance_is_rank_one():
     assert f1 >= asw.RANK1_BAR
 
 
+def test_random_basis_is_orthonormal_and_seeded():
+    q = asw.random_basis(24, 5, 3)
+    np.testing.assert_allclose(q.T @ q, np.eye(5), atol=1e-10)
+    np.testing.assert_array_equal(q, asw.random_basis(24, 5, 3))
+    assert not np.allclose(q, asw.random_basis(24, 5, 4))
+
+
+def test_next_d_components_lie_in_the_retained_subspace():
+    """PCs D+1..2D (the E3 control) are orthogonal to the removed PCs 1..D."""
+    tr, te, *_ = _synthetic()
+    D = 3
+    pcs = EmbeddingCleaner(num_components=2 * D, center=True).fit(tr).pcs
+    s_tr, _, _ = asw.pc_scores(tr, te, 2 * D)
+    ret_tr, _ = asw.abtt(tr, te, D)
+    np.testing.assert_allclose(ret_tr @ pcs[D:].T, s_tr[:, D:], atol=1e-3)
+
+
 def test_rank1_fractions_and_select_d():
     f1, f0 = asw.rank1_fractions(0.5, 0.55, 0.9, 1.0)
     assert f1 == pytest.approx(0.8) and f0 == pytest.approx(0.1)

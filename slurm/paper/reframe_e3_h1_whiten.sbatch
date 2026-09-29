@@ -6,7 +6,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=48g
-#SBATCH --time=00:25:00
+#SBATCH --time=00:12:00
 #SBATCH --output=slurm/logs/reframe_e3_h1_whiten_%j.out
 #SBATCH --error=slurm/logs/reframe_e3_h1_whiten_%j.err
 
@@ -23,7 +23,8 @@
 #
 # Sizing (pilot on 2026-09-28, 4 BLAS threads): H1 ~23 s per model-layer
 # (12 metric blocks), E3 ~7 s, WHITEN ~8 s; 100 + 164 + 100 model-layers is
-# ~75 CPU-minutes, about 6-8 minutes of wall time on 16 single-threaded workers.
+# ~75 CPU-minutes. Job 22534981 (first full run, no pc1 step) took 5:27 on
+# 16 workers; the E3 control columns and the pc1 step add under a minute.
 
 set -euo pipefail
 
@@ -57,6 +58,9 @@ $PY "$SCRIPT" e3 --bases_root "$BASES" --ft_bases_root "$FT_BASES" --workers "$W
 
 echo "=== WHITEN: reduced-rank whitening ==="
 $PY "$SCRIPT" whiten --bases_root "$BASES" --workers "$WORKERS"
+
+echo "=== H1 robustness: train- vs test-fitted PC1 at the T5 layers ==="
+$PY "$SCRIPT" pc1 --bases_root "$BASES" --workers "$WORKERS"
 
 echo "=== Render tables, figure, facts ==="
 FT_RES="$DATA_ROOT/runs/active/resubmit/results/finetune"
