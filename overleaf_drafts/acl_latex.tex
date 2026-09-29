@@ -763,24 +763,7 @@ This appendix complements the layerwise view of Section~\ref{sec:geometry}. Figu
 \label{fig:standardized_gap}
 \end{figure*}
 
-% Hand-written table (no generator). Values: runs/active/resubmit/layer_diagnostics/geometry_per_layer.csv,
-% split=test, views raw and abtt_d10. On the train split the most anisotropic LaTa layer is 4 (0.952),
-% as in Table tab:geometry_regimes; PhilTa (6) and mT5-base (5) agree across splits.
-\begin{table*}[t]
-\centering
-\small
-\begin{tabular}{lrrrrr}
-\toprule
-\textbf{Model} & \textbf{Operational layer} & \textbf{Most anisotropic layer} & \textbf{PC1 before} & \textbf{PC1 after} & \textbf{Eff. rank before$\rightarrow$after} \\
-\midrule
-LaTa & 7 & 8 & 0.956 & 0.036 & 1.34$\rightarrow$168.40 \\
-PhilTa & 1 & 6 & 0.862 & 0.039 & 1.83$\rightarrow$155.02 \\
-mT5-base & 1 & 5 & 1.000 & 0.044 & 1.00$\rightarrow$151.74 \\
-\bottomrule
-\end{tabular}
-\caption{Most anisotropic layers, by top-PC share on the test split, and operational attribution layers for the three T5 encoders. PC1: top-PC share. PC1 and effective-rank values compare baseline geometry with ABTT-D10 at the most anisotropic layer, on the test split. The main text (Table~\ref{tab:geometry_regimes}) reads top-PC share on the training split, where LaTa peaks at layer 4 instead of 8; LaTa's training curve is flat, with a top-PC share of 0.93 to 0.95 over layers 3--11. Operational layers come from the train-only retrieval rule of Appendix~\ref{app:attribution}.}
-\label{tab:layer_diagnostics_main}
-\end{table*}
+\input{tables/layer_diagnostics_main}
 
 Top-PC share and effective rank correlate with the ABTT gain across all 100 model-layers (Spearman $+0.76$ and $-0.76$, Table~\ref{tab:geometry_correlations}), but only because ABTT lifts every layer into a narrow band, so the gain mirrors the baseline. Within a family the correlations are weak. The statistics locate where ABTT helps; they do not select layers, which the train-only rule does.
 
