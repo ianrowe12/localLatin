@@ -794,6 +794,18 @@ def rho_figure_caption(summary: pd.DataFrame,
 def render_rho_figure(summary: pd.DataFrame, out_base: Path,
                       pairs_root: Optional[Path] = None) -> None:
     import matplotlib.pyplot as plt
+
+    # Style and TrueType fonts (issue #235 item 7) are scoped to this figure:
+    # a global plt.style.use leaked into every later figure in the process and
+    # broke another generator's byte-identity test when both ran together.
+    with plt.style.context("seaborn-v0_8-paper"), \
+            plt.rc_context({"pdf.fonttype": 42, "ps.fonttype": 42}):
+        _draw_rho_figure(summary, out_base, pairs_root)
+
+
+def _draw_rho_figure(summary: pd.DataFrame, out_base: Path,
+                     pairs_root: Optional[Path] = None) -> None:
+    import matplotlib.pyplot as plt
     from matplotlib.lines import Line2D
 
     rows: list[dict[str, object]] = []
@@ -808,10 +820,6 @@ def render_rho_figure(summary: pd.DataFrame, out_base: Path,
                 }
             )
 
-    plt.style.use("seaborn-v0_8-paper")
-    # TrueType (Type 42) fonts, not Type 3, in the PDF (issue #235 item 7).
-    plt.rcParams["pdf.fonttype"] = 42
-    plt.rcParams["ps.fonttype"] = 42
     # Printed at \linewidth (about 3.0 in), so the figure is drawn at that
     # width and every label is at least 8 pt on the page.
     fig, ax = plt.subplots(figsize=(3.0, 2.9))
