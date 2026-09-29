@@ -1087,7 +1087,7 @@ def takeaway_sentence(sections: Sequence["CeilingSection"]) -> str:
     if all(raises):
         parts.append(f"Fine-tuning raises Task A AUROC for {every}")
         if all(lowers):
-            parts[-1] += ", and ABTT on top of it lowers AUROC again"
+            parts[-1] += ", and ABTT on top of it lowers AUROC again in point estimate"
     elif all(lowers):
         parts.append(f"ABTT lowers the Task A AUROC of the fine-tuned encoder for {every}")
     if all(v is not None for v in verdicts):
