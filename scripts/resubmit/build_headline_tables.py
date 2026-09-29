@@ -727,16 +727,10 @@ def task_b_comparison(
         return finetune_clause[0].upper() + finetune_clause[1:]
     tf_assign = 100.0 * _lexical_value(lexical, "TF-IDF char 3-5", "overall_assignment_acc")
     tf_dir1 = 100.0 * _lexical_value(lexical, "TF-IDF char 3-5", "dir_acc_at_1")
-    # Compare the printed (rounded) values. When the lexical row is at or above
-    # the best zero-shot ABTT cell on both metrics, say so: the body text says
-    # it routes above every pre-trained configuration, and a caption calling it
-    # merely "level" would contradict that (#235 review B1).
-    a, a_best = round(tf_assign, 1), round(float(assign.max()), 1)
-    d, d_best = round(tf_dir1, 1), round(float(dir1.max()), 1)
-    if a >= a_best and d >= d_best:
-        standing = "at or above"
-    else:
-        standing = level_word(tf_assign - assign.max(), 1.0)
+    # "level with" inside the seed spread. The directory-level bootstrap of
+    # issue #233 agrees: TF-IDF minus the best zero-shot ABTT cell is +0.5
+    # DirAcc@1 with a 95% interval of -1.7 to 1.6, so it is statistically level.
+    standing = level_word(tf_assign - assign.max(), 1.0)
     return (
         f"TF-IDF char 3--5 is {standing} the "
         f"best zero-shot ABTT cell ({tf_assign:.1f} against {assign.max():.1f} assignment "

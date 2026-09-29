@@ -206,13 +206,13 @@ def test_task_b_comparison_states_the_ceiling_as_a_finding():
     assert "is below every zero-shot ABTT cell" in rebuttal
 
 
-def test_task_b_lexical_row_at_or_above_every_zero_shot_cell_is_said_so():
-    """Review of #239 (B1): a lexical row that matches or beats the best
-    zero-shot ABTT cell on both metrics must not be called merely 'level'."""
+def test_task_b_lexical_row_inside_the_seed_spread_is_level():
+    """A lexical row a fraction of a point above the best zero-shot ABTT cell
+    is 'level with' it (seed spread up to 1.0; the #233 bootstrap agrees)."""
     best = bht.best_rows(_results_frame(), "hidden", "train_dir_acc_at_1")
     lexical = _lexical_frame().assign(overall_assignment_acc=0.915, dir_acc_at_1=0.905)
     sentence = bht.task_b_comparison(best, lexical, _finetune_frame())
-    assert sentence.startswith("TF-IDF char 3--5 is at or above the best zero-shot ABTT cell")
+    assert sentence.startswith("TF-IDF char 3--5 is level with the best zero-shot ABTT cell")
 
 
 def test_task_a_comparison_covers_the_finetuned_row_alone_by_default():
