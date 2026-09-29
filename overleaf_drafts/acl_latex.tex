@@ -597,7 +597,6 @@ Sections~\ref{sec:localizing} and~\ref{sec:objective} ask what masks the retriev
 This section asks whether a train-only projection can remove the mask, and where it stops helping.
 ABTT (Section~\ref{sec:postproc}) subtracts the training mean and removes the top $D$ training components; no model parameter changes.
 
-% TODO(Ian): regenerate taskA_headline/taskB_headline with --lexical_csv so the char 3-5-gram TF-IDF row appears under the rule
 \input{tables/taskA_headline}
 
 \paragraph{ABTT restores every layer.}
@@ -609,7 +608,6 @@ Because ABTT is a linear projection fit on training vectors, this shows that the
 The character 3--5-gram TF-IDF reference reaches 0.987 on the same split (Table~\ref{tab:lexical_baselines}).
 The repair therefore matches the lexical reference but does not exceed it.
 
-% TODO(Ian): regenerate taskA_headline/taskB_headline with --lexical_csv so the char 3-5-gram TF-IDF row appears under the rule
 \input{tables/taskB_headline}
 
 \paragraph{Routing converges.}
@@ -851,7 +849,7 @@ The main text uses ABTT-only as the paper-facing repair. This appendix reports S
 \section{Reference Systems: the Fine-Tuning Ceilings}
 \label{app:reference_systems}
 
-Tables~\ref{tab:taskA_headline} and~\ref{tab:taskB_headline} carry three reference rows below the rule, one supervised fine-tuning ceiling per fine-tuned model. Table~\ref{tab:finetune_ceiling} gives all three with the pre-trained rows they are compared against. Every model we fine-tuned is reported, on whichever side of its own zero-shot row it lands.
+Tables~\ref{tab:taskA_headline} and~\ref{tab:taskB_headline} carry four reference rows below the rule: one supervised fine-tuning ceiling per fine-tuned model, and the character 3--5-gram TF-IDF reference. Table~\ref{tab:finetune_ceiling} gives all three with the pre-trained rows they are compared against. Every model we fine-tuned is reported, on whichever side of its own zero-shot row it lands.
 
 Three encoders are fine-tuned under one recipe, LaTa, Qwen3-0.6B and KaLM-mini. Fine-tuning only the Latin-pretrained model would leave the ceiling confounded with Latin pretraining, so the second model is a multilingual decoder-only encoder with no Latin-specific pretraining, Qwen3-0.6B. The third answers the remaining question, whether supervision can clear the best cell the correction produces anywhere in the paper: KaLM-mini holds it, at 91.7 assignment accuracy and at 89.4 DirAcc@1 tied with Qwen3-0.6B. All three are trained with symmetric InfoNCE over positive pairs and in-batch negatives (no two pairs from one directory in a batch), temperature 0.05, AdamW at learning rate $2\times10^{-5}$ with weight decay 0.01, linear warmup over the first 10 percent of steps then linear decay, gradient clipping at 1.0, 16 pairs per batch, up to 8 epochs with early stopping after 3 epochs without dev improvement, and seed 42. All three are mean-pooled with the same token filter as their zero-shot rows, so the fine-tuned vectors live in the space those rows are measured in; Qwen3-0.6B and KaLM-mini add gradient checkpointing, which recomputes activations rather than storing them and leaves the gradients unchanged. The dev slice holds out 28 of the 190 train directories with at least two files (71 files), the same directories for every model, so each trains on 499 of the 565 positive train pairs, and the checkpoint is chosen by dev DirAcc@1 with dev AUROC as the tie-break. Accuracy differences at or below one dev file are treated as ties, because one file out of 71 is the pool's whole resolution; without that, a model whose pre-trained encoder already routes all 71 dev files can never select a trained checkpoint. A 71-file pool is the weak link in this protocol: one borderline file flipped between two otherwise identical Qwen3-0.6B runs at a training loss of $6\times10^{-4}$, which is GPU non-determinism rather than a difference in the model, and it is worth 1.4 points of the selection criterion. LaTa selects epoch 7, the last epoch run before early stopping fired, and its ABTT sweep selects $D=10$, the top of the grid, at every layer, so the tuned and fixed ABTT variants coincide there. Qwen3-0.6B selects epoch 3 of 6 run, and its sweep is a genuine one, selecting the top of the grid at 12 of 28 layers and $D=2$ at the layer its Task B row reports. KaLM-mini selects epoch 1 of 4 run, the only model of the three whose pre-trained encoder leaves the dev pool room to improve, and its sweep selects the top of the grid at 19 of 24 layers including the layer its Task B row reports. All three rows are ceilings at this training budget rather than asymptotes: training loss reaches $4\times10^{-5}$ on Qwen3-0.6B by epoch 4 and $3\times10^{-5}$ on KaLM-mini, so the 499 pairs are memorized and more epochs buy nothing.
 

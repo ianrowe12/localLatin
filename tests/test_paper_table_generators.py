@@ -254,6 +254,7 @@ def test_main_writes_the_pairs_clause_into_both_headline_captions(tmp_path, monk
             "--finetune_csv", str(tmp_path / "f.csv"),
             "--finetune_run_info", str(tmp_path / "run_info.json"),
             "--out_dir", str(tmp_path / "out"),
+            "--no_lexical",
         ],
     )
     bht.main()
@@ -263,13 +264,12 @@ def test_main_writes_the_pairs_clause_into_both_headline_captions(tmp_path, monk
         tex = (tmp_path / "out" / name).read_text()
         assert clause in tex, name
         assert "left by a directory-level dev carve" not in tex, name
-        # Issue #197: a default run must not re-add the lexical rows.
+        # --no_lexical builds the tables with no lexical row or sentence.
         for term in LEXICAL_TERMS:
             assert term not in tex, (name, term)
 
 
-def test_main_adds_lexical_rows_only_when_the_csv_is_passed(tmp_path, monkeypatch):
-    """The rebuttal variant is still buildable, but only on request."""
+def _run_main_with_lexical(tmp_path, monkeypatch, extra_args=()):
     _results_frame().to_csv(tmp_path / "r.csv", index=False)
     _lexical_frame().to_csv(tmp_path / "l.csv", index=False)
     _finetune_frame().to_csv(tmp_path / "f.csv", index=False)
@@ -283,14 +283,60 @@ def test_main_adds_lexical_rows_only_when_the_csv_is_passed(tmp_path, monkeypatc
             "--finetune_csv", str(tmp_path / "f.csv"),
             "--finetune_run_info", str(tmp_path / "absent.json"),
             "--out_dir", str(tmp_path / "out"),
+            *extra_args,
         ],
     )
     bht.main()
-    for name in ("taskA_headline.tex", "taskB_headline.tex"):
-        tex = (tmp_path / "out" / name).read_text()
+    return {
+        name: (tmp_path / "out" / name).read_text()
+        for name in ("taskA_headline.tex", "taskB_headline.tex")
+    }
+
+
+def _row_labels(tex: str) -> set:
+    return {line.split(" &")[0] for line in tex.splitlines() if " & " in line}
+
+
+def test_main_adds_the_tfidf_reference_row_when_the_csv_is_passed(tmp_path, monkeypatch):
+    """Issue #235: the paper's tables carry the TF-IDF reference it quotes,
+    and only that one; BM25 and Levenshtein stay in the appendix table."""
+    for name, tex in _run_main_with_lexical(tmp_path, monkeypatch).items():
+        labels = _row_labels(tex)
+        assert "TF-IDF char 3--5" in labels, name
+        assert "BM25 (word)" not in labels and "Levenshtein" not in labels, name
+        assert "the character 3--5-gram TF-IDF reference" in tex, name
+        assert "three lexical baselines" not in tex, name
+        assert "rather than beat it" in tex, name
+
+
+def test_main_can_still_print_all_three_lexical_rows(tmp_path, monkeypatch):
+    extra = []
+    for key, _ in bht.LEXICAL_SYSTEMS:
+        extra += ["--lexical_system", key]
+    for name, tex in _run_main_with_lexical(tmp_path, monkeypatch, extra).items():
+        labels = _row_labels(tex)
         for key, display in bht.LEXICAL_SYSTEMS:
-            assert any(line.startswith(display + " &") for line in tex.splitlines()), (name, key)
+            assert display in labels, (name, key)
         assert "three lexical baselines" in tex, name
+
+
+def test_task_b_caption_opens_with_the_spread_takeaway():
+    results = _results_frame()
+    best = bht.best_rows(results, "hidden", "train_dir_acc_at_1")
+    caption = bht.task_b_caption(results, best, None, _finetune_frame(), [])
+    # Fixture: every train-selected cell is 0.90 dir@1 for every model.
+    assert caption.startswith(
+        "Task B autonomous routing for all six models under four post-processing "
+        "settings, in percent. Baseline directory accuracy at rank 1 spans 90.0 to "
+        "90.0 across models (0.0 points), and ABTT narrows it to 90.0 to 90.0 (0.0 points)."
+    )
+
+
+def test_task_a_caption_points_the_gap_definition_at_the_tasks_section():
+    """Issue #235 item 1: fig:gap moved to an appendix."""
+    tex = _render_task_a()
+    assert r"Cosine gap is defined in Section~\ref{sec:tasks}" in tex
+    assert r"\ref{fig:gap}" not in tex
 
 
 # --- two fine-tuning ceilings in the reference block (#194) ----------------
@@ -753,8 +799,8 @@ def test_bare_headline_run_reproduces_the_committed_tables(tmp_path: Path, monke
     """Issue #208: a bare run once dropped the Qwen3-0.6B fine-tuned row because
     the defaults named only the LaTa ceiling. Both ceilings are defaults now, and
     this drives ``main()`` with no arguments but ``--out_dir``."""
-    for raw in [bht.DEFAULT_RESULTS_CSV, *bht.DEFAULT_FINETUNE_CSVS,
-                *bht.DEFAULT_FINETUNE_RUN_INFOS]:
+    for raw in [bht.DEFAULT_RESULTS_CSV, bht.DEFAULT_LEXICAL_CSV,
+                *bht.DEFAULT_FINETUNE_CSVS, *bht.DEFAULT_FINETUNE_RUN_INFOS]:
         _skip_unless(REPO_ROOT / raw, "headline table input (gitignored)")
     monkeypatch.chdir(REPO_ROOT)
     monkeypatch.setattr(sys, "argv", ["build_headline_tables.py",
@@ -880,6 +926,7 @@ def test_main_writes_the_selected_layers_table(tmp_path, monkeypatch):
             "--finetune_csv", str(tmp_path / "f.csv"),
             "--finetune_run_info", str(tmp_path / "absent.json"),
             "--out_dir", str(tmp_path / "out"),
+            "--no_lexical",
         ],
     )
     bht.main()
