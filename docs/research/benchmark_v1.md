@@ -86,8 +86,16 @@ python scripts/data/benchmark_manifest.py --check   # exits non-zero if the corp
 
 ## Split
 
-`runs/active/resubmit/data/phase_resubmit_split.csv` (gitignored, so it is not part of
-this PR; regenerate it with the commands below).
+`runs/active/resubmit/data/phase_resubmit_split.csv`, tracked since issue #230 together with
+its carry-over input `runs/active/resubmit/data/benchmark_v1/phase_resubmit_split.pre_correction_backup.csv`
+(both force-added: `runs/active/*` stays gitignored). sha256 at the time of tracking:
+
+| File | sha256 |
+|---|---|
+| `phase_resubmit_split.csv` | `15924639d0e612f37f11dcf22146297b8252d19f4bdccbf4754a39bc2efd2460` |
+| `benchmark_v1/phase_resubmit_split.pre_correction_backup.csv` | `d5350a302fa1dc3dd5f8b1c151bbb2f65a92f2d37ece99e81f280a00697d650d` |
+
+The commands below document how the tracked split was produced from the backup.
 
 The v2 split generator (`src/canon_split_v2.py`, seed 42) draws from one RNG stream in
 folder-size-class order, so a directory changing size reshuffles unrelated files. Rerunning
