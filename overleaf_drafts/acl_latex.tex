@@ -204,7 +204,7 @@ We therefore keep ABTT as the reference.
 LaTa & T5 & Latin & none & 12 & run \\
 PhilTa & T5 & Grc/La/En & none & 12 & run \\
 mT5-base & T5 & 101 lang. & none & 12 & run \\
-T5-v1.1-base & T5 & English & none & 12 & \pendingnum{P2x2} \\
+T5-v1.1-base & T5 & English & none & 12 & run \\
 \midrule
 LaBERTa & Enc. & Latin & none & 12 & \pendingnum{P2x2} \\
 PhilBERTa & Enc. & Grc/La/En & none & 12 & \pendingnum{P2x2} \\
@@ -531,7 +531,7 @@ A Sentence-T5 that collapses at mid-depth is then predicted by both accounts, wh
 We read this cell against LaBSE's healthy middle layers and against raw T5-v1.1-base.
 An English model may also retrieve Latin poorly at every layer for reasons unrelated to collapse, so for this cell the label-free top-PC share and effective rank are the primary readout.
 Table~\ref{tab:panel_2x2} reports the lowest baseline AUROC over layers and the peak top-PC share of each cell.
-We find \pending{P2x2: lowest baseline AUROC and peak top-PC share over layers for LaBERTa, PhilBERTa, Latin BERT, T5-v1.1-base and Sentence-T5; expected under the architecture account: the raw encoder-only models stay above 0.80 AUROC at every layer, while Sentence-T5 and T5-v1.1-base reach a top-PC share above 0.8 at mid-depth}.
+We find \pending{P2x2: lowest baseline AUROC and peak top-PC share over layers for LaBERTa, PhilBERTa, Latin BERT and Sentence-T5; expected under the architecture account: the raw encoder-only models stay above 0.80 AUROC at every layer, while Sentence-T5 and T5-v1.1-base reach a top-PC share above 0.8 at mid-depth}.
 % CONDITIONAL: cite mikkelsen2026 as contrast if the 2x2 panel supports a T5-specific account
 
 % PLACEHOLDER TABLE: filled by P2x2 (embedding-trained T5 and raw encoder-only rows)
