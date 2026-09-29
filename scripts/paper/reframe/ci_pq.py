@@ -411,6 +411,13 @@ def paper_reproduce(src: Sources, cfg: Config, results: pd.DataFrame,
 
 CHECK_KEYS = ("tau", "D", "aucroc", "gap", "overall_assignment_acc", "dir_acc_at_1",
               "train_aucroc", "train_dir_acc_at_1")
+# Counts, tau and D must agree exactly. Continuous scores may differ in the
+# eighth digit: cosines are float32 matrix products, and a different BLAS
+# thread count (the paper's run vs this one) changes their last bit, which can
+# reorder a few near-tied pairs. 1e-6 is far below the printed precision,
+# which is checked separately cell by cell.
+TOL = {"tau": 0.0, "D": 0.0, "overall_assignment_acc": 0.0, "dir_acc_at_1": 0.0,
+       "train_dir_acc_at_1": 0.0, "aucroc": 1e-6, "gap": 1e-6, "train_aucroc": 1e-6}
 
 
 def build_units(src: Sources, cfg: Config, D: Optional[int], tau: Optional[float],
@@ -552,13 +559,13 @@ def cmd_compute(args: argparse.Namespace) -> None:
             rec[f"paper_{k}"] = p
             rec[f"csv_{k}"] = r
             if r is not None and not (isinstance(r, float) and np.isnan(r)) and p is not None:
-                tol = 1e-6 if k == "gap" else 1e-9
+                tol = TOL[k]
                 if not _close(p, r, tol):
                     ok = False
             if k in fast:
                 rec[f"fast_{k}"] = fast[k]
                 if fast[k] is not None and p is not None:
-                    tol = 1e-6 if k == "gap" else 1e-9
+                    tol = TOL[k]
                     if not _close(fast[k], p, tol):
                         ok = False
         rec["all_match"] = ok
