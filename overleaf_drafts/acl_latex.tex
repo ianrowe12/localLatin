@@ -204,7 +204,7 @@ We therefore keep ABTT as the reference.
 LaTa & T5 & Latin & none & 12 & run \\
 PhilTa & T5 & Grc/La/En & none & 12 & run \\
 mT5-base & T5 & 101 lang. & none & 12 & run \\
-T5-v1.1-base & T5 & English & none & 12 & \pendingnum{P2x2} \\
+T5-v1.1-base & T5 & English & none & 12 & run \\
 \midrule
 LaBERTa & Enc. & Latin & none & 12 & \pendingnum{P2x2} \\
 PhilBERTa & Enc. & Grc/La/En & none & 12 & \pendingnum{P2x2} \\
@@ -397,7 +397,7 @@ We test whether such coordinates explain a collapse to chance, and at which dept
 At every layer of LaTa, PhilTa, mT5-base, LaBSE and Qwen3-0.6B, we rank residual coordinates two ways on training passages: by mean absolute value, and by variance across passages.
 For each ranking we zero the top $k$ coordinates, $k \in \{1,3,5,10\}$.
 We also standardize every coordinate by its training mean and standard deviation \citep{timkey2021rogue}, and we center the vectors without removing any component ($D=0$).
-ABTT with $D=1$ serves as a reference, since it repairs a rank-one nuisance under either account.
+ABTT with $D=1$ serves as a reference, since it removes the dominant direction, and ABTT with $D=3$ as a second, since it recovers at least 80 percent of the $D=10$ gain at every collapsed T5 layer.
 If a few passage-varying coordinates cause the collapse, zeroing the top $k \le 5$ coordinates by variance restores AUROC at the collapsed T5 layers to at least 0.90.
 Zeroing by mean magnitude, which also picks coordinates that shift all passages together, should help less.
 Top-PC share then falls toward the range of the non-T5 models.
@@ -414,21 +414,20 @@ We find \pending{E1: AUROC and top-PC share after zeroing the top-$k$ coordinate
 \centering
 \footnotesize
 \setlength{\tabcolsep}{4pt}
-\begin{tabular}{@{}lccccccccccccc@{}}
+\begin{tabular}{@{}lcccccccccccccc@{}}
 \toprule
- & & & \multicolumn{4}{c}{Zeroed, ranked by mean $|x|$} & \multicolumn{4}{c}{Zeroed, ranked by variance} & & & \\
+ & & & \multicolumn{4}{c}{Zeroed, ranked by mean $|x|$} & \multicolumn{4}{c}{Zeroed, ranked by variance} & & & & \\
 \cmidrule(lr){4-7}\cmidrule(lr){8-11}
-Model & L & Base & 1 & 3 & 5 & 10 & 1 & 3 & 5 & 10 & Std. & $D{=}0$ & ABTT$_{D=1}$ \\
+Model & L & Base & 1 & 3 & 5 & 10 & 1 & 3 & 5 & 10 & Std. & $D{=}0$ & ABTT$_{D=1}$ & ABTT$_{D=3}$ \\
 \midrule
-% Base: baseline test AUROC at the worst baseline layer (z1_numbers.md); E1 recomputes it.
-LaTa       & 6  & 0.496 & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} \\
-PhilTa     & 10 & 0.538 & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} \\
-mT5-base   & 5  & 0.654 & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} \\
-LaBSE      & 1  & 0.806 & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} \\
-Qwen3-0.6B & 1  & 0.858 & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} \\
+LaTa       & 6  & 0.496 & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & 0.482 & 0.671 & 0.973 \\
+PhilTa     & 10 & 0.538 & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & 0.501 & 0.602 & 0.964 \\
+mT5-base   & 5  & 0.654 & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & 0.670 & 0.835 & 0.914 \\
+LaBSE      & 1  & 0.806 & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & 0.867 & 0.886 & 0.929 \\
+Qwen3-0.6B & 1  & 0.858 & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & \pendingnum{E1} & 0.954 & 0.959 & 0.970 \\
 \bottomrule
 \end{tabular}
-\caption{Coordinate ablation at each model's worst baseline layer (L). Cells give Task~A test AUROC for the unmodified mean-pooled vectors (Base); after zeroing the $k$ residual coordinates with the largest mean absolute training value, or with the largest variance across training passages; after per-coordinate standardization with training statistics (Std.); after centering alone ($D{=}0$); and after ABTT with one component (ABTT$_{D=1}$), a reference that repairs a rank-one nuisance under either account. All statistics are fit on training embeddings only.}
+\caption{Coordinate ablation at each model's worst baseline layer (L). Cells give Task~A test AUROC for the unmodified mean-pooled vectors (Base); after zeroing the $k$ residual coordinates with the largest mean absolute training value, or with the largest variance across training passages; after per-coordinate standardization with training statistics (Std.); after centering alone ($D{=}0$); and after ABTT with one or three components (ABTT$_{D=1}$, ABTT$_{D=3}$), the two reference repairs. At the collapsed T5 layers, one component recovers a median 45 percent of the AUROC gain of $D{=}10$, and three recover at least 80 percent at every layer (Table~\ref{tab:d_ablation}). All statistics are fit on training embeddings only.}
 \label{tab:e1_coordinate_ablation}
 \end{table*}
 
@@ -532,10 +531,10 @@ A Sentence-T5 that collapses at mid-depth is then predicted by both accounts, wh
 We read this cell against LaBSE's healthy middle layers and against raw T5-v1.1-base.
 An English model may also retrieve Latin poorly at every layer for reasons unrelated to collapse, so for this cell the label-free top-PC share and effective rank are the primary readout.
 Table~\ref{tab:panel_2x2} reports the lowest baseline AUROC over layers and the peak top-PC share of each cell.
-We find \pending{P2x2: lowest baseline AUROC and peak top-PC share over layers for LaBERTa, PhilBERTa, Latin BERT, T5-v1.1-base and Sentence-T5; expected under the architecture account: the raw encoder-only models stay above 0.80 AUROC at every layer, while Sentence-T5 and T5-v1.1-base reach a top-PC share above 0.8 at mid-depth}.
+We find \pending{P2x2: lowest baseline AUROC and peak top-PC share over layers for LaBERTa, PhilBERTa, Latin BERT and Sentence-T5; expected under the architecture account: the raw encoder-only models stay above 0.80 AUROC at every layer, while Sentence-T5 and T5-v1.1-base reach a top-PC share above 0.8 at mid-depth}.
 % CONDITIONAL: cite mikkelsen2026 as contrast if the 2x2 panel supports a T5-specific account
 
-% PLACEHOLDER TABLE: filled by P2x2 (embedding-trained T5, raw T5-v1.1-base and raw encoder-only rows) and FT (fine-tuned LaTa top-PC share)
+% PLACEHOLDER TABLE: filled by P2x2 (embedding-trained T5 and raw encoder-only rows)
 \begin{table}[t]
 \centering
 \footnotesize
@@ -545,20 +544,15 @@ We find \pending{P2x2: lowest baseline AUROC and peak top-PC share over layers f
 Cell & Models & AUROC$_{\min}$ & PC1$_{\max}$ \\
 \midrule
 T5, raw      & \makecell[l]{LaTa, PhilTa,\\mT5-base} & 0.50--0.65 & 0.86--1.00 \\
-T5, raw      & T5-v1.1-base           & \pendingnum{P2x2} & \pendingnum{P2x2} \\
-T5, raw+FT   & LaTa (fine-tuned)      & 0.50--0.57 & \pendingnum{FT} \\
+T5, raw      & T5-v1.1-base           & 0.489 & 0.975 \\
+T5, raw+FT   & LaTa (fine-tuned)      & 0.50--0.57 & 0.945 \\
 T5, emb.     & Sentence-T5            & \pendingnum{P2x2} & \pendingnum{P2x2} \\
 \midrule
 Enc., raw    & \makecell[l]{LaBERTa, PhilBERTa,\\Latin BERT} & \pendingnum{P2x2} & \pendingnum{P2x2} \\
 Enc., emb.   & LaBSE                  & 0.806 & 0.524 \\
 \bottomrule
 \end{tabular}
-% Raw T5 values from z1_numbers.md: min AUROC LaTa 0.496 (L6), PhilTa 0.538 (L10), mT5-base 0.654 (L5);
-% max top-PC share LaTa 0.952, PhilTa 0.858, mT5-base 1.000. The brief quotes 0.50--0.66 / 0.83--1.00
-% (range over collapsed layers, not per-model extremes). Fine-tuned LaTa AUROC range 0.50--0.57 is over
-% layers 2--11 (REPORT §2.4), so it is a mid-depth range, not a strict minimum.
-% LaBSE values from z1_numbers.md (geometry_regimes): min AUROC 0.806 (layer 1), max top-PC share 0.524.
-\caption{Architecture-by-objective panel. AUROC$_{\min}$ is the lowest Task~A test AUROC over layers of the unmodified mean-pooled vectors (a range when the cell holds several models; for fine-tuned LaTa, the range over layers 2--11). PC1$_{\max}$ is the peak top-PC share over layers, the largest share of centered training variance on the first principal component. Enc.\ is encoder-only, emb.\ is embedding-trained, and FT is contrastive fine-tuning on training pairs. T5-v1.1-base is read on the Latin corpus as the raw partner of Sentence-T5. \pending{FT: import layerwise fine-tuned LaTa row}}
+\caption{Architecture-by-objective panel. AUROC$_{\min}$ is the lowest Task~A test AUROC over layers of the unmodified mean-pooled vectors (a range when the cell holds several models; for fine-tuned LaTa, the range over layers 2--11). PC1$_{\max}$ is the peak top-PC share over layers, the largest share of centered training variance on the first principal component. Enc.\ is encoder-only, emb.\ is embedding-trained, and FT is contrastive fine-tuning on training pairs. T5-v1.1-base is read on the Latin corpus as the raw partner of Sentence-T5.}
 \label{tab:panel_2x2}
 \end{table}
 
