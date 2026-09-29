@@ -19,9 +19,11 @@ integration pass.
    **including LaTa's** (0.984 to 0.970: −0.014, CI −0.032 to +0.001). This
    contradicts the current sentence "ABTT lowers AUROC for every fine-tuned
    model" read as an effect.
-4. The lexical reference is level with the best ABTT cell on both tasks. Its
-   lead in DirAcc@1 is +0.5 (−1.7 to +1.6), so "above every ABTT cell" does
-   not survive.
+4. The lexical reference is not distinguishable from the best ABTT cells.
+   Qwen3-0.6B and KaLM-mini tie at 89.4 DirAcc@1, and TF-IDF leads each by
+   +0.5 (95% CI −1.4 to 2.5 against Qwen3-0.6B, −1.3 to 2.3 against
+   KaLM-mini). Only LaTa's ABTT cell is significantly below TF-IDF. "Above
+   every ABTT cell" does not survive.
 5. PQ: the routing gain of the embedding-trained models appears without any
    threshold and at the oracle threshold. It is not a grid artifact and is not
    produced by centering. It comes with the removed top components and with a
@@ -39,7 +41,7 @@ integration pass.
 | Run of record | job **22535867** (code `5245ec3`), 32:03 elapsed, 6 h 59 min total CPU, 7.9 GB peak RSS. `compute` 1,718 s wall, `sweep` 175 s |
 | Earlier jobs | 22535011 (LaBSE pilot, B = 200, cancelled during the sweep); 22535062 and 22535192 (stopped at the reproduction gate, see below); 22535244 (pilot, B = 1,000, 4:06 elapsed, 35 CPU-min, used to set `--time`); 22535292 (first full run, 29:07, 6 h 28 min CPU; its intervals are identical to the run of record, which only adds the PQ paired contrasts) |
 | Raw outputs | `runs/active/reframe/ci_pq_v2/` (also `bootstrap_replicates.npz`: every replicate and the draw counts), `runs/active/reframe/ci_pq_v2_sweep/` (`sweep_per_layer.csv`, 2,076 rows) |
-| Published copies | `docs/research/data/reframe_ci_pq/` (`headline_ci.csv`, `headline_ci_diffs.csv`, `pq_cells.csv`, `sweep_selected.csv`, `reproduction_*.csv`, `run_info.json`, `sweep_run_info.json`) |
+| Published copies | `docs/research/data/reframe_ci_pq/` (`headline_ci.csv`, `headline_ci_diffs.csv`, `pq_cells.csv`, `sweep_selected.csv`, `reproduction_*.csv`, `run_info.json`, `sweep_run_info.json`). `publish` changes labels only, and every number is copied as text: D is blank where nothing is fitted (Base, SIF), and the replicate-max rows are relabelled (see CI results) |
 | Tables | `overleaf_drafts/tables/headline_ci.tex` (`tab:headline_ci`), `headline_ci_diffs.tex` (`tab:headline_ci_diffs`), `pq_routing.tex` (`tab:pq_routing`), `taskA_headline_ci.tex` and `taskB_headline_ci.tex` (compact drop-ins that keep the labels `tab:taskA_headline`/`tab:taskB_headline`) |
 | Tests | `tests/test_reframe_ci_pq.py`: the fast evaluator against `run_resubmit_evaluate` on random fixtures, the bootstrap weights against an explicit resample with duplicated directories, byte-identical regeneration of all five tables from the committed CSVs, the stale-CSV guard, and the lexical-row path of the compact tables |
 
@@ -90,6 +92,13 @@ the interval is taken on the per-replicate difference. Each cell sits at its
 own train-selected layer, so "ABTT − Base" compares printed cells, not one
 layer. `share_le_0` in `headline_ci_diffs.csv` is the fraction of replicates
 with a difference ≤ 0.
+
+**Rounding.** Differences are computed at full precision and then rounded,
+so they can differ by one unit in the last digit from the difference of the
+two printed cells. Qwen3-0.6B's ABTT AUROC gain is +0.006 although its printed
+cells, 0.966 and 0.973, differ by 0.007; LaBSE's is +0.030 against printed
+0.956 and 0.987. The contrast table's caption says so. This memo and the
+replacement LaTeX quote the full-precision difference with its interval.
 
 **Spreads.** The largest minus the smallest of the six zero-shot cells, per
 replicate. Under resampling the range of near-tied values is biased upward,
@@ -147,13 +156,26 @@ Full table: `tab:headline_ci` (every cell) and `tab:headline_ci_diffs`
 | Fine-tuned ABTT − zero-shot ABTT, LaTa | −0.002 (−0.010, 0.005) | −0.7 (−2.6, 1.2) | −0.9 (−2.8, 1.0) |
 | Qwen3-0.6B | +0.022 (0.006, 0.044) | +0.6 (−1.6, 2.9) | +2.0 (0.0, 4.0) |
 | KaLM-mini | +0.013 (0.002, 0.029) | +1.6 (−0.3, 3.6) | +3.1 (1.2, 5.2) |
-| TF-IDF char 3–5 − best ABTT cell (re-chosen per replicate) | +0.000 (−0.004, 0.004) | +0.1 (−1.9, 1.3) | +0.5 (−1.7, 1.6) |
+| TF-IDF char 3–5 − ABTT, Qwen3-0.6B | +0.014 (0.002, 0.031) | +0.3 (−1.6, 2.3) | +0.5 (−1.4, 2.5) |
+| TF-IDF char 3–5 − ABTT, KaLM-mini | +0.006 (−0.002, 0.016) | +0.1 (−1.6, 1.9) | +0.5 (−1.3, 2.3) |
+| TF-IDF char 3–5 − ABTT, LaBSE | +0.000 (−0.004, 0.005) | +1.0 (−1.0, 3.1) | +1.4 (−0.8, 3.6) |
 | Spread over six models, Base | 0.134 (0.110, 0.158) | 40.3 (35.7, 44.7) | 39.3 (34.6, 43.7) |
 | Spread over six models, ABTT | 0.015 (0.006, 0.034) | 3.3 (1.8, 5.8) | 3.3 (1.8, 6.0) |
 
 TF-IDF against each model's ABTT cell (DirAcc@1): LaTa +3.7 (1.4, 6.2) is the
-only one that excludes zero. Against LaBSE the AUROC difference is 0.000
-(−0.004, 0.005), a tie.
+only one that excludes zero. The best ABTT cells are Qwen3-0.6B's and
+KaLM-mini's, tied at 89.4, and the fixed contrasts against them are the ones
+quoted. On Task A, the best ABTT cell is LaBSE's, and the AUROC difference is
+0.000 (−0.004, 0.005), a tie.
+
+`headline_ci_diffs.csv` also carries a row group
+`tfidf_minus_replicate_max_abtt`: TF-IDF minus the best ABTT cell re-chosen in
+every replicate. It is labelled there as a max-over-models statistic and is
+not used in the text. The replicate maximum sits above the maximum of the
+point estimates (mean replicate max 89.84 against 89.39 DirAcc@1, about +0.45),
+so its interval is centred near zero even though the point difference is
++0.47. The first version of this memo quoted it; the fixed contrasts above
+replace it.
 
 The fine-tuned drops: the replicate shares below zero are 96% (LaTa), 89%
 (Qwen3-0.6B) and 92% (KaLM-mini). The direction is consistent across the
@@ -174,19 +196,20 @@ configurations. The three embedding-trained models:
 | | LaBSE | Qwen3-0.6B | KaLM-mini |
 |---|---|---|---|
 | Layer Base / ABTT | 11 / 11 | 28 / 5 | 23 / 3 |
-| **(1) Existing-vs-new AUROC of the max cosine**, Base → ABTT | 0.922 → 0.960 | 0.900 → 0.954 | 0.931 → 0.958 |
+| **(1) Existing-vs-new AUROC of the max cosine**, Base cell → ABTT cell | 0.922 → 0.960 | 0.900 → 0.954 | 0.931 → 0.958 |
 | paired Δ (95% CI) | +0.037 (0.021, 0.055) | +0.055 (0.034, 0.077) | +0.027 (0.012, 0.043) |
-| **(2) Oracle gap** (best test threshold − train τ), Base | +1.0 (0.1, 3.5) | +1.0 (0.2, 2.6) | 0.0 (0.0, 1.1) |
-| same, ABTT | +0.6 (0.1, 1.6) | +0.7 (0.2, 1.7) | +0.2 (0.0, 1.6) |
+| **(2) Oracle gap**: best-test-threshold assignment acc. − train-τ assignment acc., Base cell | +1.0 (0.1, 3.5) | +1.0 (0.2, 2.6) | 0.0 (0.0, 1.1) |
+| same, ABTT cell | +0.6 (0.1, 1.6) | +0.7 (0.2, 1.7) | +0.2 (0.0, 1.6) |
 | ABTT − Base at each side's oracle threshold | +7.0 (4.2, 9.3) | +8.9 (6.1, 11.7) | +4.4 (2.2, 6.8) |
-| **(3) Hubness**: skewness of N₁₀, Base → ABTT | 2.00 → 0.58 | 2.51 → 1.07 | 1.97 → 0.87 |
-| max N₁₀, Base → ABTT | 68 → 28 | 86 → 38 | 63 → 37 |
+| **(3) Hubness**: skewness of N₁₀, Base cell → ABTT cell | 2.00 → 0.58 | 2.51 → 1.07 | 1.97 → 0.87 |
+| max N₁₀, Base cell → ABTT cell | 68 → 28 | 86 → 38 | 63 → 37 |
 | **(4) Centering only (D = 0)**, assignment acc. − Base, at the Base layer | −4.7 (−7.4, −2.0) | +2.6 (−0.4, 5.5) | −1.9 (−3.7, −0.1) |
 | ABTT − centering at the ABTT layer | +12.1 (8.8, 15.5) | +25.9 (22.0, 29.9) | +12.0 (9.1, 15.1) |
 | centering, own train-selected layer (assign / DirAcc@1 / Task A AUROC) | 83.9 / 82.1 / 0.956 | 85.4 / 83.1 / 0.975 | 85.7 / 83.9 / 0.979 |
 | **(5) τ refit, fixed layer and D**: Base assign (paper → exact cut) | 83.3 → 82.5 | 82.3 → 82.6 | 87.5 → 86.2 |
 | ABTT assign (paper → exact cut) | 90.8 → 90.8 | 91.5 → 91.5 | 91.7 → 91.7 |
 | SD of test pair cosines at the Base cell | 0.039 | 0.043 | 0.021 |
+| same at the ABTT cell (after ABTT; raw at that layer) | 0.102 (0.039) | 0.086 (0.034) | 0.085 (0.054) |
 
 Definitions and notes:
 
@@ -195,7 +218,13 @@ Definitions and notes:
   involves no threshold.
 - (2) The best assignment accuracy over every cut of the test max-cosines,
   minus the printed value at train τ. The oracle is re-optimized in every
-  replicate.
+  replicate. It is an accuracy gap, not a distance between thresholds. At the
+  three Base cells the point gap is at most 1.0 and the upper bounds are 1.1
+  to 3.5.
+- (1) and (3) compare the Base cell with the ABTT cell, each at its own
+  train-selected layer. The layers are the same for LaBSE (11), but not for
+  Qwen3-0.6B (28 vs 5) or KaLM-mini (23 vs 3). The rows at the ABTT layer in
+  `tab:pq_routing` separate the layer change from the projection.
 - (3) N_k(x) is the number of test files that have x among their k = 10
   nearest neighbours by cosine, excluding self. The statistic is the
   population skewness E[(N−μ)³]/σ³, the k-occurrence skewness of Radovanović
@@ -221,17 +250,25 @@ Definitions and notes:
 
 Threshold grid across all printed Task B numbers (66 numbers from 33 cells):
 
-- **Fixed layer and D.** The fine grid moves 45 and the exact cut 48 at
-  0.1-point precision. Most moves are one file (0.12 points). Moves above 1
-  point occur only at Base or SIF cells: mT5-base Base +2.6/+2.3, KaLM-mini
-  SIF +2.0/+2.1, LaBSE SIF −1.5/−1.7, KaLM-mini Base −1.3, mT5-base SIF +1.3/+1.4.
-  No ABTT, SIF+ABTT or fine-tuned cell moves by more than 0.8. The mean change
-  is +0.15.
+- **Fixed layer and D.** The fine grid moves 45 of the 66 printed routing numbers, by a median of 3 files (0.35 points); ABTT, SIF+ABTT and fine-tuned cells move by at most 0.8, and Base and SIF cells by up to 2.6. The
+  exact cut moves 48. The fine-grid moves, in files (1 file = 0.117 points),
+  are distributed as {1: 14, 2: 3, 3: 10, 5: 1, 6: 3, 7: 4, 8: 2, 11: 2,
+  13: 2, 15: 2, 17: 1, 22: 1}. Moves above 1 point: mT5-base Base
+  +2.6/+2.3 (fine/exact), KaLM-mini SIF +2.0/+2.1, LaBSE SIF −1.5/−1.7,
+  KaLM-mini Base −1.3/−1.3, mT5-base SIF +1.3/+1.4. The mean signed change is
+  +0.15.
 - **Layer and D re-selected under the new grid as well** (60 embedding
   cells). The fine grid moves 42 and the exact cut 44. The largest moves are
   mT5-base Base +5.0 (layer 12 → 1), LaBSE SIF −2.3 (layer 12 → 11), KaLM-mini
   SIF +2.1, PhilTa SIF+ABTT −2.0 (layer 1 → 2) and fine-tuned KaLM-mini ABTT
   −1.2 (D 10 → 5).
+
+**Recommendation.** Keep the published grid. Every grid variant optimizes the
+same training objective (best F1 over same- vs different-directory pairs), and
+the 200-point grid is simply its published resolution. Refitting would trade
+one set of one-to-few-file differences for another, and it would not change
+any conclusion. Disclose the sensitivity instead, with the `Exact` column of
+`tab:pq_routing` and the Limitations sentence below.
 
 Collapsed T5 baselines (for completeness): their oracle gaps are large (LaTa
 +5.6, PhilTa +7.0, mT5-base +19.6), so part of their baseline deficit is a
@@ -259,16 +296,18 @@ The paragraph makes, or implies, six claims.
    Centering also lowers LaBSE's routing (−4.7) and KaLM-mini's (−1.9). For
    Qwen3-0.6B and KaLM-mini, centering at its own selected layer does reach
    ABTT's Task A AUROC (0.975 vs 0.973; 0.979 vs 0.981), but it recovers at
-   most 3 of the 7 to 9 routing points. The shared offset, read as the mean
+   most 3 of the 4 to 9 routing points. The shared offset, read as the mean
    vector, does not account for the routing gain in any of the three.
 4. *"A cost to the open-set decision beyond ranking would need offsets that
    differ by query, such as hub vectors … or a shift between the training and
    test score distributions."* **The shift is ruled out and hubs are
-   consistent.** The train τ is within 1 point of the test optimum at every
-   embedding-trained baseline cell, and ABTT's gain holds at the oracle
-   threshold (check 2). Hubness falls sharply under ABTT (skewness 2.0–2.5 →
-   0.6–1.1; the largest hub reaches 63–86 files under Base, 28–38 under
-   ABTT), while centering alone leaves it near 1.8. This is correlational.
+   consistent.** At every embedding-trained Base cell, the train-fit τ gives
+   assignment accuracy within 1.0 point of the best test threshold (upper
+   bounds 1.1 to 3.5), and ABTT's gain holds at the oracle threshold
+   (check 2). Hubness falls sharply from the Base cell to the ABTT cell
+   (skewness 2.0–2.5 → 0.6–1.1; the largest hub reaches 63–86 files at the
+   Base cell and 28–38 at the ABTT cell), while centering alone at the ABTT
+   layer leaves it near 1.8. This is correlational.
    The checks do not show that reducing hubness causes the routing gain.
 5. *"The threshold grid offers a mundane alternative … one grid step can
    span most of a standard deviation, and ABTT could help routing simply by
@@ -277,9 +316,8 @@ The paragraph makes, or implies, six claims.
    ABTT cells do not move and the baselines move by −1.3 to +0.3, so the gap
    grows or shrinks by about a point. The gain is present with no threshold
    at all (check 1). The grid does matter for the **precision of the printed
-   one-decimal routing numbers**: most change by one file, and Base/SIF cells
-   by up to 2.6 points (5.0 with re-selection). That belongs in the appendix
-   or Limitations, not in the offset argument.
+   one-decimal routing numbers**: the fine grid moves 45 of the 66 printed routing numbers, by a median of 3 files (0.35 points); ABTT, SIF+ABTT and fine-tuned cells move by at most 0.8, and Base and SIF cells by up to 2.6 (5.0 with re-selection).
+   That belongs in the appendix or Limitations, not in the offset argument.
 6. *"Until they run, we do not attribute the routing gain to the offset
    geometry."* The checks attribute the gain to what ABTT removes beyond the
    mean. The supported wording is "a gain in separating known from new
@@ -307,15 +345,16 @@ split (the five-seed spread speaks to that only for Task B).
    KaLM-mini (+0.8) rises are within noise.
 3. Section 7, "Routing converges", and Section 3, "Lexical reference": "89.9
    … above every ABTT cell (86.1 to 89.4)" and "above every pre-trained one".
-   The best-cell difference is +0.5 (−1.7, 1.6), so the supported word is
-   "level with". Only LaTa's ABTT cell is significantly below. The
+   TF-IDF is not distinguishable from the best ABTT cells: +0.5 (−1.4 to 2.5
+   against Qwen3-0.6B, −1.3 to 2.3 against KaLM-mini), so the supported word
+   is "level with". Only LaTa's ABTT cell is significantly below TF-IDF. The
    generated caption of `taskB_headline.tex` with `--lexical_csv` already
    says "level with", from its one-point tolerance.
 4. "Practitioner rule": "… and hurt ranking in contrastively fine-tuned ones"
    is stronger than the data. "Did not help ranking" survives.
 5. Section 7: "The test cosines of Qwen3-0.6B spread with a standard
    deviation as small as 0.007." True of layer 27 only. The routing cells are
-   at layers 28 (SD 0.043) and 5 (0.086).
+   at layers 28 (SD 0.043) and 5 (0.086 after ABTT; 0.034 raw).
 6. The generated caption of `taskB_headline.tex` places the fine-tuned
    Qwen3-0.6B and KaLM-mini ABTT rows "above every zero-shot ABTT cell".
    On the single split their assignment accuracy exceeds their own zero-shot
@@ -326,12 +365,22 @@ split (the five-seed spread speaks to that only for Task B).
    Routed to Ian; not changed here.
 7. Limitations: "The headline cells carry no confidence intervals until …"
    is superseded (replacement below).
+8. Section 7, "Routing converges": "Surface overlap remains the strongest
+   router on this corpus." Replace with "Surface overlap routes as well as the
+   best repaired encoder on this corpus."
+9. "Practitioner rule": "… a character n-gram reference routes better than
+   every pre-trained configuration on this corpus." Replace "routes better
+   than every" with "routes as well as the best".
+10. "Where the repair costs": "Why the projection costs ranking in fine-tuned
+    models is the subspace question …". Replace "Why the projection costs
+    ranking in fine-tuned models" with "Whether the projection costs ranking
+    in fine-tuned models", since no drop is established.
 
 Supported as written: the abstract's "cuts the cross-model spread in routing
 accuracy from 39.3 to 3.3 points" (34.6–43.7 → 1.8–6.0); "ABTT moves every
 model into a band from 0.971 to 0.987"; "mT5-base gains 0.137"
 (0.109–0.166); "the repair matches the lexical reference but does not exceed
-it" (+0.000, −0.004 to 0.004). The five-seed claim "fine-tuned Qwen3-0.6B
+it" (TF-IDF minus LaBSE's ABTT cell, the best on Task A: 0.000, −0.004 to 0.005). The five-seed claim "fine-tuned Qwen3-0.6B
 with ABTT routes at 92.3 against 90.5 …" is a different protocol. The
 single-split DirAcc@1 contrasts point the same way (+2.0, 0.0 to 4.0;
 +3.1, 1.2 to 5.2).
@@ -349,7 +398,8 @@ headline tables are regenerated with `--lexical_csv` (handoff TODO), run
 `python scripts/paper/reframe/ci_pq.py render` afterwards. The compact tables
 copy the headline tables line by line, the renderer adds interval rows to the
 lexical rows, and it stops if a printed value and the CI CSV disagree.
-No new bibliography entry is needed.
+No new bibliography entry is needed. Line numbers below refer to `main` at
+`9beeeec` and shift after #239; match on the quoted strings.
 
 **CI, line 624.** Replace
 `The single-split cells in both headline tables carry no intervals yet: \pending{CI: directory-level bootstrap intervals on every headline cell}.`
@@ -358,7 +408,7 @@ with:
 ```latex
 Directory-level bootstrap intervals (Appendix~\ref{app:ci_pq}, Table~\ref{tab:headline_ci}) span about $\pm 0.02$ AUROC and $\pm 3$ points of routing accuracy per cell.
 Every routing gain from ABTT excludes zero, as do the AUROC gains of the three T5 encoders and LaBSE; those of Qwen3-0.6B ($+0.006$, 95\% CI $-0.010$ to $0.019$) and KaLM-mini ($+0.009$, $-0.002$ to $0.021$) do not (Table~\ref{tab:headline_ci_diffs}).
-The spread in DirAcc@1 falls from 39.3 (34.6 to 43.7) to 3.3 (1.8 to 6.0) points, and the lexical reference's lead over the best ABTT cell, $+0.5$ points, lies inside its interval ($-1.7$ to $1.6$).
+The spread in DirAcc@1 falls from 39.3 (34.6 to 43.7) to 3.3 (1.8 to 6.0) points, and the lexical reference is not distinguishable from the best ABTT cells ($+0.5$; 95\% CI $-1.4$ to $2.5$ against Qwen3-0.6B, $-1.3$ to $2.3$ against KaLM-mini); only LaTa's ABTT cell is significantly below it.
 ```
 
 and in the same paragraph change
@@ -366,6 +416,7 @@ and in the same paragraph change
 to
 `The lexical reference routes at 89.9 on the single split, level with the best ABTT cells (86.1 to 89.4), and at 91.1 over five seeds, above every SIF+ABTT cell (88.9 to 90.6).`
 (The five-seed clause is outside this bootstrap and is left as written.)
+In the next sentence, change `Surface overlap remains the strongest router on this corpus.` to `Surface overlap routes as well as the best repaired encoder on this corpus.`
 In Section 3, "Lexical reference", change `and 89.9 DirAcc@1 on Task~B, above every pre-trained one` to `and 89.9 DirAcc@1 on Task~B, level with the best pre-trained ones`.
 
 **PQ, lines 641–642.** Replace
@@ -376,12 +427,12 @@ with:
 ```latex
 Five checks on cached embeddings test these readings (Table~\ref{tab:pq_routing}).
 The gain does not depend on the threshold.
-With no threshold at all, the AUROC of each file's best-match cosine for existing against new files rises under ABTT by 0.037 (95\% CI 0.021 to 0.055) for LaBSE, 0.055 (0.034 to 0.077) for Qwen3-0.6B, and 0.027 (0.012 to 0.043) for KaLM-mini.
-At their baseline cells the training threshold lies within 1.0 point of the best test threshold, and the gain survives when both settings use their best test thresholds (7.0, 8.9, and 4.4 points).
+With no threshold at all, the AUROC of each file's best-match cosine for existing against new files rises from the baseline cell to the ABTT cell by 0.037 (95\% CI 0.021 to 0.055) for LaBSE, 0.055 (0.034 to 0.077) for Qwen3-0.6B, and 0.027 (0.012 to 0.043) for KaLM-mini.
+At their baseline cells the train-fit $\tau$ gives assignment accuracy within 1.0 point of the best test threshold (upper bounds 1.1 to 3.5), and the gain survives when both settings use their best test thresholds (7.0, 8.9, and 4.4 points).
 Refitting $\tau$ as the exact best-F1 cut leaves the three ABTT cells unchanged and moves the baselines by $-1.3$ to $+0.3$ points; the 0.007 standard deviation belongs to Qwen3-0.6B's layer 27, and at its selected layer 28 the test cosines spread with 0.043.
 Nor does the shared offset produce the gain.
-Centering alone ($D=0$) lowers LaBSE's assignment accuracy by 4.7 points (2.0 to 7.4), and at the ABTT layer of each of the three the removed components add 12.0 to 25.9 points on top of centering.
-ABTT also reduces hubness \citep{radovanovic2010hubs}: the skewness of the 10-occurrence distribution falls from 2.0--2.5 to 0.6--1.1, while centering alone leaves it near 1.8.
+At each baseline cell's layer, centering alone ($D=0$) changes assignment accuracy by $-4.7$ points ($-7.4$ to $-2.0$) for LaBSE, $+2.6$ ($-0.4$ to $5.5$) for Qwen3-0.6B, and $-1.9$ ($-3.7$ to $-0.1$) for KaLM-mini, and at the ABTT layer of each of the three the removed components add 12.0 to 25.9 points on top of centering.
+From the baseline cell to the ABTT cell hubness also falls \citep{radovanovic2010hubs}: the skewness of the 10-occurrence distribution drops from 2.0--2.5 to 0.6--1.1, while centering alone at the ABTT layer leaves it near 1.8.
 We therefore read the routing gain as better separation of known from new witnesses by their best match, carried by the top components beyond the mean; whether the reduced hubness causes it remains untested.
 ```
 
@@ -398,12 +449,13 @@ to
 (`On pairwise ranking, ABTT lowers AUROC ...` through `... and from 91.7 to 92.5 for KaLM-mini (Table~\ref{tab:finetune_ceiling}).`) with:
 
 ```latex
-On pairwise ranking, ABTT lowers the AUROC of every fine-tuned model, but no single drop is outside its 95\% interval.
+ABTT does not help fine-tuned ranking: AUROC falls by 0.002 to 0.014 in point estimate, and every 95\% interval includes zero.
 Fine-tuned LaTa falls from 0.984 to 0.970 ($-0.014$, $-0.032$ to $+0.001$), and Qwen3-0.6B and KaLM-mini fall by 0.002 and 0.003 ($-0.005$ to $+0.001$; $-0.007$ to $+0.001$); for Qwen3-0.6B the two rows also sit at different train-selected layers (28 and 27).
 The same projection raises fine-tuned LaTa's DirAcc@1 from 81.6 to 85.2 ($+3.6$, 1.0 to 6.3); the rises for Qwen3-0.6B (90.8 to 91.4) and KaLM-mini (91.7 to 92.5) are within noise (Table~\ref{tab:finetune_ceiling}).
 ```
 
 and in the next sentence change `The ranking loss is consistent with \citet{rajaee2021finetuning}` to `The direction of the ranking loss is consistent with \citet{rajaee2021finetuning}`.
+Later in the paragraph change `Why the projection costs ranking in fine-tuned models is the subspace question` to `Whether the projection costs ranking in fine-tuned models is the subspace question`.
 Optionally, after `... and KaLM-mini at 93.0 against 90.9; for LaTa the two tie at 87.7 (Appendix~\ref{app:reference_systems}).`, add:
 `On the single split the DirAcc@1 differences are $+2.0$ (0.0 to 4.0) and $+3.1$ (1.2 to 5.2).`
 
@@ -412,14 +464,14 @@ Optionally, after `... and KaLM-mini at 93.0 against 90.9; for LaTa the two tie 
 to
 `The gain is largest where the baseline is weakest: mT5-base gains 0.137 (0.109 to 0.166), while KaLM-mini gains 0.009 ($-0.002$ to $0.021$), within noise.`
 
-**"Practitioner rule", line 660.** Change `and hurt ranking in contrastively fine-tuned ones` to `and did not help ranking in contrastively fine-tuned ones`.
+**"Practitioner rule", lines 660 and 662.** Change `and hurt ranking in contrastively fine-tuned ones` to `and did not help ranking in contrastively fine-tuned ones`, and `a character n-gram reference routes better than every pre-trained configuration on this corpus` to `a character n-gram reference routes as well as the best pre-trained configuration on this corpus`.
 
 **Limitations, line 694.** Replace
 `The headline cells carry no confidence intervals until the directory-level bootstrap is run (CI), so small differences, such as the ABTT drops on fine-tuned Qwen3-0.6B and KaLM-mini, should not be read as effects.`
 with:
 
 ```latex
-The bootstrap intervals resample test directories with the layer, threshold, and projections held fixed, so they cover test-set sampling but not the choice of split; they span about $\pm 0.02$ AUROC and $\pm 3$ routing points, and differences below that, including the ABTT drops on the fine-tuned encoders and the lexical reference's lead, are not effects. The printed routing accuracies are precise to a few files: refitting the threshold on a finer grid moves most of them by one file and baseline cells by up to 2.6 points (Table~\ref{tab:pq_routing}).
+The bootstrap intervals resample test directories with the layer, threshold, and projections held fixed, so they cover test-set sampling but not the choice of split; they span about $\pm 0.02$ AUROC and $\pm 3$ routing points, and differences below that, including the ABTT drops on the fine-tuned encoders and the lexical reference's lead, are not effects. The printed routing accuracies are precise to a few files: refitting the threshold on a finer grid moves 45 of the 66 printed routing numbers, by a median of 3 files (0.35 points); ABTT, SIF+ABTT, and fine-tuned cells move by at most 0.8, and Base and SIF cells by up to 2.6 (Table~\ref{tab:pq_routing}).
 ```
 
 ## Suggested appendix text (`app:ci_pq`)
