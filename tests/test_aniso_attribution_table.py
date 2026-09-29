@@ -42,6 +42,10 @@ def _summary(base: float, abtt: float) -> pd.DataFrame:
                 }
                 for key in bmaa.METRIC_KEYS:
                     row[f"{key}_mean"] = value
+                for key in bmaa.SHUFFLE_KEYS:
+                    row[bmaa._shuffle_gap_col(key, "mean")] = 0.1
+                    row[bmaa._shuffle_gap_col(key, "se")] = 0.01
+                    row[bmaa._shuffle_gap_col(key, "n")] = 200
                 rows.append(row)
     return pd.DataFrame(rows)
 
@@ -93,7 +97,7 @@ def test_verdict_follows_the_two_standard_error_rule():
 
 
 def test_delta_cell_marks_only_ties():
-    assert bat._delta_cell((0.367, 0.023)) == "$+0.367$ (16.0)"
+    assert bat._delta_cell((0.367, 0.023)) == "$+0.367$ ($16.0$)"
     assert bat._delta_cell((-0.024, 0.016)).endswith(r"$^\dagger$")
     assert bat._delta_cell(None) == "--"
 
@@ -134,6 +138,19 @@ def test_rendered_table_puts_both_layer_sets_under_each_model(tmp_path: Path):
     assert "LaTa 8, PhilTa 6, and mT5-base 5" in tex
     assert "—" not in tex and "–" not in tex
     assert r"\label{tab:attribution_metrics_aniso}" in tex
+    assert "every $\\rho_{\\text{LOO}}$ cell beats a shuffle" in tex
+
+
+def test_caption_names_the_cells_that_fail_the_shuffle_control():
+    summary = bmaa.select_main_rows(_summary(0.2, 0.5))
+    col = bmaa._shuffle_gap_col(bat.RHO_KEY, "mean")
+    mask = ((summary["model"] == "bowphs/LaTa") & (summary["method"] == "ig")
+            & (summary["variant"] == "baseline"))
+    summary.loc[mask, col] = -0.014
+    layer_set = bat.LayerSet("anis.", summary, {}, {}, ANISOTROPIC)
+    assert bat.shuffle_failures(summary, bat.RHO_KEY) == ["LaTa IG baseline"]
+    clause = bat._shuffle_clause(layer_set, "most anisotropic")
+    assert "in one of the twelve cells (LaTa IG baseline)" in clause
 
 
 def test_generator_refuses_two_runs_at_the_same_layers(tmp_path: Path):

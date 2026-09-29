@@ -47,11 +47,13 @@ from attribution_run_of_record import (  # noqa: E402
     stamp_line,
 )
 from build_main_attribution_artifacts import (  # noqa: E402
+    _NUMBER_WORDS,
     DEL_GAP_KEY,
     METHODS,
     MODELS,
     RHO_KEY,
     _abtt_pair_count_range,
+    _shuffle_gap_col,
     _baseline_pair_count_range,
     _count_phrase,
     _get,
@@ -136,13 +138,40 @@ def _delta_cell(entry: Optional[Tuple[float, float]]) -> str:
     mean, se = entry
     z = mean / se if se > 0 else float("nan")
     tie = verdict(entry) == "tie"
-    text = f"${mean:+.3f}$ ({z:.1f})"
+    text = f"${mean:+.3f}$ (${z:.1f}$)"
     return text + (r"$^\dagger$" if tie else "")
 
 
 def _layers_phrase(layers: Dict[str, int]) -> str:
     parts = [f"{label} {layers[model]}" for model, label in MODELS]
     return ", ".join(parts[:-1]) + f", and {parts[-1]}"
+
+
+def shuffle_failures(summary: pd.DataFrame, metric_key: str) -> list:
+    """Cells where the real attribution does not beat a shuffle of its own scores."""
+    col = _shuffle_gap_col(metric_key, "mean")
+    out = []
+    for model, model_label in MODELS:
+        for method, method_label in METHODS:
+            for variant in ("baseline", "abtt"):
+                if _get(summary, model, method, variant, col) <= 0:
+                    out.append(f"{model_label} {method_label} {variant}")
+    return out
+
+
+def _shuffle_clause(layer_set: LayerSet, where: str) -> str:
+    """One sentence on the rank column's shuffled-attribution control, read off the summary."""
+    failures = shuffle_failures(layer_set.summary, RHO_KEY)
+    if not failures:
+        return (rf" At the {where} layers every $\rho_{{\text{{LOO}}}}$ cell beats "
+                r"a shuffle of its own attribution scores.")
+    n = len(failures)
+    return (
+        rf" At the {where} layers the real attribution does not beat a shuffle "
+        rf"of its own scores on $\rho_{{\text{{LOO}}}}$ in "
+        rf"{_NUMBER_WORDS.get(n, str(n))} of the twelve cells "
+        rf"({', '.join(failures)})."
+    )
 
 
 def caption(reference: LayerSet, aniso: LayerSet) -> str:
@@ -154,8 +183,9 @@ def caption(reference: LayerSet, aniso: LayerSet) -> str:
         r"Table~\ref{tab:attribution_metrics_main} (op., "
         rf"{_layers_phrase(reference.layers)}, chosen by the train-only retrieval "
         r"rule) and each model's most anisotropic layer (anis., "
-        rf"{_layers_phrase(aniso.layers)}, the largest top-PC variance share of "
-        r"Table~\ref{tab:layer_diagnostics_main}). Methods, settings, token filter "
+        rf"{_layers_phrase(aniso.layers)}, the largest top-PC variance share on "
+        r"the test split, Table~\ref{tab:layer_diagnostics_main}). Methods, "
+        r"settings, token filter "
         r"and erasure operator are those of Table~\ref{tab:attribution_metrics_main}; "
         r"ABTT removes $D=10$ components fit on training embeddings at each layer. "
         r"Boldface marks the better variant. $\Delta$ is the paired ABTT minus "
@@ -165,7 +195,9 @@ def caption(reference: LayerSet, aniso: LayerSet) -> str:
         rf"{_wtl(reference.rho)} cells on $\rho_{{\text{{LOO}}}}$ and "
         rf"{_wtl(reference.del_gap)} on DelAUC gap at the operational layers, and "
         rf"{_wtl(aniso.rho)} and {_wtl(aniso.del_gap)} at the most anisotropic "
-        r"layers. At the most anisotropic layers the DelAUC columns average "
+        r"layers."
+        + _shuffle_clause(aniso, "most anisotropic")
+        + r" There the DelAUC columns average "
         rf"{_count_phrase(lo_n, hi_n)} ABTT pairs against "
         rf"{_count_phrase(base_lo, base_hi)} baseline pairs, since ratio metrics "
         r"are undefined below a full-query cosine of 0.05.}"
