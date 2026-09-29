@@ -51,7 +51,7 @@ layer-diagnostics caption. The rule reads the test split, which is legitimate
 for a label-free statistic but differs from the train-only convention elsewhere.
 And the argmax sits on a plateau: LaTa's PC1 share is 0.93 to 0.96 over layers 3
 to 11 (so layers 7 and 8 are geometrically near-identical), and mT5-base reads
-1.000 at every layer from 5 to 11 (5 is the first). The layer set was fixed
+1.000 at every layer from 5 to 10 (0.999 at 11; 5 is the first). The layer set was fixed
 before any attribution was computed at it.
 
 ## Provenance
@@ -196,9 +196,10 @@ the gap is positive, as criterion 5 of the decision memo defines it.
 
 (`AOPC-Comp` equals `DelAUC gap` and `AOPC-Suff` equals `InsAUC gap` per cell,
 as on v1.) All six ABTT cells pass every metric, by 6 to 40 standard errors. The
-failures are baseline IG cells at the two layers where the baseline retrieval
-score is nearest chance: there baseline IG ranks tokens no better than a
-permutation of its own scores. Several passing baseline cells are also within
+failures are the baseline IG cells of LaTa (layer 8, baseline AUROC 0.502) and
+mT5-base (layer 5, 0.654), where baseline IG ranks tokens no better than a
+permutation of its own scores; PhilTa layer 6 (0.541) passes, so the failures
+do not simply track how close the baseline score is to chance. Several passing baseline cells are also within
 two standard errors of zero (DelAUC gap PhilTa baseline IG +0.4 SE and MaRC +0.7
 SE, mT5-base baseline MaRC +0.9 SE). Read literally, criterion 5 ("in every
 cell") would disqualify `rho_LOO` as a headline column at these layers; the
@@ -237,10 +238,12 @@ cell, a replication check the design did not plan but that it passes.
 
 1. *Larger gains inside the collapse.* The mean `rho_LOO` gain is 0.344 at the
    anisotropic layers against 0.312 at the operational ones, and it is smaller
-   in two cells (PhilTa/IG +0.213 vs +0.285, mT5-base/IG +0.298 vs +0.543). The
-   gains hold their size because the baseline falls, not because ABTT
-   explanations get better: post-ABTT `rho_LOO` is lower at the anisotropic
-   layers for PhilTa/IG (0.278 vs 0.614) and mT5-base/IG (0.272 vs 0.686).
+   in three cells (PhilTa/IG +0.213 vs +0.285, mT5-base/IG +0.298 vs +0.543,
+   LaTa/MaRC +0.427 vs +0.455, the last within noise). The gains hold their size
+   because the baseline falls, not because ABTT explanations get better:
+   post-ABTT `rho_LOO` is lower at the anisotropic layers in five of six cells,
+   most for PhilTa/IG (0.278 vs 0.614), mT5-base/IG (0.272 vs 0.686) and
+   mT5-base/MaRC (0.413 vs 0.504).
 2. *Deletion faithfulness.* It gets worse: 2/2/2 against 4/0/2. Both LaTa cells
    still favour the baseline, as they do at layer 7, and PhilTa/IG and
    mT5-base/IG become ties. The erasure-curve and ERASER metrics all weaken the
@@ -263,7 +266,7 @@ plateau could move individual cells.
 Keep the run of record at the operational layers as the attribution result in
 `app:attribution`. Add this run as a second appendix table,
 `tables/attribution_metrics_aniso.tex` (`tab:attribution_metrics_aniso`),
-`\input` next to `tab:attribution_metrics_main`, and one or two sentences in the
+`\input` next to `tab:attribution_metrics_main`, and the sentences below in the
 Results subsection of `app:attribution`. Nothing goes in the main text, since
 attribution is no longer a contribution.
 
@@ -272,22 +275,24 @@ Proposed sentences (for Ian, who is editing `acl_latex.tex`):
 > As a mechanism check we repeated the analysis on the same pairs at each
 > model's most anisotropic layer (LaTa 8, PhilTa 6, mT5-base 5;
 > Table~\ref{tab:attribution_metrics_aniso}), where baseline AUROC is 0.502,
-> 0.541 and 0.654 and ABTT restores 0.965, 0.981 and 0.978. ABTT then improves
-> $\rho_{\mathrm{LOO}}$ in all six cells (10.8 to 18.3 standard errors), mainly
-> because the baseline explanation collapses with the score (baseline integrated
-> gradients for LaTa and mT5-base no longer beat a shuffle of their own
-> scores), while chance-corrected deletion faithfulness improves in only two
-> cells, ties in two, and still favours the baseline in both LaTa cells.
+> 0.541 and 0.654 and ABTT restores 0.965, 0.981 and 0.978. ABTT improves
+> $\rho_{\mathrm{LOO}}$ in all six cells (10.8 to 18.3 standard errors), but
+> the mean gain is no larger than at the operational layers (0.34 against
+> 0.31): the baseline explanation falls with the score, and baseline integrated
+> gradients for LaTa and mT5-base no longer beat a shuffle of their own scores,
+> so $\rho_{\mathrm{LOO}}$ fails the every-cell control at these layers.
+> Chance-corrected deletion faithfulness is weaker than at the operational
+> layers (ABTT wins two cells, ties two and loses both LaTa cells, against four
+> wins and two losses), so the mixed attribution picture is not an artefact of
+> the layer choice.
 
-If one sentence is preferred, drop the parenthetical on the shuffle control
-but keep the deletion clause: the deletion result is what stops the check from
-reading as a stronger claim than the evidence carries.
-
-Two follow-ups for whoever inserts it: the Setup paragraph already names these
-layers as mechanism checks, so no new definition is needed; and the sentence
-"a metric qualifies for the headline table only if the real attribution beats
-the permutation mean in every cell" is about the operational layers, where it
-still holds.
+Follow-ups for the paper integration pass (not edits made here): the Setup
+paragraph already names these layers as mechanism checks, so no new definition
+is needed; and the rule sentence at `acl_latex.tex:899` ("a metric qualifies for
+the headline table only if the real attribution beats the permutation mean in
+every cell") should read "in every cell at the operational layers", since
+`rho_LOO` fails that control in two baseline cells at the most anisotropic
+layers.
 
 ## Reproduce
 
