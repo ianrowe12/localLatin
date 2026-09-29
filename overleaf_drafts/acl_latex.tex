@@ -958,7 +958,7 @@ This appendix keeps the example-level views for one PhilTa retrieval pair. Figur
 
 Figures~\ref{fig:tsne} and~\ref{fig:umap} give the t-SNE and UMAP panels for LaTa, PhilTa, and mT5-base, and Figures~\ref{fig:tsne_appendix} and~\ref{fig:umap_appendix} extend them to LaBSE, Qwen3-0.6B, and KaLM-mini. All four draw all 1,705 witnesses, color the same six largest directories, and compare baseline mean pooling with ABTT-only at $D=10$; each model sits at the layer chosen on the train split by DirAcc@1 under ABTT, the Task B ABTT layer of Table~\ref{tab:selected_layers}.
 
-In t-SNE \citep{vandermaaten2008tsne} and UMAP \citep{mcinnes2018umap} projections at the train-selected layers, ABTT-only with $D=10$ forms tighter same-directory groups than baseline mean pooling: the t-SNE silhouette of the 1,160 winnable witnesses rises by 0.07 to 1.16 on the three T5 encoders.
+In t-SNE \citep{vandermaaten2008tsne} and UMAP \citep{mcinnes2018umap} projections at the train-selected layers, ABTT-only with $D=10$ forms tighter same-directory groups than baseline mean pooling: on each of the three T5 encoders the t-SNE silhouette of the 1,160 winnable witnesses rises, from 0.50 to 0.57 for PhilTa, from $-0.25$ to 0.48 for mT5-base, and from $-0.66$ to 0.50 for LaTa. Silhouette lies in $[-1, 1]$, so a rise can be as large as 2; these three are 0.07, 0.72 and 1.16.
 
 
 \begin{figure*}[!t]
