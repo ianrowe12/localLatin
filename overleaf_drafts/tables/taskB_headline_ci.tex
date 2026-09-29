@@ -1,0 +1,37 @@
+% generated table
+\begin{table*}[t]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{1.8pt}
+\begin{tabular}{lrrrrrrrr}
+\toprule
+& \multicolumn{4}{c}{\textbf{Assignment accuracy}} & \multicolumn{4}{c}{\textbf{Directory accuracy @1}} \\
+\cmidrule(lr){2-5}\cmidrule(lr){6-9}
+\textbf{Model} & Base & SIF & ABTT & SIF+ABTT & Base & SIF & ABTT & SIF+ABTT \\
+\midrule
+LaTa & 73.8 & 83.2 & 88.5 & \textbf{90.2} & 72.1 & 81.8 & 86.1 & \textbf{88.2} \\
+ & {\scriptsize [70.2,77.3]} & {\scriptsize [80.1,86.3]} & {\scriptsize [85.8,90.9]} & {\scriptsize [87.6,92.6]} & {\scriptsize [68.4,75.8]} & {\scriptsize [78.5,85.1]} & {\scriptsize [83.2,88.9]} & {\scriptsize [85.4,90.9]} \\
+PhilTa & 70.9 & 79.0 & 91.1 & \textbf{91.4} & 69.3 & 77.7 & 88.3 & \textbf{88.9} \\
+ & {\scriptsize [66.9,74.9]} & {\scriptsize [75.6,82.4]} & {\scriptsize [88.9,93.2]} & {\scriptsize [89.1,93.6]} & {\scriptsize [65.2,73.5]} & {\scriptsize [74.2,81.3]} & {\scriptsize [85.6,90.9]} & {\scriptsize [86.2,91.5]} \\
+mT5-base & 47.2 & 54.5 & \textbf{90.3} & \textbf{90.3} & 46.6 & 54.1 & \textbf{88.5} & 87.5 \\
+ & {\scriptsize [43.1,51.6]} & {\scriptsize [50.3,58.8]} & {\scriptsize [87.9,92.7]} & {\scriptsize [88.0,92.6]} & {\scriptsize [42.5,51.0]} & {\scriptsize [49.8,58.4]} & {\scriptsize [85.7,91.2]} & {\scriptsize [84.8,90.2]} \\
+LaBSE & 83.3 & 83.4 & \textbf{90.8} & 89.6 & 81.5 & 81.9 & \textbf{88.5} & 86.9 \\
+ & {\scriptsize [80.2,86.4]} & {\scriptsize [80.2,86.5]} & {\scriptsize [88.5,92.9]} & {\scriptsize [87.2,91.9]} & {\scriptsize [78.1,84.7]} & {\scriptsize [78.6,85.2]} & {\scriptsize [85.8,90.9]} & {\scriptsize [84.2,89.5]} \\
+Qwen3-0.6B & 82.3 & 76.0 & \textbf{91.5} & 90.8 & 80.3 & 74.2 & \textbf{89.4} & 88.6 \\
+ & {\scriptsize [79.1,85.4]} & {\scriptsize [72.5,79.4]} & {\scriptsize [89.1,93.7]} & {\scriptsize [88.3,93.1]} & {\scriptsize [76.9,83.6]} & {\scriptsize [70.6,77.8]} & {\scriptsize [86.7,92.0]} & {\scriptsize [85.8,91.2]} \\
+KaLM-mini & 87.5 & 85.7 & \textbf{91.7} & 90.8 & 85.9 & 84.0 & \textbf{89.4} & 88.0 \\
+ & {\scriptsize [84.8,90.1]} & {\scriptsize [82.8,88.5]} & {\scriptsize [89.5,93.8]} & {\scriptsize [88.4,93.0]} & {\scriptsize [82.9,88.7]} & {\scriptsize [80.9,87.1]} & {\scriptsize [86.7,91.9]} & {\scriptsize [85.2,90.7]} \\
+\midrule
+LaTa (fine-tuned) & 83.4 & -- & \textbf{87.8} & -- & 81.6 & -- & \textbf{85.2} & -- \\
+ & {\scriptsize [80.2,86.5]} &  & {\scriptsize [85.2,90.2]} &  & {\scriptsize [78.1,84.9]} &  & {\scriptsize [82.3,87.9]} &  \\
+Qwen3-0.6B (fine-tuned) & 91.4 & -- & \textbf{92.1} & -- & 90.8 & -- & \textbf{91.4} & -- \\
+ & {\scriptsize [88.7,93.8]} &  & {\scriptsize [89.6,94.3]} &  & {\scriptsize [88.1,93.3]} &  & {\scriptsize [88.8,93.7]} &  \\
+KaLM-mini (fine-tuned) & 92.4 & -- & \textbf{93.4} & -- & 91.7 & -- & \textbf{92.5} & -- \\
+ & {\scriptsize [90.1,94.6]} &  & {\scriptsize [91.2,95.4]} &  & {\scriptsize [89.3,94.0]} &  & {\scriptsize [90.3,94.7]} &  \\
+TF-IDF char 3--5 & \multicolumn{4}{c}{91.8} & \multicolumn{4}{c}{89.9} \\
+ & \multicolumn{4}{c}{{\scriptsize [89.7,93.8]}} & \multicolumn{4}{c}{{\scriptsize [87.3,92.3]}} \\
+\bottomrule
+\end{tabular}
+\caption{Task B autonomous routing for all six models under four post-processing settings, in percent. Baseline directory accuracy at rank 1 spans 46.6 to 85.9 across models (39.3 points), and ABTT narrows it to 86.1 to 89.4 (3.3 points). Each cell is a test-set score at the layer chosen by training-set directory accuracy at rank 1, listed in Table~\ref{tab:selected_layers}. Assignment accuracy scores the existing-versus-new decision alone, comparing each file's maximum cosine against the train-fit threshold $\tau$; a degenerate threshold that routes everything as existing already attains the 62.4 percent class prior. Directory accuracy at rank 1 requires the correct directory, so read the two columns together. Per-layer grids: Appendix Tables~\ref{tab:taskB_routing_main}, \ref{tab:taskB_routing_appendix}, and~\ref{tab:taskB_routing_appendix_sif}. Below the rule, reference systems on the same split with the same evaluation code: LaTa, Qwen3-0.6B, and KaLM-mini fine-tuned contrastively on 499 of the 565 positive train pairs (a 28-directory dev carve takes the rest), a ceiling at this training budget, and the character 3--5-gram TF-IDF reference (TF-IDF char 3--5), fitted on train files (both setups: Appendix~\ref{app:reference_systems}). TF-IDF char 3--5 is level with the best zero-shot ABTT cell (91.8 against 91.7 assignment accuracy, 89.9 against 89.4 directory accuracy at rank 1), and the fine-tuned encoders with ABTT sit below every zero-shot ABTT cell for LaTa (87.8 and 85.2), above every zero-shot ABTT cell for Qwen3-0.6B (92.1 and 91.4), and above every zero-shot ABTT cell for KaLM-mini (93.4 and 92.5), against cells spanning 88.5 to 91.7 and 86.1 to 89.4. The zero-shot rows diagnose where the retrieval signal sits inside encoders; they are not offered as retrievers that beat surface overlap. Bracketed rows: 95\% percentile intervals from a directory-level bootstrap ($B=10{,}000$ resamples of the 514 test directories with replacement, seed 233); all cells with intervals are in Table~\ref{tab:headline_ci}.}
+\label{tab:taskB_headline}
+\end{table*}

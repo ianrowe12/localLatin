@@ -1,0 +1,133 @@
+task,row,setting,metric,layer,config,csv_value,recomputed,csv_printed,recomputed_printed,table_printed,match
+A,LaTa,Base,auroc,12,zs:bowphs/LaTa:L12:baseline,0.9375956764427696,0.9375956764427696,0.938,0.938,0.938,True
+A,LaTa,Base,gap,12,zs:bowphs/LaTa:L12:baseline,0.2374739646911621,0.2374739646911621,0.237,0.237,0.237,True
+A,LaTa,SIF,auroc,1,zs:bowphs/LaTa:L1:sif_only,0.9475254382797704,0.9475254359942231,0.948,0.948,0.948,True
+A,LaTa,SIF,gap,1,zs:bowphs/LaTa:L1:sif_only,0.3661633729934692,0.36616337299346924,0.366,0.366,0.366,True
+A,LaTa,ABTT,auroc,12,zs:bowphs/LaTa:L12:abtt_optimal,0.9713791183210156,0.9713791183210156,0.971,0.971,0.971,True
+A,LaTa,ABTT,gap,12,zs:bowphs/LaTa:L12:abtt_optimal,0.5252421744517051,0.5252421498298645,0.525,0.525,0.525,True
+A,LaTa,SIF+ABTT,auroc,7,zs:bowphs/LaTa:L7:sif_abtt_optimal,0.9656288593182124,0.9656288593182124,0.966,0.966,0.966,True
+A,LaTa,SIF+ABTT,gap,7,zs:bowphs/LaTa:L7:sif_abtt_optimal,0.5795291374088265,0.5795291662216187,0.580,0.580,0.580,True
+A,PhilTa,Base,auroc,1,zs:bowphs/PhilTa:L1:baseline,0.9393410712887283,0.9393410598609916,0.939,0.939,0.939,True
+A,PhilTa,Base,gap,1,zs:bowphs/PhilTa:L1:baseline,0.231429636478424,0.23142963647842407,0.231,0.231,0.231,True
+A,PhilTa,SIF,auroc,1,zs:bowphs/PhilTa:L1:sif_only,0.954623985123244,0.9546239736955069,0.955,0.955,0.955,True
+A,PhilTa,SIF,gap,1,zs:bowphs/PhilTa:L1:sif_only,0.3193932473659515,0.3193933069705963,0.319,0.319,0.319,True
+A,PhilTa,ABTT,auroc,9,zs:bowphs/PhilTa:L9:abtt_optimal,0.9826002921514686,0.9826002967225634,0.983,0.983,0.983,True
+A,PhilTa,ABTT,gap,9,zs:bowphs/PhilTa:L9:abtt_optimal,0.5399833514529746,0.539983332157135,0.540,0.540,0.540,True
+A,PhilTa,SIF+ABTT,auroc,8,zs:bowphs/PhilTa:L8:sif_abtt_optimal,0.9818379912393322,0.9818379889537848,0.982,0.982,0.982,True
+A,PhilTa,SIF+ABTT,gap,8,zs:bowphs/PhilTa:L8:sif_abtt_optimal,0.5733042208303232,0.5733042359352112,0.573,0.573,0.573,True
+A,mT5-base,Base,auroc,12,zs:google/mt5-base:L12:baseline,0.8375411007704617,0.8375410984849143,0.838,0.838,0.838,True
+A,mT5-base,Base,gap,12,zs:google/mt5-base:L12:baseline,0.0814971923828125,0.0814971923828125,0.081,0.081,0.081,True
+A,mT5-base,SIF,auroc,1,zs:google/mt5-base:L1:sif_only,0.8454491930765173,0.8454491656499485,0.845,0.845,0.845,True
+A,mT5-base,SIF,gap,1,zs:google/mt5-base:L1:sif_only,0.0360802412033081,0.036080241203308105,0.036,0.036,0.036,True
+A,mT5-base,ABTT,auroc,2,zs:google/mt5-base:L2:abtt_optimal,0.9747448474299284,0.9747448428588337,0.975,0.975,0.975,True
+A,mT5-base,ABTT,gap,2,zs:google/mt5-base:L2:abtt_optimal,0.5360302194021642,0.5360302329063416,0.536,0.536,0.536,True
+A,mT5-base,SIF+ABTT,auroc,1,zs:google/mt5-base:L1:sif_abtt_optimal,0.9740538990222848,0.9740538967367375,0.974,0.974,0.974,True
+A,mT5-base,SIF+ABTT,gap,1,zs:google/mt5-base:L1:sif_abtt_optimal,0.5192627809592523,0.5192627906799316,0.519,0.519,0.519,True
+A,LaBSE,Base,auroc,12,zs:sentence-transformers/LaBSE:L12:baseline,0.956210413290418,0.9562104201470601,0.956,0.956,0.956,True
+A,LaBSE,Base,gap,12,zs:sentence-transformers/LaBSE:L12:baseline,0.1832662224769592,0.18326616287231445,0.183,0.183,0.183,True
+A,LaBSE,SIF,auroc,12,zs:sentence-transformers/LaBSE:L12:sif_only,0.955684597968463,0.955684593397368,0.956,0.956,0.956,True
+A,LaBSE,SIF,gap,12,zs:sentence-transformers/LaBSE:L12:sif_only,0.1844584345817566,0.1844584345817566,0.184,0.184,0.184,True
+A,LaBSE,ABTT,auroc,11,zs:sentence-transformers/LaBSE:L11:abtt_optimal,0.9866048454738656,0.9866048454738655,0.987,0.987,0.987,True
+A,LaBSE,ABTT,gap,11,zs:sentence-transformers/LaBSE:L11:abtt_optimal,0.6106886176276021,0.6106886267662048,0.611,0.611,0.611,True
+A,LaBSE,SIF+ABTT,auroc,10,zs:sentence-transformers/LaBSE:L10:sif_abtt_optimal,0.9759445564047776,0.975944558690325,0.976,0.976,0.976,True
+A,LaBSE,SIF+ABTT,gap,10,zs:sentence-transformers/LaBSE:L10:sif_abtt_optimal,0.5800374703248963,0.5800374746322632,0.580,0.580,0.580,True
+A,Qwen3-0.6B,Base,auroc,26,zs:Qwen/Qwen3-Embedding-0.6B:L26:baseline,0.966446052222418,0.9664460613646074,0.966,0.966,0.966,True
+A,Qwen3-0.6B,Base,gap,26,zs:Qwen/Qwen3-Embedding-0.6B:L26:baseline,0.0240765810012817,0.02407658100128174,0.024,0.024,0.024,True
+A,Qwen3-0.6B,SIF,auroc,22,zs:Qwen/Qwen3-Embedding-0.6B:L22:sif_only,0.9419372840123416,0.9419372634424151,0.942,0.942,0.942,True
+A,Qwen3-0.6B,SIF,gap,22,zs:Qwen/Qwen3-Embedding-0.6B:L22:sif_only,0.053398311138153,0.053398311138153076,0.053,0.053,0.053,True
+A,Qwen3-0.6B,ABTT,auroc,2,zs:Qwen/Qwen3-Embedding-0.6B:L2:abtt_optimal,0.9725992920873454,0.9725992920873453,0.973,0.973,0.973,True
+A,Qwen3-0.6B,ABTT,gap,2,zs:Qwen/Qwen3-Embedding-0.6B:L2:abtt_optimal,0.5527527658268809,0.5527527928352356,0.553,0.553,0.553,True
+A,Qwen3-0.6B,SIF+ABTT,auroc,2,zs:Qwen/Qwen3-Embedding-0.6B:L2:sif_abtt_optimal,0.9723338463259724,0.9723338463259725,0.972,0.972,0.972,True
+A,Qwen3-0.6B,SIF+ABTT,gap,2,zs:Qwen/Qwen3-Embedding-0.6B:L2:sif_abtt_optimal,0.5403348009567708,0.5403348207473755,0.540,0.540,0.540,True
+A,KaLM-mini,Base,auroc,23,zs:KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5:L23:baseline,0.9715439862832048,0.971543974855468,0.972,0.972,0.972,True
+A,KaLM-mini,Base,gap,23,zs:KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5:L23:baseline,0.056228220462799,0.05622822046279907,0.056,0.056,0.056,True
+A,KaLM-mini,SIF,auroc,23,zs:KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5:L23:sif_only,0.964037096683391,0.964037096683391,0.964,0.964,0.964,True
+A,KaLM-mini,SIF,gap,23,zs:KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5:L23:sif_only,0.0561007261276245,0.05610084533691406,0.056,0.056,0.056,True
+A,KaLM-mini,ABTT,auroc,1,zs:KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5:L1:abtt_optimal,0.9806189648178008,0.9806189648178009,0.981,0.981,0.981,True
+A,KaLM-mini,ABTT,gap,1,zs:KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5:L1:abtt_optimal,0.5676946127205156,0.5676946043968201,0.568,0.568,0.568,True
+A,KaLM-mini,SIF+ABTT,auroc,2,zs:KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5:L2:sif_abtt_optimal,0.9810785381192648,0.9810785381192647,0.981,0.981,0.981,True
+A,KaLM-mini,SIF+ABTT,gap,2,zs:KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5:L2:sif_abtt_optimal,0.534881063940702,0.534881055355072,0.535,0.535,0.535,True
+A,LaTa (fine-tuned),Base,auroc,12,ft:LaTa:L12:baseline,0.9838516887809226,0.9838516910664699,0.984,0.984,0.984,True
+A,LaTa (fine-tuned),Base,gap,12,ft:LaTa:L12:baseline,0.3871713876724243,0.3871713876724243,0.387,0.387,0.387,True
+A,LaTa (fine-tuned),ABTT,auroc,12,ft:LaTa:L12:abtt_optimal,0.969728939380024,0.9697289439511186,0.970,0.970,0.970,True
+A,LaTa (fine-tuned),ABTT,gap,12,ft:LaTa:L12:abtt_optimal,0.5477693489519879,0.5477693676948547,0.548,0.548,0.548,True
+A,Qwen3-0.6B (fine-tuned),Base,auroc,28,ft:Qwen3-0.6B:L28:baseline,0.9961028216947744,0.9961028216947744,0.996,0.996,0.996,True
+A,Qwen3-0.6B (fine-tuned),Base,gap,28,ft:Qwen3-0.6B:L28:baseline,0.6843201890587807,0.6843202114105225,0.684,0.684,0.684,True
+A,Qwen3-0.6B (fine-tuned),ABTT,auroc,27,ft:Qwen3-0.6B:L27:abtt_optimal,0.9941157347816416,0.9941157347816415,0.994,0.994,0.994,True
+A,Qwen3-0.6B (fine-tuned),ABTT,gap,27,ft:Qwen3-0.6B:L27:abtt_optimal,0.7163613073935267,0.7163612842559814,0.716,0.716,0.716,True
+A,KaLM-mini (fine-tuned),Base,auroc,24,ft:KaLM-mini:L24:baseline,0.9965240823650582,0.9965240823650581,0.997,0.997,0.997,True
+A,KaLM-mini (fine-tuned),Base,gap,24,ft:KaLM-mini:L24:baseline,0.6356983408331871,0.6356983184814453,0.636,0.636,0.636,True
+A,KaLM-mini (fine-tuned),ABTT,auroc,24,ft:KaLM-mini:L24:abtt_optimal,0.9937038928522212,0.993703892852221,0.994,0.994,0.994,True
+A,KaLM-mini (fine-tuned),ABTT,gap,24,ft:KaLM-mini:L24:abtt_optimal,0.6508361104351934,0.6508361101150513,0.651,0.651,0.651,True
+A,BM25 (word),ref,auroc,-1,lex:BM25 (word),0.9737727172670164,0.9737727172670163,0.974,0.974,,True
+A,BM25 (word),ref,gap,-1,lex:BM25 (word),0.2430699279313596,0.24306992793135962,0.243,0.243,,True
+A,TF-IDF char 3-5,ref,auroc,-1,lex:TF-IDF char 3-5,0.986914107464574,0.9869141074645741,0.987,0.987,,True
+A,TF-IDF char 3-5,ref,gap,-1,lex:TF-IDF char 3-5,0.5553827016874419,0.5553827016874419,0.555,0.555,,True
+A,Levenshtein,ref,auroc,-1,lex:Levenshtein,0.9524261044583296,0.9524261044583295,0.952,0.952,,True
+A,Levenshtein,ref,gap,-1,lex:Levenshtein,0.3621792491526134,0.3621792491526134,0.362,0.362,,True
+B,LaTa,Base,assign,1,zs:bowphs/LaTa:L1:baseline,0.7377622377622378,0.7377622377622378,73.8,73.8,73.8,True
+B,LaTa,Base,dir1,1,zs:bowphs/LaTa:L1:baseline,0.7214452214452215,0.7214452214452215,72.1,72.1,72.1,True
+B,LaTa,SIF,assign,1,zs:bowphs/LaTa:L1:sif_only,0.8321678321678322,0.8321678321678322,83.2,83.2,83.2,True
+B,LaTa,SIF,dir1,1,zs:bowphs/LaTa:L1:sif_only,0.8181818181818182,0.8181818181818182,81.8,81.8,81.8,True
+B,LaTa,ABTT,assign,8,zs:bowphs/LaTa:L8:abtt_optimal,0.8846153846153846,0.8846153846153846,88.5,88.5,88.5,True
+B,LaTa,ABTT,dir1,8,zs:bowphs/LaTa:L8:abtt_optimal,0.8613053613053613,0.8613053613053613,86.1,86.1,86.1,True
+B,LaTa,SIF+ABTT,assign,12,zs:bowphs/LaTa:L12:sif_abtt_optimal,0.902097902097902,0.9020979020979021,90.2,90.2,90.2,True
+B,LaTa,SIF+ABTT,dir1,12,zs:bowphs/LaTa:L12:sif_abtt_optimal,0.8822843822843823,0.8822843822843823,88.2,88.2,88.2,True
+B,PhilTa,Base,assign,1,zs:bowphs/PhilTa:L1:baseline,0.7086247086247086,0.7086247086247086,70.9,70.9,70.9,True
+B,PhilTa,Base,dir1,1,zs:bowphs/PhilTa:L1:baseline,0.6934731934731935,0.6934731934731935,69.3,69.3,69.3,True
+B,PhilTa,SIF,assign,1,zs:bowphs/PhilTa:L1:sif_only,0.7902097902097902,0.7902097902097902,79.0,79.0,79.0,True
+B,PhilTa,SIF,dir1,1,zs:bowphs/PhilTa:L1:sif_only,0.7773892773892774,0.7773892773892774,77.7,77.7,77.7,True
+B,PhilTa,ABTT,assign,1,zs:bowphs/PhilTa:L1:abtt_optimal,0.9114219114219114,0.9114219114219114,91.1,91.1,91.1,True
+B,PhilTa,ABTT,dir1,1,zs:bowphs/PhilTa:L1:abtt_optimal,0.8834498834498834,0.8834498834498834,88.3,88.3,88.3,True
+B,PhilTa,SIF+ABTT,assign,1,zs:bowphs/PhilTa:L1:sif_abtt_optimal,0.9137529137529138,0.9137529137529138,91.4,91.4,91.4,True
+B,PhilTa,SIF+ABTT,dir1,1,zs:bowphs/PhilTa:L1:sif_abtt_optimal,0.8892773892773893,0.8892773892773893,88.9,88.9,88.9,True
+B,mT5-base,Base,assign,12,zs:google/mt5-base:L12:baseline,0.472027972027972,0.47202797202797203,47.2,47.2,47.2,True
+B,mT5-base,Base,dir1,12,zs:google/mt5-base:L12:baseline,0.4662004662004662,0.4662004662004662,46.6,46.6,46.6,True
+B,mT5-base,SIF,assign,1,zs:google/mt5-base:L1:sif_only,0.5454545454545454,0.5454545454545454,54.5,54.5,54.5,True
+B,mT5-base,SIF,dir1,1,zs:google/mt5-base:L1:sif_only,0.5407925407925408,0.5407925407925408,54.1,54.1,54.1,True
+B,mT5-base,ABTT,assign,1,zs:google/mt5-base:L1:abtt_optimal,0.9032634032634032,0.9032634032634033,90.3,90.3,90.3,True
+B,mT5-base,ABTT,dir1,1,zs:google/mt5-base:L1:abtt_optimal,0.8846153846153846,0.8846153846153846,88.5,88.5,88.5,True
+B,mT5-base,SIF+ABTT,assign,2,zs:google/mt5-base:L2:sif_abtt_optimal,0.9032634032634032,0.9032634032634033,90.3,90.3,90.3,True
+B,mT5-base,SIF+ABTT,dir1,2,zs:google/mt5-base:L2:sif_abtt_optimal,0.8752913752913752,0.8752913752913752,87.5,87.5,87.5,True
+B,LaBSE,Base,assign,11,zs:sentence-transformers/LaBSE:L11:baseline,0.8333333333333334,0.8333333333333334,83.3,83.3,83.3,True
+B,LaBSE,Base,dir1,11,zs:sentence-transformers/LaBSE:L11:baseline,0.8146853146853147,0.8146853146853147,81.5,81.5,81.5,True
+B,LaBSE,SIF,assign,12,zs:sentence-transformers/LaBSE:L12:sif_only,0.8344988344988346,0.8344988344988346,83.4,83.4,83.4,True
+B,LaBSE,SIF,dir1,12,zs:sentence-transformers/LaBSE:L12:sif_only,0.8193473193473193,0.8193473193473193,81.9,81.9,81.9,True
+B,LaBSE,ABTT,assign,11,zs:sentence-transformers/LaBSE:L11:abtt_optimal,0.907925407925408,0.9079254079254079,90.8,90.8,90.8,True
+B,LaBSE,ABTT,dir1,11,zs:sentence-transformers/LaBSE:L11:abtt_optimal,0.8846153846153846,0.8846153846153846,88.5,88.5,88.5,True
+B,LaBSE,SIF+ABTT,assign,11,zs:sentence-transformers/LaBSE:L11:sif_abtt_optimal,0.8962703962703963,0.8962703962703963,89.6,89.6,89.6,True
+B,LaBSE,SIF+ABTT,dir1,11,zs:sentence-transformers/LaBSE:L11:sif_abtt_optimal,0.8694638694638694,0.8694638694638694,86.9,86.9,86.9,True
+B,Qwen3-0.6B,Base,assign,28,zs:Qwen/Qwen3-Embedding-0.6B:L28:baseline,0.8228438228438228,0.8228438228438228,82.3,82.3,82.3,True
+B,Qwen3-0.6B,Base,dir1,28,zs:Qwen/Qwen3-Embedding-0.6B:L28:baseline,0.803030303030303,0.803030303030303,80.3,80.3,80.3,True
+B,Qwen3-0.6B,SIF,assign,27,zs:Qwen/Qwen3-Embedding-0.6B:L27:sif_only,0.7599067599067599,0.7599067599067599,76.0,76.0,76.0,True
+B,Qwen3-0.6B,SIF,dir1,27,zs:Qwen/Qwen3-Embedding-0.6B:L27:sif_only,0.7424242424242424,0.7424242424242424,74.2,74.2,74.2,True
+B,Qwen3-0.6B,ABTT,assign,5,zs:Qwen/Qwen3-Embedding-0.6B:L5:abtt_optimal,0.914918414918415,0.914918414918415,91.5,91.5,91.5,True
+B,Qwen3-0.6B,ABTT,dir1,5,zs:Qwen/Qwen3-Embedding-0.6B:L5:abtt_optimal,0.8939393939393939,0.8939393939393939,89.4,89.4,89.4,True
+B,Qwen3-0.6B,SIF+ABTT,assign,5,zs:Qwen/Qwen3-Embedding-0.6B:L5:sif_abtt_optimal,0.907925407925408,0.9079254079254079,90.8,90.8,90.8,True
+B,Qwen3-0.6B,SIF+ABTT,dir1,5,zs:Qwen/Qwen3-Embedding-0.6B:L5:sif_abtt_optimal,0.8857808857808858,0.8857808857808858,88.6,88.6,88.6,True
+B,KaLM-mini,Base,assign,23,zs:KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5:L23:baseline,0.8752913752913752,0.8752913752913752,87.5,87.5,87.5,True
+B,KaLM-mini,Base,dir1,23,zs:KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5:L23:baseline,0.8589743589743589,0.8589743589743589,85.9,85.9,85.9,True
+B,KaLM-mini,SIF,assign,22,zs:KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5:L22:sif_only,0.8566433566433567,0.8566433566433567,85.7,85.7,85.7,True
+B,KaLM-mini,SIF,dir1,22,zs:KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5:L22:sif_only,0.8403263403263403,0.8403263403263403,84.0,84.0,84.0,True
+B,KaLM-mini,ABTT,assign,3,zs:KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5:L3:abtt_optimal,0.9172494172494172,0.9172494172494172,91.7,91.7,91.7,True
+B,KaLM-mini,ABTT,dir1,3,zs:KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5:L3:abtt_optimal,0.8939393939393939,0.8939393939393939,89.4,89.4,89.4,True
+B,KaLM-mini,SIF+ABTT,assign,1,zs:KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5:L1:sif_abtt_optimal,0.907925407925408,0.9079254079254079,90.8,90.8,90.8,True
+B,KaLM-mini,SIF+ABTT,dir1,1,zs:KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5:L1:sif_abtt_optimal,0.87995337995338,0.87995337995338,88.0,88.0,88.0,True
+B,LaTa (fine-tuned),Base,assign,12,ft:LaTa:L12:baseline,0.8344988344988346,0.8344988344988346,83.4,83.4,83.4,True
+B,LaTa (fine-tuned),Base,dir1,12,ft:LaTa:L12:baseline,0.8158508158508159,0.8158508158508159,81.6,81.6,81.6,True
+B,LaTa (fine-tuned),ABTT,assign,12,ft:LaTa:L12:abtt_optimal,0.8776223776223776,0.8776223776223776,87.8,87.8,87.8,True
+B,LaTa (fine-tuned),ABTT,dir1,12,ft:LaTa:L12:abtt_optimal,0.8519813519813519,0.8519813519813519,85.2,85.2,85.2,True
+B,Qwen3-0.6B (fine-tuned),Base,assign,28,ft:Qwen3-0.6B:L28:baseline,0.9137529137529138,0.9137529137529138,91.4,91.4,91.4,True
+B,Qwen3-0.6B (fine-tuned),Base,dir1,28,ft:Qwen3-0.6B:L28:baseline,0.907925407925408,0.9079254079254079,90.8,90.8,90.8,True
+B,Qwen3-0.6B (fine-tuned),ABTT,assign,27,ft:Qwen3-0.6B:L27:abtt_optimal,0.9207459207459208,0.9207459207459208,92.1,92.1,92.1,True
+B,Qwen3-0.6B (fine-tuned),ABTT,dir1,27,ft:Qwen3-0.6B:L27:abtt_optimal,0.9137529137529138,0.9137529137529138,91.4,91.4,91.4,True
+B,KaLM-mini (fine-tuned),Base,assign,24,ft:KaLM-mini:L24:baseline,0.9242424242424242,0.9242424242424242,92.4,92.4,92.4,True
+B,KaLM-mini (fine-tuned),Base,dir1,24,ft:KaLM-mini:L24:baseline,0.9172494172494172,0.9172494172494172,91.7,91.7,91.7,True
+B,KaLM-mini (fine-tuned),ABTT,assign,24,ft:KaLM-mini:L24:abtt_optimal,0.9335664335664337,0.9335664335664335,93.4,93.4,93.4,True
+B,KaLM-mini (fine-tuned),ABTT,dir1,24,ft:KaLM-mini:L24:abtt_optimal,0.9254079254079254,0.9254079254079254,92.5,92.5,92.5,True
+B,BM25 (word),ref,assign,-1,lex:BM25 (word),0.6247086247086248,0.6247086247086248,62.5,62.5,,True
+B,BM25 (word),ref,dir1,-1,lex:BM25 (word),0.5629370629370629,0.5629370629370629,56.3,56.3,,True
+B,TF-IDF char 3-5,ref,assign,-1,lex:TF-IDF char 3-5,0.9184149184149184,0.9184149184149184,91.8,91.8,,True
+B,TF-IDF char 3-5,ref,dir1,-1,lex:TF-IDF char 3-5,0.8986013986013986,0.8986013986013986,89.9,89.9,,True
+B,Levenshtein,ref,assign,-1,lex:Levenshtein,0.8776223776223776,0.8776223776223776,87.8,87.8,,True
+B,Levenshtein,ref,dir1,-1,lex:Levenshtein,0.8624708624708625,0.8624708624708625,86.2,86.2,,True

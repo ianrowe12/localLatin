@@ -1,0 +1,235 @@
+task,kind,source,row,method,setting,grid,layer,D,tau,auroc,auroc_printed,auroc_published,gap,gap_printed,gap_published,published_layer,published_D,same_layer,same_D,moves,assign,assign_printed,assign_published,dir1,dir1_printed,dir1_published
+A,zs,bowphs/PhilTa,PhilTa,baseline,Base,paper,1,0,0.8944723618090452,0.9393410598609916,0.939,0.939,0.23142963647842407,0.231,0.231,1.0,10.0,True,True,False,,,,,,
+B,zs,bowphs/PhilTa,PhilTa,baseline,Base,paper,1,0,0.8944723618090452,,,,,,,1.0,10.0,True,True,False,0.7086247086247086,70.9,70.9,0.6934731934731935,69.3,69.3
+A,zs,bowphs/PhilTa,PhilTa,baseline,Base,fine,1,0,0.8923000000000001,0.9393410598609916,0.939,0.939,0.23142963647842407,0.231,0.231,1.0,10.0,True,True,False,,,,,,
+B,zs,bowphs/PhilTa,PhilTa,baseline,Base,fine,1,0,0.8923000000000001,,,,,,,1.0,10.0,True,True,False,0.7086247086247086,70.9,70.9,0.6934731934731935,69.3,69.3
+A,zs,bowphs/PhilTa,PhilTa,baseline,Base,exact,1,0,0.8923898339271545,0.9393410598609916,0.939,0.939,0.23142963647842407,0.231,0.231,1.0,10.0,True,True,False,,,,,,
+B,zs,bowphs/PhilTa,PhilTa,baseline,Base,exact,1,0,0.8923898339271545,,,,,,,1.0,10.0,True,True,True,0.7097902097902098,71.0,70.9,0.6946386946386947,69.5,69.3
+A,zs,bowphs/PhilTa,PhilTa,center,center,paper,1,0,0.5477386934673367,0.974590221005669,0.975,,0.5770443677902222,0.577,,,,,,,,,,,,
+B,zs,bowphs/PhilTa,PhilTa,center,center,paper,1,0,0.5477386934673367,,,,,,,,,,,,0.837995337995338,83.8,,0.817016317016317,81.7,
+A,zs,bowphs/PhilTa,PhilTa,center,center,fine,1,0,0.5542,0.974590221005669,0.975,,0.5770443677902222,0.577,,,,,,,,,,,,
+B,zs,bowphs/PhilTa,PhilTa,center,center,fine,1,0,0.5542,,,,,,,,,,,,0.8438228438228438,84.4,,0.8228438228438228,82.3,
+A,zs,bowphs/PhilTa,PhilTa,center,center,exact,1,0,0.5542968511581421,0.974590221005669,0.975,,0.5770443677902222,0.577,,,,,,,,,,,,
+B,zs,bowphs/PhilTa,PhilTa,center,center,exact,1,0,0.5542968511581421,,,,,,,,,,,,0.8438228438228438,84.4,,0.8228438228438228,82.3,
+A,zs,bowphs/PhilTa,PhilTa,abtt_optimal,ABTT,paper,9,10,0.45226130653266333,0.9826002967225634,0.983,0.983,0.539983332157135,0.540,0.540,9.0,10.0,True,True,False,,,,,,
+B,zs,bowphs/PhilTa,PhilTa,abtt_optimal,ABTT,paper,1,10,0.4170854271356784,,,,,,,1.0,10.0,True,True,False,0.9114219114219114,91.1,91.1,0.8834498834498834,88.3,88.3
+A,zs,bowphs/PhilTa,PhilTa,abtt_optimal,ABTT,fine,9,10,0.45080000000000003,0.9826002967225634,0.983,0.983,0.539983332157135,0.540,0.540,9.0,10.0,True,True,False,,,,,,
+B,zs,bowphs/PhilTa,PhilTa,abtt_optimal,ABTT,fine,1,10,0.41700000000000004,,,,,,,1.0,10.0,True,True,False,0.9114219114219114,91.1,91.1,0.8834498834498834,88.3,88.3
+A,zs,bowphs/PhilTa,PhilTa,abtt_optimal,ABTT,exact,9,10,0.45080816745758057,0.9826002967225634,0.983,0.983,0.539983332157135,0.540,0.540,9.0,10.0,True,True,False,,,,,,
+B,zs,bowphs/PhilTa,PhilTa,abtt_optimal,ABTT,exact,1,10,0.41765326261520386,,,,,,,1.0,10.0,True,True,False,0.9114219114219114,91.1,91.1,0.8834498834498834,88.3,88.3
+A,zs,bowphs/PhilTa,PhilTa,sif_only,SIF,paper,1,0,0.8492462311557789,0.9546239736955069,0.955,0.955,0.3193933069705963,0.319,0.319,1.0,10.0,True,True,False,,,,,,
+B,zs,bowphs/PhilTa,PhilTa,sif_only,SIF,paper,1,0,0.8492462311557789,,,,,,,1.0,10.0,True,True,False,0.7902097902097902,79.0,79.0,0.7773892773892774,77.7,77.7
+A,zs,bowphs/PhilTa,PhilTa,sif_only,SIF,fine,1,0,0.8513000000000001,0.9546239736955069,0.955,0.955,0.3193933069705963,0.319,0.319,1.0,10.0,True,True,False,,,,,,
+B,zs,bowphs/PhilTa,PhilTa,sif_only,SIF,fine,1,0,0.8513000000000001,,,,,,,1.0,10.0,True,True,True,0.789044289044289,78.9,79.0,0.7762237762237763,77.6,77.7
+A,zs,bowphs/PhilTa,PhilTa,sif_only,SIF,exact,1,0,0.8513720035552979,0.9546239736955069,0.955,0.955,0.3193933069705963,0.319,0.319,1.0,10.0,True,True,False,,,,,,
+B,zs,bowphs/PhilTa,PhilTa,sif_only,SIF,exact,1,0,0.8513720035552979,,,,,,,1.0,10.0,True,True,True,0.789044289044289,78.9,79.0,0.7762237762237763,77.6,77.7
+A,zs,bowphs/PhilTa,PhilTa,sif_abtt_optimal,SIF+ABTT,paper,8,10,0.45226130653266333,0.9818379889537848,0.982,0.982,0.5733042359352112,0.573,0.573,8.0,10.0,True,True,False,,,,,,
+B,zs,bowphs/PhilTa,PhilTa,sif_abtt_optimal,SIF+ABTT,paper,1,10,0.4221105527638191,,,,,,,1.0,10.0,True,True,False,0.9137529137529138,91.4,91.4,0.8892773892773893,88.9,88.9
+A,zs,bowphs/PhilTa,PhilTa,sif_abtt_optimal,SIF+ABTT,fine,1,10,0.42010000000000003,0.975023590506114,0.975,0.982,0.5736216902732849,0.574,0.573,8.0,10.0,False,True,True,,,,,,
+B,zs,bowphs/PhilTa,PhilTa,sif_abtt_optimal,SIF+ABTT,fine,2,10,0.385,,,,,,,1.0,10.0,False,True,True,0.8939393939393939,89.4,91.4,0.865967365967366,86.6,88.9
+A,zs,bowphs/PhilTa,PhilTa,sif_abtt_optimal,SIF+ABTT,exact,1,10,0.4201470613479614,0.975023590506114,0.975,0.982,0.5736216902732849,0.574,0.573,8.0,10.0,False,True,True,,,,,,
+B,zs,bowphs/PhilTa,PhilTa,sif_abtt_optimal,SIF+ABTT,exact,2,10,0.3854992389678955,,,,,,,1.0,10.0,False,True,True,0.8939393939393939,89.4,91.4,0.865967365967366,86.6,88.9
+A,zs,bowphs/LaTa,LaTa,baseline,Base,paper,12,0,0.8743718592964824,0.9375956764427696,0.938,0.938,0.2374739646911621,0.237,0.237,12.0,10.0,True,True,False,,,,,,
+B,zs,bowphs/LaTa,LaTa,baseline,Base,paper,1,0,0.8442211055276382,,,,,,,1.0,10.0,True,True,False,0.7377622377622378,73.8,73.8,0.7214452214452215,72.1,72.1
+A,zs,bowphs/LaTa,LaTa,baseline,Base,fine,12,0,0.8748,0.9375956764427696,0.938,0.938,0.2374739646911621,0.237,0.237,12.0,10.0,True,True,False,,,,,,
+B,zs,bowphs/LaTa,LaTa,baseline,Base,fine,1,0,0.8426,,,,,,,1.0,10.0,True,True,True,0.745920745920746,74.6,73.8,0.7296037296037297,73.0,72.1
+A,zs,bowphs/LaTa,LaTa,baseline,Base,exact,12,0,0.8753739595413208,0.9375956764427696,0.938,0.938,0.2374739646911621,0.237,0.237,12.0,10.0,True,True,False,,,,,,
+B,zs,bowphs/LaTa,LaTa,baseline,Base,exact,1,0,0.8427062034606934,,,,,,,1.0,10.0,True,True,True,0.745920745920746,74.6,73.8,0.7296037296037297,73.0,72.1
+A,zs,bowphs/LaTa,LaTa,center,center,paper,12,0,0.5879396984924623,0.9720390747058231,0.972,,0.5351781249046326,0.535,,,,,,,,,,,,
+B,zs,bowphs/LaTa,LaTa,center,center,paper,1,0,0.577889447236181,,,,,,,,,,,,0.8088578088578089,80.9,,0.7773892773892774,77.7,
+A,zs,bowphs/LaTa,LaTa,center,center,fine,12,0,0.5896,0.9720390747058231,0.972,,0.5351781249046326,0.535,,,,,,,,,,,,
+B,zs,bowphs/LaTa,LaTa,center,center,fine,1,0,0.5797,,,,,,,,,,,,0.8088578088578089,80.9,,0.7773892773892774,77.7,
+A,zs,bowphs/LaTa,LaTa,center,center,exact,12,0,0.5899127721786499,0.9720390747058231,0.972,,0.5351781249046326,0.535,,,,,,,,,,,,
+B,zs,bowphs/LaTa,LaTa,center,center,exact,1,0,0.5805950164794922,,,,,,,,,,,,0.8111888111888111,81.1,,0.7797202797202797,78.0,
+A,zs,bowphs/LaTa,LaTa,abtt_optimal,ABTT,paper,12,10,0.4221105527638191,0.9713791183210156,0.971,0.971,0.5252421498298645,0.525,0.525,12.0,10.0,True,True,False,,,,,,
+B,zs,bowphs/LaTa,LaTa,abtt_optimal,ABTT,paper,8,10,0.4723618090452261,,,,,,,8.0,10.0,True,True,False,0.8846153846153846,88.5,88.5,0.8613053613053613,86.1,86.1
+A,zs,bowphs/LaTa,LaTa,abtt_optimal,ABTT,fine,12,10,0.44010000000000005,0.9713791183210156,0.971,0.971,0.5252421498298645,0.525,0.525,12.0,10.0,True,True,False,,,,,,
+B,zs,bowphs/LaTa,LaTa,abtt_optimal,ABTT,fine,8,10,0.47150000000000003,,,,,,,8.0,10.0,True,True,True,0.8834498834498834,88.3,88.5,0.8601398601398601,86.0,86.1
+A,zs,bowphs/LaTa,LaTa,abtt_optimal,ABTT,exact,12,10,0.4402613341808319,0.9713791183210156,0.971,0.971,0.5252421498298645,0.525,0.525,12.0,10.0,True,True,False,,,,,,
+B,zs,bowphs/LaTa,LaTa,abtt_optimal,ABTT,exact,8,10,0.4731215536594391,,,,,,,8.0,10.0,True,True,False,0.8846153846153846,88.5,88.5,0.8613053613053613,86.1,86.1
+A,zs,bowphs/LaTa,LaTa,sif_only,SIF,paper,1,0,0.7889447236180904,0.9475254359942231,0.948,0.948,0.36616337299346924,0.366,0.366,1.0,10.0,True,True,False,,,,,,
+B,zs,bowphs/LaTa,LaTa,sif_only,SIF,paper,1,0,0.7889447236180904,,,,,,,1.0,10.0,True,True,False,0.8321678321678322,83.2,83.2,0.8181818181818182,81.8,81.8
+A,zs,bowphs/LaTa,LaTa,sif_only,SIF,fine,1,0,0.7899,0.9475254359942231,0.948,0.948,0.36616337299346924,0.366,0.366,1.0,10.0,True,True,False,,,,,,
+B,zs,bowphs/LaTa,LaTa,sif_only,SIF,fine,1,0,0.7899,,,,,,,1.0,10.0,True,True,False,0.8321678321678322,83.2,83.2,0.8181818181818182,81.8,81.8
+A,zs,bowphs/LaTa,LaTa,sif_only,SIF,exact,1,0,0.7900434732437134,0.9475254359942231,0.948,0.948,0.36616337299346924,0.366,0.366,1.0,10.0,True,True,False,,,,,,
+B,zs,bowphs/LaTa,LaTa,sif_only,SIF,exact,1,0,0.7900434732437134,,,,,,,1.0,10.0,True,True,False,0.8321678321678322,83.2,83.2,0.8181818181818182,81.8,81.8
+A,zs,bowphs/LaTa,LaTa,sif_abtt_optimal,SIF+ABTT,paper,7,10,0.4723618090452261,0.9656288593182124,0.966,0.966,0.5795291662216187,0.580,0.580,7.0,10.0,True,True,False,,,,,,
+B,zs,bowphs/LaTa,LaTa,sif_abtt_optimal,SIF+ABTT,paper,12,10,0.46733668341708545,,,,,,,12.0,10.0,True,True,False,0.9020979020979021,90.2,90.2,0.8822843822843823,88.2,88.2
+A,zs,bowphs/LaTa,LaTa,sif_abtt_optimal,SIF+ABTT,fine,7,10,0.4687,0.9656288593182124,0.966,0.966,0.5795291662216187,0.580,0.580,7.0,10.0,True,True,False,,,,,,
+B,zs,bowphs/LaTa,LaTa,sif_abtt_optimal,SIF+ABTT,fine,12,10,0.4671,,,,,,,12.0,10.0,True,True,False,0.9020979020979021,90.2,90.2,0.8822843822843823,88.2,88.2
+A,zs,bowphs/LaTa,LaTa,sif_abtt_optimal,SIF+ABTT,exact,7,10,0.4691007435321808,0.9656288593182124,0.966,0.966,0.5795291662216187,0.580,0.580,7.0,10.0,True,True,False,,,,,,
+B,zs,bowphs/LaTa,LaTa,sif_abtt_optimal,SIF+ABTT,exact,12,10,0.4677426218986511,,,,,,,12.0,10.0,True,True,False,0.9020979020979021,90.2,90.2,0.8822843822843823,88.2,88.2
+A,zs,google/mt5-base,mT5-base,baseline,Base,paper,12,0,0.9698492462311558,0.8375410984849143,0.838,0.838,0.0814971923828125,0.081,0.081,12.0,10.0,True,True,False,,,,,,
+B,zs,google/mt5-base,mT5-base,baseline,Base,paper,12,0,0.9698492462311558,,,,,,,12.0,10.0,True,True,False,0.47202797202797203,47.2,47.2,0.4662004662004662,46.6,46.6
+A,zs,google/mt5-base,mT5-base,baseline,Base,fine,12,0,0.9666,0.8375410984849143,0.838,0.838,0.0814971923828125,0.081,0.081,12.0,10.0,True,True,False,,,,,,
+B,zs,google/mt5-base,mT5-base,baseline,Base,fine,1,0,0.9927,,,,,,,12.0,10.0,False,True,True,0.5221445221445221,52.2,47.2,0.5081585081585082,50.8,46.6
+A,zs,google/mt5-base,mT5-base,baseline,Base,exact,12,0,0.966630220413208,0.8375410984849143,0.838,0.838,0.0814971923828125,0.081,0.081,12.0,10.0,True,True,False,,,,,,
+B,zs,google/mt5-base,mT5-base,baseline,Base,exact,1,0,0.992713212966919,,,,,,,12.0,10.0,False,True,True,0.5221445221445221,52.2,47.2,0.5081585081585082,50.8,46.6
+A,zs,google/mt5-base,mT5-base,center,center,paper,2,0,0.6733668341708543,0.9098170235542847,0.910,,0.47772714495658875,0.478,,,,,,,,,,,,
+B,zs,google/mt5-base,mT5-base,center,center,paper,1,0,0.6884422110552764,,,,,,,,,,,,0.6585081585081585,65.9,,0.6072261072261073,60.7,
+A,zs,google/mt5-base,mT5-base,center,center,fine,2,0,0.6748000000000001,0.9098170235542847,0.910,,0.47772714495658875,0.478,,,,,,,,,,,,
+B,zs,google/mt5-base,mT5-base,center,center,fine,1,0,0.686,,,,,,,,,,,,0.6596736596736597,66.0,,0.6083916083916084,60.8,
+A,zs,google/mt5-base,mT5-base,center,center,exact,2,0,0.675195574760437,0.9098170235542847,0.910,,0.47772714495658875,0.478,,,,,,,,,,,,
+B,zs,google/mt5-base,mT5-base,center,center,exact,1,0,0.6864685416221619,,,,,,,,,,,,0.6596736596736597,66.0,,0.6083916083916084,60.8,
+A,zs,google/mt5-base,mT5-base,abtt_optimal,ABTT,paper,2,10,0.4221105527638191,0.9747448428588337,0.975,0.975,0.5360302329063416,0.536,0.536,2.0,10.0,True,True,False,,,,,,
+B,zs,google/mt5-base,mT5-base,abtt_optimal,ABTT,paper,1,10,0.4371859296482412,,,,,,,1.0,10.0,True,True,False,0.9032634032634033,90.3,90.3,0.8846153846153846,88.5,88.5
+A,zs,google/mt5-base,mT5-base,abtt_optimal,ABTT,fine,2,10,0.42510000000000003,0.9747448428588337,0.975,0.975,0.5360302329063416,0.536,0.536,2.0,10.0,True,True,False,,,,,,
+B,zs,google/mt5-base,mT5-base,abtt_optimal,ABTT,fine,1,10,0.39430000000000004,,,,,,,1.0,10.0,True,True,True,0.9114219114219114,91.1,90.3,0.8881118881118881,88.8,88.5
+A,zs,google/mt5-base,mT5-base,abtt_optimal,ABTT,exact,2,10,0.4254072308540344,0.9747448428588337,0.975,0.975,0.5360302329063416,0.536,0.536,2.0,10.0,True,True,False,,,,,,
+B,zs,google/mt5-base,mT5-base,abtt_optimal,ABTT,exact,1,10,0.39438802003860474,,,,,,,1.0,10.0,True,True,True,0.9114219114219114,91.1,90.3,0.8881118881118881,88.8,88.5
+A,zs,google/mt5-base,mT5-base,sif_only,SIF,paper,1,0,0.9899497487437187,0.8454491656499485,0.845,0.845,0.036080241203308105,0.036,0.036,1.0,10.0,True,True,False,,,,,,
+B,zs,google/mt5-base,mT5-base,sif_only,SIF,paper,1,0,0.9899497487437187,,,,,,,1.0,10.0,True,True,False,0.5454545454545454,54.5,54.5,0.5407925407925408,54.1,54.1
+A,zs,google/mt5-base,mT5-base,sif_only,SIF,fine,1,0,0.9890000000000001,0.8454491656499485,0.845,0.845,0.036080241203308105,0.036,0.036,1.0,10.0,True,True,False,,,,,,
+B,zs,google/mt5-base,mT5-base,sif_only,SIF,fine,1,0,0.9890000000000001,,,,,,,1.0,10.0,True,True,True,0.5582750582750583,55.8,54.5,0.5501165501165501,55.0,54.1
+A,zs,google/mt5-base,mT5-base,sif_only,SIF,exact,1,0,0.9889323115348816,0.8454491656499485,0.845,0.845,0.036080241203308105,0.036,0.036,1.0,10.0,True,True,False,,,,,,
+B,zs,google/mt5-base,mT5-base,sif_only,SIF,exact,1,0,0.9889323115348816,,,,,,,1.0,10.0,True,True,True,0.5594405594405595,55.9,54.5,0.5501165501165501,55.0,54.1
+A,zs,google/mt5-base,mT5-base,sif_abtt_optimal,SIF+ABTT,paper,1,10,0.3417085427135678,0.9740538967367375,0.974,0.974,0.5192627906799316,0.519,0.519,1.0,10.0,True,True,False,,,,,,
+B,zs,google/mt5-base,mT5-base,sif_abtt_optimal,SIF+ABTT,paper,2,10,0.35678391959798994,,,,,,,2.0,10.0,True,True,False,0.9032634032634033,90.3,90.3,0.8752913752913752,87.5,87.5
+A,zs,google/mt5-base,mT5-base,sif_abtt_optimal,SIF+ABTT,fine,1,10,0.34140000000000004,0.9740538967367375,0.974,0.974,0.5192627906799316,0.519,0.519,1.0,10.0,True,True,False,,,,,,
+B,zs,google/mt5-base,mT5-base,sif_abtt_optimal,SIF+ABTT,fine,2,10,0.3579,,,,,,,2.0,10.0,True,True,False,0.9032634032634033,90.3,90.3,0.8752913752913752,87.5,87.5
+A,zs,google/mt5-base,mT5-base,sif_abtt_optimal,SIF+ABTT,exact,1,10,0.34899187088012695,0.9740538967367375,0.974,0.974,0.5192627906799316,0.519,0.519,1.0,10.0,True,True,False,,,,,,
+B,zs,google/mt5-base,mT5-base,sif_abtt_optimal,SIF+ABTT,exact,2,10,0.3590161204338074,,,,,,,2.0,10.0,True,True,True,0.9079254079254079,90.8,90.3,0.87995337995338,88.0,87.5
+A,zs,sentence-transformers/LaBSE,LaBSE,baseline,Base,paper,12,0,0.9246231155778895,0.9562104201470601,0.956,0.956,0.18326616287231445,0.183,0.183,12.0,10.0,True,True,False,,,,,,
+B,zs,sentence-transformers/LaBSE,LaBSE,baseline,Base,paper,11,0,0.9748743718592965,,,,,,,11.0,10.0,True,True,False,0.8333333333333334,83.3,83.3,0.8146853146853147,81.5,81.5
+A,zs,sentence-transformers/LaBSE,LaBSE,baseline,Base,fine,12,0,0.9239,0.9562104201470601,0.956,0.956,0.18326616287231445,0.183,0.183,12.0,10.0,True,True,False,,,,,,
+B,zs,sentence-transformers/LaBSE,LaBSE,baseline,Base,fine,11,0,0.9767,,,,,,,11.0,10.0,True,True,True,0.8263403263403264,82.6,83.3,0.8111888111888111,81.1,81.5
+A,zs,sentence-transformers/LaBSE,LaBSE,baseline,Base,exact,12,0,0.9240436553955078,0.9562104201470601,0.956,0.956,0.18326616287231445,0.183,0.183,12.0,10.0,True,True,False,,,,,,
+B,zs,sentence-transformers/LaBSE,LaBSE,baseline,Base,exact,11,0,0.976792573928833,,,,,,,11.0,10.0,True,True,True,0.8251748251748252,82.5,83.3,0.8100233100233101,81.0,81.5
+A,zs,sentence-transformers/LaBSE,LaBSE,center,center,paper,12,0,0.6633165829145728,0.9556775699101869,0.956,,0.653659462928772,0.654,,,,,,,,,,,,
+B,zs,sentence-transformers/LaBSE,LaBSE,center,center,paper,12,0,0.6633165829145728,,,,,,,,,,,,0.8391608391608392,83.9,,0.8205128205128205,82.1,
+A,zs,sentence-transformers/LaBSE,LaBSE,center,center,fine,12,0,0.6619,0.9556775699101869,0.956,,0.653659462928772,0.654,,,,,,,,,,,,
+B,zs,sentence-transformers/LaBSE,LaBSE,center,center,fine,12,0,0.6619,,,,,,,,,,,,0.8368298368298368,83.7,,0.8181818181818182,81.8,
+A,zs,sentence-transformers/LaBSE,LaBSE,center,center,exact,12,0,0.661928117275238,0.9556775699101869,0.956,,0.653659462928772,0.654,,,,,,,,,,,,
+B,zs,sentence-transformers/LaBSE,LaBSE,center,center,exact,12,0,0.661928117275238,,,,,,,,,,,,0.8368298368298368,83.7,,0.8181818181818182,81.8,
+A,zs,sentence-transformers/LaBSE,LaBSE,abtt_optimal,ABTT,paper,11,10,0.45226130653266333,0.9866048454738655,0.987,0.987,0.6106886267662048,0.611,0.611,11.0,10.0,True,True,False,,,,,,
+B,zs,sentence-transformers/LaBSE,LaBSE,abtt_optimal,ABTT,paper,11,10,0.45226130653266333,,,,,,,11.0,10.0,True,True,False,0.9079254079254079,90.8,90.8,0.8846153846153846,88.5,88.5
+A,zs,sentence-transformers/LaBSE,LaBSE,abtt_optimal,ABTT,fine,11,10,0.452,0.9866048454738655,0.987,0.987,0.6106886267662048,0.611,0.611,11.0,10.0,True,True,False,,,,,,
+B,zs,sentence-transformers/LaBSE,LaBSE,abtt_optimal,ABTT,fine,11,10,0.452,,,,,,,11.0,10.0,True,True,False,0.9079254079254079,90.8,90.8,0.8846153846153846,88.5,88.5
+A,zs,sentence-transformers/LaBSE,LaBSE,abtt_optimal,ABTT,exact,11,10,0.4522605538368225,0.9866048454738655,0.987,0.987,0.6106886267662048,0.611,0.611,11.0,10.0,True,True,False,,,,,,
+B,zs,sentence-transformers/LaBSE,LaBSE,abtt_optimal,ABTT,exact,11,10,0.4522605538368225,,,,,,,11.0,10.0,True,True,False,0.9079254079254079,90.8,90.8,0.8846153846153846,88.5,88.5
+A,zs,sentence-transformers/LaBSE,LaBSE,sif_only,SIF,paper,12,0,0.9195979899497487,0.955684593397368,0.956,0.956,0.1844584345817566,0.184,0.184,12.0,10.0,True,True,False,,,,,,
+B,zs,sentence-transformers/LaBSE,LaBSE,sif_only,SIF,paper,12,0,0.9195979899497487,,,,,,,12.0,10.0,True,True,False,0.8344988344988346,83.4,83.4,0.8193473193473193,81.9,81.9
+A,zs,sentence-transformers/LaBSE,LaBSE,sif_only,SIF,fine,12,0,0.9226000000000001,0.955684593397368,0.956,0.956,0.1844584345817566,0.184,0.184,12.0,10.0,True,True,False,,,,,,
+B,zs,sentence-transformers/LaBSE,LaBSE,sif_only,SIF,fine,12,0,0.9226000000000001,,,,,,,12.0,10.0,True,True,True,0.8193473193473193,81.9,83.4,0.8041958041958042,80.4,81.9
+A,zs,sentence-transformers/LaBSE,LaBSE,sif_only,SIF,exact,12,0,0.922715425491333,0.955684593397368,0.956,0.956,0.1844584345817566,0.184,0.184,12.0,10.0,True,True,False,,,,,,
+B,zs,sentence-transformers/LaBSE,LaBSE,sif_only,SIF,exact,11,0,0.9741268754005432,,,,,,,12.0,10.0,False,True,True,0.8111888111888111,81.1,83.4,0.7902097902097902,79.0,81.9
+A,zs,sentence-transformers/LaBSE,LaBSE,sif_abtt_optimal,SIF+ABTT,paper,10,10,0.45226130653266333,0.975944558690325,0.976,0.976,0.5800374746322632,0.580,0.580,10.0,10.0,True,True,False,,,,,,
+B,zs,sentence-transformers/LaBSE,LaBSE,sif_abtt_optimal,SIF+ABTT,paper,11,10,0.4221105527638191,,,,,,,11.0,10.0,True,True,False,0.8962703962703963,89.6,89.6,0.8694638694638694,86.9,86.9
+A,zs,sentence-transformers/LaBSE,LaBSE,sif_abtt_optimal,SIF+ABTT,fine,10,10,0.4511,0.975944558690325,0.976,0.976,0.5800374746322632,0.580,0.580,10.0,10.0,True,True,False,,,,,,
+B,zs,sentence-transformers/LaBSE,LaBSE,sif_abtt_optimal,SIF+ABTT,fine,11,7,0.4722,,,,,,,11.0,10.0,True,False,True,0.8939393939393939,89.4,89.6,0.8764568764568764,87.6,86.9
+A,zs,sentence-transformers/LaBSE,LaBSE,sif_abtt_optimal,SIF+ABTT,exact,10,10,0.4512096047401428,0.975944558690325,0.976,0.976,0.5800374746322632,0.580,0.580,10.0,10.0,True,True,False,,,,,,
+B,zs,sentence-transformers/LaBSE,LaBSE,sif_abtt_optimal,SIF+ABTT,exact,11,7,0.47273391485214233,,,,,,,11.0,10.0,True,False,True,0.8939393939393939,89.4,89.6,0.8764568764568764,87.6,86.9
+A,zs,Qwen/Qwen3-Embedding-0.6B,Qwen3-0.6B,baseline,Base,paper,26,0,0.9899497487437187,0.9664460613646074,0.966,0.966,0.02407658100128174,0.024,0.024,26.0,10.0,True,True,False,,,,,,
+B,zs,Qwen/Qwen3-Embedding-0.6B,Qwen3-0.6B,baseline,Base,paper,28,0,0.9447236180904522,,,,,,,28.0,10.0,True,True,False,0.8228438228438228,82.3,82.3,0.803030303030303,80.3,80.3
+A,zs,Qwen/Qwen3-Embedding-0.6B,Qwen3-0.6B,baseline,Base,fine,26,0,0.9879,0.9664460613646074,0.966,0.966,0.02407658100128174,0.024,0.024,26.0,10.0,True,True,False,,,,,,
+B,zs,Qwen/Qwen3-Embedding-0.6B,Qwen3-0.6B,baseline,Base,fine,26,0,0.9879,,,,,,,28.0,10.0,False,True,True,0.817016317016317,81.7,82.3,0.8041958041958042,80.4,80.3
+A,zs,Qwen/Qwen3-Embedding-0.6B,Qwen3-0.6B,baseline,Base,exact,26,0,0.987678587436676,0.9664460613646074,0.966,0.966,0.02407658100128174,0.024,0.024,26.0,10.0,True,True,False,,,,,,
+B,zs,Qwen/Qwen3-Embedding-0.6B,Qwen3-0.6B,baseline,Base,exact,26,0,0.987678587436676,,,,,,,28.0,10.0,False,True,True,0.8181818181818182,81.8,82.3,0.8053613053613053,80.5,80.3
+A,zs,Qwen/Qwen3-Embedding-0.6B,Qwen3-0.6B,center,center,paper,23,0,0.592964824120603,0.975097612529978,0.975,,0.6215925216674805,0.622,,,,,,,,,,,,
+B,zs,Qwen/Qwen3-Embedding-0.6B,Qwen3-0.6B,center,center,paper,25,0,0.592964824120603,,,,,,,,,,,,0.8543123543123543,85.4,,0.831002331002331,83.1,
+A,zs,Qwen/Qwen3-Embedding-0.6B,Qwen3-0.6B,center,center,fine,23,0,0.5941000000000001,0.975097612529978,0.975,,0.6215925216674805,0.622,,,,,,,,,,,,
+B,zs,Qwen/Qwen3-Embedding-0.6B,Qwen3-0.6B,center,center,fine,25,0,0.5953,,,,,,,,,,,,0.8554778554778555,85.5,,0.8321678321678322,83.2,
+A,zs,Qwen/Qwen3-Embedding-0.6B,Qwen3-0.6B,center,center,exact,23,0,0.5944035053253174,0.975097612529978,0.975,,0.6215925216674805,0.622,,,,,,,,,,,,
+B,zs,Qwen/Qwen3-Embedding-0.6B,Qwen3-0.6B,center,center,exact,25,0,0.5973638296127319,,,,,,,,,,,,0.8566433566433567,85.7,,0.8344988344988346,83.4,
+A,zs,Qwen/Qwen3-Embedding-0.6B,Qwen3-0.6B,abtt_optimal,ABTT,paper,2,10,0.45226130653266333,0.9725992920873453,0.973,0.973,0.5527527928352356,0.553,0.553,2.0,10.0,True,True,False,,,,,,
+B,zs,Qwen/Qwen3-Embedding-0.6B,Qwen3-0.6B,abtt_optimal,ABTT,paper,5,10,0.4170854271356784,,,,,,,5.0,10.0,True,True,False,0.914918414918415,91.5,91.5,0.8939393939393939,89.4,89.4
+A,zs,Qwen/Qwen3-Embedding-0.6B,Qwen3-0.6B,abtt_optimal,ABTT,fine,2,10,0.4506,0.9725992920873453,0.973,0.973,0.5527527928352356,0.553,0.553,2.0,10.0,True,True,False,,,,,,
+B,zs,Qwen/Qwen3-Embedding-0.6B,Qwen3-0.6B,abtt_optimal,ABTT,fine,5,10,0.41750000000000004,,,,,,,5.0,10.0,True,True,False,0.914918414918415,91.5,91.5,0.8939393939393939,89.4,89.4
+A,zs,Qwen/Qwen3-Embedding-0.6B,Qwen3-0.6B,abtt_optimal,ABTT,exact,2,10,0.4525758624076843,0.9725992920873453,0.973,0.973,0.5527527928352356,0.553,0.553,2.0,10.0,True,True,False,,,,,,
+B,zs,Qwen/Qwen3-Embedding-0.6B,Qwen3-0.6B,abtt_optimal,ABTT,exact,5,10,0.4176791310310364,,,,,,,5.0,10.0,True,True,False,0.914918414918415,91.5,91.5,0.8939393939393939,89.4,89.4
+A,zs,Qwen/Qwen3-Embedding-0.6B,Qwen3-0.6B,sif_only,SIF,paper,22,0,0.9798994974874372,0.9419372634424151,0.942,0.942,0.053398311138153076,0.053,0.053,22.0,10.0,True,True,False,,,,,,
+B,zs,Qwen/Qwen3-Embedding-0.6B,Qwen3-0.6B,sif_only,SIF,paper,27,0,0.9899497487437187,,,,,,,27.0,10.0,True,True,False,0.7599067599067599,76.0,76.0,0.7424242424242424,74.2,74.2
+A,zs,Qwen/Qwen3-Embedding-0.6B,Qwen3-0.6B,sif_only,SIF,fine,22,0,0.9779,0.9419372634424151,0.942,0.942,0.053398311138153076,0.053,0.053,22.0,10.0,True,True,False,,,,,,
+B,zs,Qwen/Qwen3-Embedding-0.6B,Qwen3-0.6B,sif_only,SIF,fine,28,0,0.9503,,,,,,,27.0,10.0,False,True,True,0.7738927738927739,77.4,76.0,0.7552447552447552,75.5,74.2
+A,zs,Qwen/Qwen3-Embedding-0.6B,Qwen3-0.6B,sif_only,SIF,exact,22,0,0.9778683185577393,0.9419372634424151,0.942,0.942,0.053398311138153076,0.053,0.053,22.0,10.0,True,True,False,,,,,,
+B,zs,Qwen/Qwen3-Embedding-0.6B,Qwen3-0.6B,sif_only,SIF,exact,28,0,0.9503960013389587,,,,,,,27.0,10.0,False,True,True,0.7738927738927739,77.4,76.0,0.7552447552447552,75.5,74.2
+A,zs,Qwen/Qwen3-Embedding-0.6B,Qwen3-0.6B,sif_abtt_optimal,SIF+ABTT,paper,2,10,0.4120603015075377,0.9723338463259725,0.972,0.972,0.5403348207473755,0.540,0.540,2.0,10.0,True,True,False,,,,,,
+B,zs,Qwen/Qwen3-Embedding-0.6B,Qwen3-0.6B,sif_abtt_optimal,SIF+ABTT,paper,5,10,0.3969849246231156,,,,,,,5.0,10.0,True,True,False,0.9079254079254079,90.8,90.8,0.8857808857808858,88.6,88.6
+A,zs,Qwen/Qwen3-Embedding-0.6B,Qwen3-0.6B,sif_abtt_optimal,SIF+ABTT,fine,2,10,0.40950000000000003,0.9723338463259725,0.972,0.972,0.5403348207473755,0.540,0.540,2.0,10.0,True,True,False,,,,,,
+B,zs,Qwen/Qwen3-Embedding-0.6B,Qwen3-0.6B,sif_abtt_optimal,SIF+ABTT,fine,5,10,0.39540000000000003,,,,,,,5.0,10.0,True,True,True,0.9090909090909091,90.9,90.8,0.8869463869463869,88.7,88.6
+A,zs,Qwen/Qwen3-Embedding-0.6B,Qwen3-0.6B,sif_abtt_optimal,SIF+ABTT,exact,2,10,0.4123087525367737,0.9723338463259725,0.972,0.972,0.5403348207473755,0.540,0.540,2.0,10.0,True,True,False,,,,,,
+B,zs,Qwen/Qwen3-Embedding-0.6B,Qwen3-0.6B,sif_abtt_optimal,SIF+ABTT,exact,5,10,0.3957372009754181,,,,,,,5.0,10.0,True,True,True,0.9090909090909091,90.9,90.8,0.8869463869463869,88.7,88.6
+A,zs,KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,KaLM-mini,baseline,Base,paper,23,0,0.964824120603015,0.971543974855468,0.972,0.972,0.05622822046279907,0.056,0.056,23.0,10.0,True,True,False,,,,,,
+B,zs,KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,KaLM-mini,baseline,Base,paper,23,0,0.964824120603015,,,,,,,23.0,10.0,True,True,False,0.8752913752913752,87.5,87.5,0.8589743589743589,85.9,85.9
+A,zs,KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,KaLM-mini,baseline,Base,fine,23,0,0.9676,0.971543974855468,0.972,0.972,0.05622822046279907,0.056,0.056,23.0,10.0,True,True,False,,,,,,
+B,zs,KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,KaLM-mini,baseline,Base,fine,22,0,0.9721000000000001,,,,,,,23.0,10.0,False,True,True,0.8671328671328671,86.7,87.5,0.8508158508158508,85.1,85.9
+A,zs,KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,KaLM-mini,baseline,Base,exact,23,0,0.9675998687744141,0.971543974855468,0.972,0.972,0.05622822046279907,0.056,0.056,23.0,10.0,True,True,False,,,,,,
+B,zs,KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,KaLM-mini,baseline,Base,exact,22,0,0.9721226096153259,,,,,,,23.0,10.0,False,True,True,0.8671328671328671,86.7,87.5,0.8508158508158508,85.1,85.9
+A,zs,KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,KaLM-mini,center,center,paper,24,0,0.5879396984924623,0.9789740426358446,0.979,,0.577157735824585,0.577,,,,,,,,,,,,
+B,zs,KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,KaLM-mini,center,center,paper,23,0,0.5979899497487438,,,,,,,,,,,,0.8566433566433567,85.7,,0.8391608391608392,83.9,
+A,zs,KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,KaLM-mini,center,center,fine,24,0,0.5908,0.9789740426358446,0.979,,0.577157735824585,0.577,,,,,,,,,,,,
+B,zs,KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,KaLM-mini,center,center,fine,23,0,0.5986,,,,,,,,,,,,0.8589743589743589,85.9,,0.8414918414918415,84.1,
+A,zs,KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,KaLM-mini,center,center,exact,24,0,0.5911898016929626,0.9789740426358446,0.979,,0.577157735824585,0.577,,,,,,,,,,,,
+B,zs,KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,KaLM-mini,center,center,exact,23,0,0.5988978743553162,,,,,,,,,,,,0.8613053613053613,86.1,,0.8438228438228438,84.4,
+A,zs,KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,KaLM-mini,abtt_optimal,ABTT,paper,1,10,0.4120603015075377,0.9806189648178009,0.981,0.981,0.5676946043968201,0.568,0.568,1.0,10.0,True,True,False,,,,,,
+B,zs,KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,KaLM-mini,abtt_optimal,ABTT,paper,3,10,0.3969849246231156,,,,,,,3.0,10.0,True,True,False,0.9172494172494172,91.7,91.7,0.8939393939393939,89.4,89.4
+A,zs,KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,KaLM-mini,abtt_optimal,ABTT,fine,1,10,0.4127,0.9806189648178009,0.981,0.981,0.5676946043968201,0.568,0.568,1.0,10.0,True,True,False,,,,,,
+B,zs,KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,KaLM-mini,abtt_optimal,ABTT,fine,3,10,0.3951,,,,,,,3.0,10.0,True,True,True,0.916083916083916,91.6,91.7,0.8927738927738927,89.3,89.4
+A,zs,KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,KaLM-mini,abtt_optimal,ABTT,exact,1,10,0.4133606255054474,0.9806189648178009,0.981,0.981,0.5676946043968201,0.568,0.568,1.0,10.0,True,True,False,,,,,,
+B,zs,KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,KaLM-mini,abtt_optimal,ABTT,exact,3,10,0.395460307598114,,,,,,,3.0,10.0,True,True,False,0.9172494172494172,91.7,91.7,0.8939393939393939,89.4,89.4
+A,zs,KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,KaLM-mini,sif_only,SIF,paper,23,0,0.9698492462311558,0.964037096683391,0.964,0.964,0.05610084533691406,0.056,0.056,23.0,10.0,True,True,False,,,,,,
+B,zs,KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,KaLM-mini,sif_only,SIF,paper,22,0,0.9698492462311558,,,,,,,22.0,10.0,True,True,False,0.8566433566433567,85.7,85.7,0.8403263403263403,84.0,84.0
+A,zs,KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,KaLM-mini,sif_only,SIF,fine,23,0,0.9666,0.964037096683391,0.964,0.964,0.05610084533691406,0.056,0.056,23.0,10.0,True,True,False,,,,,,
+B,zs,KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,KaLM-mini,sif_only,SIF,fine,22,0,0.9676,,,,,,,22.0,10.0,True,True,True,0.8764568764568764,87.6,85.7,0.8578088578088578,85.8,84.0
+A,zs,KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,KaLM-mini,sif_only,SIF,exact,23,0,0.9665957093238831,0.964037096683391,0.964,0.964,0.05610084533691406,0.056,0.056,23.0,10.0,True,True,False,,,,,,
+B,zs,KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,KaLM-mini,sif_only,SIF,exact,22,0,0.9676417112350464,,,,,,,22.0,10.0,True,True,True,0.8776223776223776,87.8,85.7,0.8589743589743589,85.9,84.0
+A,zs,KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,KaLM-mini,sif_abtt_optimal,SIF+ABTT,paper,2,10,0.3869346733668342,0.9810785381192647,0.981,0.981,0.534881055355072,0.535,0.535,2.0,10.0,True,True,False,,,,,,
+B,zs,KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,KaLM-mini,sif_abtt_optimal,SIF+ABTT,paper,1,7,0.3919597989949749,,,,,,,1.0,7.0,True,True,False,0.9079254079254079,90.8,90.8,0.87995337995338,88.0,88.0
+A,zs,KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,KaLM-mini,sif_abtt_optimal,SIF+ABTT,fine,2,10,0.38870000000000005,0.9810785381192647,0.981,0.981,0.534881055355072,0.535,0.535,2.0,10.0,True,True,False,,,,,,
+B,zs,KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,KaLM-mini,sif_abtt_optimal,SIF+ABTT,fine,1,10,0.3985,,,,,,,1.0,7.0,True,False,True,0.914918414918415,91.5,90.8,0.8892773892773893,88.9,88.0
+A,zs,KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,KaLM-mini,sif_abtt_optimal,SIF+ABTT,exact,2,10,0.3889264464378357,0.9810785381192647,0.981,0.981,0.534881055355072,0.535,0.535,2.0,10.0,True,True,False,,,,,,
+B,zs,KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,KaLM-mini,sif_abtt_optimal,SIF+ABTT,exact,1,10,0.3998236656188965,,,,,,,1.0,7.0,True,False,True,0.914918414918415,91.5,90.8,0.8892773892773893,88.9,88.0
+A,ft,LaTa,LaTa (fine-tuned),baseline,Base,paper,12,0,0.7587939698492463,0.9838516910664699,0.984,0.984,0.3871713876724243,0.387,0.387,12.0,10.0,True,True,False,,,,,,
+B,ft,LaTa,LaTa (fine-tuned),baseline,Base,paper,12,0,0.7587939698492463,,,,,,,12.0,10.0,True,True,False,0.8344988344988346,83.4,83.4,0.8158508158508159,81.6,81.6
+A,ft,LaTa,LaTa (fine-tuned),baseline,Base,fine,12,0,0.7585000000000001,0.9838516910664699,0.984,0.984,0.3871713876724243,0.387,0.387,12.0,10.0,True,True,False,,,,,,
+B,ft,LaTa,LaTa (fine-tuned),baseline,Base,fine,12,0,0.7585000000000001,,,,,,,12.0,10.0,True,True,True,0.8321678321678322,83.2,83.4,0.8135198135198135,81.4,81.6
+A,ft,LaTa,LaTa (fine-tuned),baseline,Base,exact,12,0,0.758560299873352,0.9838516910664699,0.984,0.984,0.3871713876724243,0.387,0.387,12.0,10.0,True,True,False,,,,,,
+B,ft,LaTa,LaTa (fine-tuned),baseline,Base,exact,12,0,0.758560299873352,,,,,,,12.0,10.0,True,True,True,0.8321678321678322,83.2,83.4,0.8135198135198135,81.4,81.6
+A,ft,LaTa,LaTa (fine-tuned),center,center,paper,12,0,0.5879396984924623,0.9848330205576944,0.985,,0.6086868047714233,0.609,,,,,,,,,,,,
+B,ft,LaTa,LaTa (fine-tuned),center,center,paper,12,0,0.5879396984924623,,,,,,,,,,,,0.8251748251748252,82.5,,0.803030303030303,80.3,
+A,ft,LaTa,LaTa (fine-tuned),center,center,fine,12,0,0.5883,0.9848330205576944,0.985,,0.6086868047714233,0.609,,,,,,,,,,,,
+B,ft,LaTa,LaTa (fine-tuned),center,center,fine,12,0,0.5883,,,,,,,,,,,,0.824009324009324,82.4,,0.8018648018648019,80.2,
+A,ft,LaTa,LaTa (fine-tuned),center,center,exact,12,0,0.5883040428161621,0.9848330205576944,0.985,,0.6086868047714233,0.609,,,,,,,,,,,,
+B,ft,LaTa,LaTa (fine-tuned),center,center,exact,12,0,0.5883040428161621,,,,,,,,,,,,0.824009324009324,82.4,,0.8018648018648019,80.2,
+A,ft,LaTa,LaTa (fine-tuned),abtt_optimal,ABTT,paper,12,10,0.4371859296482412,0.9697289439511186,0.970,0.970,0.5477693676948547,0.548,0.548,12.0,10.0,True,True,False,,,,,,
+B,ft,LaTa,LaTa (fine-tuned),abtt_optimal,ABTT,paper,12,10,0.4371859296482412,,,,,,,12.0,10.0,True,True,False,0.8776223776223776,87.8,87.8,0.8519813519813519,85.2,85.2
+A,ft,LaTa,LaTa (fine-tuned),abtt_optimal,ABTT,fine,12,10,0.43810000000000004,0.9697289439511186,0.970,0.970,0.5477693676948547,0.548,0.548,12.0,10.0,True,True,False,,,,,,
+B,ft,LaTa,LaTa (fine-tuned),abtt_optimal,ABTT,fine,12,10,0.43810000000000004,,,,,,,12.0,10.0,True,True,True,0.8811188811188811,88.1,87.8,0.8554778554778555,85.5,85.2
+A,ft,LaTa,LaTa (fine-tuned),abtt_optimal,ABTT,exact,12,10,0.43845808506011963,0.9697289439511186,0.970,0.970,0.5477693676948547,0.548,0.548,12.0,10.0,True,True,False,,,,,,
+B,ft,LaTa,LaTa (fine-tuned),abtt_optimal,ABTT,exact,12,10,0.43845808506011963,,,,,,,12.0,10.0,True,True,True,0.8811188811188811,88.1,87.8,0.8554778554778555,85.5,85.2
+A,ft,Qwen3-0.6B,Qwen3-0.6B (fine-tuned),baseline,Base,paper,28,0,0.6733668341708543,0.9961028216947744,0.996,0.996,0.6843202114105225,0.684,0.684,28.0,10.0,True,True,False,,,,,,
+B,ft,Qwen3-0.6B,Qwen3-0.6B (fine-tuned),baseline,Base,paper,28,0,0.6733668341708543,,,,,,,28.0,10.0,True,True,False,0.9137529137529138,91.4,91.4,0.9079254079254079,90.8,90.8
+A,ft,Qwen3-0.6B,Qwen3-0.6B (fine-tuned),baseline,Base,fine,28,0,0.6732,0.9961028216947744,0.996,0.996,0.6843202114105225,0.684,0.684,28.0,10.0,True,True,False,,,,,,
+B,ft,Qwen3-0.6B,Qwen3-0.6B (fine-tuned),baseline,Base,fine,28,0,0.6732,,,,,,,28.0,10.0,True,True,False,0.9137529137529138,91.4,91.4,0.9079254079254079,90.8,90.8
+A,ft,Qwen3-0.6B,Qwen3-0.6B (fine-tuned),baseline,Base,exact,28,0,0.6765235066413879,0.9961028216947744,0.996,0.996,0.6843202114105225,0.684,0.684,28.0,10.0,True,True,False,,,,,,
+B,ft,Qwen3-0.6B,Qwen3-0.6B (fine-tuned),baseline,Base,exact,28,0,0.6765235066413879,,,,,,,28.0,10.0,True,True,True,0.9125874125874126,91.3,91.4,0.9067599067599068,90.7,90.8
+A,ft,Qwen3-0.6B,Qwen3-0.6B (fine-tuned),center,center,paper,28,0,0.6482412060301508,0.9961212157803042,0.996,,0.7393249273300171,0.739,,,,,,,,,,,,
+B,ft,Qwen3-0.6B,Qwen3-0.6B (fine-tuned),center,center,paper,28,0,0.6482412060301508,,,,,,,,,,,,0.9114219114219114,91.1,,0.9067599067599068,90.7,
+A,ft,Qwen3-0.6B,Qwen3-0.6B (fine-tuned),center,center,fine,28,0,0.6467,0.9961212157803042,0.996,,0.7393249273300171,0.739,,,,,,,,,,,,
+B,ft,Qwen3-0.6B,Qwen3-0.6B (fine-tuned),center,center,fine,28,0,0.6467,,,,,,,,,,,,0.9125874125874126,91.3,,0.9079254079254079,90.8,
+A,ft,Qwen3-0.6B,Qwen3-0.6B (fine-tuned),center,center,exact,28,0,0.6497448682785034,0.9961212157803042,0.996,,0.7393249273300171,0.739,,,,,,,,,,,,
+B,ft,Qwen3-0.6B,Qwen3-0.6B (fine-tuned),center,center,exact,28,0,0.6497448682785034,,,,,,,,,,,,0.9090909090909091,90.9,,0.9044289044289044,90.4,
+A,ft,Qwen3-0.6B,Qwen3-0.6B (fine-tuned),abtt_optimal,ABTT,paper,27,2,0.5979899497487438,0.9941157347816415,0.994,0.994,0.7163612842559814,0.716,0.716,27.0,2.0,True,True,False,,,,,,
+B,ft,Qwen3-0.6B,Qwen3-0.6B (fine-tuned),abtt_optimal,ABTT,paper,27,2,0.5979899497487438,,,,,,,27.0,2.0,True,True,False,0.9207459207459208,92.1,92.1,0.9137529137529138,91.4,91.4
+A,ft,Qwen3-0.6B,Qwen3-0.6B (fine-tuned),abtt_optimal,ABTT,fine,27,2,0.5938,0.9941157347816415,0.994,0.994,0.7163612842559814,0.716,0.716,27.0,2.0,True,True,False,,,,,,
+B,ft,Qwen3-0.6B,Qwen3-0.6B (fine-tuned),abtt_optimal,ABTT,fine,27,2,0.5938,,,,,,,27.0,2.0,True,True,False,0.9207459207459208,92.1,92.1,0.9137529137529138,91.4,91.4
+A,ft,Qwen3-0.6B,Qwen3-0.6B (fine-tuned),abtt_optimal,ABTT,exact,27,2,0.5942143201828003,0.9941157347816415,0.994,0.994,0.7163612842559814,0.716,0.716,27.0,2.0,True,True,False,,,,,,
+B,ft,Qwen3-0.6B,Qwen3-0.6B (fine-tuned),abtt_optimal,ABTT,exact,27,2,0.5942143201828003,,,,,,,27.0,2.0,True,True,False,0.9207459207459208,92.1,92.1,0.9137529137529138,91.4,91.4
+A,ft,KaLM-mini,KaLM-mini (fine-tuned),baseline,Base,paper,24,0,0.6130653266331658,0.9965240823650581,0.997,0.997,0.6356983184814453,0.636,0.636,24.0,10.0,True,True,False,,,,,,
+B,ft,KaLM-mini,KaLM-mini (fine-tuned),baseline,Base,paper,24,0,0.6130653266331658,,,,,,,24.0,10.0,True,True,False,0.9242424242424242,92.4,92.4,0.9172494172494172,91.7,91.7
+A,ft,KaLM-mini,KaLM-mini (fine-tuned),baseline,Base,fine,24,0,0.5924,0.9965240823650581,0.997,0.997,0.6356983184814453,0.636,0.636,24.0,10.0,True,True,False,,,,,,
+B,ft,KaLM-mini,KaLM-mini (fine-tuned),baseline,Base,fine,24,0,0.5924,,,,,,,24.0,10.0,True,True,True,0.921911421911422,92.2,92.4,0.9137529137529138,91.4,91.7
+A,ft,KaLM-mini,KaLM-mini (fine-tuned),baseline,Base,exact,24,0,0.5926399230957031,0.9965240823650581,0.997,0.997,0.6356983184814453,0.636,0.636,24.0,10.0,True,True,False,,,,,,
+B,ft,KaLM-mini,KaLM-mini (fine-tuned),baseline,Base,exact,24,0,0.5926399230957031,,,,,,,24.0,10.0,True,True,True,0.921911421911422,92.2,92.4,0.9137529137529138,91.4,91.7
+A,ft,KaLM-mini,KaLM-mini (fine-tuned),center,center,paper,24,0,0.5477386934673367,0.996214923223983,0.996,,0.6989415287971497,0.699,,,,,,,,,,,,
+B,ft,KaLM-mini,KaLM-mini (fine-tuned),center,center,paper,24,0,0.5477386934673367,,,,,,,,,,,,0.9254079254079254,92.5,,0.9184149184149184,91.8,
+A,ft,KaLM-mini,KaLM-mini (fine-tuned),center,center,fine,24,0,0.5431,0.996214923223983,0.996,,0.6989415287971497,0.699,,,,,,,,,,,,
+B,ft,KaLM-mini,KaLM-mini (fine-tuned),center,center,fine,24,0,0.5431,,,,,,,,,,,,0.9230769230769231,92.3,,0.914918414918415,91.5,
+A,ft,KaLM-mini,KaLM-mini (fine-tuned),center,center,exact,24,0,0.549517810344696,0.996214923223983,0.996,,0.6989415287971497,0.699,,,,,,,,,,,,
+B,ft,KaLM-mini,KaLM-mini (fine-tuned),center,center,exact,24,0,0.549517810344696,,,,,,,,,,,,0.9254079254079254,92.5,,0.9184149184149184,91.8,
+A,ft,KaLM-mini,KaLM-mini (fine-tuned),abtt_optimal,ABTT,paper,24,10,0.45226130653266333,0.993703892852221,0.994,0.994,0.6508361101150513,0.651,0.651,24.0,10.0,True,True,False,,,,,,
+B,ft,KaLM-mini,KaLM-mini (fine-tuned),abtt_optimal,ABTT,paper,24,10,0.45226130653266333,,,,,,,24.0,10.0,True,True,False,0.9335664335664335,93.4,93.4,0.9254079254079254,92.5,92.5
+A,ft,KaLM-mini,KaLM-mini (fine-tuned),abtt_optimal,ABTT,fine,24,5,0.4999,0.9955320108010216,0.996,0.994,0.6667628288269043,0.667,0.651,24.0,10.0,True,False,True,,,,,,
+B,ft,KaLM-mini,KaLM-mini (fine-tuned),abtt_optimal,ABTT,fine,24,5,0.4999,,,,,,,24.0,10.0,True,False,True,0.921911421911422,92.2,93.4,0.9137529137529138,91.4,92.5
+A,ft,KaLM-mini,KaLM-mini (fine-tuned),abtt_optimal,ABTT,exact,24,5,0.5002728700637817,0.9955320108010216,0.996,0.994,0.6667628288269043,0.667,0.651,24.0,10.0,True,False,True,,,,,,
+B,ft,KaLM-mini,KaLM-mini (fine-tuned),abtt_optimal,ABTT,exact,24,5,0.5002728700637817,,,,,,,24.0,10.0,True,False,True,0.921911421911422,92.2,93.4,0.9137529137529138,91.4,92.5
