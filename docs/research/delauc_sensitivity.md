@@ -354,11 +354,11 @@ two numbers in the repo are never confused.
 
 `overleaf_drafts/tables/attribution_delauc_sensitivity.tex` is generated from
 `configs.csv` and `cells.csv` by
-`scripts/ig/build_delauc_sensitivity_table.py`. It is **not** `\input` anywhere
-yet, and `tests/test_delauc_sensitivity.py` asserts that it is not: whether the
-appendix carries it is a separate decision from computing it. If it goes in, it
-belongs in Appendix `app:attribution_sweeps`, next to the erasure-operator
-caveat that already lives there.
+`scripts/ig/build_delauc_sensitivity_table.py`. Issue #235 took the decision to
+print it: it is `\input` in Appendix `app:attribution_sweeps`, next to the
+erasure-operator caveat, and `tests/test_delauc_sensitivity.py` now asserts
+that placement. Its caption says that the bold predeclared row draws five
+random orderings while the table of record uses 20 (the 20-draw row).
 
 ## Reproduce
 
