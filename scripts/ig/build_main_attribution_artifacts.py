@@ -829,7 +829,8 @@ def render_rho_figure(summary: pd.DataFrame, out_base: Path,
     ax.set_yticklabels([str(row["label"]) for row in rows], fontsize=8.5)
     ax.tick_params(axis="x", labelsize=8.5)
     ax.set_xlabel(r"$\rho_{\mathrm{LOO}}$ (higher is better)", fontsize=9)
-    ax.set_xlim(-0.08, 0.68)
+    # 0.74, not 0.68: the largest cell (mT5-base IG with ABTT, 0.686) was clipped.
+    ax.set_xlim(-0.08, 0.74)
     ax.grid(axis="x", color="0.86", linewidth=0.7)
     ax.grid(axis="y", visible=False)
     ax.spines["top"].set_visible(False)

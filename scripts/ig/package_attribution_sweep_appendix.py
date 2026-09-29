@@ -147,23 +147,34 @@ def method_order(summary: pd.DataFrame, requested: Sequence[str]) -> list[str]:
 def _render_block(
     summary: pd.DataFrame, keys: Sequence[str], methods: Sequence[str]
 ) -> list[str]:
-    """One tabular: a base/ABTT column pair per metric key, a row per method."""
+    """One tabular: a base/ABTT column pair per metric key, a row per method.
+
+    The model is a group row rather than a column, which keeps the widest
+    block (seven metric pairs) inside the text width at \\footnotesize.
+    """
+    n_cols = 1 + 2 * len(keys)
     lines = [
-        rf"\begin{{tabular}}{{{'ll' + 'rr' * len(keys)}}}",
+        rf"\begin{{tabular}}{{{'l' + 'rr' * len(keys)}}}",
         r"\toprule",
     ]
-    header = ["Model", "Method"]
+    header = ["Method"]
     for key in keys:
-        header.append(rf"\multicolumn{{2}}{{c}}{{{metric_label(key)}}}")
+        label = metric_label(key)
+        if "@" in label:
+            # Two-line header: a one-line "Suff@10% ^" is wider than its two
+            # number columns and pushes all the slack into the ABTT column.
+            head, tail = label.split("@", 1)
+            label = rf"\makecell{{{head}\\@{tail}}}"
+        header.append(rf"\multicolumn{{2}}{{c}}{{{label}}}")
     lines.append(" & ".join(header) + r" \\")
 
     cmid = []
     for i, _ in enumerate(keys):
-        start = 3 + 2 * i
+        start = 2 + 2 * i
         cmid.append(rf"\cmidrule(lr){{{start}-{start + 1}}}")
     lines.append(" ".join(cmid))
 
-    subheader = ["", ""]
+    subheader = [""]
     for _ in keys:
         subheader.extend(["Base", "ABTT"])
     lines.append(" & ".join(subheader) + r" \\")
@@ -174,10 +185,11 @@ def _render_block(
         ordered_methods = method_order(model_rows, methods)
         if not ordered_methods:
             continue
-        first_model_row = True
+        lines.append(
+            rf"\multicolumn{{{n_cols}}}{{l}}{{\emph{{{MODEL_SHORT.get(model, model)}}}}} \\"
+        )
         for method in ordered_methods:
-            cells = [MODEL_SHORT.get(model, model) if first_model_row else "", METHOD_LABELS.get(method, method)]
-            first_model_row = False
+            cells = [METHOD_LABELS.get(method, method)]
             for key in keys:
                 mean_col = f"{key}_mean"
                 for variant in VARIANTS:
@@ -225,7 +237,7 @@ def render_table(
         r"\begin{table*}[t]",
         r"\centering",
         r"\footnotesize",
-        r"\setlength{\tabcolsep}{3pt}",
+        r"\setlength{\tabcolsep}{2pt}",
     ]
     for b, keys in enumerate(blocks):
         if b:
