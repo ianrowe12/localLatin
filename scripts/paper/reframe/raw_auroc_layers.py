@@ -162,7 +162,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     for p in problems:
         print("REPRODUCTION MISMATCH:", p)
     if not problems:
-        print("reproduction: raw T5 panel cells match the published baseline and printed minima")
+        if args.res_csv is not None and args.res_csv.exists():
+            print("reproduction: raw T5 panel cells match the published baseline and printed minima")
+        else:
+            print(f"reproduction: printed minima match; published-cell check SKIPPED ({args.res_csv} not found)")
     return 1 if problems else 0
 
 

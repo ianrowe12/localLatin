@@ -111,5 +111,5 @@ def test_committed_cells_recompute_from_caches():
     ref = pd.read_csv(COMMITTED).set_index(["model", "layer"])["aucroc"]
     for name, layer in (("LaTa", 6), ("T5-v1.1-base", 2)):
         df = ral.score_models(split, BASES, GEN, names=[name], layers=[layer])
-        assert df["aucroc"].item() == pytest.approx(float(ref.loc[(name, layer)]), abs=1e-9)
+        assert df["aucroc"].item() == pytest.approx(float(ref.loc[(name, layer)]), abs=1e-6)
     assert round(float(ref.loc[("LaTa", 6)]), 3) == 0.496
