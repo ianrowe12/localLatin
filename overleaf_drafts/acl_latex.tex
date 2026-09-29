@@ -113,6 +113,7 @@ Prior work shows that a few residual coordinates of very large magnitude can dom
 In decoder language models they persist through the middle layers \citep{sun2024massive}, and in T5 encoders they grow with depth \citep{zhao2025outlier}.
 We test whether mean pooling turns these coordinates into values that vary from passage to passage and so drown out content (Section~\ref{sec:localizing}).
 We also test whether T5 pretraining or the missing embedding objective produces the collapse (Section~\ref{sec:objective}).
+A label-free check finds the same low-rank middle layers on English court opinions, including in a T5 encoder pretrained on English alone.
 
 We measure the geometry on two tasks.
 Pairwise retrieval (Task~A) scores every pair of witnesses and tests ranking directly.
@@ -564,6 +565,7 @@ Enc., emb.   & LaBSE                  & 0.806 & 0.524 \\
 Fine-tuning gives a first piece of evidence.
 Contrastive fine-tuning on 499 of the training pairs (Appendix~\ref{app:reference_systems}) raises LaTa's last layer from 0.938 to 0.984 AUROC (Table~\ref{tab:finetune_ceiling}).
 Its layers 2 to 11 still collapse, at AUROC 0.50 to 0.57.
+Their geometry barely moves: the peak top-PC share is 0.945 after fine-tuning against 0.952 before (Table~\ref{tab:ft_lata_layerwise}, Appendix~\ref{app:reference_systems}).
 Supervision attached to the output thus leaves the intermediate layers unrepaired.
 A similar output-only pattern is reported for a multilingual encoder: after sentence-level tuning it has no large outlier dimension at the output layer, while the base model's top outlier persists, reduced, at layer 8 \citep{haemmerl2023anisotropy}.
 This result does not separate the two accounts: small-scale supervision at the output may leave intermediate layers untouched under either.
@@ -576,7 +578,13 @@ We compute the same for T5-v1.1-base \citep{raffel2020t5} on both the Latin corp
 If the collapse is a property of the model, each model shows the same profile on both texts: top-PC share above 0.8 and effective rank near 1 at mid-depth.
 If mT5-base stays high-rank on English, the collapse depends on the input text.
 If T5-v1.1-base stays high-rank on English while mT5-base collapses there, it depends on the pretraining data.
-We find \pending{GEN: per-layer top-PC share and effective rank for mT5-base and PhilTa on the English sample, T5-v1.1-base on both texts (sample source and size to be fixed); expected: a mid-depth low-rank profile in every cell}.
+Every cell shows the same profile (Table~\ref{tab:gen_geometry} and Figure~\ref{fig:gen_geometry}, Appendix~\ref{app:layer_diagnostics}).
+The English sample is 1,705 public-domain passages of US court opinions from the Caselaw Access Project \citep{cap2024}, as redistributed in the Common Pile \citep{kandpal2025commonpile}, one per Latin passage and matched to it in mT5 token length; as on Latin, we read the statistics on the 847 passages paired with training passages.
+On English, mT5-base reaches a top-PC share of at least 0.999 with effective rank 1.0 at layers 5 to 11, as on Latin, and PhilTa reaches 0.85 to 0.89 at layers 4 to 11 (0.83 to 0.86 on Latin).
+PhilTa's effective rank is 1.8 to 2.3 on both texts, as on Latin, rather than near 1.
+T5-v1.1-base, pretrained on English alone, collapses from layer 2 to layer 11 on both texts, at top-PC share 0.93 to 0.95 on English and 0.96 to 0.97 on Latin.
+In every cell the first and last layers stay high-rank.
+Neither fail condition occurs: in these cells the low-rank middle layers appear on both texts, whether or not the input is in the model's pretraining language.
 This check speaks to geometry only.
 Whether retrieval also collapses on English text stays outside what this testbed measures.
 
@@ -682,7 +690,7 @@ Token attributions at the train-selected layers are reported in Appendix~\ref{ap
 \clearpage
 \section*{Limitations}
 
-The study uses one labeled corpus in one language and one domain: medieval Latin canon law. The 1,705-witness corpus is large for this field but small by current NLP standards. We test six models, and others may behave differently. In the models we have run, architecture and training objective are confounded, so we cannot yet say whether the mid-depth collapse follows from T5 pretraining or from the absence of an embedding objective; the controlled panel of Section~\ref{sec:objective} is designed to separate them (P2x2). The headline cells carry no confidence intervals until the directory-level bootstrap is run (CI), so small differences, such as the ABTT drops on fine-tuned Qwen3-0.6B and KaLM-mini, should not be read as effects. ABTT needs enough text to estimate principal components, so smaller archives need separate study.
+The study uses one labeled corpus in one language and one domain: medieval Latin canon law. A label-free check extends the geometry, but not the retrieval result, to one English register (Section~\ref{sec:objective}). The 1,705-witness corpus is large for this field but small by current NLP standards. We test six models, and others may behave differently. In the models we have run, architecture and training objective are confounded, so we cannot yet say whether the mid-depth collapse follows from T5 pretraining or from the absence of an embedding objective; the controlled panel of Section~\ref{sec:objective} is designed to separate them (P2x2). The headline cells carry no confidence intervals until the directory-level bootstrap is run (CI), so small differences, such as the ABTT drops on fine-tuned Qwen3-0.6B and KaLM-mini, should not be read as effects. ABTT needs enough text to estimate principal components, so smaller archives need separate study.
 
 Task~B measures ranking quality and a single threshold decision. It does not measure the full judgment a working scholar brings to deciding whether a witness belongs to an existing directory. The attribution analysis in the appendix is local to fixed query-candidate scores and failed its pre-registered threshold; its consistent effect is a leave-one-out rank faithfulness gain, and the ERASER-style rationale metrics are mixed.
 
@@ -736,6 +744,17 @@ This appendix complements the layerwise view of Section~\ref{sec:geometry}. Figu
 \input{tables/layer_diagnostics_main}
 
 Top-PC share and effective rank correlate with the ABTT gain across all 100 model-layers (Spearman $+0.76$ and $-0.76$, Table~\ref{tab:geometry_correlations}), but only because ABTT lifts every layer into a narrow band, so the gain mirrors the baseline. Within a family the correlations are weak. The statistics locate where ABTT helps; they do not select layers, which the train-only rule does.
+
+\paragraph{Geometry on English text.} Table~\ref{tab:gen_geometry} and Figure~\ref{fig:gen_geometry} give the label-free check of Section~\ref{sec:objective}. The English sample comes from the public-domain US court opinions of the Caselaw Access Project \citep{cap2024}, in the redistribution of the Common Pile \citep{kandpal2025commonpile}; every sampled document is marked public domain. Legal prose is the nearest openly licensed English register to canon law. Each non-empty Latin passage receives one English passage from a distinct opinion (the two empty Latin files receive an empty one): a run of whole words from a random sentence start in the body text, whose mT5 token count is within $\max(2, 3\%)$ tokens of the Latin passage's, and the English passage inherits its partner's split. The two texts then have the same mT5 length distribution (median 98 tokens). The match holds only under the mT5 tokenizer: under PhilTa's tokenizer the English passages are about 40 percent longer, and under T5-v1.1's English-only tokenizer the Latin passages are about 55 percent longer. Re-pairing the training passages on each model's own token lengths (653 to 847 pairs) moves top-PC share at the collapsed layers by about 0.01 to 0.02, depending on the matching rule, and leaves every cell collapsed on the same layers.
+
+\input{tables/gen_geometry}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{fig_gen_geometry.pdf}
+\caption{Label-free layer geometry of three T5 encoders on the Latin corpus (solid, filled markers) and on English US court opinions matched to the Latin passages in mT5 token length (dashed, hollow markers), read on 847 passages per cell. (a)~Top-PC share, the share of centered variance on the first principal component; the dotted line is the 0.6 threshold that marks every collapsed Latin layer (one false alarm, mT5-base layer~4). (b)~Entropy effective rank, log scale. Every model is low-rank from layer 2 to 4 through layer 11 on both texts and recovers at layer 12.}
+\label{fig:gen_geometry}
+\end{figure*}
 
 \section{Score Distributions at the Collapsed Retrieval Layer}
 \label{app:score_distributions}
@@ -820,6 +839,10 @@ Three encoders are fine-tuned under one recipe, LaTa, Qwen3-0.6B and KaLM-mini. 
 \renewenvironment{table}[1][t]{\begin{table*}[#1]}{\end{table*}}
 \input{tables/finetune_ceiling}
 \endgroup
+
+\paragraph{Fine-tuned LaTa by layer.} Table~\ref{tab:ft_lata_layerwise} gives fine-tuned LaTa at every layer, with no post-hoc correction, beside the pre-trained model. Fine-tuning lifts the last layer from 0.938 to 0.984 AUROC and leaves layers 2 to 11 at 0.499 to 0.569. Their top-PC share stays at 0.759 to 0.945, against 0.771 to 0.952 before fine-tuning, so the collapsed geometry stays in place.
+
+\input{tables/ft_lata_layerwise}
 
 \paragraph{Lexical reference systems.} Table~\ref{tab:lexical_baselines} gives the three lexical reference systems (BM25, character 3--5-gram TF-IDF, and Levenshtein similarity) on both tasks; the character n-gram row is the reference quoted in Section~\ref{sec:repair}.
 
