@@ -225,8 +225,6 @@ def _render_tex(table: pd.DataFrame, todo_comments: list[str]) -> str:
         "\\centering\n"
         "\\small\n"
         "\\setlength{\\tabcolsep}{6pt}\n"
-        f"\\caption{{{CAPTION}}}\n"
-        f"\\label{{{LABEL}}}\n"
         f"\\begin{{tabular}}{{{COLUMN_FORMAT}}}\n"
         "\\toprule\n"
         f"{HEADER}\n"
@@ -234,6 +232,10 @@ def _render_tex(table: pd.DataFrame, todo_comments: list[str]) -> str:
         f"{body}\n"
         "\\bottomrule\n"
         "\\end{tabular}\n"
+        # Caption below the table, as the ACL style asks (formatting.md;
+        # issue #235 item 11).
+        f"\\caption{{{CAPTION}}}\n"
+        f"\\label{{{LABEL}}}\n"
         "\\end{table*}\n"
     )
 
