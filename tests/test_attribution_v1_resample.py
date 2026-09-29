@@ -338,3 +338,82 @@ print(token_filtering.TOKEN_FILTER_CHOICES[0])
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "all"
+
+
+# --- issue #227: the run manifest check at non-operational layers -------------
+#
+# build_attribution_run_manifest.py checked every run against the operational
+# layer contract (LaTa 7), so a run at the most anisotropic layers failed its
+# last step after all GPU work. --layer_overrides states the layers the run was
+# built at; without it the operational contract is still what is expected.
+
+
+def _manifest_run(tmp_path: Path, layer: int) -> dict:
+    examples = pd.DataFrame(
+        {
+            "example_id": [1, 2],
+            "model_name": ["bowphs/LaTa", "bowphs/LaTa"],
+            "layer": [layer, layer],
+            "D": [10, 10],
+            "gold_similar": [1, 1],
+            "candidate_role": ["pair_example", "pair_example"],
+        }
+    )
+    examples_csv = tmp_path / "examples.csv"
+    examples.to_csv(examples_csv, index=False)
+    pc_root = tmp_path / "pcs"
+    (pc_root / "bowphs_LaTa").mkdir(parents=True)
+    np.savez(pc_root / "bowphs_LaTa" / f"layer{layer}_pcs.npz",
+             pcs=np.zeros((10, 4)), mean_vec=np.zeros(4))
+    return {"examples_csv": examples_csv, "pc_root": pc_root,
+            "out": tmp_path / "manifest.json"}
+
+
+def _build_manifest(run: dict, tmp_path: Path, overrides=None):
+    cmd = [
+        sys.executable,
+        str(REPO_ROOT / "scripts/ig/build_attribution_run_manifest.py"),
+        "--examples_csv", str(run["examples_csv"]),
+        "--pc_root", str(run["pc_root"]),
+        "--artifacts_root", str(tmp_path / "artifacts"),
+        "--retrieval_mark_root", str(tmp_path / "marc"),
+        "--metrics_root", str(tmp_path / "metrics"),
+        "--out_json", str(run["out"]),
+        "--out_inventory_csv", str(tmp_path / "inventory.csv"),
+        "--expected_n_per_model", "2",
+        "--expected_models", "bowphs/LaTa",
+    ]
+    if overrides is not None:
+        cmd += ["--layer_overrides", *overrides]
+    return subprocess.run(cmd, capture_output=True, text=True)
+
+
+class TestManifestLayerOverrides:
+    def test_without_the_flag_the_operational_layer_is_expected(self, tmp_path):
+        run = _manifest_run(tmp_path, layer=8)
+        result = _build_manifest(run, tmp_path)
+        assert result.returncode == 1
+        errors = json.loads(run["out"].read_text())["errors"]
+        assert any("expected layer 7, found [8]" in e for e in errors)
+
+    def test_matching_overrides_pass(self, tmp_path):
+        run = _manifest_run(tmp_path, layer=8)
+        result = _build_manifest(run, tmp_path, ["bowphs/LaTa=8"])
+        assert result.returncode == 0, result.stdout + result.stderr
+        manifest = json.loads(run["out"].read_text())
+        assert manifest["errors"] == []
+        assert manifest["layer_overrides"] == {"bowphs/LaTa": 8}
+
+    def test_overrides_against_an_operational_run_fail(self, tmp_path):
+        run = _manifest_run(tmp_path, layer=7)
+        result = _build_manifest(run, tmp_path, ["bowphs/LaTa=8"])
+        assert result.returncode == 1
+        errors = json.loads(run["out"].read_text())["errors"]
+        assert any("expected layer 8, found [7]" in e for e in errors)
+
+    def test_a_non_integer_override_is_refused(self, tmp_path):
+        run = _manifest_run(tmp_path, layer=8)
+        result = _build_manifest(run, tmp_path, ["bowphs/LaTa=eight"])
+        assert result.returncode != 0
+        assert "integer layer" in result.stderr
+        assert not run["out"].exists()
