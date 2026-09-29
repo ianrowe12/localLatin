@@ -24,7 +24,7 @@ Issue #234, share of the analysis reframe (#229). Handoff rows GEN and FT in
 - **Tokenizer sensitivity**: re-matching the training rows on each model's own tokenizer
   lengths moves top-PC share by at most 0.010 on the collapsed layers (0.033 at any layer);
   every cell stays collapsed on the same layers.
-- Compute: about 4 CPU core-hours (pilot 0.4, main job 3.2, fix-round job 22535892 about 0.3);
+- Compute: 3.8 CPU core-hours (pilot 0.4, main job 3.2, fix-round job 22535892, 0.2);
   no GPU.
 
 ## Provenance
