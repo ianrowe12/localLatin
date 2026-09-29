@@ -153,13 +153,14 @@ def summarize(geo: pd.DataFrame, subset: str = "train") -> pd.DataFrame:
                 continue
             pk = s.loc[s.pc1.idxmax()]
             lo = s.loc[s.erank.idxmin()]
-            hi = s[s.pc1 > COLLAPSE_PC1].layer.tolist()
-            mid = s[(s.layer >= 3) & (s.layer <= 10)]
+            hs = s[s.pc1 >= COLLAPSE_PC1]
+            hi = hs.layer.tolist()
             out.append(dict(model=disp, text=tdisp, n=int(s.n.iloc[0]), pc1_max=pk.pc1,
                             pc1_max_layer=int(pk.layer), erank_min=lo.erank,
                             erank_min_layer=int(lo.layer), n_high=len(hi),
-                            high_layers=_ranges(hi), pc1_mid_min=mid.pc1.min(),
-                            pc1_mid_max=mid.pc1.max(), erank_mid_max=mid.erank.max(),
+                            high_layers=_ranges(hi), pc1_hi_min=hs.pc1.min(),
+                            pc1_hi_max=hs.pc1.max(), erank_hi_min=hs.erank.min(),
+                            erank_hi_max=hs.erank.max(),
                             pc1_L1=s.pc1.iloc[0], pc1_L12=s.pc1.iloc[-1]))
     return pd.DataFrame(out)
 
@@ -182,15 +183,16 @@ def _ranges(layers) -> str:
 def write_gen_table(summ: pd.DataFrame, path: Path) -> None:
     lines = [HEADER, r"\begin{table}[t]", r"\centering", r"\footnotesize",
              r"\setlength{\tabcolsep}{3pt}", r"\begin{tabular}{@{}llcccc@{}}", r"\toprule",
-             r"Model & Text & PC1$_{\max}$ ($\ell$) & PC1 $>$ " + f"{COLLAPSE_PC1:.1f}"
-             + r" & PC1$_{3\text{--}10}$ & Rank$_{\min}$ ($\ell$) \\", r"\midrule"]
+             r"& & & \multicolumn{3}{c}{Layers with PC1 $\ge$ " + f"{COLLAPSE_PC1:.1f}" + r"} \\",
+             r"\cmidrule(lr){4-6}",
+             r"Model & Text & PC1$_{\max}$ ($\ell$) & Layers & PC1 & Eff.\ rank \\", r"\midrule"]
     prev = None
     for _, x in summ.iterrows():
         if prev is not None and x.model != prev:
             lines.append(r"\addlinespace")
         name = x.model if x.model != prev else ""
         lines.append(f"{name} & {x.text} & {x.pc1_max:.3f} ({x.pc1_max_layer}) & {x.high_layers} & "
-                     f"{x.pc1_mid_min:.2f}--{x.pc1_mid_max:.2f} & {x.erank_min:.2f} ({x.erank_min_layer}) \\\\")
+                     f"{x.pc1_hi_min:.3f}--{x.pc1_hi_max:.3f} & {x.erank_hi_min:.2f}--{x.erank_hi_max:.2f} \\\\")
         prev = x.model
     n = int(summ.n.iloc[0]) if len(summ) else 0
     lines += [r"\bottomrule", r"\end{tabular}",
@@ -199,11 +201,11 @@ def write_gen_table(summ: pd.DataFrame, path: Path) -> None:
               r"training passages, or the English passages paired with them one to one and matched "
               r"in mT5 token length (US court opinions, Caselaw Access Project). PC1$_{\max}$: peak "
               r"top-PC share over the 12 layers, the share of centered variance on the first "
-              r"principal component, with its layer $\ell$. PC1 $>$ " + f"{COLLAPSE_PC1:.1f}" + r": "
-              r"layers above the threshold that separates collapsed from healthy layers on the Latin "
-              r"testbed. PC1$_{3\text{--}10}$: range over layers 3 to 10. Rank$_{\min}$: smallest "
-              r"entropy effective rank over layers. No labels are used, so the English rows say "
-              r"nothing about retrieval.}",
+              r"principal component, with its layer $\ell$. The last three columns cover the layers "
+              r"whose top-PC share is at least " + f"{COLLAPSE_PC1:.1f}" + r", the threshold that "
+              r"separates collapsed from healthy layers on the Latin testbed, and give the range of "
+              r"top-PC share and of entropy effective rank over them. No labels are used, so the "
+              r"English rows say nothing about retrieval.}",
               r"\label{tab:gen_geometry}", r"\end{table}"]
     path.write_text("\n".join(lines) + "\n")
 
@@ -283,11 +285,12 @@ def facts(geo, summ, summ_all, rep, ft, path: Path) -> None:
     w = L.append
     for title, sm in [("train subset (primary)", summ), ("all 1,705 rows (sensitivity)", summ_all)]:
         w(f"## Summary, {title}")
-        w("| model | text | n | PC1 max (layer) | layers PC1>0.6 | PC1 range L3-10 | max eff rank L3-10 | min eff rank (layer) | PC1 L1 | PC1 L12 |")
+        w("| model | text | n | PC1 max (layer) | layers PC1>=0.6 | PC1 range there | eff rank range there | min eff rank (layer) | PC1 L1 | PC1 L12 |")
         w("|---|---|---|---|---|---|---|---|---|---|")
         for _, x in sm.iterrows():
             w(f"| {x.model} | {x.text} | {x.n} | {x.pc1_max:.3f} ({x.pc1_max_layer}) | {x.high_layers.replace('--', '-')} | "
-              f"{x.pc1_mid_min:.3f}-{x.pc1_mid_max:.3f} | {x.erank_mid_max:.2f} | {x.erank_min:.2f} ({x.erank_min_layer}) | "
+              f"{x.pc1_hi_min:.3f}-{x.pc1_hi_max:.3f} | {x.erank_hi_min:.2f}-{x.erank_hi_max:.2f} | "
+              f"{x.erank_min:.2f} ({x.erank_min_layer}) | "
               f"{x.pc1_L1:.3f} | {x.pc1_L12:.3f} |")
         w("")
     w("## Per layer (train subset): top-PC share / effective rank / mean pairwise cosine")
