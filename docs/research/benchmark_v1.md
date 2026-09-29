@@ -110,7 +110,7 @@ corpus), and only directory-derived columns are recomputed
 (`build_meta_with_carried_over_split` in `src/canon_split_v2.py`).
 
 ```bash
-# Back up first: the CSV is gitignored, so this file is the only copy.
+# Historical, do not re-run: when this ran the CSV was gitignored and the backup was the only copy; both are tracked now (#230) and re-running this cp would overwrite the tracked backup.
 mkdir -p runs/active/resubmit/data/benchmark_v1
 cp runs/active/resubmit/data/phase_resubmit_split.csv \
    runs/active/resubmit/data/benchmark_v1/phase_resubmit_split.pre_correction_backup.csv
