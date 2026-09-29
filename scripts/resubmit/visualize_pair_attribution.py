@@ -9,6 +9,14 @@ phase 12e visualiser (``scripts/_archive/run_phase12e_visualize.py``), whose
 inputs no longer exist and whose example was a different pair from the MaRC
 figure's; this script ports its matrix construction unchanged.
 
+Where the pair comes from: example 11 of the webapp IG gallery
+(``runs/active/ig_examples/phase12f_examples.csv``), a same-directory PhilTa
+pair (CANT.328.15) at layer 6, PhilTa's most anisotropic layer and the layer of
+the attribution mechanism check, not the operational attribution layer. It is a
+demonstration pair, picked because ABTT reverses the baseline decision (baseline
+predicts different, ABTT same), and it is not one of the 200 positive pairs the
+attribution metrics are computed on. The paper's captions say all of this.
+
 Pair matrix: for the ``--max_tokens`` query and candidate positions with the
 largest integrated-gradient magnitude under either variant, each cell is the
 token-token cosine times the geometric mean of the two tokens' L1-normalised
@@ -52,7 +60,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--model_name", default="bowphs/PhilTa")
     p.add_argument(
         "--example_id", type=int, default=11,
-        help="Pair to render; 11 is the PhilTa pair of fig_retrieval_mark_pair_philta.",
+        help=(
+            "Gallery pair to render. 11 is the paper's demonstration pair: PhilTa "
+            "layer 6, ABTT reverses the baseline decision, outside the 200 "
+            "evaluated pairs; fig_retrieval_mark_pair_philta shows the same pair."
+        ),
     )
     p.add_argument("--max_tokens", type=int, default=18,
                    help="Query and candidate positions shown per side.")

@@ -120,8 +120,11 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=11,
         help=(
-            "Primary example id to render (default: 11, the PhilTa pair the "
-            "paper prints; visualize_pair_attribution.py renders the same pair)."
+            "Primary example id to render (default: 11, the paper's PhilTa "
+            "demonstration pair from the webapp IG gallery: layer 6, the most "
+            "anisotropic layer, chosen because ABTT reverses the baseline "
+            "decision, not one of the 200 evaluated pairs; "
+            "visualize_pair_attribution.py renders the same pair)."
         ),
     )
     parser.add_argument(
@@ -194,7 +197,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--dpi",
         type=int,
-        default=150,
+        default=200,
         help="PNG DPI (PDF is vector).",
     )
     parser.add_argument(

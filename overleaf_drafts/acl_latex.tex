@@ -842,7 +842,7 @@ Table~\ref{tab:attribution_metrics_main} compares baseline and ABTT attributions
 
 ABTT improves rank faithfulness in five of six model-view cells ($\rho_{\mathrm{LOO}}$ 5/6, Kendall $\tau_b$ agreeing in the same five) by 10.3 to 22.5 standard errors, the sixth a tie at 1.5; chance-corrected deletion faithfulness improves in four of six, and both LaTa cells favour the baseline, at 2.1 and 8.5 standard errors. Comp@25\% and the InsAUC gap point the same way (Table~\ref{tab:attribution_metrics_secondary}): Comp@25\% favours ABTT in four of six cells, both LaTa cells to the baseline as for DelAUC gap, and the InsAUC gap in five of six, LaTa/IG to the baseline; MinFrac@0.80 does not, favouring ABTT in two. Neither is headline evidence, and InsAUC gap and AOPC-Suff (identical gaps by construction) fall to $-0.024$ on mT5-base/IG baseline, the one non-positive cell of the control (Table~\ref{tab:attribution_shuffle_control}). So we claim better-ranked rationales, not a gain on every axis.
 
-Masking acts on cached layer-$L$ hidden states, so every faithfulness statement is about the pooled read-out at that layer, not the encoder's input-to-output map. Appendix~\ref{app:attribution_sweeps} carries the threshold sweeps and Figure~\ref{fig:attribution_rho_loo_main}; Appendix~\ref{app:qual_attribution} shows one PhilTa retrieval case, with its integrated-gradient pair matrix before and after ABTT.
+Masking acts on cached layer-$L$ hidden states, so every faithfulness statement is about the pooled read-out at that layer, not the encoder's input-to-output map. Appendix~\ref{app:attribution_sweeps} carries the threshold sweeps and Figure~\ref{fig:attribution_rho_loo_main}; Appendix~\ref{app:qual_attribution} shows one PhilTa demonstration pair, outside the 200 evaluated pairs and at a different layer, with its integrated-gradient pair matrix before and after ABTT.
 
 \section{Secondary Attribution Metrics and Sweeps}
 \label{app:attribution_sweeps}
@@ -864,26 +864,26 @@ Masking acts on cached layer-$L$ hidden states, so every faithfulness statement 
 \section{Qualitative Attribution Examples}
 \label{app:qual_attribution}
 
-This appendix keeps the example-level views for one PhilTa retrieval pair. Figure~\ref{fig:pairmatrix} gives the integrated-gradient pair matrix before and after ABTT. The attention map in Figure~\ref{fig:attention} is context only, since ABTT is applied after encoding. The retrieval-adapted MaRC masks in Figure~\ref{fig:retrieval_mark} show the learned-mask view for the same pair.
+This appendix keeps the example-level views for one PhilTa retrieval pair, at PhilTa layer 6, its most anisotropic layer (the layer of the mechanism check in Appendix~\ref{app:attribution}), not the operational layer of Table~\ref{tab:attribution_metrics_main}; a demonstration pair chosen because ABTT reverses the baseline decision, outside the 200 evaluated pairs. Figure~\ref{fig:pairmatrix} gives the integrated-gradient pair matrix before and after ABTT. The attention map in Figure~\ref{fig:attention} is context only, since ABTT is applied after encoding. The retrieval-adapted MaRC masks in Figure~\ref{fig:retrieval_mark} show the learned-mask view for the same pair.
 
 \begin{figure*}[!t]
 \centering
 \includegraphics[width=0.94\textwidth]{fig_pair_matrix_philta.pdf}
-\caption{Derived pairwise heatmap for one PhilTa retrieval case. The left panel shows the baseline representation and the right panel shows the same example after ABTT. Both axes use original decoded tokens: the 18 query and 18 candidate tokens with the largest integrated-gradient magnitude under either representation. Cell values combine token-token cosine similarity with single-sequence integrated-gradient scores.}
+\caption{Derived pairwise heatmap for one PhilTa retrieval pair, at PhilTa layer 6, its most anisotropic layer (the layer of the mechanism check in Appendix~\ref{app:attribution}), not the operational layer of Table~\ref{tab:attribution_metrics_main}; a demonstration pair chosen because ABTT reverses the baseline decision, outside the 200 evaluated pairs. The left panel shows the baseline representation and the right panel shows the same example after ABTT. Both axes use original decoded tokens: the 18 query and 18 candidate tokens with the largest integrated-gradient magnitude under either representation. Cell values combine token-token cosine similarity with single-sequence integrated-gradient scores.}
 \label{fig:pairmatrix}
 \end{figure*}
 
 \begin{figure*}[!t]
 \centering
 \includegraphics[width=0.94\textwidth]{fig_attention_philta.pdf}
-\caption{Companion self-attention maps for the same PhilTa example as Figure~\ref{fig:pairmatrix}. ABTT is applied after encoding, so attention is included only as supporting context.}
+\caption{Companion self-attention maps at PhilTa layer 6 for the same demonstration pair as Figure~\ref{fig:pairmatrix}, which is outside the 200 evaluated pairs. ABTT is applied after encoding, so attention is included only as supporting context.}
 \label{fig:attention}
 \end{figure*}
 
 \begin{figure*}[!t]
 \centering
 \includegraphics[width=0.94\textwidth]{fig_retrieval_mark_pair_philta.pdf}
-\caption{Retrieval-adapted MaRC masks for the same PhilTa pair as Figure~\ref{fig:pairmatrix}. The upper two strips give the mask on the query with the candidate fixed, and the lower two the mask on the candidate with the query fixed; each sequence wraps onto two strips. In every strip the Baseline row uses the raw cosine target and the ABTT row the ABTT-corrected cosine target. Gray cells are non-content positions, frozen at zero.}
+\caption{Retrieval-adapted MaRC masks at PhilTa layer 6 for the same demonstration pair as Figure~\ref{fig:pairmatrix}, which is outside the 200 evaluated pairs. The upper two strips give the mask on the query with the candidate fixed, and the lower two the mask on the candidate with the query fixed; each sequence wraps onto two strips. In every strip the Baseline row uses the raw cosine target and the ABTT row the ABTT-corrected cosine target. Gray cells are non-content positions, frozen at zero.}
 \label{fig:retrieval_mark}
 \end{figure*}
 
