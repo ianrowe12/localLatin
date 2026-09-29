@@ -102,6 +102,12 @@ def test_delta_cell_marks_only_ties():
     assert bat._delta_cell(None) == "--"
 
 
+def test_negative_means_print_a_minus_sign_and_keep_the_bold():
+    assert bat._variant_cells(-0.018, 0.357) == ["$-0.018$", r"\textbf{0.357}"]
+    assert bat._variant_cells(-0.026, -0.030) == [r"$\mathbf{-0.026}$", "$-0.030$"]
+    assert bat._variant_cells(0.913, 0.182) == [r"\textbf{0.913}", "0.182"]
+
+
 def test_run_layers_refuses_a_run_with_two_layers_for_one_model(tmp_path: Path):
     csv = tmp_path / "positive200_examples.csv"
     pd.DataFrame({"model_name": ["bowphs/LaTa", "bowphs/LaTa", "bowphs/PhilTa",

@@ -58,7 +58,6 @@ from build_main_attribution_artifacts import (  # noqa: E402
     _count_phrase,
     _get,
     _mean_col,
-    _pair_cells,
     paired_cell_stats,
     select_main_rows,
 )
@@ -142,6 +141,24 @@ def _delta_cell(entry: Optional[Tuple[float, float]]) -> str:
     return text + (r"$^\dagger$" if tie else "")
 
 
+def _num_cell(value: float, bold: bool) -> str:
+    """One per-variant mean; a negative value goes in math mode so it prints a minus sign."""
+    if pd.isna(value):
+        return "--"
+    text = f"{value:.3f}"
+    if value < 0:
+        return rf"$\mathbf{{{text}}}$" if bold else f"${text}$"
+    return rf"\textbf{{{text}}}" if bold else text
+
+
+def _variant_cells(base: float, abtt: float) -> list:
+    """Base and ABTT cells, the better one bolded (higher is better), as in the main table."""
+    if pd.isna(base) or pd.isna(abtt):
+        return [_num_cell(base, False), _num_cell(abtt, False)]
+    abtt_wins = abtt > base
+    return [_num_cell(base, not abtt_wins), _num_cell(abtt, abtt_wins)]
+
+
 def _layers_phrase(layers: Dict[str, int]) -> str:
     parts = [f"{label} {layers[model]}" for model, label in MODELS]
     return ", ".join(parts[:-1]) + f", and {parts[-1]}"
@@ -188,7 +205,10 @@ def caption(reference: LayerSet, aniso: LayerSet) -> str:
         r"settings, token filter "
         r"and erasure operator are those of Table~\ref{tab:attribution_metrics_main}; "
         r"ABTT removes $D=10$ components fit on training embeddings at each layer. "
-        r"Boldface marks the better variant. $\Delta$ is the paired ABTT minus "
+        r"$\rho_{\text{LOO}}$ correlates attribution magnitude with the "
+        r"leave-one-out change in the cosine; DelAUC gap is the random-order minus "
+        r"attribution-order deletion-curve area, positive when attribution beats "
+        r"chance. Boldface marks the better variant. $\Delta$ is the paired ABTT minus "
         r"baseline mean over pairs valid under both variants, with its ratio to "
         r"the paired standard error in parentheses; a dagger marks a tie, within "
         r"two standard errors of zero. ABTT wins, ties and loses "
@@ -197,7 +217,7 @@ def caption(reference: LayerSet, aniso: LayerSet) -> str:
         rf"{_wtl(aniso.rho)} and {_wtl(aniso.del_gap)} at the most anisotropic "
         r"layers."
         + _shuffle_clause(aniso, "most anisotropic")
-        + r" There the DelAUC columns average "
+        + r" At the most anisotropic layers the DelAUC columns average "
         rf"{_count_phrase(lo_n, hi_n)} ABTT pairs against "
         rf"{_count_phrase(base_lo, base_hi)} baseline pairs, since ratio metrics "
         r"are undefined below a full-query cosine of 0.05.}"
@@ -235,12 +255,12 @@ def render(reference: LayerSet, aniso: LayerSet, *, source_run: Optional[str],
                     f"{layer_set.tag} {layer_set.layers[model]}" if first_layer_row else "",
                     method_label,
                 ]
-                cells += _pair_cells(
+                cells += _variant_cells(
                     _get(layer_set.summary, model, method, "baseline", _mean_col(RHO_KEY)),
                     _get(layer_set.summary, model, method, "abtt", _mean_col(RHO_KEY)),
                 )
                 cells.append(_delta_cell(layer_set.rho.get((model, method))))
-                cells += _pair_cells(
+                cells += _variant_cells(
                     _get(layer_set.summary, model, method, "baseline", _mean_col(DEL_GAP_KEY)),
                     _get(layer_set.summary, model, method, "abtt", _mean_col(DEL_GAP_KEY)),
                 )
