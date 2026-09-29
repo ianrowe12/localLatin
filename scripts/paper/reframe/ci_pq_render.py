@@ -148,8 +148,7 @@ def render_appendix(ci: pd.DataFrame, info: Dict) -> str:
     n_dirs = _n_dirs(info)
     caption = (
         "Every headline cell of Tables~\\ref{tab:taskA_headline} and~\\ref{tab:taskB_headline} "
-        "with its 95\\% interval. " + _boot_clause(info, n_dirs)[0].upper()
-        + _boot_clause(info, n_dirs)[1:] + ". A replicate keeps every file and pair of a drawn "
+        "with its " + _boot_clause(info, n_dirs) + ". A replicate keeps every file and pair of a drawn "
         "directory; a directory drawn twice counts twice, and pairs between its two copies are "
         "not formed. " + FIXED_CLAUSE + " Each cell is read at its train-selected layer "
         "(Table~\\ref{tab:selected_layers}); Task B in percent. The lexical rows are the "
@@ -232,8 +231,9 @@ def render_diffs(diffs: pd.DataFrame, info: Dict) -> str:
         f"directory-level bootstrap replicates as Table~\\ref{{tab:headline_ci}} ($B={_B(info)}$, "
         f"{n_dirs} test directories, seed {info['seed']}). Both cells of a contrast are "
         "recomputed on each replicate, so the interval reflects their correlation. Each cell "
-        "sits at its own train-selected layer; the two centering rows compare three "
-        "settings at the ABTT cell's layer (Section~\\ref{sec:repair}). Spread: the largest "
+        "sits at its own train-selected layer. The two centering contrasts compare baseline, "
+        "centering alone ($D=0$) and ABTT at the layer of the ABTT cell, the Task A ABTT layer "
+        "for $\\Delta$ AUROC and the Task B ABTT layer for the two routing columns. Spread: the largest "
         "minus the smallest of the six zero-shot models. Task B in points. "
         + FIXED_CLAUSE
     )
@@ -282,11 +282,15 @@ def render_pq(pq: pd.DataFrame, info: Dict, sweep: Optional[pd.DataFrame]) -> st
                     sub = head[(head["setting"] == "Base") & (head["layer"] == L_abtt)]
             if len(sub):
                 picked.append((name, sub.iloc[0]))
+        # The baseline at the ABTT layer repeats the Base cell when both share a layer.
+        if len(picked) > 1 and picked[0][0] == "Base" and picked[1][0] == "Base @ ABTT layer" \
+                and int(picked[0][1]["layer"]) == int(picked[1][1]["layer"]):
+            picked.pop(1)
         for k, (name, r) in enumerate(picked):
             cells = [
                 m if k == 0 else "", name, str(int(r["layer"])),
                 format(r["pair_cos_sd"], ".3f"),
-                f"{r['ev_auroc']:.3f} {_ci(r['ev_auroc_lo'], r['ev_auroc_hi'], 'auroc', True)}",
+                f"{r['ev_auroc']:.3f} {_ci(r['ev_auroc_lo'], r['ev_auroc_hi'], 'auroc')}",
                 _num(r["assign"], "assign"),
                 f"{_signed(r['oracle_gap_assign'], 'assign')} "
                 f"{_ci(r['oracle_gap_assign_lo'], r['oracle_gap_assign_hi'], 'assign')}",
@@ -302,7 +306,7 @@ def render_pq(pq: pd.DataFrame, info: Dict, sweep: Optional[pd.DataFrame]) -> st
         "Routing checks at the Task B cells (Table~\\ref{tab:taskB_headline}) of the six "
         "zero-shot models: the Base and ABTT cells at their train-selected layers (L), and "
         "baseline and centering alone ($D=0$, subtract the training mean) at the ABTT cell's "
-        "layer. Cos.\\ SD: standard deviation of all test pairwise cosines. Exist./new AUROC: "
+        "layer (a second baseline row only where that layer differs). Cos.\\ SD: standard deviation of all test pairwise cosines. Exist./new AUROC: "
         "threshold-free AUROC of each test file's maximum cosine for existing against new "
         "files. Assign.: assignment accuracy at the train-fit $\\tau$ (the printed cell). "
         "Oracle gap: best assignment accuracy over every test threshold minus Assign. "

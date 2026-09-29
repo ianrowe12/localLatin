@@ -729,9 +729,13 @@ def cmd_compute(args: argparse.Namespace) -> None:
                       "share_le_0": float((d <= 0).mean()),
                       "share_ge_0": float((d >= 0).mean()), "note": note})
 
+    # Task B contrasts also carry the threshold-free PQ quantities (check 1 and
+    # the oracle accuracy of check 2), so the routing gain can be split into
+    # ranking and threshold parts on the same replicates.
+    B_EXT = TASK_METRICS["B"] + ("ev_auroc", "oracle_assign", "oracle_dir1")
     for _, disp in MODELS:
         for task in ("A", "B"):
-            for m in TASK_METRICS[task]:
+            for m in (TASK_METRICS[task] if task == "A" else B_EXT):
                 add_diff("abtt_minus_base", disp, task, m,
                          cell_tag(task, disp, "ABTT"), cell_tag(task, disp, "Base"))
     for disp, _, _, _ in FINETUNED:
@@ -752,7 +756,7 @@ def cmd_compute(args: argparse.Namespace) -> None:
     for key, cfg in extra.items():
         task, model_id, which = key.split("|")
         disp = DISPLAY[model_id]
-        mets = TASK_METRICS[task][:1] if task == "A" else TASK_METRICS[task]
+        mets = TASK_METRICS[task][:1] if task == "A" else B_EXT
         for m in mets:
             if which == "center@abtt":
                 add_diff("center_minus_base_at_abtt_layer", disp, task, m, cfg.tag(),
