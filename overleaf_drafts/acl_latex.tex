@@ -54,8 +54,6 @@
   Affiliation / Address line 3 \\
   \texttt{email@domain} \\}
 
-% Camera-ready author block: kept outside the submission sources, in
-% docs/research/camera_ready_notes.md, so the anonymous sources name no author.
 
 \begin{document}
 \maketitle
@@ -315,7 +313,7 @@ The lower block of Table~\ref{tab:geometry_correlations} adds no separate eviden
 ABTT lifts every layer into a narrow band (0.962 to 0.987), so its gain is nearly a constant minus the baseline, and the gain correlations mirror the baseline ones.
 The variance statistics thus separate the collapsed regime from the healthy one.
 They do not rank layers within a regime, and a high share alone does not guarantee collapse.
-This limit fits reports that geometric metrics do not reliably predict the downstream performance of language models \citep{kulkarni2026geometry} and that the cosine geometry of sentence embeddings does not predict their task performance \citep{nastase2025geometry}.
+This limit fits reports that geometric metrics of the final-layer unembeddings of OLMo-style language models do not reliably predict their downstream performance \citep{kulkarni2026geometry} and that the cosine geometry of sentence embeddings does not predict their task performance \citep{nastase2025geometry}.
 
 \paragraph{The standardized gap.}
 The raw cosine gap, the margin a threshold works with, tracks retrieval even less well.
@@ -672,7 +670,6 @@ The labels are expert-assigned, but by one project. Its director or supervised g
 
 The benchmark holds early medieval legal texts, transcribed from manuscripts and early printings, and contains no personal data. The Carolingian Canon Law project publishes its material under a Creative Commons Attribution-NonCommercial-ShareAlike 4.0 licence \citep{ccl2026about}. The project has confirmed in writing that the licence covers the transcriptions, annotations and markup in the exports we use and that, in the view of the project's Advisory Board, attribution to the project suffices; the project's interface credits the transcriber and proofreader of each unit. The project's corpus keeps growing and being corrected, so benchmark version 1 is a dated snapshot, fixed by a sha256 manifest of its 1,705 labelled files, and every number in this paper comes from it. We will release it under the same licence, in coordination with the project's periodic versioned exports, and later versions will follow those exports. The intended use is research on retrieval and on assisted source identification: the system ranks candidates for an expert to judge and does not identify sources on its own.
 
-% Acknowledgments (camera-ready only): see docs/research/camera_ready_notes.md.
 
 \bibliography{custom}
 
@@ -783,7 +780,7 @@ The main text uses ABTT-only as the paper-facing repair. This appendix reports S
 \section{Reference Systems: the Fine-Tuning Ceilings}
 \label{app:reference_systems}
 
-Tables~\ref{tab:taskA_headline} and~\ref{tab:taskB_headline} carry four reference rows below the rule: one supervised fine-tuning ceiling per fine-tuned model, and the character 3--5-gram TF-IDF reference. Table~\ref{tab:finetune_ceiling} gives all three with the pre-trained rows they are compared against. Every model we fine-tuned is reported, on whichever side of its own zero-shot row it lands.
+Tables~\ref{tab:taskA_headline} and~\ref{tab:taskB_headline} carry four reference rows below the rule: one supervised fine-tuning ceiling per fine-tuned model, and the character 3--5-gram TF-IDF reference. Table~\ref{tab:finetune_ceiling} gives the three fine-tuning ceilings with the pre-trained rows they are compared against. Every model we fine-tuned is reported, on whichever side of its own zero-shot row it lands.
 
 Three encoders are fine-tuned under one recipe, LaTa, Qwen3-0.6B and KaLM-mini. Fine-tuning only the Latin-pretrained model would leave the ceiling confounded with Latin pretraining, so the second model is a multilingual decoder-only encoder with no Latin-specific pretraining, Qwen3-0.6B. The third answers the remaining question, whether supervision can clear the best cell the correction produces anywhere in the paper: KaLM-mini holds it, at 91.7 assignment accuracy and at 89.4 DirAcc@1 tied with Qwen3-0.6B. All three are trained with symmetric InfoNCE over positive pairs and in-batch negatives (no two pairs from one directory in a batch), temperature 0.05, AdamW at learning rate $2\times10^{-5}$ with weight decay 0.01, linear warmup over the first 10 percent of steps then linear decay, gradient clipping at 1.0, 16 pairs per batch, up to 8 epochs with early stopping after 3 epochs without dev improvement, and seed 42. All three are mean-pooled with the same token filter as their zero-shot rows, so the fine-tuned vectors live in the space those rows are measured in; Qwen3-0.6B and KaLM-mini add gradient checkpointing, which recomputes activations rather than storing them and leaves the gradients unchanged. The dev slice holds out 28 of the 190 train directories with at least two files (71 files), the same directories for every model, so each trains on 499 of the 565 positive train pairs, and the checkpoint is chosen by dev DirAcc@1 with dev AUROC as the tie-break. Accuracy differences at or below one dev file are treated as ties, because one file out of 71 is the pool's whole resolution; without that, a model whose pre-trained encoder already routes all 71 dev files can never select a trained checkpoint. A 71-file pool is the weak link in this protocol: one borderline file flipped between two otherwise identical Qwen3-0.6B runs at a training loss of $6\times10^{-4}$, which is GPU non-determinism rather than a difference in the model, and it is worth 1.4 points of the selection criterion. LaTa selects epoch 7, the last epoch run before early stopping fired, and its ABTT sweep selects $D=10$, the top of the grid, at every layer, so the tuned and fixed ABTT variants coincide there. Qwen3-0.6B selects epoch 3 of 6 run, and its sweep is a genuine one, selecting the top of the grid at 12 of 28 layers and $D=2$ at the layer its Task B row reports. KaLM-mini selects epoch 1 of 4 run, the only model of the three whose pre-trained encoder leaves the dev pool room to improve, and its sweep selects the top of the grid at 19 of 24 layers including the layer its Task B row reports. All three rows are ceilings at this training budget rather than asymptotes: training loss reaches $4\times10^{-5}$ on Qwen3-0.6B by epoch 4 and $3\times10^{-5}$ on KaLM-mini, so the 499 pairs are memorized and more epochs buy nothing.
 
@@ -892,7 +889,7 @@ This appendix keeps the example-level views for one PhilTa retrieval pair, at Ph
 
 Figures~\ref{fig:tsne} and~\ref{fig:umap} give the t-SNE and UMAP panels for LaTa, PhilTa, and mT5-base, and Figures~\ref{fig:tsne_appendix} and~\ref{fig:umap_appendix} extend them to LaBSE, Qwen3-0.6B, and KaLM-mini. All four draw all 1,705 witnesses, color the same six largest directories, and compare baseline mean pooling with ABTT-only at $D=10$; each model sits at the layer chosen on the train split by DirAcc@1 under ABTT, the Task B ABTT layer of Table~\ref{tab:selected_layers}.
 
-In t-SNE \citep{vandermaaten2008tsne} and UMAP \citep{mcinnes2018umap} projections at the train-selected layers, ABTT-only with $D=10$ forms tighter same-directory groups than baseline mean pooling: on each of the three T5 encoders the t-SNE silhouette of the 1,160 winnable witnesses rises, from 0.50 to 0.57 for PhilTa, from $-0.25$ to 0.48 for mT5-base, and from $-0.66$ to 0.50 for LaTa. Silhouette lies in $[-1, 1]$, so a rise can be as large as 2; these three are 0.07, 0.72 and 1.16.
+In t-SNE \citep{vandermaaten2008tsne} and UMAP \citep{mcinnes2018umap} projections at the train-selected layers, ABTT-only with $D=10$ forms tighter same-directory groups than baseline mean pooling: on each of the three T5 encoders the t-SNE silhouette of the 1,160 winnable witnesses rises, from 0.50 to 0.57 for PhilTa, from $-0.25$ to 0.48 for mT5-base, and from $-0.66$ to 0.50 for LaTa. Silhouette lies in $[-1, 1]$, so a rise can be as large as 2; the three rises are 0.07, 0.72 and 1.16.
 
 
 \begin{figure*}[!t]
