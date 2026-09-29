@@ -68,7 +68,8 @@ Top-PC share, the first principal component's variance share, flags all 26 colla
 A top-$D$ projection fit on training vectors lifts every layer to AUROC 0.96--0.99 and cuts the cross-model spread in routing accuracy from 39.3 to 3.3 points.
 The repair matches, but does not exceed, a character n-gram reference.
 Contrastive fine-tuning of LaTa improves its last layer but not its collapsed middle layers.
-We test whether a few massive, passage-varying residual coordinates cause the collapse, and whether T5 pretraining or the missing embedding objective produces it \pending{E1--E3, P2x2: one-sentence result}.
+At the collapsed layers one direction holds most of the variance, but removing it alone restores only part of the ranking; removing two to five restores nearly all of it.
+We test whether a few massive, passage-varying residual coordinates cause the collapse, and whether T5 pretraining or the missing embedding objective produces it \pending{E1, E2, P2x2: one-sentence result}.
 We release the frozen testbed and split, the evaluation code, and lexical reference scores.
 \end{abstract}
 
@@ -124,7 +125,7 @@ Section~\ref{sec:repair} tests whether this gain goes beyond ranking.
 This paper makes four contributions.
 (1)~We give the first per-layer retrieval profile of T5 encoder states in isolation that we know of: in our panel, T5 encoders collapse to or near chance at mid-depth. A $2 \times 2$ control crosses T5 pretraining with an embedding objective \pending{P2x2: raw encoder-only and embedding-trained T5 cells}.
 (2)~We compare anisotropy statistics with retrieval layer by layer. Top-PC share and effective rank separate collapsed from healthy layers, whereas mean pairwise cosine is lower at collapsed layers than at healthy ones. A train-only projection restores every layer, which shows that the signal was present in the layer but masked.
-(3)~We give a falsifiable test of the massive-coordinate account for mean-pooled passage retrieval: coordinate ablation, token audit, subspace split, and a $D$ ablation \pending{E1--E3, H1}.
+(3)~We give a falsifiable test of the massive-coordinate account for mean-pooled passage retrieval (coordinate ablation, token audit, subspace split, and a $D$ ablation), and find that the nuisance spans two to five directions that carry little retrieval signal in the pre-trained models \pending{E1, E2: coordinate ablation and token audit result}.
 (4)~We release the frozen testbed and split, the evaluation code, and lexical reference scores (Section~\ref{sec:testbed}).
 
 \input{related_work}
@@ -185,7 +186,11 @@ We use only this weighting step of SIF, not its common-component removal.
 SIF+ABTT applies both.
 Full-rank PCA whitening \citep{su2021whitening} is ill-conditioned here, since it estimates 768 to 1,024 dimensions from 847 training vectors.
 It degenerates the learned threshold and also ranks below ABTT at every layer, at Task~A AUROC 0.82--0.88 for the T5 encoders and LaBSE and 0.55--0.64 for the two decoders, so we exclude it (Appendix~\ref{app:sif_variants}).
-Whitening to a reduced dimension, as \citet{su2021whitening} also do, is the fairer comparison: \pending{WHITEN: PCA whitening with $k \in \{64,128,256\}$, Task~A AUROC}.
+Whitening to a reduced dimension, as \citet{su2021whitening} also do, is the fairer comparison.
+Fit on training embeddings with $k=128$ or $256$ components, it ranks on par with ABTT (Table~\ref{tab:whiten_reduced}, Appendix~\ref{app:sif_variants}): Task~A AUROC 0.973--0.984 at each model's train-selected layer against 0.971--0.987, and within 0.021 of ABTT at every one of the 100 model-layers, collapsed layers included; $k=64$ falls slightly below.
+On pairwise ranking the repair therefore does not depend on ABTT in particular.
+On routing it does: reduced-rank whitening does not degenerate the threshold as full rank does, but at each model's train-selected Task~B layer $k=128$ reaches DirAcc@1 1.9 to 4.5 points below ABTT, and $k=256$ up to 15 points below.
+We therefore keep ABTT as the reference.
 
 \begin{table}[t]
 \centering
@@ -398,7 +403,7 @@ Top-PC share then falls toward the range of the non-T5 models.
 For LaBSE and Qwen3-0.6B, which have no collapsed layer, zeroing should change AUROC by at most 0.03 at their train-selected layers, where ABTT itself adds 0.007 to 0.031, and should recover only a small part of the ABTT gain at their weakest layers.
 If standardization repairs a collapsed layer but zeroing $k \le 5$ does not, the nuisance sits on a few coordinates, but more than five.
 If neither repairs it and only a projection does, the dominant axis is spread over many coordinates of similar variance.
-The account then reduces to ``one dominant direction'', which is what Section~\ref{sec:geometry} already reports.
+The account then reduces to ``a few dominant directions'', which is what Section~\ref{sec:geometry} already reports.
 Centering alone tests whether the shared offset matters at all at these layers.
 Table~\ref{tab:e1_coordinate_ablation} gives each model at its worst baseline layer.
 We find \pending{E1: AUROC and top-PC share after zeroing the top-$k$ coordinates under each ranking, after standardization, and after centering, per layer; expected: zeroing $k \le 5$ coordinates by across-passage variance restores collapsed T5 layers to AUROC $\ge 0.90$ and top-PC share $< 0.2$, and LaBSE and Qwen3-0.6B change by at most 0.03 at their train-selected layers}.
@@ -451,13 +456,20 @@ Our account says that the top $D$ directions ABTT removes hold nuisance in pre-t
 We rank passages by their projection onto PC1 alone, onto PCs 2 to $D$, and onto the retained subspace, and we compare the removed with the retained subspace.
 At collapsed layers the full vector already ranks at chance and the removed subspace dominates it, so the test informs mainly where the full vector is healthy.
 The cleanest contrast is LaTa's layer 12, which the pre-trained and fine-tuned models share.
-ABTT raises the pre-trained layer from 0.938 to 0.971 and lowers the fine-tuned one from 0.984 to 0.970.
+ABTT raises the pre-trained layer from 0.938 to 0.971 and lowers the fine-tuned one from 0.984 to 0.970 in point estimate.
 If the removed subspace holds nuisance in pre-trained spaces, it ranks well below the retained subspace there, although PCs 2 to $D$ may still carry some topical signal.
 Fine-tuning is reported to concentrate task signal in the dominant directions \citep{rajaee2021finetuning}.
 If that holds here, the removed subspace of fine-tuned LaTa, Qwen3-0.6B and KaLM-mini ranks well above chance and close to the retained one.
-This would explain why ABTT lowers fine-tuned LaTa's AUROC.
+This would explain the drop in fine-tuned LaTa's AUROC under ABTT.
 If the removed subspace ranks no better after fine-tuning than before, that drop needs another cause.
-We find \pending{E3: Task~A AUROC of PC1 alone, PCs 2 to $D$, and the retained subspace, pre-trained vs fine-tuned, at each model's reported layer and at LaTa layer 12; expected: the removed subspace ranks well below the retained one in pre-trained models and close to it in fine-tuned LaTa}.
+We find that the removed subspace ranks below the retained one in every pre-trained model (Table~\ref{tab:e3_subspace_split}, Appendix~\ref{app:abtt_ablations}).
+At the 26 collapsed T5 layers it ranks at chance (median AUROC 0.489; PC1 alone 0.463), while the retained subspace reaches 0.977.
+Where the full vector is healthy the removed subspace still carries retrieval signal, mostly in PCs 2 to $D$, but the retained subspace leads by at least 0.08 in the T5 encoders and 0.04 in the other models at every pre-trained layer.
+The third outcome that would falsify the account (Scope, below) therefore does not occur.
+At the selected layers of the pre-trained models the top $D$ directions also rank below the next $D$ (LaTa layer 12: 0.868 against 0.907), so per dimension they carry less signal than what follows them; after fine-tuning they rank above it (0.953 against 0.900 for LaTa).
+At LaTa's layer 12 the pre-trained gain from ABTT comes from centering alone (0.972), so removing the top components costs 0.001 before fine-tuning and 0.015 after it.
+In fine-tuned Qwen3-0.6B and KaLM-mini the removed subspace also comes within 0.02 of the retained one (0.983 against 0.992, and 0.978 against 0.994, at $D=10$).
+This is consistent with fine-tuning moving task signal into the dominant directions \citep{rajaee2021finetuning}, and with the point-estimate drop of fine-tuned LaTa's AUROC under ABTT from 0.984 to 0.970.
 
 \paragraph{How many directions (H1).}
 ABTT selects $D=10$, the top of the searched grid, in 87 of 100 model-layers (81 of 100 when SIF precedes it).
@@ -469,13 +481,20 @@ We set the threshold at 80 percent of the $D=10$ gain.
 The curve then stays flat beyond $D=1$, and centering alone recovers little.
 If $D=1$ falls below that threshold, the nuisance is a low-dimensional subspace, and we drop the one-direction wording.
 Figure~\ref{fig:d_ablation} shows the sweep.
-We find \pending{H1: AUROC and training DirAcc@1 against $D$ for every model-layer; expected: $D=1$ recovers $\ge 80$ percent of the $D=10$ AUROC gain at collapsed T5 layers and $D=0$ recovers little}.
+We find that the nuisance is not rank-1.
+At the 26 collapsed T5 layers, $D=1$ recovers a median 45 percent of the $D=10$ AUROC gain (13 to 89 percent) and reaches the 80 percent threshold at only one layer, LaTa layer~2.
+Centering alone recovers nothing (median $-4$ percent).
+Two components recover a median 78 percent, and three recover at least 80 percent at every collapsed layer (median 96 percent, AUROC 0.964 against 0.977 at $D=10$; Table~\ref{tab:d_ablation}, Appendix~\ref{app:abtt_ablations}).
+This happens although the first component holds a median 94 percent of the centered training variance at these layers: one direction dominates the variance, but the nuisance that breaks cosine ranking spans a few directions, two to three in LaTa and PhilTa and more in mT5-base.
+$D=1$ recovers the most in mT5-base (median 64 percent) and the least in PhilTa (14 percent), but mT5-base needs the most components overall: LaTa reaches the full gain with two (median 98 percent), PhilTa with three (95 percent), while mT5-base still lacks 15 percent at $D=3$ and keeps rising until $D=10$.
+The failure of $D=1$ is not an estimation artifact: at LaTa layer~6, PhilTa layer~10 and mT5-base layer~8 the first component fit on training and on test passages agree to $|\cos| \ge 0.995$, removing a test-fitted first component also leaves AUROC at 0.684, 0.666 and 0.869, and after the training-fitted removal the next direction still holds 66 to 74 percent of the remaining test variance in LaTa and PhilTa.
+Beyond $D=10$ the curve is flat to within about 0.02, and extending the selection grid to $D=50$ would move training selection to $D \ge 15$ at 99 of 100 model-layers while changing test AUROC by at most 0.023.
+We therefore drop the one-direction wording for what breaks ranking.
 
-% PLACEHOLDER FIGURE: filled by H1
 \begin{figure}[t]
 \centering
-\fbox{\parbox[c][3.2cm][c]{0.92\columnwidth}{\centering\pending{H1: figure not yet generated}}}
-\caption{Task~A test AUROC against the number of removed components $D$, with $D=0$ meaning centering alone. One line per model at its worst baseline layer; ABTT is fit on training embeddings only. \pending{H1: caption to be checked against the generated figure}}
+\includegraphics[width=\columnwidth]{fig_d_ablation.pdf}
+\caption{Task~A test AUROC (top) and training DirAcc@1 (bottom) against the number $D$ of removed principal components, one line per model at its lowest-AUROC baseline layer (in parentheses in the legend). The horizontal axis is categorical: raw is the uncorrected vector, $D=0$ is centering on the training mean alone, and the ticks are not evenly spaced in $D$. ABTT is fit on training embeddings only; the dotted vertical line marks $D=10$, the top of the selection grid, and the gray horizontal line chance (AUROC 0.5). Filled markers and solid lines: T5 encoders; hollow markers and dashed lines: embedding-trained models. At the collapsed T5 layers one component restores part of the ranking, and two to five restore nearly all of it.}
 \label{fig:d_ablation}
 \end{figure}
 
@@ -621,6 +640,7 @@ The same projection still raises their routing: DirAcc@1 rises from 81.6 to 85.2
 The ranking loss is consistent with \citet{rajaee2021finetuning}, who found that removing top directions lowers the STS performance of BERT after Siamese fine-tuning.
 \citet{reichbauer2026alignment} find, by contrast, that whitening still helps fine-tuned Latin and Greek encoders.
 Why the projection costs ranking in fine-tuned models is the subspace question of Section~\ref{sec:localizing}: if fine-tuning moves task signal into the top components, then removing them removes signal (E3).
+E3 finds that fine-tuning does move signal there: at layer 12 the removed subspace of fine-tuned LaTa ranks at 0.953, against 0.868 before fine-tuning and 0.900 for the next ten components.
 
 Fine-tuning on 499 training pairs also beats the training-free projection for the embedding-trained models.
 Over five random reassignments of query and reference files, fine-tuned Qwen3-0.6B with ABTT routes at 92.3 against 90.5 for its zero-shot ABTT row, and KaLM-mini at 93.0 against 90.9; for LaTa the two tie at 87.7 (Appendix~\ref{app:reference_systems}).
@@ -634,10 +654,12 @@ Neither statistic chooses among healthy layers, and a character n-gram reference
 \label{sec:discussion}
 
 The analysis describes one failure precisely.
-In the middle layers of the T5 encoders in our panel, one dominant direction \pending{H1: or a low-dimensional subspace} takes over the pooled vectors, and cosine ranking falls to or near chance.
+In the middle layers of the T5 encoders in our panel, a low-dimensional subspace takes over the pooled vectors, and cosine ranking falls to or near chance.
+One direction holds most of its variance, but removing it alone restores only part of the ranking; removing two to five restores nearly all of it.
 Top-PC share separates these layers from healthy ones; mean pairwise cosine does not.
-\pending{E1--E3: whether massive coordinates explain the direction}.
-A projection fit on training vectors removes the direction and restores ranking at every depth.
+In the pre-trained models the removed directions rank below the retained ones, so the projection discards little retrieval signal; after fine-tuning they carry more (E3).
+\pending{E1, E2: whether massive coordinates explain the subspace}.
+A projection fit on training vectors removes these few directions and restores ranking at every depth.
 Choosing among healthy layers still needs a train-only task signal.
 
 Several observations remain open.
@@ -763,19 +785,29 @@ The main text focuses on LaTa, PhilTa, and mT5-base. This appendix reports the s
 \section{SIF and Whitening Post-Processing Sweeps}
 \label{app:sif_variants}
 
-The main text uses ABTT-only as the paper-facing repair. This appendix reports SIF-only, SIF plus fixed-$D$ ABTT, and SIF plus tuned-$D$ ABTT, and gives the full account of the PCA whitening variant that Section~\ref{sec:postproc} excludes. Table~\ref{tab:taskb} first gives the five-seed cumulative top-$K$ result discussed in the main text, with SIF plus ABTT at each model's train-selected layer. The per-layer tables then keep one primary metric per task so the four-method grid stays readable.
+The main text uses ABTT-only as the paper-facing repair. This appendix reports SIF-only, SIF plus fixed-$D$ ABTT, and SIF plus tuned-$D$ ABTT, and gives the full account of the full-rank PCA whitening variant that Section~\ref{sec:postproc} excludes, with the reduced-rank variant it compares against ABTT (Table~\ref{tab:whiten_reduced}). Table~\ref{tab:taskb} first gives the five-seed cumulative top-$K$ result discussed in the main text, with SIF plus ABTT at each model's train-selected layer. The per-layer tables then keep one primary metric per task so the four-method grid stays readable.
 
-\paragraph{Why whitening is excluded.} PCA whitening \citep{su2021whitening} leaves the different-directory cosine mean at or below 0.015, so the learned threshold degenerates: across all 100 whitening cells every file is routed to an existing directory, existing accuracy is 1.000, new accuracy never exceeds one file in 323, and assignment accuracy sits at the 62.4 percent class prior. That prior beats baseline in 60 of 100 cells while DirAcc@1 never exceeds 41.5 percent, so the apparent gain is a thresholding artifact. SIF and whitening fall short of ABTT for different reasons. SIF acts before pooling, so it can only attenuate the frequent tokens that feed the dominant direction, and whatever survives that reweighting is still pooled into the passage vector; whitening acts after pooling but rescales all directions instead of deleting the top few, which flattens the same-directory margin along with the common component and so degenerates the routing threshold.
+\paragraph{Why whitening is excluded.} Full-rank PCA whitening \citep{su2021whitening} leaves the different-directory cosine mean at or below 0.015, so the learned threshold degenerates: across all 100 whitening cells every file is routed to an existing directory, existing accuracy is 1.000, new accuracy never exceeds one file in 323, and assignment accuracy sits at the 62.4 percent class prior. That prior beats baseline in 60 of 100 cells while DirAcc@1 never exceeds 41.5 percent, so the apparent gain is a thresholding artifact. SIF and full-rank whitening fall short of ABTT for different reasons. SIF acts before pooling, so it can only attenuate the frequent tokens that feed the dominant direction, and whatever survives that reweighting is still pooled into the passage vector. Full-rank whitening also rescales the near-null directions that 847 training vectors cannot estimate (condition numbers $3\times10^{5}$ to $10^{16}$), which amplifies noise and degenerates the routing threshold; reduced-rank whitening drops them and does not degenerate it (Table~\ref{tab:whiten_reduced}).
 
 \paragraph{Top-$k$ ranking.} In the top-$k$ ranking form of Task B, each directory receives its best document match score, a pseudo-option \texttt{NEW} receives score $\tau$, and the simulated expert succeeds when the labeled directory appears in the shortlist. Cumulative top-$K$ accuracy is the fraction of test queries whose labeled directory is among the top $K$ options. Table~\ref{tab:taskb} gives the shortlist view (per-layer: Appendix~\ref{app:per_layer_headline}): every model exceeds 95\% by Top-2 and gains little after Top-3.
 
 \input{tables/taskB_topk.tex}
+
+\input{tables/whiten_reduced}
 
 \onecolumn
 \input{tables/taskA_appendix_sif}
 \input{tables/taskB_routing_appendix_sif}
 \input{tables/taskB_ranking_appendix_mseed}
 \twocolumn
+
+\section{ABTT Component Ablations}
+\label{app:abtt_ablations}
+
+This appendix gives the two tables behind the $D$ ablation (H1) and the subspace split (E3) of Section~\ref{sec:localizing}. Table~\ref{tab:d_ablation} gives Task~A test AUROC against the number of removed components at each model's lowest-AUROC baseline layer, with medians over groups of layers; Figure~\ref{fig:d_ablation} plots the same worst-layer curves. Table~\ref{tab:e3_subspace_split} ranks passages within the removed and the retained subspace, with two dimension-matched controls inside the retained one. Every quantity is fit on training embeddings only.
+
+\input{tables/d_ablation}
+\input{tables/e3_subspace_split}
 
 \section{Reference Systems: the Fine-Tuning Ceilings}
 \label{app:reference_systems}
