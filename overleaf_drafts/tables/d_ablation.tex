@@ -2,7 +2,7 @@
 \begin{table*}[t]
 \centering
 \small
-\setlength{\tabcolsep}{4pt}
+\setlength{\tabcolsep}{3.1pt}
 \begin{tabular}{lrrrrrrrrrrrrr}
 \toprule
 & & & \multicolumn{11}{c}{\textbf{Removed components $D$}} \\
@@ -19,11 +19,14 @@ KaLM-mini (5) & 1 & 0.861 & 0.917 & 0.926 & 0.969 & 0.969 & 0.983 & 0.982 & 0.98
 \midrule
 \multicolumn{14}{l}{\emph{Median over model-layers}} \\
 Collapsed T5 & 26 & 0.541 & 0.503 & 0.713 & 0.902 & 0.964 & 0.973 & 0.977 & 0.977 & 0.974 & 0.975 & 0.974 & 0.971 \\
+\quad LaTa & 10 & 0.502 & 0.488 & 0.713 & 0.956 & 0.973 & 0.972 & 0.976 & 0.970 & 0.971 & 0.969 & 0.980 & 0.983 \\
+\quad PhilTa & 9 & 0.542 & 0.502 & 0.602 & 0.872 & 0.963 & 0.980 & 0.981 & 0.981 & 0.975 & 0.978 & 0.973 & 0.970 \\
+\quad mT5-base & 7 & 0.657 & 0.678 & 0.865 & 0.894 & 0.934 & 0.955 & 0.974 & 0.978 & 0.975 & 0.974 & 0.965 & 0.962 \\
 Other T5 & 10 & 0.874 & 0.936 & 0.952 & 0.967 & 0.973 & 0.979 & 0.976 & 0.973 & 0.972 & 0.972 & 0.973 & 0.971 \\
 Embedding-trained & 64 & 0.903 & 0.944 & 0.966 & 0.971 & 0.976 & 0.979 & 0.980 & 0.978 & 0.977 & 0.975 & 0.974 & 0.973 \\
 All & 100 & 0.885 & 0.936 & 0.958 & 0.968 & 0.973 & 0.978 & 0.979 & 0.977 & 0.975 & 0.974 & 0.974 & 0.972 \\
 \bottomrule
 \end{tabular}
-\caption{Task~A test AUROC against the number $D$ of top principal components that ABTT removes, fit on training embeddings only. Raw: mean-pooled vectors with no correction; $D=0$: centering on the training mean alone. The top block reads each model at its lowest-AUROC baseline layer (layer in parentheses); the bottom block gives medians over the 26 collapsed T5 layers (baseline AUROC below 0.70), the other 10 T5 layers, the 64 layers of the embedding-trained models, and all 100 model-layers. The paper's selection grid for $D$ stops at 10.}
+\caption{Task~A test AUROC against the number $D$ of top principal components that ABTT removes, fit on training embeddings only. Raw: mean-pooled vectors with no correction; $D=0$: centering on the training mean alone. The top block reads each model at its lowest-AUROC baseline layer (layer in parentheses); the bottom block gives medians over the 26 collapsed T5 layers (baseline AUROC below 0.70), also split by model, the other 10 T5 layers, the 64 layers of the embedding-trained models, and all 100 model-layers. The paper's selection grid for $D$ stops at 10.}
 \label{tab:d_ablation}
 \end{table*}
