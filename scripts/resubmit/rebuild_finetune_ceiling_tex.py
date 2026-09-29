@@ -43,6 +43,11 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument("--results_dir", default="runs/active/resubmit/results/finetune")
     p.add_argument("--tex_out", default="overleaf_drafts/tables/finetune_ceiling.tex")
+    p.add_argument(
+        "--notes_out", default=None,
+        help="Optional file for the run notes and five-seed readout, which the "
+             "table itself no longer carries.",
+    )
     return p.parse_args()
 
 
@@ -52,7 +57,8 @@ def main() -> None:
     sections = [
         ceiling.load_extra_section(spec, results_dir) for spec in (args.run or DEFAULT_RUNS)
     ]
-    ceiling.write_tex(sections, Path(args.tex_out))
+    ceiling.write_tex(sections, Path(args.tex_out),
+                      notes_path=Path(args.notes_out) if args.notes_out else None)
 
 
 if __name__ == "__main__":

@@ -135,10 +135,12 @@ def _shuffle_gap_col(metric_key: str, stat: str) -> str:
 
 # Overleaf receives these files, so the header says nothing about the repo.
 HEADER = "% generated table"
+# No issue numbers here: the submission sources must not point at the
+# repository's tracker (#239 review). The selection memo is issue #120 and the
+# re-sample issue #187; see the module docstring.
 REGEN_NOTE = (
-    "% Selection and wording follow the part B memo behind issue #120; the numbers "
-    "come from the\n% run stamped above (issue #187 re-sample). Regenerate from "
-    "that summary rather than\n% editing the numbers here."
+    "% The numbers come from the run stamped above. Regenerate from that summary "
+    "rather than\n% editing the numbers here."
 )
 
 

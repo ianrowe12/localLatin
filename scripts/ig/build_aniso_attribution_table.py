@@ -73,10 +73,12 @@ REFERENCE_PREFIX = "% reference run: "
 TIE_SE = 2.0
 
 HEADER = "% generated table"
+# No issue number or repository path: the submission sources must not point at
+# the repository (#239 review). This is issue #227's table.
 REGEN_NOTE = (
-    "% Issue #227: the run of record's pairs, methods and settings at each model's "
-    "most\n% anisotropic layer, beside the operational layers. Regenerate with "
-    "scripts/ig/build_aniso_attribution_table.py\n% rather than editing the numbers here."
+    "% The run of record's pairs, methods and settings at each model's most\n"
+    "% anisotropic layer, beside the operational layers. Regenerate from the runs "
+    "stamped above\n% rather than editing the numbers here."
 )
 
 Cell = Tuple[str, str]

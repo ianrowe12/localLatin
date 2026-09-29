@@ -82,12 +82,23 @@ def build_facts(selection, ft_results=None, epoch_budget=8, dev_frac=0.25,
     ), pair_data, split
 
 
+def write_and_read(sections, out) -> str:
+    """Render the table plus its notes file, returned together.
+
+    Since the #239 review the run notes and the five-seed readout go to a
+    notes file, never into the table; the assertions on them read both."""
+    notes = out.with_suffix(".notes.txt")
+    ceiling.write_tex(sections, out, notes_path=notes)
+    tex = out.read_text(encoding="utf-8")
+    assert tex.rstrip().endswith(r"\end{table}"), "the shipped table carries no trailing notes"
+    return tex + ("\n" + notes.read_text(encoding="utf-8") if notes.exists() else "")
+
+
 def render(tmp_path, facts, display_name: str = "LaTa") -> str:
     out = tmp_path / "finetune_ceiling.tex"
-    ceiling.write_tex(
+    return write_and_read(
         [ceiling.CeilingSection(display_name, COMPARISON, facts)], out
     )
-    return out.read_text(encoding="utf-8")
 
 
 def unwrapped(tex: str) -> str:
@@ -205,14 +216,13 @@ def two_sections(tmp_path):
         display_name="Qwen3-0.6B",
     )
     out = tmp_path / "finetune_ceiling.tex"
-    ceiling.write_tex(
+    return write_and_read(
         [
             ceiling.CeilingSection("LaTa", COMPARISON, lata),
             ceiling.CeilingSection("Qwen3-0.6B", qwen_comparison(), qwen),
         ],
         out,
     )
-    return out.read_text(encoding="utf-8")
 
 
 def test_two_model_table_carries_both_models_rows(tmp_path):
@@ -294,7 +304,7 @@ def three_sections(tmp_path):
         display_name="KaLM-mini",
     )
     out = tmp_path / "finetune_ceiling.tex"
-    ceiling.write_tex(
+    return write_and_read(
         [
             ceiling.CeilingSection("LaTa", COMPARISON, lata),
             ceiling.CeilingSection("Qwen3-0.6B", qwen_comparison(), qwen),
@@ -302,7 +312,6 @@ def three_sections(tmp_path):
         ],
         out,
     )
-    return out.read_text(encoding="utf-8")
 
 
 def test_three_model_table_carries_every_models_rows(tmp_path):

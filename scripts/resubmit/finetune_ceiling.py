@@ -1161,7 +1161,8 @@ def load_extra_section(spec: str, results_dir: Path) -> CeilingSection:
     return CeilingSection(display_name, comparison, facts, mseed)
 
 
-def write_tex(sections: Sequence[CeilingSection], path: Path) -> None:
+def write_tex(sections: Sequence[CeilingSection], path: Path,
+              notes_path: Optional[Path] = None) -> None:
     """Emit the table body. Generated file: edit the generator, not this.
 
     The header names no repository path: this directory ships to Overleaf
@@ -1243,12 +1244,16 @@ def write_tex(sections: Sequence[CeilingSection], path: Path) -> None:
         r"\label{tab:finetune_ceiling}",
         r"\end{table}",
     ]
+    # The run notes and the five-seed readout are for the people running the
+    # ceiling, not for the paper: they go to ``notes_path`` (the run's results
+    # directory) and never into the table the submission ships (#239 review).
+    note_lines: List[str] = []
     notes: List[str] = []
     for sec in sections:
         if sec.facts is not None:
             notes += sec.facts.notes()
     if notes:
-        lines += ["", "% Notes for whoever moves these rows into the paper:"] + notes
+        note_lines += ["% Notes for whoever moves these rows into the paper:"] + notes
     mseed_lines = []
     for sec in sections:
         if sec.mseed_agg is not None and not sec.mseed_agg.empty:
@@ -1258,13 +1263,17 @@ def write_tex(sections: Sequence[CeilingSection], path: Path) -> None:
                     f"dir_acc@1 = {r['dir_acc_at_1_mean']:.3f} +/- {r['dir_acc_at_1_std']:.3f}"
                 )
     if mseed_lines:
-        lines.append("")
-        lines.append(r"% 5-seed Task B (mean +/- std over seeds 42-46), same protocol as the")
-        lines.append(r"% multi-seed appendix table:")
-        lines += mseed_lines
+        note_lines.append("")
+        note_lines.append(r"% 5-seed Task B (mean +/- std over seeds 42-46), same protocol as the")
+        note_lines.append(r"% multi-seed appendix table:")
+        note_lines += mseed_lines
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(f"  wrote {path}", flush=True)
+    if notes_path is not None and note_lines:
+        notes_path.parent.mkdir(parents=True, exist_ok=True)
+        notes_path.write_text("\n".join(note_lines) + "\n", encoding="utf-8")
+        print(f"  wrote {notes_path}", flush=True)
 
 
 # --------------------------------------------------------------------------- #
@@ -1475,7 +1484,8 @@ def main() -> None:
             facts,
             mseed_agg if not mseed_agg.empty else None,
         )
-        write_tex(extra + [mine], Path(args.tex_out))
+        write_tex(extra + [mine], Path(args.tex_out),
+                  notes_path=results_dir / f"{args.results_prefix}_ceiling_notes.txt")
 
     run_info["total_seconds"] = time.time() - t0
     write_run_info(out_dir / "run_info.json", run_info, needs_model)
