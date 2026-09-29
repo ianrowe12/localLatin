@@ -154,8 +154,8 @@ def test_lexical_rows_span_their_metric_block_when_opted_in():
     assert row.count(r"\multicolumn{4}{c}") == 2
     caption = tex[tex.index(r"\caption{") :]
     # The rebuttal variant keeps the framing constraint of issues #119 and #176.
-    assert "practitioner's operating point" in caption
-    assert "rather than beat it" in caption
+    assert "not offered as retrievers that beat surface overlap" in caption
+    assert "The zero-shot rows diagnose where the retrieval signal sits" in caption
     # The fine-tune clause opens with an acronym; it must not be lowercased
     # when it follows the lexical clause (review of PR #200).
     assert "and ABTT moves the fine-tuned encoder's AUROC" in caption
@@ -202,8 +202,17 @@ def test_task_b_comparison_states_the_ceiling_as_a_finding():
     assert "is below every zero-shot ABTT cell" in sentence
     assert "TF-IDF" not in sentence
     rebuttal = bht.task_b_comparison(best, _lexical_frame(), _finetune_frame())
-    assert "TF-IDF char 3--5 is below the best ABTT cell (80.0 against 91.0" in rebuttal
+    assert "TF-IDF char 3--5 is below the best zero-shot ABTT cell (80.0 against 91.0" in rebuttal
     assert "is below every zero-shot ABTT cell" in rebuttal
+
+
+def test_task_b_lexical_row_at_or_above_every_zero_shot_cell_is_said_so():
+    """Review of #239 (B1): a lexical row that matches or beats the best
+    zero-shot ABTT cell on both metrics must not be called merely 'level'."""
+    best = bht.best_rows(_results_frame(), "hidden", "train_dir_acc_at_1")
+    lexical = _lexical_frame().assign(overall_assignment_acc=0.915, dir_acc_at_1=0.905)
+    sentence = bht.task_b_comparison(best, lexical, _finetune_frame())
+    assert sentence.startswith("TF-IDF char 3--5 is at or above the best zero-shot ABTT cell")
 
 
 def test_task_a_comparison_covers_the_finetuned_row_alone_by_default():
@@ -306,7 +315,7 @@ def test_main_adds_the_tfidf_reference_row_when_the_csv_is_passed(tmp_path, monk
         assert "BM25 (word)" not in labels and "Levenshtein" not in labels, name
         assert "the character 3--5-gram TF-IDF reference" in tex, name
         assert "three lexical baselines" not in tex, name
-        assert "rather than beat it" in tex, name
+        assert "not offered as retrievers that beat surface overlap" in tex, name
 
 
 def test_main_can_still_print_all_three_lexical_rows(tmp_path, monkeypatch):

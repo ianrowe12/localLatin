@@ -586,9 +586,11 @@ def reference_caption(
         + lexical_rows_phrase(lexical_systems)
         + " (both setups: Appendix~\\ref{app:reference_systems}). "
         + comparison
-        + " Surface overlap is the practitioner's operating point on this "
-        "corpus, and the embedding rows diagnose representation geometry "
-        "rather than beat it."
+        # The fine-tuned rows in the same table can exceed the lexical row,
+        # so the closing sentence speaks about the zero-shot rows only, and
+        # never implies that any embedding row beats surface overlap (#235).
+        + " The zero-shot rows diagnose where the retrieval signal sits inside "
+        "encoders; they are not offered as retrievers that beat surface overlap."
     )
 
 
@@ -661,7 +663,8 @@ def task_a_comparison(
     tfidf = _lexical_value(lexical, "TF-IDF char 3-5", "aucroc")
     return (
         f"TF-IDF char 3--5 is {level_word(tfidf - abtt_best, 0.001)} the best "
-        f"ABTT AUROC ({tfidf:.3f} against {abtt_best:.3f}), and " + finetune_clause
+        f"zero-shot ABTT AUROC ({tfidf:.3f} against {abtt_best:.3f}), and "
+        + finetune_clause
     )
 
 
@@ -724,9 +727,19 @@ def task_b_comparison(
         return finetune_clause[0].upper() + finetune_clause[1:]
     tf_assign = 100.0 * _lexical_value(lexical, "TF-IDF char 3-5", "overall_assignment_acc")
     tf_dir1 = 100.0 * _lexical_value(lexical, "TF-IDF char 3-5", "dir_acc_at_1")
+    # Compare the printed (rounded) values. When the lexical row is at or above
+    # the best zero-shot ABTT cell on both metrics, say so: the body text says
+    # it routes above every pre-trained configuration, and a caption calling it
+    # merely "level" would contradict that (#235 review B1).
+    a, a_best = round(tf_assign, 1), round(float(assign.max()), 1)
+    d, d_best = round(tf_dir1, 1), round(float(dir1.max()), 1)
+    if a >= a_best and d >= d_best:
+        standing = "at or above"
+    else:
+        standing = level_word(tf_assign - assign.max(), 1.0)
     return (
-        f"TF-IDF char 3--5 is {level_word(tf_assign - assign.max(), 1.0)} the "
-        f"best ABTT cell ({tf_assign:.1f} against {assign.max():.1f} assignment "
+        f"TF-IDF char 3--5 is {standing} the "
+        f"best zero-shot ABTT cell ({tf_assign:.1f} against {assign.max():.1f} assignment "
         f"accuracy, {tf_dir1:.1f} against {dir1.max():.1f} directory accuracy at "
         f"rank 1), and " + finetune_clause
     )
