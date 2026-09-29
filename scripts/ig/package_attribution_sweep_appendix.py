@@ -144,33 +144,14 @@ def method_order(summary: pd.DataFrame, requested: Sequence[str]) -> list[str]:
     return [m for m in requested if m in present]
 
 
-def render_table(
-    summary: pd.DataFrame,
-    out_path: Path,
-    *,
-    methods: Sequence[str],
-    caption: str,
-    label: str,
-    fractions: Sequence[float],
-    compactness_thresholds: Sequence[float],
-    source_run: str | None = None,
-) -> None:
-    keys = metric_keys(fractions, compactness_thresholds)
-    colspec = "ll" + "rr" * len(keys)
-
-    lines: list[str] = ["% generated table"]
-    if source_run:
-        lines.append(stamp_line(source_run))
-    lines += [
-        r"\begin{table*}[t]",
-        r"\centering",
-        r"\scriptsize",
-        r"\setlength{\tabcolsep}{2pt}",
-        r"\resizebox{\textwidth}{!}{%",
-        rf"\begin{{tabular}}{{{colspec}}}",
+def _render_block(
+    summary: pd.DataFrame, keys: Sequence[str], methods: Sequence[str]
+) -> list[str]:
+    """One tabular: a base/ABTT column pair per metric key, a row per method."""
+    lines = [
+        rf"\begin{{tabular}}{{{'ll' + 'rr' * len(keys)}}}",
         r"\toprule",
     ]
-
     header = ["Model", "Method"]
     for key in keys:
         header.append(rf"\multicolumn{{2}}{{c}}{{{metric_label(key)}}}")
@@ -184,7 +165,7 @@ def render_table(
 
     subheader = ["", ""]
     for _ in keys:
-        subheader.extend(["base", "abtt"])
+        subheader.extend(["Base", "ABTT"])
     lines.append(" & ".join(subheader) + r" \\")
     lines.append(r"\midrule")
 
@@ -210,9 +191,47 @@ def render_table(
 
     if lines[-1] == r"\midrule":
         lines[-1] = r"\bottomrule"
+    lines.append(r"\end{tabular}")
+    return lines
+
+
+def render_table(
+    summary: pd.DataFrame,
+    out_path: Path,
+    *,
+    methods: Sequence[str],
+    caption: str,
+    label: str,
+    fractions: Sequence[float],
+    compactness_thresholds: Sequence[float],
+    source_run: str | None = None,
+) -> None:
+    # Two stacked tabulars instead of one 24-column tabular shrunk by
+    # \resizebox to about 4.5 pt (issue #235 item 10): the threshold-free rank
+    # metric with the ERASER ratio metrics, then MinFrac. Both print at
+    # \footnotesize with no scaling.
+    blocks = [
+        ["loo_rho"]
+        + [_metric_key("suff", frac) for frac in fractions]
+        + [_metric_key("comp", frac) for frac in fractions],
+        [_metric_key("compactness", threshold) for threshold in compactness_thresholds],
+    ]
+    blocks = [block for block in blocks if block]
+
+    lines: list[str] = ["% generated table"]
+    if source_run:
+        lines.append(stamp_line(source_run))
+    lines += [
+        r"\begin{table*}[t]",
+        r"\centering",
+        r"\footnotesize",
+        r"\setlength{\tabcolsep}{3pt}",
+    ]
+    for b, keys in enumerate(blocks):
+        if b:
+            lines.append(r"\par\medskip")
+        lines += _render_block(summary, keys, methods)
     lines.extend([
-        r"\end{tabular}%",
-        r"}",
         rf"\caption{{{caption}}}",
         rf"\label{{{label}}}",
         r"\end{table*}",
