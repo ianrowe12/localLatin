@@ -721,15 +721,17 @@ def task_b_comparison(
         finetune_clause = (
             "the fine-tuned encoders with ABTT sit " + _and_list(placements)
             + f", against cells spanning {assign.min():.1f} to {assign.max():.1f} "
-            f"and {dir1.min():.1f} to {dir1.max():.1f}."
+            f"and {dir1.min():.1f} to {dir1.max():.1f}; these are point comparisons, "
+            "and Appendix~\\ref{app:ci_pq} gives their bootstrap intervals."
         )
     if lexical is None:
         return finetune_clause[0].upper() + finetune_clause[1:]
     tf_assign = 100.0 * _lexical_value(lexical, "TF-IDF char 3-5", "overall_assignment_acc")
     tf_dir1 = 100.0 * _lexical_value(lexical, "TF-IDF char 3-5", "dir_acc_at_1")
     # "level with" inside the seed spread. The directory-level bootstrap of
-    # issue #233 agrees: TF-IDF minus the best zero-shot ABTT cell is +0.5
-    # DirAcc@1 with a 95% interval of -1.7 to 1.6, so it is statistically level.
+    # issue #233 agrees: TF-IDF minus each of the two best zero-shot ABTT cells
+    # (Qwen3-0.6B and KaLM-mini, tied at 89.4) is +0.5 DirAcc@1, with 95%
+    # intervals of -1.4 to 2.5 and -1.3 to 2.3, so it is statistically level.
     standing = level_word(tf_assign - assign.max(), 1.0)
     return (
         f"TF-IDF char 3--5 is {standing} the "

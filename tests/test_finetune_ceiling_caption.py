@@ -458,7 +458,7 @@ def test_takeaway_gives_each_model_its_own_five_seed_verdict(tmp_path):
     ])
     assert (
         "Fine-tuning raises Task A AUROC for every model, and ABTT on top of it "
-        "lowers AUROC again; on five-seed routing, the fine-tuned encoder with ABTT "
+        "lowers AUROC again in point estimate; on five-seed routing, the fine-tuned encoder with ABTT "
         "is level with its pre-trained ABTT row for LaTa and above it for Qwen3-0.6B."
     ) in tex
 
