@@ -12,7 +12,12 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from attribution_model_config import DEFAULT_MODELS, model_config, model_slug  # noqa: E402
+from attribution_model_config import (  # noqa: E402
+    DEFAULT_MODELS,
+    model_config,
+    model_slug,
+    parse_layer_overrides,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -28,6 +33,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--expected_models", nargs="*", default=DEFAULT_MODELS)
     parser.add_argument("--required_methods", nargs="*", default=["ig", "retrieval_mark"])
     parser.add_argument("--variants", nargs="*", default=["baseline", "abtt"])
+    parser.add_argument(
+        "--layer_overrides",
+        nargs="*",
+        default=None,
+        help="MODEL_OR_SLUG=LAYER overrides of the expected layer. Pass the same "
+        "overrides the examples CSV and the PCs were built with (issue #227 "
+        "reruns the v1 pairs at the most anisotropic layers). Without them the "
+        "operational contract in attribution_model_config.py is expected.",
+    )
     parser.add_argument(
         "--require_complete",
         action="store_true",
@@ -77,6 +91,10 @@ def _pc_info(path: Path, expected_d: int) -> tuple[dict[str, Any], list[str]]:
 
 def main() -> None:
     args = parse_args()
+    try:
+        layer_overrides = parse_layer_overrides(args.layer_overrides)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
     examples = pd.read_csv(args.examples_csv)
     expected_models = list(args.expected_models)
     expected_model_set = set(expected_models)
@@ -101,7 +119,7 @@ def main() -> None:
     artifact_method_errors = 0
 
     for model_name in expected_models:
-        cfg = model_config(model_name)
+        cfg = model_config(model_name, layer_overrides)
         slug = model_slug(model_name)
         sub = examples[examples["model_name"] == model_name].copy()
         expected_layer = int(cfg["layer"])
@@ -227,6 +245,7 @@ def main() -> None:
         "expected_n_per_model": args.expected_n_per_model,
         "required_methods": args.required_methods,
         "variants": args.variants,
+        "layer_overrides": layer_overrides,
         "pc_files": pc_records,
         "summary": summary_info,
         "inventory_csv": str(args.out_inventory_csv),
