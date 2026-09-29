@@ -168,6 +168,22 @@ def test_compact_table_refuses_a_stale_csv(tmp_path):
 
 
 @needs_published
+def test_compact_table_handles_lexical_rows():
+    """``build_headline_tables.py --lexical_csv`` adds rows spanning each block."""
+    ci = pd.read_csv(PUBLISHED / "headline_ci.csv")
+    info = {"B": 10000, "seed": 233, "n_test_dirs": 514}
+    tf = ci[(ci["row"] == "TF-IDF char 3-5") & (ci["task"] == "B")].set_index("metric")
+    a = format(100 * tf.loc["assign", "estimate"], ".1f")
+    d = format(100 * tf.loc["dir1", "estimate"], ".1f")
+    row = f"TF-IDF char 3--5 & \\multicolumn{{4}}{{c}}{{{a}}} & \\multicolumn{{4}}{{c}}{{{d}}} \\\\"
+    head = (TABLES / "taskB_headline.tex").read_text().replace(
+        "\\bottomrule", row + "\n\\bottomrule", 1)
+    out = R.render_compact(head, ci, "B", info).splitlines()
+    k = out.index(row)
+    assert out[k + 1].count("\\multicolumn{4}{c}{{\\scriptsize [") == 2
+
+
+@needs_published
 def test_every_printed_cell_was_reproduced():
     checks = pd.read_csv(PUBLISHED / "reproduction_cells.csv")
     configs = pd.read_csv(PUBLISHED / "reproduction_configs.csv")

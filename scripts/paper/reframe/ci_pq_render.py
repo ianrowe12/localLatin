@@ -50,8 +50,9 @@ def _num(x: float, metric: str, drop_zero: bool = False) -> str:
     return s.replace("-", "$-$")
 
 
-def _ci(lo: float, hi: float, metric: str, drop_zero: bool = False) -> str:
-    return f"[{_num(lo, metric, drop_zero)}, {_num(hi, metric, drop_zero)}]"
+def _ci(lo: float, hi: float, metric: str, drop_zero: bool = False, tight: bool = False) -> str:
+    sep = "," if tight else ", "
+    return f"[{_num(lo, metric, drop_zero)}{sep}{_num(hi, metric, drop_zero)}]"
 
 
 def _signed(x: float, metric: str) -> str:
@@ -111,8 +112,8 @@ def render_appendix(ci: pd.DataFrame, info: Dict) -> str:
         HEADER.rstrip("\n"),
         r"\begin{table*}[t]",
         r"\centering",
-        r"\footnotesize",
-        r"\setlength{\tabcolsep}{4pt}",
+        r"\scriptsize",
+        r"\setlength{\tabcolsep}{3pt}",
         r"\begin{tabular}{llllll}",
         r"\toprule",
         r"& & \multicolumn{2}{c}{\textbf{Task A}} & \multicolumn{2}{c}{\textbf{Task B}} \\",
@@ -191,8 +192,8 @@ def render_diffs(diffs: pd.DataFrame, info: Dict) -> str:
         HEADER.rstrip("\n"),
         r"\begin{table*}[t]",
         r"\centering",
-        r"\footnotesize",
-        r"\setlength{\tabcolsep}{4pt}",
+        r"\scriptsize",
+        r"\setlength{\tabcolsep}{3pt}",
         r"\begin{tabular}{lllll}",
         r"\toprule",
         r"\textbf{Contrast} & \textbf{Model} & $\Delta$ AUROC & $\Delta$ Assignment acc. "
@@ -252,16 +253,16 @@ def render_pq(pq: pd.DataFrame, info: Dict, sweep: Optional[pd.DataFrame]) -> st
         HEADER.rstrip("\n"),
         r"\begin{table*}[t]",
         r"\centering",
-        r"\footnotesize",
-        r"\setlength{\tabcolsep}{3.5pt}",
+        r"\scriptsize",
+        r"\setlength{\tabcolsep}{2.5pt}",
         r"\begin{tabular}{llrrlrlrrr}",
         r"\toprule",
         r"\textbf{Model} & \textbf{Setting} & \textbf{L} & Cos.\ SD & Exist./new AUROC "
-        r"& Assign. & Oracle gap & $\tau$ & Exact-$\tau$ & Hub skew \\",
+        r"& Assign. & Oracle gap & $\tau$ & Exact & Skew \\",
         r"\midrule",
     ]
-    order = [("Base", "baseline"), ("Base @ ABTT layer", "baseline"),
-             ("Centering @ ABTT layer", "center"), ("ABTT", "abtt_optimal")]
+    order = [("Base", "baseline"), ("Base @ ABTT L", "baseline"),
+             ("Centering @ ABTT L", "center"), ("ABTT", "abtt_optimal")]
     for m in ZS_ROWS:
         rows = pq[pq["row"] == m]
         head = rows[rows["headline"].astype(bool)]
@@ -283,7 +284,7 @@ def render_pq(pq: pd.DataFrame, info: Dict, sweep: Optional[pd.DataFrame]) -> st
             if len(sub):
                 picked.append((name, sub.iloc[0]))
         # The baseline at the ABTT layer repeats the Base cell when both share a layer.
-        if len(picked) > 1 and picked[0][0] == "Base" and picked[1][0] == "Base @ ABTT layer" \
+        if len(picked) > 1 and picked[0][0] == "Base" and picked[1][0] == "Base @ ABTT L" \
                 and int(picked[0][1]["layer"]) == int(picked[1][1]["layer"]):
             picked.pop(1)
         for k, (name, r) in enumerate(picked):
@@ -310,8 +311,8 @@ def render_pq(pq: pd.DataFrame, info: Dict, sweep: Optional[pd.DataFrame]) -> st
         "threshold-free AUROC of each test file's maximum cosine for existing against new "
         "files. Assign.: assignment accuracy at the train-fit $\\tau$ (the printed cell). "
         "Oracle gap: best assignment accuracy over every test threshold minus Assign. "
-        "Exact-$\\tau$: assignment accuracy with $\\tau$ re-fit as the exact best-F1 cut over "
-        "all training pair scores instead of the 200-point grid. Hub skew: skewness of the "
+        "Exact: assignment accuracy with $\\tau$ re-fit as the exact best-F1 cut over "
+        "all training pair scores instead of the 200-point grid. Skew: skewness of the "
         "$k$-occurrence distribution $N_{10}$ over test files \\citep{radovanovic2010hubs}. "
         + f"Brackets: 95\\% directory-bootstrap intervals ($B={_B(info)}$). " + moved
     )
@@ -370,6 +371,8 @@ def render_compact(head_tex: str, ci: pd.DataFrame, task: str, info: Dict) -> st
         if line.startswith(r"\caption{"):
             line = line[:-1] + " Bracketed rows: " + _boot_clause(info, _n_dirs(info)) + \
                 "; all cells with intervals are in Table~\\ref{tab:headline_ci}.}"
+        if line.startswith(r"\setlength{\tabcolsep}"):
+            line = r"\setlength{\tabcolsep}{1.8pt}"
         out.append(line)
         label = _data_row_label(line)
         if label is None:
@@ -383,7 +386,7 @@ def render_compact(head_tex: str, ci: pd.DataFrame, task: str, info: Dict) -> st
                 r = _lookup(ci, task, key, "ref", metric)
                 _check(r, printed, metric, label)
                 cells.append("\\multicolumn{4}{c}{{\\scriptsize "
-                             + _ci(r["ci_lo"], r["ci_hi"], metric, True) + "}}")
+                             + _ci(r["ci_lo"], r["ci_hi"], metric, True, True) + "}}")
             out.append(" & " + " & ".join(cells) + r" \\")
             continue
         parts = [p.strip() for p in body.split("&")]
@@ -399,7 +402,7 @@ def render_compact(head_tex: str, ci: pd.DataFrame, task: str, info: Dict) -> st
                 continue
             r = _lookup(ci, task, label, setting, metric)
             _check(r, printed, metric, f"{label}/{setting}")
-            cells.append("{\\scriptsize " + _ci(r["ci_lo"], r["ci_hi"], metric, True) + "}")
+            cells.append("{\\scriptsize " + _ci(r["ci_lo"], r["ci_hi"], metric, True, True) + "}")
         out.append(" & " + " & ".join(cells) + r" \\")
     return "\n".join(out) + "\n"
 
