@@ -1,10 +1,12 @@
 """Render the paper figure ``fig_retrieval_mark_pair_philta`` showing the
 retrieval-adapted MaRC learned token masks for one query-candidate pair.
 
-Produces a 2x2 (or 4x1 stacked) panel of horizontal heatmap-bars:
-
-    rows    = {mask on query (candidate fixed), mask on candidate (query fixed)}
-    columns = {baseline (raw cosine target), ABTT (cleaned cosine target)}
+The paper layout (``--layout wrapped``, the default since issue #235) has one
+block per side of the pair, {mask on query (candidate fixed), mask on candidate
+(query fixed)}; each block is a two-row heatmap, {baseline (raw cosine target),
+ABTT (cleaned cosine target)}, over one row of token labels, wrapped onto
+several lines so the labels stay at 8 pt at print width. The older 2x2 and
+4x1 stacked layouts of horizontal heatmap-bars remain available.
 
 Each panel shows the learned mask value per token position in [0, 1]. The
 x-axis tick labels are the decoded subwords. Frozen non-content positions
@@ -68,6 +70,10 @@ import numpy as np
 from matplotlib.colors import Normalize
 from matplotlib.cm import ScalarMappable
 
+# Type 42 (TrueType) fonts in the PDF, never Type 3 (issue #235 item 7).
+matplotlib.rcParams["pdf.fonttype"] = 42
+matplotlib.rcParams["ps.fonttype"] = 42
+
 
 # ---------------------------------------------------------------------------
 # Defaults / style
@@ -90,7 +96,7 @@ RETRIEVAL_MARK_KEYS = (
 )
 
 SUBWORD_MARKERS = ("\u2581", "##", "\u0120", "_")  # "▁", "##", "Ġ", "_"
-EMPTY_TOKEN_PLACEHOLDER = "\u23b5"  # "⎵"
+EMPTY_TOKEN_PLACEHOLDER = "_"  # ASCII: DejaVu Sans Mono has no U+23B5
 
 FROZEN_EPS = 1e-6
 FROZEN_GRAY = "#c8c8c8"
@@ -112,8 +118,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--example_id",
         type=int,
-        default=41,
-        help="Primary example id to render (default: 41, first PhilTa).",
+        default=11,
+        help=(
+            "Primary example id to render (default: 11, the PhilTa pair the "
+            "paper prints; visualize_pair_attribution.py renders the same pair)."
+        ),
     )
     parser.add_argument(
         "--model_name",
@@ -159,9 +168,28 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--layout",
         type=str,
-        choices=("2x2", "stacked"),
-        default="stacked",
-        help="2x2 grid or a 4-row stacked layout (default: stacked).",
+        choices=("wrapped", "2x2", "stacked"),
+        default="wrapped",
+        help=(
+            "wrapped (default, the paper figure): one block per side, baseline "
+            "and ABTT masks as two rows over shared token labels, each sequence "
+            "wrapped onto lines of at most --wrap tokens so 8 pt labels fit at "
+            "print width (issue #235 item 9). 2x2 / stacked: the old layouts."
+        ),
+    )
+    parser.add_argument(
+        "--wrap",
+        type=int,
+        default=42,
+        help="Maximum tokens per line in the wrapped layout.",
+    )
+    parser.add_argument(
+        "--annotate",
+        action="store_true",
+        help=(
+            "Add the model/example suptitle and the cosine annotation. Off for "
+            "the paper figure, whose caption carries that context."
+        ),
     )
     parser.add_argument(
         "--dpi",
@@ -363,6 +391,73 @@ def _render_panel(
     ax.tick_params(which="minor", bottom=False, left=False)
 
 
+WRAPPED_TICK_FONTSIZE = 8.3  # 8 pt after the 0.97 print scale
+WRAPPED_TITLE_FONTSIZE = 9
+
+
+def _frozen_overlay(frozen: np.ndarray) -> np.ndarray:
+    """RGBA layer painting frozen (non-content) cells gray, others transparent."""
+    overlay = np.zeros(frozen.shape + (4,), dtype=np.float32)
+    rgb = [int(FROZEN_GRAY[i:i + 2], 16) / 255.0 for i in (1, 3, 5)]
+    for ch in range(3):
+        overlay[..., ch][frozen] = rgb[ch]
+    overlay[..., 3][frozen] = 1.0
+    return overlay
+
+
+def render_wrapped(
+    panels: list,
+    wrap: int,
+    norm: Normalize,
+    cmap,
+) -> plt.Figure:
+    """The paper layout: one block per side of the pair, wrapped.
+
+    ``panels`` holds (block title, baseline mask, ABTT mask, token labels) for
+    the query and for the candidate. Each block is a two-row heatmap (baseline
+    target on top, ABTT target below) over one row of token labels, and a
+    sequence longer than ``wrap`` tokens continues on the next line. Every line
+    uses the same cell width, so a token column is the same size throughout,
+    and 8 pt labels fit at the printed width of about 5.9 in.
+    """
+    lines = []
+    for title, base, abtt, toks in panels:
+        n = len(toks)
+        n_lines = int(np.ceil(n / wrap))
+        per_line = int(np.ceil(n / n_lines))
+        for i in range(n_lines):
+            lo, hi = i * per_line, min(n, (i + 1) * per_line)
+            label = f"{title}, tokens {lo + 1} to {hi} of {n}" if n_lines > 1 else title
+            lines.append((label, np.vstack([base[lo:hi], abtt[lo:hi]]), toks[lo:hi]))
+    width = max(len(toks) for _, _, toks in lines)
+
+    fig, axes = plt.subplots(
+        len(lines), 1, figsize=(6.0, 1.3 * len(lines)), constrained_layout=True
+    )
+    for ax, (label, matrix, toks) in zip(np.atleast_1d(axes), lines):
+        ax.imshow(matrix, cmap=cmap, norm=norm, aspect="auto", interpolation="nearest")
+        frozen = matrix <= FROZEN_EPS
+        if frozen.any():
+            ax.imshow(_frozen_overlay(frozen), aspect="auto", interpolation="nearest")
+        ax.set_xlim(-0.5, width - 0.5)
+        ax.set_yticks([0, 1])
+        ax.set_yticklabels(["Baseline", "ABTT"], fontsize=WRAPPED_TICK_FONTSIZE)
+        ax.set_xticks(np.arange(len(toks)))
+        ax.set_xticklabels(toks, rotation=90, fontsize=WRAPPED_TICK_FONTSIZE,
+                           fontfamily="monospace")
+        ax.tick_params(length=1.5, pad=1)
+        ax.set_title(label, fontsize=WRAPPED_TITLE_FONTSIZE, fontweight="bold",
+                     loc="left", pad=3)
+        for side in ("top", "right"):
+            ax.spines[side].set_visible(False)
+    sm = ScalarMappable(norm=norm, cmap=cmap)
+    sm.set_array([])
+    cbar = fig.colorbar(sm, ax=list(np.atleast_1d(axes)), shrink=0.6, pad=0.01, aspect=30)
+    cbar.set_label("mask value", fontsize=WRAPPED_TICK_FONTSIZE)
+    cbar.ax.tick_params(labelsize=WRAPPED_TICK_FONTSIZE)
+    return fig
+
+
 def render_figure(
     data: dict,
     tokenizer,
@@ -372,8 +467,10 @@ def render_figure(
     dpi: int,
     example_id: int,
     model_name: str,
+    wrap: int = 42,
+    annotate: bool = False,
 ) -> tuple[Path, Path, tuple[float, float]]:
-    """Render the 2x2 (or stacked) figure and save PDF + PNG."""
+    """Render the wrapped (or 2x2, or stacked) figure and save PDF + PNG."""
     q_ids = np.asarray(data["query_input_ids"]).reshape(-1)
     c_ids = np.asarray(data["candidate_input_ids"]).reshape(-1)
 
@@ -400,6 +497,25 @@ def render_figure(
         ("ABTT: candidate mask", c_mask_abtt, c_tokens),
     ]
 
+    if layout == "wrapped":
+        fig = render_wrapped(
+            [
+                ("Query mask, candidate fixed", q_mask_base, q_mask_abtt, q_tokens),
+                ("Candidate mask, query fixed", c_mask_base, c_mask_abtt, c_tokens),
+            ],
+            wrap,
+            norm,
+            cmap,
+        )
+        out_dir.mkdir(parents=True, exist_ok=True)
+        pdf_path = out_dir / f"{out_name}.pdf"
+        png_path = out_dir / f"{out_name}.png"
+        fig.savefig(pdf_path, bbox_inches="tight", metadata={"CreationDate": None})
+        fig.savefig(png_path, dpi=dpi, bbox_inches="tight")
+        size = fig.get_size_inches()
+        plt.close(fig)
+        return pdf_path, png_path, (float(size[0]), float(size[1]))
+
     if layout == "2x2":
         fig, axes = plt.subplots(2, 2, figsize=(13, 5.2), constrained_layout=False)
         order = [0, 1, 2, 3]  # row-major: row0=query baseline/abtt, row1=cand baseline/abtt
@@ -415,11 +531,12 @@ def render_figure(
             _render_panel(ax_i, vals, toks, title, norm, cmap)
 
     model_short = MODEL_SHORT.get(model_name, _slug(model_name).split("_")[-1])
-    fig.suptitle(
-        f"Retrieval-adapted MaRC attribution: {model_short}, example {example_id}",
-        fontsize=SUPTITLE_FONTSIZE,
-        fontweight="bold",
-    )
+    if annotate:
+        fig.suptitle(
+            f"Retrieval-adapted MaRC attribution: {model_short}, example {example_id}",
+            fontsize=SUPTITLE_FONTSIZE,
+            fontweight="bold",
+        )
 
     # Shared colorbar on the right side.
     fig.subplots_adjust(right=0.88, top=0.90, bottom=0.22, hspace=0.95)
@@ -444,7 +561,7 @@ def render_figure(
 
     cos_base_s = _scalar(cos_base)
     cos_abtt_s = _scalar(cos_abtt)
-    if cos_base_s is not None or cos_abtt_s is not None:
+    if annotate and (cos_base_s is not None or cos_abtt_s is not None):
         pieces = []
         if cos_base_s is not None:
             pieces.append(f"cos_baseline = {cos_base_s:.3f}")
@@ -552,6 +669,8 @@ def main() -> int:
         dpi=args.dpi,
         example_id=rendered_example_id,
         model_name=rendered_model_name,
+        wrap=args.wrap,
+        annotate=args.annotate,
     )
 
     print(f"[OK] Wrote {pdf_path} ({w_in:.2f} x {h_in:.2f} in)")

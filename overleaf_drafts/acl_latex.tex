@@ -934,7 +934,7 @@ This appendix keeps the example-level views for one PhilTa retrieval pair. Figur
 \begin{figure*}[!t]
 \centering
 \includegraphics[width=0.94\textwidth]{fig_pair_matrix_philta.pdf}
-\caption{Derived pairwise heatmap for one PhilTa retrieval case. The left panel shows the baseline representation and the right panel shows the same example after ABTT. Both axes use original decoded tokens. Cell values combine token-token cosine similarity with single-sequence integrated-gradient scores.}
+\caption{Derived pairwise heatmap for one PhilTa retrieval case. The left panel shows the baseline representation and the right panel shows the same example after ABTT. Both axes use original decoded tokens: the 18 query and 18 candidate tokens with the largest integrated-gradient magnitude under either representation. Cell values combine token-token cosine similarity with single-sequence integrated-gradient scores.}
 \label{fig:pairmatrix}
 \end{figure*}
 
@@ -948,7 +948,7 @@ This appendix keeps the example-level views for one PhilTa retrieval pair. Figur
 \begin{figure*}[!t]
 \centering
 \includegraphics[width=0.94\textwidth]{fig_retrieval_mark_pair_philta.pdf}
-\caption{Retrieval-adapted MaRC masks for the same PhilTa pair as Figure~\ref{fig:pairmatrix}. Top row: mask on the query with the candidate fixed. Bottom row: mask on the candidate with the query fixed. Left column: baseline cosine target. Right column: ABTT-corrected cosine target.}
+\caption{Retrieval-adapted MaRC masks for the same PhilTa pair as Figure~\ref{fig:pairmatrix}. The upper two strips give the mask on the query with the candidate fixed, and the lower two the mask on the candidate with the query fixed; each sequence wraps onto two strips. In every strip the Baseline row uses the raw cosine target and the ABTT row the ABTT-corrected cosine target. Gray cells are non-content positions, frozen at zero.}
 \label{fig:retrieval_mark}
 \end{figure*}
 
