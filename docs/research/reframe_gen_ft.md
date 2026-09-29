@@ -6,7 +6,7 @@ Issue #234, share of the analysis reframe (#229). Handoff rows GEN and FT in
 ## Results in brief
 
 - **GEN: every cell shows the mid-depth low-rank profile.** mT5-base, PhilTa and
-  T5-v1.1-base on a length-matched English sample, and T5-v1.1-base on the Latin corpus,
+  T5-v1.1-base on an English sample matched in mT5 token length, and T5-v1.1-base on the Latin corpus,
   reach a top-PC share of 0.82 or more with effective rank 1.0 to 3.1 at every layer from 4
   to 11, and all recover at the first and last layer. Neither fail branch in the handoff
   occurs: mT5-base does not stay high-rank on English (so the collapse does not depend on the
@@ -21,7 +21,11 @@ Issue #234, share of the analysis reframe (#229). Handoff rows GEN and FT in
 - **FT: the handoff numbers are right.** Fine-tuned LaTa, layers 2 to 11: baseline AUROC
   0.499 to 0.569 (printed 0.50 to 0.57); last layer 0.938 to 0.984. New: its peak top-PC
   share is **0.945** (layer 4), against 0.952 (layer 4) before fine-tuning.
-- Compute: 3.6 CPU core-hours (pilot 0.4, main job 3.2); no GPU.
+- **Tokenizer sensitivity**: re-matching the training rows on each model's own tokenizer
+  lengths moves top-PC share by at most 0.010 on the collapsed layers (0.033 at any layer);
+  every cell stays collapsed on the same layers.
+- Compute: about 4 CPU core-hours (pilot 0.4, main job 3.2, fix-round job 22535892 about 0.3);
+  no GPU.
 
 ## Provenance
 
@@ -29,11 +33,11 @@ Issue #234, share of the analysis reframe (#229). Handoff rows GEN and FT in
 |---|---|
 | Scripts | `scripts/paper/reframe/gen_english_sample.py`, `gen_extract.py`, `gen_ft_geometry.py` |
 | Job | `slurm/reframe/gen_ft_geometry.sbatch`, job 22535075 (cpu, 16 cores, 48 GB, 12:04 elapsed of 50:00 reserved); pilot job 22534999 (16 cores, 1:28) |
-| Outputs (gitignored) | `runs/active/reframe/gen/`: `english_sample.{csv,json}`, `english_sample_lengths.csv`, `bases/<model_slug>/{latin,english}/hidden_layer{1..12}_embeddings.npy` + `meta.csv` + `config.json`, `gen_geometry.csv`, `gen_repro.csv`, `ft_layerwise.csv`, `gen_ft_facts.md` |
+| Outputs (gitignored) | `runs/active/reframe/gen/`: `english_sample.{csv,json}`, `english_sample_lengths.csv`, `bases/<model_slug>/{latin,english}/hidden_layer{1..12}_embeddings.npy` + `meta.csv` + `config.json`, `gen_geometry.csv`, `gen_repro.csv`, `ft_layerwise.csv`, `gen_rematch.csv`, `gen_ft_facts.md` |
 | Committed artefacts | `overleaf_drafts/tables/gen_geometry.tex` (`tab:gen_geometry`), `overleaf_drafts/tables/ft_lata_layerwise.tex` (`tab:ft_lata_layerwise`), `overleaf_drafts/figures/fig_gen_geometry.{pdf,png}` |
-| Models (HF revision) | `google/mt5-base` 2eb15465c5dd, `bowphs/PhilTa` 8572ff520a1a, `google/t5-v1_1-base` b5fc947a416e (all Apache-2.0); fp32, torch 2.10, transformers 4.57.6 |
+| Models (HF revision) | `google/mt5-base` 2eb15465c5dd, `bowphs/PhilTa` 8572ff520a1a, `google/t5-v1_1-base` b5fc947a416e (all Apache-2.0), pinned in code (`MODEL_REVISIONS` in `gen_english_sample.py`, used for the matching and length tokenizers and by `gen_extract.py`, which refuses any other snapshot; every extraction's `config.json` records exactly these); fp32, torch 2.10, transformers 4.57.6 |
 | Split | `runs/active/resubmit/data/phase_resubmit_split.csv` (847 train / 858 test) |
-| Tests | `tests/test_reframe_gen_ft.py` (sampler logic on a toy counter, renderer determinism, byte-identical regeneration of the committed tables from `runs/`, skipped when absent) |
+| Tests | `tests/test_reframe_gen_ft.py` (sampler logic on a toy counter; `layer_stats` on synthetic rank-1-plus-noise and isotropic data; the re-matching rule and its summary; renderer determinism; byte-identical regeneration of the committed tables from `runs/`, skipped when absent) |
 
 Rerun, from the checkout that holds the code (models and CAP shards must be in the HF cache;
 compute nodes run offline):
@@ -77,13 +81,17 @@ conclusion changes, and no peak moves by more than 0.001.
   Innovation Lab), in the public-domain raw redistribution of Common Pile v0.1
   (`common-pile/caselaw_access_project`, revision `3c2cb5080b3a16a04d8d8d07b28eaec7c1ba7a90`),
   seven of its 173 shards: `cap_00000`, `00030`, `00060`, `00090`, `00120`, `00150`, `00170`.
-- **Licence**: the CAP texts are public domain (CC0 at the source; Common Pile includes only
-  public-domain CAP documents). Nothing is redistributed by this repo: the sample is rebuilt
-  from the pinned revision.
+- **Licence**: what is verified is this. The dataset card at the pinned revision states that
+  only public-domain documents from the Caselaw Access Project and Court Listener were
+  included. Each record carries its own `source` and `metadata.license` fields, and
+  `gen_english_sample.py` writes both to the sample CSV. All 1,703 sampled documents read
+  `source: Caselaw Access Project` and `license: Public Domain`, and none comes from Court
+  Listener. Nothing is redistributed by this repo: the sample is rebuilt from the pinned
+  revision.
 - **Why this corpus**: legal prose is the nearest openly licensed English register to canon
   law. It is on the HF hub and ungated. (The TeraflopAI/free-law CAP mirrors are gated, and
   Pile of Law is CC BY-NC-SA.) The seven shards span federal and state reporters from the 1810s
-  (Martin's Louisiana reports, Cowen's New York reports) to the 2010s. The sample draws on 45
+  (Martin's Louisiana reports, Cowen's New York reports) to the 2010s. The sample draws on 44
   reporters, led by F.2d (316 passages), Ga. App. (208) and Ill. App. (103).
 - **Selection** (`gen_english_sample.py`, seed 42): 1,500 random documents per shard; a
   document's prose is its body paragraphs (lines at column 0 with at least 12 words, of which at
@@ -93,13 +101,13 @@ conclusion changes, and no peak moves by more than 0.001.
   drawn at random, and whole words are added until the mT5 token count (EOS included) is as close
   to the Latin passage's as possible. A match is accepted within max(2, 3 percent) tokens. One
   document gives at most one passage (1,703 distinct opinions). The two empty Latin files get an
-  empty English partner. Targets above 1,024 tokens (4 passages) are capped there, since the
-  encoder truncates at 512.
+  empty English partner. Four Latin passages exceed 1,024 mT5 tokens; their targets are capped
+  at 1,024, and both sides are truncated at 512 by the encoder anyway.
 - **Size**: 1,705 passages, one per labelled Latin passage, each inheriting its partner's
   split. Text sha256 (passages joined by newlines):
   `db09a4cc56528d59008072b1d011a55815e3cd9b5db4510aca50ba4d5b5c38b3`.
 - **Length match** (mT5 tokenizer, the matching tokenizer): 1,086 of 1,705 exact, all within
-  3 tokens. The distributions coincide:
+  3 tokens of the target (the Latin length, capped at 1,024). The distributions coincide:
 
 | Tokenizer | Text | median | IQR | 95th pct | > 512 |
 |---|---|---|---|---|---|
@@ -113,9 +121,29 @@ conclusion changes, and no peak moves by more than 0.001.
   The match is exact only under the mT5 tokenizer, the one multilingual model in the cross.
   Under PhilTa's tokenizer the English passages are about 40 percent longer. Under T5-v1.1's
   English-only tokenizer, Latin fragments into more pieces and the Latin passages are about
-  55 percent longer. All cells collapse whatever the direction of the mismatch, so length does
-  not drive the result. It still bounds how exactly Latin and English cells can be compared
-  number by number.
+  55 percent longer.
+
+- **Per-tokenizer re-match check** (`gen_ft_geometry.py`, `rematch`; `gen_rematch.csv`). For
+  each model, the Latin and English training rows are re-paired on that model's own token
+  lengths. Lengths are clipped at 512, as the encoder sees them. Both sides are sorted and
+  paired greedily, with the same tolerance of max(2, 3 percent). The geometry is then
+  recomputed on the matched rows. Matched n: 847 for mT5-base (every row), 690 for PhilTa, 653
+  for T5-v1.1-base. (The reviewer's guide figures of 833 / 673 / 641 come from a slightly
+  different rule; ours clips at 512, so the long passages that both sides truncate still
+  match.)
+
+| Model | n | Max change in top-PC share, all layers (Latin / English) | Same, layers with share >= 0.6 | Layers with share >= 0.6 (Latin / English) | Latin-minus-English sign unchanged |
+|---|---|---|---|---|---|
+| mT5-base | 847 | 0.000 / 0.000 | 0.000 / 0.000 | 4-11 / 4-11 (unchanged) | 12 of 12 layers |
+| PhilTa | 690 | 0.010 / 0.013 | 0.010 / 0.003 | 3-11 / 4-11 (unchanged) | 12 of 12 |
+| T5-v1.1-base | 653 | 0.033 / 0.022 | 0.009 / 0.006 | 2-11 / 2-11 (unchanged) | 12 of 12 |
+
+  mT5-base is unchanged because re-pairing under its own tokenizer keeps every row, and the
+  statistics depend only on the set of rows. The largest move anywhere, 0.033, is at
+  T5-v1.1-base's Latin layer 12, a healthy layer. On the collapsed layers no share moves by more
+  than 0.010. Every cell stays collapsed on exactly the same layers, and at every layer the Latin
+  share stays on the same side of the English share. The residual length mismatch under the
+  PhilTa and T5-v1.1 tokenizers does not drive the result.
 
 ## Latin reproduction check
 
@@ -128,8 +156,9 @@ were realigned by filename).
 - Top-PC share: identical to the 6 significant digits stored at all 24 model-layers.
 - Effective rank: max absolute difference 1e-4, max relative 1.7e-6 (rounding).
 - Vectors: min cosine 1.00000000; max relative L2 difference 3.2e-4. The max absolute
-  difference is 0.28, at mT5-base layers 5 to 11, where the pooled vectors carry massive
-  coordinates. That is float32 CPU versus GPU arithmetic on large values.
+  difference is 0.28, at PhilTa layers 10 and 11 (0.23 to 0.25 at mT5-base layers 5 to 11).
+  These are the layers where the pooled vectors carry massive coordinates, so this is float32
+  CPU versus GPU arithmetic on large values.
 
 The published geometry therefore reproduces, and the English and T5-v1.1 cells are comparable
 with the paper's numbers.
@@ -173,8 +202,8 @@ Per layer, top-PC share (Latin / English):
 3. **What this supports.** Within the models and texts tested, the low-rank middle layers are
    a property of the model, not of Latin input or of out-of-domain text. That is the reading
    the Section 6 paragraph states as the prediction. It also removes one alternative
-   explanation for the raw T5 cells of P2x2: T5-v1.1-base's collapse on Latin is not a
-   language-mismatch artefact, because it collapses the same way on English.
+   explanation for the raw T5 cells of P2x2: T5-v1.1-base's low-rank geometry on Latin is not
+   a language-mismatch artefact, because the same geometry appears on English.
 4. **What it does not support.**
    - It is geometry, not retrieval. On the Latin testbed a top-PC share of 0.6 or more marks
      all 26 collapsed layers with one false alarm. That false alarm is mT5-base layer 4
@@ -185,7 +214,8 @@ Per layer, top-PC share (Latin / English):
      era and genre together, so "the input text" here means these two texts.
    - Three T5 encoders of one size (base). Nothing here separates T5 pretraining from the
      missing embedding objective: every model in the cross is raw. That remains P2x2's job.
-5. **A side observation on mean cosine**, the usual anisotropy statistic. It moves a lot with
+5. **A side observation on mean cosine**, the usual anisotropy statistic, read here on the same
+   training rows (the paper's geometry table reads it on test passages). It moves a lot with
    the text while the variance statistics do not. On the collapsed layers of T5-v1.1-base it is
    0.87-0.96 on Latin and 0.34-0.44 on English. On mT5-base layers 5-11 it is 0.33-0.38 on Latin
    and 0.63-0.69 on English. This is consistent with the paper's Section 4 point that mean cosine
@@ -196,9 +226,11 @@ Per layer, top-PC share (Latin / English):
 
 - Section 6 predicts, if the collapse is a property of the model, "top-PC share above 0.8 and
   effective rank near 1 at mid-depth" in every cell. Top-PC share holds (>= 0.82 at layers 4 to
-  11 in every cell). "Effective rank near 1" holds for mT5-base (1.00) and T5-v1.1-base
-  (1.1-1.4), but PhilTa sits at 1.8-2.3 on both texts, as it already does on Latin (Section 4
-  quotes collapsed effective rank 1.0-4.6). Suggested wording: "effective rank below 2.5".
+  11 in every cell). "Effective rank near 1" holds for mT5-base (1.00 at layers 5 to 11)
+  and T5-v1.1-base (1.1 to 1.4), but not for PhilTa, which sits at 1.8 to 2.3 on both texts, as
+  it already does on Latin (Section 4 quotes collapsed effective rank 1.0 to 4.6). The prediction
+  stays as written; the replacement text below reports the departure rather than loosening the
+  prediction after the result.
 - The expected result in `\pending{GEN}` ("a mid-depth low-rank profile in every cell") is
   what we find.
 - The Limitations first sentence ("one labeled corpus in one language") stays true for
@@ -211,8 +243,9 @@ ABTT-optimal AUROC per layer, fine-tuned), `runs/active/resubmit/results/phase_r
 (pre-trained), and the fine-tuned vectors in
 `runs/active/resubmit_finetune_bases/phase9_bases/bowphs_LaTa-ft/hidden_mean_tokempty/`, where
 top-PC share and effective rank were recomputed with the same code on the 847 training
-passages. The pre-trained LaTa geometry recomputed the same way matches the paper (peak 0.952
-at layer 4, `z1_numbers.md`).
+passages. As in the paper's convention, these training rows include the passages of the
+fine-tuning pairs, which were carved from the training split. The pre-trained LaTa geometry
+recomputed the same way matches the paper (peak 0.952 at layer 4, `z1_numbers.md`).
 
 | Layer | AUROC PT | AUROC FT | Top-PC share PT | Top-PC share FT | Eff. rank PT | Eff. rank FT |
 |---|---|---|---|---|---|---|
@@ -266,14 +299,15 @@ checked against them.
 ```latex
 Every cell shows the same profile (Table~\ref{tab:gen_geometry}, Figure~\ref{fig:gen_geometry}).
 The English sample is 1,705 passages of US court opinions from the Caselaw Access Project \citep{kandpal2025commonpile}, one per Latin passage and matched to it in mT5 token length; as on Latin, we read the statistics on the 847 passages paired with training passages.
-On English, mT5-base reaches a top-PC share of at least 0.999 with effective rank 1.0 at layers 5 to 11, as on Latin, and PhilTa reaches 0.85 to 0.89 at layers 4 to 11 (0.83 to 0.86 on Latin), with effective rank 1.8 to 2.3 on both texts.
-T5-v1.1-base, pretrained on English alone, collapses from layer 2 to layer 11 on both texts, at top-PC share 0.93 to 0.95 on English and 0.96 to 0.98 on Latin.
+On English, mT5-base reaches a top-PC share of at least 0.999 with effective rank 1.0 at layers 5 to 11, as on Latin, and PhilTa reaches 0.85 to 0.89 at layers 4 to 11 (0.83 to 0.86 on Latin).
+PhilTa's effective rank is 1.8 to 2.3 on both texts, as on Latin, rather than near 1.
+T5-v1.1-base, pretrained on English alone, collapses from layer 2 to layer 11 on both texts, at top-PC share 0.93 to 0.95 on English and 0.96 to 0.97 on Latin.
 In every cell the first and last layers stay high-rank.
-Neither fail condition occurs: in these cells the low-rank middle layers follow the model rather than the input text or the pretraining language.
+Neither fail condition occurs: in these cells the low-rank middle layers appear on both texts, whether or not the input is in the model's pretraining language.
 ```
 
-and, if the prediction sentence stays, change "effective rank near 1" to "effective rank below
-2.5" (PhilTa is 1.8 to 2.3 on both texts).
+The prediction sentence before it ("top-PC share above 0.8 and effective rank near 1") stays
+as written; the PhilTa sentence reports where the result departs from it.
 
 **2. `tab:panel_2x2` caption, `\pending{FT: import layerwise fine-tuned LaTa row}` (line 570).**
 Delete the `\pending{...}` (the caption already defines the fine-tuned AUROC range). In the
@@ -298,9 +332,12 @@ short GEN paragraph in the layer-diagnostics appendix for the rest):
 \begin{figure*}[t]
 \centering
 \includegraphics[width=\textwidth]{figures/fig_gen_geometry.pdf}
-\caption{Label-free layer geometry of three T5 encoders on the Latin corpus (solid, filled markers) and on a length-matched English sample of US court opinions (dashed, hollow markers), read on 847 passages per cell. (a)~Top-PC share, the share of centered variance on the first principal component; the dotted line is the 0.6 threshold that separates collapsed from healthy layers on the Latin testbed. (b)~Entropy effective rank, log scale. Every model is low-rank from layer 2 to 4 through layer 11 on both texts and recovers at layer 12.}
+\caption{Label-free layer geometry of three T5 encoders on the Latin corpus (solid, filled markers) and on English US court opinions matched to the Latin passages in mT5 token length (dashed, hollow markers), read on 847 passages per cell. (a)~Top-PC share, the share of centered variance on the first principal component; the dotted line is the 0.6 threshold that marks every collapsed Latin layer (one false alarm, mT5-base layer~4). (b)~Entropy effective rank, log scale. Every model is low-rank from layer 2 to 4 through layer 11 on both texts and recovers at layer 12.}
 \label{fig:gen_geometry}
 \end{figure*}
+
+The English passages match the Latin ones in mT5 token length only.
+Re-pairing the training passages on each model's own token lengths (653 to 847 pairs) moves top-PC share by at most 0.010 at the collapsed layers and 0.033 at any layer, and leaves every cell collapsed on the same layers.
 ```
 
 **5. Optional, Limitations**, after the first sentence:

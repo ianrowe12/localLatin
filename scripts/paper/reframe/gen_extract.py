@@ -33,6 +33,9 @@ import pandas as pd
 
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from gen_english_sample import MODEL_REVISIONS  # noqa: E402
 
 
 def load_corpus(corpus: str, split: pd.DataFrame, data_root: Path, english_csv: Path) -> list[str]:
@@ -57,6 +60,7 @@ def main() -> None:
     ap.add_argument("--token_filter", default="tokenizer_empty")
     ap.add_argument("--threads", type=int, default=0, help="torch threads (0: leave default)")
     ap.add_argument("--limit", type=int, default=0, help="pilot: first N rows only")
+    ap.add_argument("--revision", default="", help="HF revision (default: the pinned GEN revision)")
     args = ap.parse_args()
 
     import torch
@@ -72,13 +76,16 @@ def main() -> None:
     if args.limit:
         split, texts = split.iloc[: args.limit], texts[: args.limit]
 
-    # The snapshot actually loaded (offline compute nodes resolve refs/main from the cache).
+    # Pinned revision (gen_english_sample.MODEL_REVISIONS); record the snapshot actually loaded.
     from transformers.utils import cached_file
-    revision = Path(cached_file(args.model_name, "config.json")).parent.name
+    pinned = args.revision or MODEL_REVISIONS.get(args.model_name)
+    revision = Path(cached_file(args.model_name, "config.json", revision=pinned)).parent.name
+    if pinned and revision != pinned:
+        raise SystemExit(f"loaded snapshot {revision} != pinned revision {pinned}")
 
     t0 = time.time()
-    tok = AutoTokenizer.from_pretrained(args.model_name)
-    model = AutoModelForSeq2SeqLM.from_pretrained(args.model_name, dtype=torch.float32)
+    tok = AutoTokenizer.from_pretrained(args.model_name, revision=pinned)
+    model = AutoModelForSeq2SeqLM.from_pretrained(args.model_name, revision=pinned, dtype=torch.float32)
     encoder = model.get_encoder()
     encoder.eval()
     keep = build_token_keep_lookup(tok, args.token_filter)

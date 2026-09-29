@@ -12,8 +12,10 @@ domain only, raw version) by Common Pile v0.1:
   https://huggingface.co/datasets/common-pile/caselaw_access_project
 at a pinned revision, seven of its 173 shards spread over the collection (federal and
 state reporters from the early 19th century to the 2010s). Legal prose is the nearest
-English register to canon law that is openly licensed and on the HF hub: the CAP text is
-public domain (CC0 at the source), and nothing is redistributed by this repo.
+English register to canon law that is openly licensed and on the HF hub. The dataset card
+at the pinned revision states that only public-domain documents are included, and each
+sampled record's own source and licence fields are written to the output (checked in
+docs/research/reframe_gen_ft.md). Nothing is redistributed by this repo.
 
 Selection (deterministic, --seed):
   1. From each shard, a fixed random set of documents is read (--docs_per_shard).
@@ -29,8 +31,8 @@ Selection (deterministic, --seed):
   4. The two empty Latin files (1 token, EOS only) get an empty English partner.
 
 Writes <out_csv> with one row per Latin passage (same order as the split CSV):
-  eng_id, latin_filename, latin_split, target_len, len_mt5, shard, doc_id, start_word,
-  n_words, text
+  eng_id, latin_filename, latin_split, target_len, len_mt5, shard, doc_id, source, licence,
+  start_word, n_words, text   (source / licence: the Common Pile record's own fields)
 and <out_csv stem>_lengths.csv: token lengths of both texts under every GEN tokenizer.
 
 Run from the repo root (CPU, a few minutes; shards must be in the HF cache, or online):
@@ -41,6 +43,7 @@ Run from the repo root (CPU, a few minutes; shards must be in the HF cache, or o
 from __future__ import annotations
 
 import argparse
+import ast
 import gzip
 import hashlib
 import json
@@ -62,6 +65,12 @@ SHARDS = [
     "cap_00150.jsonl.gz",  # Ala. App., Mass. App. Ct., Martin (La. 1810s-1830s)
     "cap_00170.jsonl.gz",  # Ga. App., F.R.D., Neb.
 ]
+# HF model revisions used for GEN (tokenizers here, weights in gen_extract.py).
+MODEL_REVISIONS = {
+    "google/mt5-base": "2eb15465c5dd7f72a8f7984306ad05ebc3dd1e1f",
+    "bowphs/PhilTa": "8572ff520a1a7316fa99ee0c9cb80a30e451c55d",
+    "google/t5-v1_1-base": "b5fc947a416ea3cb079532cb3c2bbadeb7f800fc",
+}
 MATCH_TOKENIZER = "google/mt5-base"
 LENGTH_TOKENIZERS = {
     "mt5": "google/mt5-base",
@@ -172,8 +181,20 @@ def match_sample(targets: Sequence[int], docs: Sequence[Tuple[str, str, List[str
     return out
 
 
+def doc_licence(d: dict) -> Tuple[str, str]:
+    """(source, licence) of a Common Pile record; metadata is a dict or its repr string."""
+    md = d.get("metadata", {})
+    if isinstance(md, str):
+        try:
+            md = ast.literal_eval(md)
+        except (ValueError, SyntaxError):
+            md = {}
+    return str(d.get("source", "")), str(md.get("license", "")) if isinstance(md, dict) else ""
+
+
 def load_docs(shard_paths: Sequence[Tuple[str, Path]], docs_per_shard: int, seed: int,
-              min_para_words: int) -> List[Tuple[str, str, List[str]]]:
+              min_para_words: int, licences: dict | None = None) -> List[Tuple[str, str, List[str]]]:
+    """Candidate documents in a seeded order; fills `licences[doc_id] = (source, licence)`."""
     rng = np.random.default_rng(seed + 1)
     docs = []
     for shard, path in shard_paths:
@@ -185,6 +206,8 @@ def load_docs(shard_paths: Sequence[Tuple[str, Path]], docs_per_shard: int, seed
             words = " ".join(prose_paragraphs(d["text"], min_para_words)).split()
             if words:
                 docs.append((shard, d["id"], words))
+                if licences is not None:
+                    licences[d["id"]] = doc_licence(d)
         del lines
     perm = np.random.default_rng(seed + 2).permutation(len(docs))
     return [docs[i] for i in perm]
@@ -206,7 +229,7 @@ def main() -> None:
 
     split = pd.read_csv(args.split_csv)
     latin = [Path(args.data_root, p).read_text(encoding="utf-8") for p in split["path"]]
-    tok = AutoTokenizer.from_pretrained(MATCH_TOKENIZER)
+    tok = AutoTokenizer.from_pretrained(MATCH_TOKENIZER, revision=MODEL_REVISIONS[MATCH_TOKENIZER])
 
     def count(text: str) -> int:
         return len(tok(text)["input_ids"])
@@ -216,7 +239,8 @@ def main() -> None:
 
     shard_paths = [(s, Path(hf_hub_download(DATASET, s, repo_type="dataset", revision=REVISION)))
                    for s in SHARDS]
-    docs = load_docs(shard_paths, args.docs_per_shard, args.seed, args.min_para_words)
+    licences: dict = {}
+    docs = load_docs(shard_paths, args.docs_per_shard, args.seed, args.min_para_words, licences)
     print(f"{len(docs)} candidate documents from {len(SHARDS)} shards", flush=True)
     rows = match_sample(targets, docs, count, args.seed)
 
@@ -225,8 +249,10 @@ def main() -> None:
     out.insert(1, "latin_filename", split["filename"].to_numpy())
     out.insert(2, "latin_split", split["split"].to_numpy())
     out.insert(3, "target_len", targets)
+    out["source"] = [licences.get(d, ("", ""))[0] for d in out.doc_id]
+    out["licence"] = [licences.get(d, ("", ""))[1] for d in out.doc_id]
     out = out[["eng_id", "latin_filename", "latin_split", "target_len", "len_mt5", "shard",
-               "doc_id", "start_word", "n_words", "text"]]
+               "doc_id", "source", "licence", "start_word", "n_words", "text"]]
     out_csv = Path(args.out_csv)
     out_csv.parent.mkdir(parents=True, exist_ok=True)
     out.to_csv(out_csv, index=False)
@@ -234,7 +260,8 @@ def main() -> None:
     lens = pd.DataFrame({"eng_id": out.eng_id, "latin_filename": out.latin_filename,
                          "split": out.latin_split})
     for key, name in LENGTH_TOKENIZERS.items():
-        t = tok if name == MATCH_TOKENIZER else AutoTokenizer.from_pretrained(name)
+        t = tok if name == MATCH_TOKENIZER else AutoTokenizer.from_pretrained(
+            name, revision=MODEL_REVISIONS[name])
         lens[f"latin_{key}"] = [len(t(x)["input_ids"]) for x in latin]
         lens[f"english_{key}"] = [len(t(x)["input_ids"]) for x in out.text]
     lens_csv = out_csv.with_name(out_csv.stem + "_lengths.csv")
@@ -246,7 +273,9 @@ def main() -> None:
                 max_target=args.max_target, match_tokenizer=MATCH_TOKENIZER,
                 n_passages=int(len(out)), n_candidate_docs=len(docs),
                 n_distinct_docs=int(out.doc_id[out.doc_id != ""].nunique()),
-                text_sha256=digest,
+                text_sha256=digest, tokenizer_revisions=MODEL_REVISIONS,
+                sources=out.source[out.doc_id != ""].value_counts().to_dict(),
+                licences=out.licence[out.doc_id != ""].value_counts().to_dict(),
                 max_abs_len_diff=int((out.len_mt5 - out.target_len).abs().max()))
     out_csv.with_suffix(".json").write_text(json.dumps(meta, indent=2) + "\n")
     print(json.dumps(meta, indent=2))

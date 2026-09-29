@@ -165,3 +165,40 @@ def test_committed_tables_regenerate_from_run_outputs(tmp_path):
     gfg.render(args)
     for name in ("gen_geometry.tex", "ft_lata_layerwise.tex"):
         assert (tmp_path / "t" / name).read_bytes() == (REPO / "overleaf_drafts/tables" / name).read_bytes(), name
+
+
+# ----------------------------------------------------------------------------- geometry
+def test_layer_stats_rank_one_plus_noise_vs_isotropic():
+    rng = np.random.default_rng(0)
+    n, d = 400, 64
+    direction = rng.normal(size=d)
+    rank1 = rng.normal(size=(n, 1)) * direction[None, :] * 10 + rng.normal(scale=0.01, size=(n, d))
+    s1 = gfg.layer_stats(rank1 + 5.0)  # a shared offset must not matter: the data are centered
+    assert s1["n"] == n and s1["pc1"] > 0.99 and s1["erank"] < 1.1
+    iso = rng.normal(size=(n, d))
+    s2 = gfg.layer_stats(iso)
+    assert s2["pc1"] < 0.1 and s2["erank"] > 0.8 * d
+
+
+def test_rematch_pairs_respects_tolerance_and_clipping():
+    lat = np.array([10, 50, 100, 600, 700, 5])
+    eng = np.array([700, 11, 90, 49, 103, 40])
+    li, ej = gfg.rematch_pairs(lat, eng)
+    pairs = sorted(zip(lat[li].tolist(), eng[ej].tolist()))
+    assert pairs == [(10, 11), (50, 49), (100, 103), (600, 700)]  # 600 and 700 both clip to 512
+    assert len(set(li)) == len(li) and len(set(ej)) == len(ej)
+    for a, b in zip(np.minimum(lat[li], 512), np.minimum(eng[ej], 512)):
+        assert abs(int(a) - int(b)) <= ges.tolerance(int(a))
+
+
+def test_rematch_summary_flags_changes():
+    geo = _geo_fixture()
+    rem = geo[geo.subset == "train"].copy()
+    rem["subset"], rem["n"] = "rematch_train", 700
+    rem["tokenizer"] = rem.model.map(gfg.LEN_KEY)
+    rem.loc[(rem.model == "PhilTa") & (rem.text == "english") & (rem.layer == 10), "pc1"] = 0.55
+    rs = gfg.rematch_summary(geo, rem).set_index(["model", "text"])
+    assert rs.loc[("mT5-base", "Latin"), "max_dpc1"] == 0.0
+    assert rs.loc[("mT5-base", "Latin"), "same_high_layers"]
+    x = rs.loc[("PhilTa", "English")]
+    assert not x.same_high_layers and abs(x.max_dpc1 - 0.05) < 1e-9 and x.n == 700

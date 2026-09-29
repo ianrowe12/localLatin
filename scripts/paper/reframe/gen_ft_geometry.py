@@ -22,7 +22,10 @@ Stages:
                                    new vs cached vectors (max |diff|, min cosine)
              ft_layerwise.csv      LaTa pre-trained vs fine-tuned: per-layer baseline test
                                    AUROC (from the run records) and train top-PC share,
-                                   effective rank (recomputed on the cached vectors)
+                                   effective rank (recomputed on the cached vectors; the train
+                                   rows include the fine-tuning data, as in the paper)
+             gen_rematch.csv       sensitivity: train rows re-matched on each model's own
+                                   tokenizer lengths (also runnable alone: --stage rematch)
   render   reads those CSVs only, writes
              overleaf_drafts/tables/gen_geometry.tex       (label tab:gen_geometry)
              overleaf_drafts/tables/ft_lata_layerwise.tex  (label tab:ft_lata_layerwise)
@@ -139,6 +142,71 @@ def compute(args) -> None:
                            D_abtt=int(a.D), pc1=s["pc1"], erank=s["erank"], mean_cos_train=s["mean_cos"]))
     pd.DataFrame(ft).to_csv(out_dir / "ft_layerwise.csv", index=False, float_format="%.6g")
     print(resolver.summary())
+    rematch(args)
+
+
+LEN_KEY = {"mT5-base": "mt5", "PhilTa": "philta", "T5-v1.1-base": "t5v11"}
+
+
+def rematch_pairs(lat_len, eng_len, max_length: int = 512):
+    """Length-matched Latin/English index pairs under one tokenizer.
+
+    Lengths are clipped at the encoder's max_length (what the model sees). Both sides are
+    sorted and paired greedily with a two-pointer sweep, accepting a pair when the English
+    length is within max(2, 3%) tokens of the Latin one (gen_english_sample.tolerance).
+    Returns (latin_idx, english_idx), each sorted by the Latin length.
+    """
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from gen_english_sample import tolerance
+
+    a = np.minimum(np.asarray(lat_len), max_length)
+    b = np.minimum(np.asarray(eng_len), max_length)
+    ia, ib = np.argsort(a, kind="stable"), np.argsort(b, kind="stable")
+    i = j = 0
+    li, ej = [], []
+    while i < len(ia) and j < len(ib):
+        la, lb = int(a[ia[i]]), int(b[ib[j]])
+        if abs(lb - la) <= tolerance(la):
+            li.append(int(ia[i]))
+            ej.append(int(ib[j]))
+            i += 1
+            j += 1
+        elif lb < la:
+            j += 1
+        else:
+            i += 1
+    return np.array(li, dtype=int), np.array(ej, dtype=int)
+
+
+def rematch(args) -> None:
+    """Sensitivity: re-match the train rows on each model's own tokenizer lengths.
+
+    The sample is length-matched under the mT5 tokenizer only. For each model, Latin and
+    English training rows are re-paired on that model's token lengths (rematch_pairs) and
+    the geometry is recomputed on the matched rows. Writes gen_rematch.csv.
+    """
+    sys.path.insert(0, str(REPO / "src"))
+    from embedding_alignment import AlignmentResolver
+
+    runs, out_dir = Path(args.runs_root), Path(args.out_dir)
+    split = pd.read_csv(args.split_csv)
+    lens = pd.read_csv(out_dir / "english_sample_lengths.csv")
+    if list(lens.latin_filename) != list(split.filename):
+        raise SystemExit("english_sample_lengths.csv is not in split-CSV order")
+    tr = np.flatnonzero(split["split"].to_numpy() == "train")
+    resolver = AlignmentResolver(split)
+    rows = []
+    for mid, disp, _, _ in GEN_MODELS:
+        k = LEN_KEY[disp]
+        li, ej = rematch_pairs(lens[f"latin_{k}"].to_numpy()[tr], lens[f"english_{k}"].to_numpy()[tr])
+        base = runs / "reframe/gen/bases" / mid.replace("/", "_")
+        for layer in range(1, 13):
+            for text, idx in [("latin", tr[li]), ("english", tr[ej])]:
+                x = resolver.load(base / text / f"hidden_layer{layer}_embeddings.npy")
+                rows.append(dict(model=disp, text=text, layer=layer, subset="rematch_train",
+                                 tokenizer=k, **layer_stats(x[idx])))
+        print(f"rematch {disp} ({k}): n = {len(li)}", flush=True)
+    pd.DataFrame(rows).to_csv(out_dir / "gen_rematch.csv", index=False, float_format="%.6g")
 
 
 # --------------------------------------------------------------------------- render
@@ -203,8 +271,8 @@ def write_gen_table(summ: pd.DataFrame, path: Path) -> None:
               r"top-PC share over the 12 layers, the share of centered variance on the first "
               r"principal component, with its layer $\ell$. The last three columns cover the layers "
               r"whose top-PC share is at least " + f"{COLLAPSE_PC1:.1f}" + r", the threshold that "
-              r"separates collapsed from healthy layers on the Latin testbed, and give the range of "
-              r"top-PC share and of entropy effective rank over them. No labels are used, so the "
+              r"marks every collapsed Latin layer (one false alarm, mT5-base layer~4), and give the "
+              r"range of top-PC share and of entropy effective rank over them. No labels are used, so the "
               r"English rows say nothing about retrieval.}",
               r"\label{tab:gen_geometry}", r"\end{table}"]
     path.write_text("\n".join(lines) + "\n")
@@ -227,7 +295,7 @@ def write_ft_table(ft: pd.DataFrame, path: Path) -> None:
               r"\caption{LaTa before (PT) and after (FT) contrastive fine-tuning on training pairs, "
               r"per layer, with no post-hoc correction. AUROC: Task~A test pairwise AUROC of cosine on "
               r"mean-pooled vectors. Top-PC share and effective rank: label-free geometry of the "
-              r"centered training vectors. Fine-tuning lifts the last layer and leaves the middle "
+              r"centered training vectors, which include the passages of the fine-tuning pairs. Fine-tuning lifts the last layer and leaves the middle "
               r"layers collapsed.}",
               r"\label{tab:ft_lata_layerwise}", r"\end{table}"]
     path.write_text("\n".join(lines) + "\n")
@@ -278,7 +346,36 @@ def fig_gen(geo: pd.DataFrame, out: Path, subset: str = "train") -> None:
     plt.close(fig)
 
 
-def facts(geo, summ, summ_all, rep, ft, path: Path) -> None:
+def rematch_summary(geo: pd.DataFrame, rem: pd.DataFrame) -> pd.DataFrame:
+    """Per model x text: re-matched n, max |change| of top-PC share and effective rank against
+    the primary train cells, whether the set of layers with share >= threshold is unchanged,
+    and in how many layers the Latin-minus-English sign of the share is unchanged."""
+    g = geo[geo.subset == "train"].set_index(["model", "text", "layer"]).sort_index()
+    r = rem.set_index(["model", "text", "layer"]).sort_index()
+    out = []
+    for _, disp, _, _ in GEN_MODELS:
+        if disp not in r.index.get_level_values(0):
+            continue
+        sign_same = 0
+        for layer in range(1, 13):
+            d0 = g.loc[(disp, "latin", layer), "pc1"] - g.loc[(disp, "english", layer), "pc1"]
+            d1 = r.loc[(disp, "latin", layer), "pc1"] - r.loc[(disp, "english", layer), "pc1"]
+            sign_same += int(np.sign(d0) == np.sign(d1))
+        for text, tdisp in TEXTS:
+            a = g.loc[(disp, text)].sort_index()
+            b = r.loc[(disp, text)].sort_index()
+            hi_a = a.index[a.pc1 >= COLLAPSE_PC1].tolist()
+            hi_b = b.index[b.pc1 >= COLLAPSE_PC1].tolist()
+            out.append(dict(model=disp, text=tdisp, tokenizer=b.tokenizer.iloc[0], n=int(b.n.iloc[0]),
+                            max_dpc1=float((b.pc1 - a.pc1).abs().max()),
+                            max_dpc1_high=float((b.pc1 - a.pc1).abs()[hi_a].max()) if hi_a else 0.0,
+                            max_derank_rel=float((b.erank / a.erank - 1).abs().max()),
+                            high_layers=_ranges(hi_b), same_high_layers=hi_a == hi_b,
+                            pc1_max=float(b.pc1.max()), sign_same_layers=sign_same))
+    return pd.DataFrame(out)
+
+
+def facts(geo, summ, summ_all, rep, ft, path: Path, rem: pd.DataFrame | None = None) -> None:
     L = ["# GEN and FT numbers (generated)", "",
          "Generated by `scripts/paper/reframe/gen_ft_geometry.py --stage render`. Geometry on the "
          "847-row subset (Latin training passages / their English partners) unless marked 'all'.", ""]
@@ -293,7 +390,7 @@ def facts(geo, summ, summ_all, rep, ft, path: Path) -> None:
               f"{x.erank_min:.2f} ({x.erank_min_layer}) | "
               f"{x.pc1_L1:.3f} | {x.pc1_L12:.3f} |")
         w("")
-    w("## Per layer (train subset): top-PC share / effective rank / mean pairwise cosine")
+    w("## Per layer (train subset): top-PC share / effective rank / mean pairwise cosine (all on train rows)")
     g = geo[geo.subset == "train"]
     for _, disp, _, _ in GEN_MODELS:
         for text, _ in TEXTS:
@@ -301,6 +398,19 @@ def facts(geo, summ, summ_all, rep, ft, path: Path) -> None:
             w(f"- {disp} {text}: " + "; ".join(
                 f"{int(x.layer)}: {x.pc1:.3f} / {x.erank:.2f} / {x.mean_cos:.3f}" for _, x in s.iterrows()))
     w("")
+    if rem is not None:
+        rs = rematch_summary(geo, rem)
+        w("## Sensitivity: train rows re-matched on each model's own tokenizer lengths")
+        w("Latin and English training rows re-paired greedily on the model's own token lengths "
+          "(clipped at 512, tolerance max(2, 3%)); geometry recomputed on the matched rows.")
+        w("| model | text | tokenizer | n | max abs change in PC1 vs primary | same, layers PC1>=0.6 only | max rel change in eff rank | layers PC1>=0.6 | same layers as primary | peak PC1 | layers with Latin-English sign unchanged |")
+        w("|---|---|---|---|---|---|---|---|---|---|---|")
+        for _, x in rs.iterrows():
+            w(f"| {x.model} | {x.text} | {x.tokenizer} | {x.n} | {x.max_dpc1:.3f} | {x.max_dpc1_high:.3f} | {x.max_derank_rel:.3f} | "
+              f"{x.high_layers.replace('--', '-')} | {x.same_high_layers} | {x.pc1_max:.3f} | {x.sign_same_layers}/12 |")
+        w(f"- overall max abs change in top-PC share: {rs.max_dpc1.max():.3f} (over layers with "
+          f"share >= {COLLAPSE_PC1}: {rs.max_dpc1_high.max():.3f})")
+        w("")
     if rep is not None:
         w("## Latin reproduction (mT5-base, PhilTa): new pipeline vs published geometry_per_layer.csv")
         w(f"- max |pc1_new - pc1_published| = {np.abs(rep.pc1_new - rep.pc1_published).max():.2e}")
@@ -340,6 +450,8 @@ def render(args) -> None:
     rep_p, ft_p = out_dir / "gen_repro.csv", out_dir / "ft_layerwise.csv"
     rep = pd.read_csv(rep_p) if rep_p.exists() else None
     ft = pd.read_csv(ft_p) if ft_p.exists() else None
+    rem_p = out_dir / "gen_rematch.csv"
+    rem = pd.read_csv(rem_p) if rem_p.exists() else None
     tab_dir, fig_dir = Path(args.tab_dir), Path(args.fig_dir)
     tab_dir.mkdir(parents=True, exist_ok=True)
     summ, summ_all = summarize(geo, "train"), summarize(geo, "all")
@@ -349,13 +461,13 @@ def render(args) -> None:
     if not args.no_figure:
         fig_dir.mkdir(parents=True, exist_ok=True)
         fig_gen(geo, fig_dir / "fig_gen_geometry")
-    facts(geo, summ, summ_all, rep, ft, out_dir / "gen_ft_facts.md")
+    facts(geo, summ, summ_all, rep, ft, out_dir / "gen_ft_facts.md", rem)
     print("rendered tables, figure and", out_dir / "gen_ft_facts.md")
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--stage", choices=["compute", "render", "all"], default="all")
+    ap.add_argument("--stage", choices=["compute", "rematch", "render", "all"], default="all")
     ap.add_argument("--runs_root", default="runs/active")
     ap.add_argument("--split_csv", default="runs/active/resubmit/data/phase_resubmit_split.csv")
     ap.add_argument("--out_dir", default=str(OUT_DIR))
@@ -365,6 +477,8 @@ def main() -> None:
     args = ap.parse_args()
     if args.stage in ("compute", "all"):
         compute(args)
+    if args.stage == "rematch":
+        rematch(args)
     if args.stage in ("render", "all"):
         render(args)
 
