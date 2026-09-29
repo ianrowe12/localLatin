@@ -126,7 +126,7 @@ Section~\ref{sec:repair} shows that this gain holds without any threshold and do
 This paper makes four contributions.
 (1)~We give the first per-layer retrieval profile of T5 encoder states in isolation that we know of: in our panel, T5 encoders collapse to or near chance at mid-depth. A $2 \times 2$ control crosses T5 pretraining with an embedding objective \pending{P2x2: raw encoder-only and embedding-trained T5 cells}.
 (2)~We compare anisotropy statistics with retrieval layer by layer. Top-PC share and effective rank separate collapsed from healthy layers, whereas mean pairwise cosine is lower at collapsed layers than at healthy ones. A train-only projection restores every layer, which shows that the signal was present in the layer but masked.
-(3)~We give a falsifiable test of the massive-coordinate account for mean-pooled passage retrieval (coordinate ablation, token audit, subspace split, and a $D$ ablation), and find that the nuisance spans two to five directions that carry little retrieval signal in the pre-trained models \pending{E1, E2: coordinate ablation and token audit result}.
+(3)~We give a falsifiable test of the massive-coordinate account for mean-pooled passage retrieval (coordinate ablation, token audit, subspace split, and a $D$ ablation), and find that the nuisance spans two to five directions, which rank below the retained directions in every pre-trained model \pending{E1, E2: coordinate ablation and token audit result}.
 (4)~We release the frozen testbed and split, the evaluation code, and lexical reference scores (Section~\ref{sec:testbed}).
 
 \input{related_work}
@@ -675,7 +675,7 @@ The analysis describes one failure precisely.
 In the middle layers of the T5 encoders in our panel, a low-dimensional subspace takes over the pooled vectors, and cosine ranking falls to or near chance.
 One direction holds most of its variance, but removing it alone restores only part of the ranking; removing two to five restores nearly all of it.
 Top-PC share separates these layers from healthy ones; mean pairwise cosine does not.
-In the pre-trained models the removed directions rank below the retained ones, so the projection discards little retrieval signal; after fine-tuning they carry more (E3).
+In the pre-trained models the removed directions rank below the retained ones, and at the selected layers below the next ten as well; after fine-tuning they rank above the next ten (E3).
 \pending{E1, E2: whether massive coordinates explain the subspace}.
 A projection fit on training vectors removes these few directions and restores ranking at every depth.
 Choosing among healthy layers still needs a train-only task signal.
@@ -757,7 +757,11 @@ Top-PC share and effective rank correlate with the ABTT gain across all 100 mode
 
 \paragraph{Geometry on English text.} Table~\ref{tab:gen_geometry} and Figure~\ref{fig:gen_geometry} give the label-free check of Section~\ref{sec:objective}. The English sample comes from the public-domain US court opinions of the Caselaw Access Project \citep{cap2024}, in the redistribution of the Common Pile \citep{kandpal2025commonpile}; every sampled document is marked public domain. Legal prose is the nearest openly licensed English register to canon law. Each non-empty Latin passage receives one English passage from a distinct opinion (the two empty Latin files receive an empty one): a run of whole words from a random sentence start in the body text, whose mT5 token count is within $\max(2, 3\%)$ tokens of the Latin passage's, and the English passage inherits its partner's split. The two texts then have the same mT5 length distribution (median 98 tokens). The match holds only under the mT5 tokenizer: under PhilTa's tokenizer the English passages are about 40 percent longer, and under T5-v1.1's English-only tokenizer the Latin passages are about 55 percent longer. Re-pairing the training passages on each model's own token lengths (653 to 847 pairs) moves top-PC share at the collapsed layers by about 0.01 to 0.02, depending on the matching rule, and leaves every cell collapsed on the same layers.
 
+% Generated single-column table wider than one column: set it at full width.
+\begingroup
+\renewenvironment{table}[1][t]{\begin{table*}[#1]}{\end{table*}}
 \input{tables/gen_geometry}
+\endgroup
 
 \begin{figure*}[t]
 \centering
