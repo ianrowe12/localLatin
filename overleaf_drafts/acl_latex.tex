@@ -342,7 +342,7 @@ The lower block of Table~\ref{tab:geometry_correlations} adds no separate eviden
 ABTT lifts every layer into a narrow band (0.962 to 0.987), so its gain is nearly a constant minus the baseline, and the gain correlations mirror the baseline ones.
 The variance statistics thus separate the collapsed regime from the healthy one.
 They do not rank layers within a regime, and a high share alone does not guarantee collapse.
-This limit fits reports that geometry statistics predict task performance unreliably \citep{nastase2025geometry,kulkarni2026geometry,machina2024anisotropy}.
+This limit fits reports that geometric metrics do not reliably predict the downstream performance of language models \citep{kulkarni2026geometry} and that the cosine geometry of sentence embeddings does not predict their task performance \citep{nastase2025geometry}.
 
 \paragraph{The standardized gap.}
 The raw cosine gap, the margin a threshold works with, tracks retrieval even less well.
@@ -383,7 +383,7 @@ At mT5-base's collapsed layers the 5th percentile of test cosines lies between $
 At LaTa's collapsed layers the 5th percentile lies between $-0.50$ and $-0.26$, and the standard deviation reaches 0.63.
 Prior work already separates these two components.
 \citet{timkey2021rogue} distinguish a constant offset from a few high-variance dimensions that dominate cosine, and IsoScore \citep{rudman2022isoscore} shows that the mean cosine of random pairs mainly measures the offset.
-For final-layer embeddings, top-dimension variance share predicts cosine failure better than mean cosine \citep{parupudi2026anisotropy}, and effective rank predicts retrieval quality across many models \citep{rottach2025topology}.
+For final-layer embeddings, top-dimension variance share predicts cosine failure better than mean cosine \citep{parupudi2026anisotropy}, and effective rank is the most informative geometric predictor of retrieval quality across many models, though the prediction is moderate \citep{rottach2025topology}.
 Our contribution is the layerwise version of this comparison within one testbed, including raw T5 encoder states, where the low-rank regime coincides with chance retrieval.
 Section~\ref{sec:localizing} asks what produces that dominant direction.
 
@@ -575,7 +575,7 @@ Fine-tuning gives a first piece of evidence.
 Contrastive fine-tuning on 499 of the training pairs (Appendix~\ref{app:reference_systems}) raises LaTa's last layer from 0.938 to 0.984 AUROC (Table~\ref{tab:finetune_ceiling}).
 Its layers 2 to 11 still collapse, at AUROC 0.50 to 0.57.
 Supervision attached to the output thus leaves the intermediate layers unrepaired.
-A similar output-only effect is reported for a multilingual encoder, where sentence-level tuning removes an outlier dimension at the output but not at layer 8 \citep{haemmerl2023anisotropy}.
+A similar output-only pattern is reported for a multilingual encoder: after sentence-level tuning it has no large outlier dimension at the output layer, while the base model's top outlier persists, reduced, at layer 8 \citep{haemmerl2023anisotropy}.
 This result does not separate the two accounts: small-scale supervision at the output may leave intermediate layers untouched under either.
 Our fine-tuning runs at most eight epochs on 499 pairs, far less than the large-scale contrastive training behind Sentence-T5, so the raw encoder-only cell remains the test.
 
