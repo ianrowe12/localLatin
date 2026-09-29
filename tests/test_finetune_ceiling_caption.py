@@ -82,12 +82,23 @@ def build_facts(selection, ft_results=None, epoch_budget=8, dev_frac=0.25,
     ), pair_data, split
 
 
+def write_and_read(sections, out) -> str:
+    """Render the table plus its notes file, returned together.
+
+    Since the #239 review the run notes and the five-seed readout go to a
+    notes file, never into the table; the assertions on them read both."""
+    notes = out.with_suffix(".notes.txt")
+    ceiling.write_tex(sections, out, notes_path=notes)
+    tex = out.read_text(encoding="utf-8")
+    assert tex.rstrip().endswith(r"\end{table}"), "the shipped table carries no trailing notes"
+    return tex + ("\n" + notes.read_text(encoding="utf-8") if notes.exists() else "")
+
+
 def render(tmp_path, facts, display_name: str = "LaTa") -> str:
     out = tmp_path / "finetune_ceiling.tex"
-    ceiling.write_tex(
+    return write_and_read(
         [ceiling.CeilingSection(display_name, COMPARISON, facts)], out
     )
-    return out.read_text(encoding="utf-8")
 
 
 def unwrapped(tex: str) -> str:
@@ -205,14 +216,13 @@ def two_sections(tmp_path):
         display_name="Qwen3-0.6B",
     )
     out = tmp_path / "finetune_ceiling.tex"
-    ceiling.write_tex(
+    return write_and_read(
         [
             ceiling.CeilingSection("LaTa", COMPARISON, lata),
             ceiling.CeilingSection("Qwen3-0.6B", qwen_comparison(), qwen),
         ],
         out,
     )
-    return out.read_text(encoding="utf-8")
 
 
 def test_two_model_table_carries_both_models_rows(tmp_path):
@@ -294,7 +304,7 @@ def three_sections(tmp_path):
         display_name="KaLM-mini",
     )
     out = tmp_path / "finetune_ceiling.tex"
-    ceiling.write_tex(
+    return write_and_read(
         [
             ceiling.CeilingSection("LaTa", COMPARISON, lata),
             ceiling.CeilingSection("Qwen3-0.6B", qwen_comparison(), qwen),
@@ -302,7 +312,6 @@ def three_sections(tmp_path):
         ],
         out,
     )
-    return out.read_text(encoding="utf-8")
 
 
 def test_three_model_table_carries_every_models_rows(tmp_path):
@@ -378,3 +387,104 @@ def test_cells_are_plain_and_the_caption_points_at_the_selected_layers_table(tmp
     assert row == r"LaTa (fine-tuned) & 0.984 & 0.384 & 82.6 & 80.8 \\"
     caption = tex.split(r"\caption{", 1)[1]
     assert "The selected layers are listed in Table~\\ref{tab:selected_layers}." in caption
+
+
+# --- five-seed column and caption takeaway (#235 items 4 and 13) ------------
+
+
+def _four_row_comparison(name: str, ft_abtt_auc: float = 0.97) -> pd.DataFrame:
+    """The four rows a real ceiling run writes, in ``system_order``."""
+    rows = [
+        (f"{name} (pre-trained)", False, "baseline", 0.938, 1),
+        (f"{name} (pre-trained) + ABTT", False, "abtt_optimal", 0.971, 8),
+        (f"{name} (fine-tuned)", True, "baseline", 0.984, 12),
+        (f"{name} (fine-tuned) + ABTT", True, "abtt_optimal", ft_abtt_auc, 12),
+    ]
+    return pd.DataFrame([{
+        "system": system, "finetuned": ft, "method": method,
+        "taskA_layer": 12, "taskA_aucroc": auc, "taskA_cosine_gap": 0.4,
+        "taskB_layer": layer, "taskB_assignment_acc": 0.85, "taskB_dir_acc_at_1": 0.84,
+    } for system, ft, method, auc, layer in rows])
+
+
+def _mseed(model: str, ft_abtt_mean: float) -> pd.DataFrame:
+    return pd.DataFrame([
+        {"model": model, "method": "baseline", "layer": 1,
+         "dir_acc_at_1_mean": 0.731, "dir_acc_at_1_std": 0.010, "n_seeds": 5},
+        {"model": model, "method": "abtt_optimal", "layer": 8,
+         "dir_acc_at_1_mean": 0.877, "dir_acc_at_1_std": 0.004, "n_seeds": 5},
+        {"model": model + "-ft", "method": "baseline", "layer": 12,
+         "dir_acc_at_1_mean": 0.834, "dir_acc_at_1_std": 0.009, "n_seeds": 5},
+        {"model": model + "-ft", "method": "abtt_optimal", "layer": 12,
+         "dir_acc_at_1_mean": ft_abtt_mean, "dir_acc_at_1_std": 0.008, "n_seeds": 5},
+    ])
+
+
+def _render_seeded(tmp_path, sections) -> str:
+    out = tmp_path / "finetune_ceiling.tex"
+    ceiling.write_tex(sections, out)
+    return out.read_text(encoding="utf-8")
+
+
+def test_five_seed_values_are_printed_cells_not_comments(tmp_path):
+    tex = _render_seeded(tmp_path, [
+        ceiling.CeilingSection("LaTa", _four_row_comparison("LaTa"), None,
+                               _mseed("bowphs/LaTa", 0.8766)),
+    ])
+    assert r"\begin{tabular}{lccccc}" in tex
+    row = next(l for l in tex.splitlines() if l.startswith("LaTa (fine-tuned) + ABTT &"))
+    assert row.endswith(r"& 87.7 $\pm$ 0.8 \\")
+    row = next(l for l in tex.splitlines() if l.startswith("LaTa (pre-trained) &"))
+    assert row.endswith(r"& 73.1 $\pm$ 1.0 \\")
+    assert "over five random reassignments of query and reference files" in tex
+
+
+def test_no_five_seed_column_without_every_sections_run(tmp_path):
+    tex = _render_seeded(tmp_path, [
+        ceiling.CeilingSection("LaTa", _four_row_comparison("LaTa"), None,
+                               _mseed("bowphs/LaTa", 0.8766)),
+        ceiling.CeilingSection("Qwen3-0.6B", _four_row_comparison("Qwen3-0.6B"), None, None),
+    ])
+    assert r"\begin{tabular}{lcccc}" in tex
+    assert "5 seeds" not in tex
+
+
+def test_takeaway_gives_each_model_its_own_five_seed_verdict(tmp_path):
+    tex = _render_seeded(tmp_path, [
+        ceiling.CeilingSection("LaTa", _four_row_comparison("LaTa"), None,
+                               _mseed("bowphs/LaTa", 0.8766)),
+        ceiling.CeilingSection("Qwen3-0.6B", _four_row_comparison("Qwen3-0.6B"), None,
+                               _mseed("Qwen/Qwen3-Embedding-0.6B", 0.923)),
+    ])
+    assert (
+        "Fine-tuning raises Task A AUROC for every model, and ABTT on top of it "
+        "lowers AUROC again; on five-seed routing, the fine-tuned encoder with ABTT "
+        "is level with its pre-trained ABTT row for LaTa and above it for Qwen3-0.6B."
+    ) in tex
+
+
+def test_takeaway_drops_the_abtt_clause_when_abtt_helps_a_fine_tuned_row(tmp_path):
+    tex = _render_seeded(tmp_path, [
+        ceiling.CeilingSection("LaTa", _four_row_comparison("LaTa", ft_abtt_auc=0.99),
+                               None, None),
+    ])
+    assert "Fine-tuning raises Task A AUROC for the model." in tex
+    assert "lowers AUROC again" not in tex
+
+
+def test_bare_rebuild_reproduces_the_committed_table(tmp_path, monkeypatch):
+    import rebuild_finetune_ceiling_tex as rebuild
+
+    for spec in rebuild.DEFAULT_RUNS:
+        _, prefix, out_dir = spec.split(":")
+        for path in (REPO_ROOT / out_dir / "run_info.json",
+                     REPO_ROOT / "runs/active/resubmit/results/finetune"
+                     / f"{prefix}_ceiling_comparison.csv"):
+            if not path.exists():
+                pytest.skip(f"ceiling run input not present at {path}")
+    monkeypatch.chdir(REPO_ROOT)
+    monkeypatch.setattr(sys, "argv", ["rebuild_finetune_ceiling_tex.py",
+                                      "--tex_out", str(tmp_path / "ft.tex")])
+    rebuild.main()
+    committed = REPO_ROOT / "overleaf_drafts" / "tables" / "finetune_ceiling.tex"
+    assert (tmp_path / "ft.tex").read_bytes() == committed.read_bytes()

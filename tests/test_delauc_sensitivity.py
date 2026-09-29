@@ -301,11 +301,24 @@ PAPER_TEX = REPO_ROOT / "overleaf_drafts" / "acl_latex.tex"
     not PAPER_TEX.exists(),
     reason="ci.yml sparse-checkouts without overleaf_drafts/",
 )
-def test_paper_does_not_input_the_table_yet():
-    """Issue #195 is an analysis. Whether the appendix carries this table is a
-    separate decision, so the generated file must stay unwired until it is
-    taken."""
-    assert "attribution_delauc_sensitivity" not in PAPER_TEX.read_text()
+def test_paper_inputs_the_table_in_the_sweeps_appendix():
+    """Issue #195 computed the table; issue #235 took the decision to print it,
+    in Appendix app:attribution_sweeps beside the erasure-operator caveat."""
+    tex = PAPER_TEX.read_text()
+    assert r"\input{tables/attribution_delauc_sensitivity}" in tex
+    sweeps = tex.index(r"\label{app:attribution_sweeps}")
+    nxt = tex.index(r"\section", sweeps)
+    assert sweeps < tex.index(r"\input{tables/attribution_delauc_sensitivity}") < nxt
+
+
+def test_generated_table_names_no_repository_path():
+    table = REPO_ROOT / "overleaf_drafts" / "tables" / "attribution_delauc_sensitivity.tex"
+    if not table.exists():
+        pytest.skip("overleaf_drafts/ not checked out")
+    text = table.read_text()
+    assert text.splitlines()[0] == "% generated table"
+    for leak in ("scripts/", "runs/", "docs/"):
+        assert leak not in text, leak
 
 
 @pytest.mark.parametrize("value,expected", [

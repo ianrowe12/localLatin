@@ -39,6 +39,9 @@ import pandas as pd
 import matplotlib
 
 matplotlib.use("Agg")
+# Type 42 (TrueType) fonts in the PDF, never Type 3 (issue #235 item 7).
+matplotlib.rcParams["pdf.fonttype"] = 42
+matplotlib.rcParams["ps.fonttype"] = 42
 import matplotlib.pyplot as plt
 from matplotlib import cm, colors
 from matplotlib.patches import Rectangle
@@ -356,8 +359,12 @@ def render_grid(
 ) -> None:
     n_rows = len(model_order)
     n_cols = len(methods)
+    # The paper prints the two-column grids at the full text width (about
+    # 6.3 in), so a panel is drawn about 3.1 in wide and every label is at
+    # least 8 pt on the page (issue #235 items 7 and 12). The panels are a
+    # little wider than tall, which keeps a three-model figure within a page.
     fig, axes = plt.subplots(
-        n_rows, n_cols, figsize=(3.2 * n_cols, 3.0 * n_rows), squeeze=False
+        n_rows, n_cols, figsize=(3.1 * n_cols, 1.95 * n_rows), squeeze=False
     )
 
     # High-contrast palette for the highlighted folders, up to 12 slots; we
@@ -427,15 +434,15 @@ def render_grid(
                 spine.set_color("#333333")
 
             if r == 0:
-                ax.set_title(METHOD_DISPLAY.get(method, method), fontsize=13)
+                ax.set_title(METHOD_DISPLAY.get(method, method), fontsize=10)
 
             if c == 0:
                 ax.set_ylabel(
                     f"{model_name}",
-                    fontsize=13,
+                    fontsize=10,
                     fontweight="bold",
                     rotation=90,
-                    labelpad=6,
+                    labelpad=4,
                 )
                 layer_id = best_layers.get(model_name)
                 if layer_id is not None:
@@ -444,17 +451,13 @@ def render_grid(
                         0.02,
                         f"L={layer_id}",
                         transform=ax.transAxes,
-                        fontsize=9,
+                        fontsize=8.5,
                         color="#444444",
                         ha="left",
                         va="bottom",
                     )
 
-    fig.suptitle(
-        f"2D {proj_name.upper()} of labelled fragments at each model's train-selected layer",
-        fontsize=14,
-        y=0.995,
-    )
+    # No suptitle: it repeated the caption (issue #235 item 12).
 
     # Legend for highlighted directories (placed at bottom center).
     if n_highlight and highlight_labels:
@@ -464,26 +467,32 @@ def render_grid(
             Line2D(
                 [0], [0], marker="o", color="w",
                 markerfacecolor=palette[i], markeredgecolor="black",
-                markeredgewidth=0.5, markersize=9,
+                markeredgewidth=0.5, markersize=7,
                 label=highlight_labels[i],
             )
             for i in range(min(n_highlight, len(highlight_labels)))
         ]
+        # Three columns: six labels in one row were wider than the panels
+        # and widened the whole figure.
         fig.legend(
             handles=handles,
             loc="lower center",
-            ncol=min(n_highlight, 6),
-            bbox_to_anchor=(0.5, -0.015),
+            ncol=min(n_highlight, 3),
+            bbox_to_anchor=(0.5, 0.0),
             frameon=False,
-            fontsize=10,
+            fontsize=9,
+            handletextpad=0.3,
+            columnspacing=1.2,
         )
-        fig.tight_layout(rect=(0.0, 0.04, 1.0, 0.98))
+        n_legend_rows = int(np.ceil(min(n_highlight, len(highlight_labels)) / 3))
+        bottom = 0.045 * n_legend_rows * 3 / max(n_rows, 1) + 0.01
+        fig.tight_layout(rect=(0.0, bottom, 1.0, 1.0), h_pad=0.4, w_pad=0.4)
     else:
-        fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.98))
+        fig.tight_layout(rect=(0.0, 0.0, 1.0, 1.0))
 
     figures_dir.mkdir(parents=True, exist_ok=True)
     fig.savefig(figures_dir / f"{stem}.png", dpi=180, bbox_inches="tight")
-    fig.savefig(figures_dir / f"{stem}.pdf", bbox_inches="tight")
+    fig.savefig(figures_dir / f"{stem}.pdf", bbox_inches="tight", metadata={"CreationDate": None})
     plt.close(fig)
 
 

@@ -135,10 +135,12 @@ def _shuffle_gap_col(metric_key: str, stat: str) -> str:
 
 # Overleaf receives these files, so the header says nothing about the repo.
 HEADER = "% generated table"
+# No issue numbers here: the submission sources must not point at the
+# repository's tracker (#239 review). The selection memo is issue #120 and the
+# re-sample issue #187; see the module docstring.
 REGEN_NOTE = (
-    "% Selection and wording follow the part B memo behind issue #120; the numbers "
-    "come from the\n% run stamped above (issue #187 re-sample). Regenerate from "
-    "that summary rather than\n% editing the numbers here."
+    "% The numbers come from the run stamped above. Regenerate from that summary "
+    "rather than\n% editing the numbers here."
 )
 
 
@@ -497,19 +499,22 @@ def secondary_caption(summary: pd.DataFrame) -> str:
         r"layers and the same erasure operator as "
         r"Table~\ref{tab:attribution_metrics_main}. Boldface marks the better "
         r"variant within a pair; higher is better everywhere except MinFrac. "
-        r"None of these columns is in the main table, and each is out for its "
+        r"None of these columns is in Table~\ref{tab:attribution_metrics_main}, "
+        r"and each is out for its "
         r"own reason. Kendall $\tau_b$ agrees with $\rho_{\text{LOO}}$ in "
         rf"{tau_wins}/6 cells, but it is the tie-corrected twin of the same "
         r"statistic rather than a second witness. Chance-corrected insertion "
         rf"faithfulness favours ABTT in {ins_wins}/6 cells, and we do not "
-        rf"report it in the main table because {fail_clause} the real "
+        r"report it in Table~\ref{tab:attribution_metrics_main} "
+        rf"because {fail_clause} the real "
         r"attribution does not beat a "
         r"permutation of its own scores "
         r"(Table~\ref{tab:attribution_shuffle_control}), so the measurement "
         r"does not meet the validity bar we set for a headline column. The threshold-based "
         r"ERASER metrics are reported for completeness: their "
         r"baseline-versus-ABTT verdict depends on the threshold and on the "
-        r"erasure operator, which is why the main table uses threshold-free, "
+        r"erasure operator, which is why Table~\ref{tab:attribution_metrics_main} "
+        r"uses threshold-free, "
         r"chance-corrected metrics instead. The InsAUC columns average "
         rf"{_count_phrase(lo_n, hi_n)} ABTT pairs against the baseline's "
         rf"{_count_phrase(base_lo, base_hi)}, for the "
@@ -789,6 +794,18 @@ def rho_figure_caption(summary: pd.DataFrame,
 def render_rho_figure(summary: pd.DataFrame, out_base: Path,
                       pairs_root: Optional[Path] = None) -> None:
     import matplotlib.pyplot as plt
+
+    # Style and TrueType fonts (issue #235 item 7) are scoped to this figure:
+    # a global plt.style.use leaked into every later figure in the process and
+    # broke another generator's byte-identity test when both ran together.
+    with plt.style.context("seaborn-v0_8-paper"), \
+            plt.rc_context({"pdf.fonttype": 42, "ps.fonttype": 42}):
+        _draw_rho_figure(summary, out_base, pairs_root)
+
+
+def _draw_rho_figure(summary: pd.DataFrame, out_base: Path,
+                     pairs_root: Optional[Path] = None) -> None:
+    import matplotlib.pyplot as plt
     from matplotlib.lines import Line2D
 
     rows: list[dict[str, object]] = []
@@ -803,8 +820,9 @@ def render_rho_figure(summary: pd.DataFrame, out_base: Path,
                 }
             )
 
-    plt.style.use("seaborn-v0_8-paper")
-    fig, ax = plt.subplots(figsize=(3.45, 3.0))
+    # Printed at \linewidth (about 3.0 in), so the figure is drawn at that
+    # width and every label is at least 8 pt on the page.
+    fig, ax = plt.subplots(figsize=(3.0, 2.9))
     y = np.arange(len(rows))[::-1]
     colors = {"ig": "#0072B2", "retrieval_mark": "#D55E00"}
 
@@ -818,9 +836,11 @@ def render_rho_figure(summary: pd.DataFrame, out_base: Path,
 
     ax.axvline(0, color="0.35", linewidth=0.8, linestyle="--")
     ax.set_yticks(y)
-    ax.set_yticklabels([str(row["label"]) for row in rows], fontsize=8)
+    ax.set_yticklabels([str(row["label"]) for row in rows], fontsize=8.5)
+    ax.tick_params(axis="x", labelsize=8.5)
     ax.set_xlabel(r"$\rho_{\mathrm{LOO}}$ (higher is better)", fontsize=9)
-    ax.set_xlim(-0.08, 0.68)
+    # 0.74, not 0.68: the largest cell (mT5-base IG with ABTT, 0.686) was clipped.
+    ax.set_xlim(-0.08, 0.74)
     ax.grid(axis="x", color="0.86", linewidth=0.7)
     ax.grid(axis="y", visible=False)
     ax.spines["top"].set_visible(False)
@@ -854,7 +874,7 @@ def render_rho_figure(summary: pd.DataFrame, out_base: Path,
         bbox_to_anchor=(0.5, 1.01),
         ncol=2,
         frameon=False,
-        fontsize=8,
+        fontsize=8.5,
         handletextpad=0.4,
         columnspacing=1.2,
     )

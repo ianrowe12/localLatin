@@ -22,11 +22,16 @@ ceiling, LaTa, Qwen3-0.6B and KaLM-mini (issue #208: a bare run must reproduce
 the committed tables; issue #210: it must also carry every model that was run).
 A fine-tuned row fills only the Base and ABTT columns.
 
-The three lexical baselines (BM25, character 3-5-gram TF-IDF, Levenshtein)
-left the paper by decision (issue #197, 2026-09-15) and are rebuttal material.
-Passing ``--lexical_csv`` adds them back as rows that span their metric block
-and adds their caption clauses; without it the tables carry no lexical row and
-no lexical sentence.
+Lexical reference rows. Issue #197 (2026-09-15) took the three lexical
+baselines (BM25, character 3-5-gram TF-IDF, Levenshtein) out of the paper; the
+analysis reframe (issue #235) reverses that for the one the paper quotes, the
+character 3-5-gram TF-IDF reference, which ties the best encoder on Task A.
+The lexical CSV (``--lexical_csv``, default the committed results path) adds
+one row per ``--lexical_system`` (default: the TF-IDF reference alone) spanning
+its metric block, plus the caption clauses, so a bare run reproduces the
+committed tables (issue #208). ``--no_lexical`` builds the tables without any
+lexical row or sentence. The CSV is gitignored: a run without it stops and
+says so rather than silently dropping the row.
 
 ``--finetune_csv`` is repeatable (issue #194): one ceiling per model, one row
 per ceiling, and every caption claim about a ceiling is derived from that
@@ -38,8 +43,11 @@ the defaults, so a one-model table is still one ``--finetune_csv``.
     python scripts/resubmit/build_headline_tables.py \
         --finetune_csv .../finetune_lata_ceiling_comparison.csv \
         --finetune_run_info .../finetune/run_info.json
+    # all three lexical rows (rebuttal variant); or none at all
     python scripts/resubmit/build_headline_tables.py \
-        --lexical_csv runs/active/resubmit/results/lexical_baselines.csv
+        --lexical_system "BM25 (word)" --lexical_system "TF-IDF char 3-5" \
+        --lexical_system Levenshtein
+    python scripts/resubmit/build_headline_tables.py --no_lexical
 """
 from __future__ import annotations
 
@@ -78,6 +86,10 @@ LEXICAL_SYSTEMS: List[Tuple[str, str]] = [
     ("TF-IDF char 3-5", "TF-IDF char 3--5"),
     ("Levenshtein", "Levenshtein"),
 ]
+# The paper prints only the reference it quotes (issue #235); the other two
+# stay in the appendix table ``tab:lexical_baselines``.
+TFIDF_KEY = "TF-IDF char 3-5"
+DEFAULT_LEXICAL_SYSTEMS: List[str] = [TFIDF_KEY]
 
 # Each fine-tuning ceiling was run with a baseline and an ABTT variant and
 # nothing else, so a model's two CSV rows collapse into one table row that fills
@@ -117,6 +129,7 @@ def _and_list(parts: Sequence[str]) -> str:
 
 
 DEFAULT_RESULTS_CSV = "runs/active/resubmit/results/phase_resubmit_results.csv"
+DEFAULT_LEXICAL_CSV = "runs/active/resubmit/results/lexical_baselines.csv"
 
 # The committed reference block, in row order: LaTa, Qwen3-0.6B, KaLM-mini.
 # Every ceiling that was run is a default (issue #210): the paper reports all of
@@ -142,11 +155,25 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--results_csv", default=DEFAULT_RESULTS_CSV)
     p.add_argument(
         "--lexical_csv",
-        default=None,
+        default=DEFAULT_LEXICAL_CSV,
         help=(
-            "Opt-in: the lexical baselines CSV (BM25, TF-IDF char 3-5, "
-            "Levenshtein). Off by default since issue #197 removed the lexical "
-            "rows from the paper; pass it only to rebuild the rebuttal variant."
+            "The lexical baselines CSV (BM25, TF-IDF char 3-5, Levenshtein). "
+            "The paper's tables print its TF-IDF row (issue #235)."
+        ),
+    )
+    p.add_argument(
+        "--no_lexical",
+        action="store_true",
+        help="Build the tables with no lexical row and no lexical sentence.",
+    )
+    p.add_argument(
+        "--lexical_system",
+        action="append",
+        default=None,
+        choices=[key for key, _ in LEXICAL_SYSTEMS],
+        help=(
+            "Lexical row to print with --lexical_csv. Repeat for several; "
+            "default: the TF-IDF char 3-5 reference the paper quotes."
         ),
     )
     p.add_argument(
@@ -282,6 +309,7 @@ def reference_rows(
     finetune_right_col: str,
     fmt: str,
     scale: float,
+    lexical_systems: Sequence[str] = tuple(DEFAULT_LEXICAL_SYSTEMS),
 ) -> List[str]:
     """The reference block printed under the six model rows.
 
@@ -310,6 +338,8 @@ def reference_rows(
         return lines
 
     for key, display in LEXICAL_SYSTEMS:
+        if key not in lexical_systems:
+            continue
         rows = lexical[lexical["model"] == key]
         if rows.empty:
             raise SystemExit(f"no {key!r} row in the lexical baselines CSV")
@@ -499,11 +529,24 @@ def finetune_pairs_clause(facts: Sequence[Optional[dict]]) -> str:
     )
 
 
+def lexical_rows_phrase(lexical_systems: Sequence[str]) -> str:
+    """How the caption names the lexical rows it prints."""
+    systems = list(lexical_systems)
+    if systems == [TFIDF_KEY]:
+        return (
+            "the character 3--5-gram TF-IDF reference (TF-IDF char 3--5), "
+            "fitted on train files"
+        )
+    words = {1: "one", 2: "two", 3: "three"}
+    return f"{words.get(len(systems), len(systems))} lexical baselines fitted on train files"
+
+
 def reference_caption(
     comparison: str,
     facts: Sequence[Optional[dict]] = (),
     with_lexical: bool = False,
     model_names: Sequence[str] = ("LaTa",),
+    lexical_systems: Sequence[str] = tuple(DEFAULT_LEXICAL_SYSTEMS),
 ) -> str:
     """The sentences that explain the reference block.
 
@@ -539,12 +582,15 @@ def reference_caption(
         " Below the rule, reference systems on the same split with the same "
         "evaluation code: " + names + " fine-tuned contrastively on "
         + finetune_pairs_clause(facts)
-        + ", a ceiling at this training budget, and three lexical baselines "
-        "fitted on train files (both setups: Appendix~\\ref{app:reference_systems}). "
+        + ", a ceiling at this training budget, and "
+        + lexical_rows_phrase(lexical_systems)
+        + " (both setups: Appendix~\\ref{app:reference_systems}). "
         + comparison
-        + " Surface overlap is the practitioner's operating point on this "
-        "corpus, and the embedding rows diagnose representation geometry "
-        "rather than beat it."
+        # The fine-tuned rows in the same table can exceed the lexical row,
+        # so the closing sentence speaks about the zero-shot rows only, and
+        # never implies that any embedding row beats surface overlap (#235).
+        + " The zero-shot rows diagnose where the retrieval signal sits inside "
+        "encoders; they are not offered as retrievers that beat surface overlap."
     )
 
 
@@ -617,7 +663,8 @@ def task_a_comparison(
     tfidf = _lexical_value(lexical, "TF-IDF char 3-5", "aucroc")
     return (
         f"TF-IDF char 3--5 is {level_word(tfidf - abtt_best, 0.001)} the best "
-        f"ABTT AUROC ({tfidf:.3f} against {abtt_best:.3f}), and " + finetune_clause
+        f"zero-shot ABTT AUROC ({tfidf:.3f} against {abtt_best:.3f}), and "
+        + finetune_clause
     )
 
 
@@ -680,9 +727,13 @@ def task_b_comparison(
         return finetune_clause[0].upper() + finetune_clause[1:]
     tf_assign = 100.0 * _lexical_value(lexical, "TF-IDF char 3-5", "overall_assignment_acc")
     tf_dir1 = 100.0 * _lexical_value(lexical, "TF-IDF char 3-5", "dir_acc_at_1")
+    # "level with" inside the seed spread. The directory-level bootstrap of
+    # issue #233 agrees: TF-IDF minus the best zero-shot ABTT cell is +0.5
+    # DirAcc@1 with a 95% interval of -1.7 to 1.6, so it is statistically level.
+    standing = level_word(tf_assign - assign.max(), 1.0)
     return (
-        f"TF-IDF char 3--5 is {level_word(tf_assign - assign.max(), 1.0)} the "
-        f"best ABTT cell ({tf_assign:.1f} against {assign.max():.1f} assignment "
+        f"TF-IDF char 3--5 is {standing} the "
+        f"best zero-shot ABTT cell ({tf_assign:.1f} against {assign.max():.1f} assignment "
         f"accuracy, {tf_dir1:.1f} against {dir1.max():.1f} directory accuracy at "
         f"rank 1), and " + finetune_clause
     )
@@ -693,6 +744,7 @@ def task_a_caption(
     lexical: Optional[pd.DataFrame],
     finetune: pd.DataFrame,
     facts: Sequence[Optional[dict]] = (),
+    lexical_systems: Sequence[str] = tuple(DEFAULT_LEXICAL_SYSTEMS),
 ) -> str:
     base = best[best["_method"] == "baseline"]["aucroc"]
     abtt = best[best["_method"] == "abtt_optimal"]["aucroc"]
@@ -703,7 +755,7 @@ def task_a_caption(
         "ABTT uses $D$ tuned on train. Baseline AUROC spans "
         f"{base.min():.3f} to {base.max():.3f}, and ABTT lifts every model into a "
         f"{abtt.min():.3f} to {abtt.max():.3f} band. Cosine gap is defined in "
-        "Figure~\\ref{fig:gap}. Per-layer "
+        "Section~\\ref{sec:tasks}. Per-layer "
         "grids: Appendix Tables~\\ref{tab:taskA_main}, \\ref{tab:taskA_appendix}, "
         "and~\\ref{tab:taskA_appendix_sif}."
         + reference_caption(
@@ -711,7 +763,24 @@ def task_a_caption(
             facts,
             with_lexical=lexical is not None,
             model_names=[short_name(l) for l in finetune_labels(finetune)],
+            lexical_systems=lexical_systems,
         )
+    )
+
+
+def task_b_takeaway(best: pd.DataFrame) -> str:
+    """The caption's one-sentence result (issue #235 item 13), read off the
+    cells: how far ABTT narrows the cross-model spread of directory accuracy
+    at rank 1. Spreads come from the printed (rounded) cells, so the sentence
+    cannot disagree with the table in the last digit."""
+    base = 100.0 * best[best["_method"] == "baseline"]["dir_acc_at_1"]
+    abtt = 100.0 * best[best["_method"] == "abtt_optimal"]["dir_acc_at_1"]
+    b_lo, b_hi = round(float(base.min()), 1), round(float(base.max()), 1)
+    a_lo, a_hi = round(float(abtt.min()), 1), round(float(abtt.max()), 1)
+    return (
+        f" Baseline directory accuracy at rank 1 spans {b_lo:.1f} to {b_hi:.1f} "
+        f"across models ({b_hi - b_lo:.1f} points), and ABTT narrows it to "
+        f"{a_lo:.1f} to {a_hi:.1f} ({a_hi - a_lo:.1f} points)."
     )
 
 
@@ -721,12 +790,15 @@ def task_b_caption(
     lexical: Optional[pd.DataFrame],
     finetune: pd.DataFrame,
     facts: Sequence[Optional[dict]] = (),
+    lexical_systems: Sequence[str] = tuple(DEFAULT_LEXICAL_SYSTEMS),
 ) -> str:
     row = results.iloc[0]
     prior = 100.0 * float(row["n_existing"]) / float(row["n_test"])
     return (
         "Task B autonomous routing for all six models under four post-processing "
-        "settings, in percent. Each cell is a test-set score at the layer chosen "
+        "settings, in percent."
+        + task_b_takeaway(best)
+        + " Each cell is a test-set score at the layer chosen "
         "by training-set directory accuracy at rank 1, listed in "
         "Table~\\ref{tab:selected_layers}. "
         "Assignment accuracy scores the existing-versus-new decision alone, "
@@ -742,6 +814,7 @@ def task_b_caption(
             facts,
             with_lexical=lexical is not None,
             model_names=[short_name(l) for l in finetune_labels(finetune)],
+            lexical_systems=lexical_systems,
         )
     )
 
@@ -749,7 +822,16 @@ def task_b_caption(
 def main() -> None:
     args = parse_args()
     results = pd.read_csv(args.results_csv)
-    lexical = pd.read_csv(args.lexical_csv) if args.lexical_csv else None
+    lexical = None
+    if not args.no_lexical:
+        if not Path(args.lexical_csv).exists():
+            raise SystemExit(
+                f"no lexical baselines CSV at {args.lexical_csv}; the paper's "
+                "tables print its TF-IDF row. Pass --lexical_csv, or --no_lexical "
+                "to build the tables without it."
+            )
+        lexical = pd.read_csv(args.lexical_csv)
+    lexical_systems = args.lexical_system or list(DEFAULT_LEXICAL_SYSTEMS)
     finetune_csvs = args.finetune_csv or DEFAULT_FINETUNE_CSVS
     finetune = pd.concat(
         [pd.read_csv(path) for path in finetune_csvs], ignore_index=True
@@ -770,7 +852,7 @@ def main() -> None:
         right_col="gap",
         fmt=".3f",
         scale=1.0,
-        caption=task_a_caption(best_a, lexical, finetune, facts),
+        caption=task_a_caption(best_a, lexical, finetune, facts, lexical_systems),
         label="tab:taskA_headline",
         reference_lines=reference_rows(
             lexical,
@@ -781,6 +863,7 @@ def main() -> None:
             finetune_right_col="taskA_cosine_gap",
             fmt=".3f",
             scale=1.0,
+            lexical_systems=lexical_systems,
         ),
     )
     (out_dir / "taskA_headline.tex").write_text(task_a)
@@ -795,7 +878,9 @@ def main() -> None:
         right_col="dir_acc_at_1",
         fmt=".1f",
         scale=100.0,
-        caption=task_b_caption(results, best_b, lexical, finetune, facts),
+        caption=task_b_caption(
+            results, best_b, lexical, finetune, facts, lexical_systems
+        ),
         label="tab:taskB_headline",
         reference_lines=reference_rows(
             lexical,
@@ -806,6 +891,7 @@ def main() -> None:
             finetune_right_col="taskB_dir_acc_at_1",
             fmt=".1f",
             scale=100.0,
+            lexical_systems=lexical_systems,
         ),
     )
     (out_dir / "taskB_headline.tex").write_text(task_b)

@@ -996,21 +996,117 @@ class CeilingSection:
     mseed_agg: Optional[pd.DataFrame] = None
 
 
-def _row_tex(row: pd.Series) -> str:
+def mseed_for_row(row: pd.Series, mseed_agg: Optional[pd.DataFrame]) -> Optional[Tuple[float, float]]:
+    """Five-seed Task B directory accuracy at rank 1 (mean, std) behind one row.
+
+    The ``mseed`` stage scores each comparison row at its own Task B layer and
+    method, with the fine-tuned encoder labelled ``<model>-ft``; this finds that
+    configuration again. None when the row was not run.
+    """
+    if mseed_agg is None or mseed_agg.empty:
+        return None
+    finetuned = bool(row["finetuned"]) if "finetuned" in row else False
+    hit = mseed_agg[
+        (mseed_agg["model"].astype(str).str.endswith("-ft") == finetuned)
+        & (mseed_agg["method"] == row["method"])
+        & (mseed_agg["layer"].astype(int) == int(row["taskB_layer"]))
+    ]
+    if len(hit) != 1:
+        return None
+    return float(hit.iloc[0]["dir_acc_at_1_mean"]), float(hit.iloc[0]["dir_acc_at_1_std"])
+
+
+def _row_tex(row: pd.Series, mseed: Optional[Tuple[float, float]] = None,
+             with_mseed: bool = False) -> str:
     """One plain-number row. The train-selected layers behind the cells
     (``taskA_layer``, ``taskB_layer``) are not printed here: since issue #219
     they live in the appendix table ``tab:selected_layers`` that
-    ``build_headline_tables.py`` builds from the same comparison CSV."""
+    ``build_headline_tables.py`` builds from the same comparison CSV.
+
+    With ``with_mseed`` the row ends in the five-seed directory accuracy at
+    rank 1 (issue #235): the values the paper quotes used to exist only in the
+    trailing comments of this file."""
     def fmt(x: float, nd: int = 3) -> str:
         return f"{x:.{nd}f}"
 
     name = str(row["system"]).replace("_", r"\_")
-    return (
+    cells = (
         f"{name} & {fmt(row['taskA_aucroc'])} "
         f"& {fmt(row['taskA_cosine_gap'])} "
         f"& {fmt(100 * row['taskB_assignment_acc'], 1)} "
-        f"& {fmt(100 * row['taskB_dir_acc_at_1'], 1)} \\\\"
+        f"& {fmt(100 * row['taskB_dir_acc_at_1'], 1)}"
     )
+    if with_mseed:
+        cells += (
+            " & --" if mseed is None
+            else f" & {100 * mseed[0]:.1f} $\\pm$ {100 * mseed[1]:.1f}"
+        )
+    return cells + " \\\\"
+
+
+def _level(diff: float, tol: float) -> str:
+    if abs(diff) <= tol:
+        return "level with"
+    return "above" if diff > 0 else "below"
+
+
+def takeaway_sentence(sections: Sequence["CeilingSection"]) -> str:
+    """The caption's one-sentence result (issue #235 item 13), read off the rows.
+
+    Each section's comparison CSV holds, in order, the pre-trained row, the
+    pre-trained + ABTT row, the fine-tuned row and the fine-tuned + ABTT row
+    (``system_order``). The sentence states what fine-tuning does to Task A
+    AUROC, what ABTT then does to it, and, when every section has its five-seed
+    run, where the fine-tuned ABTT row sits against the pre-trained ABTT row on
+    five-seed routing; a difference inside the larger of the two seed standard
+    deviations is 'level with'.
+    """
+    parts = []
+    raises, lowers = [], []
+    verdicts = []
+    for sec in sections:
+        comp = sec.comparison
+        pre = comp[~comp["finetuned"].astype(bool)]
+        ft = comp[comp["finetuned"].astype(bool)]
+        pre_base = pre[pre["method"] == "baseline"]
+        ft_base = ft[ft["method"] == "baseline"]
+        ft_abtt = ft[ft["method"] != "baseline"]
+        pre_abtt = pre[pre["method"] != "baseline"]
+        if not (len(pre_base) == len(ft_base) == len(ft_abtt) == len(pre_abtt) == 1):
+            return ""
+        raises.append(float(ft_base.iloc[0]["taskA_aucroc"]) > float(pre_base.iloc[0]["taskA_aucroc"]))
+        lowers.append(float(ft_abtt.iloc[0]["taskA_aucroc"]) < float(ft_base.iloc[0]["taskA_aucroc"]))
+        m_ft = mseed_for_row(ft_abtt.iloc[0], sec.mseed_agg)
+        m_pre = mseed_for_row(pre_abtt.iloc[0], sec.mseed_agg)
+        if m_ft is not None and m_pre is not None:
+            verdicts.append((sec.display_name,
+                             _level(m_ft[0] - m_pre[0], max(m_ft[1], m_pre[1]))))
+        else:
+            verdicts.append(None)
+    every = "every model" if len(sections) > 1 else "the model"
+    if all(raises):
+        parts.append(f"Fine-tuning raises Task A AUROC for {every}")
+        if all(lowers):
+            parts[-1] += ", and ABTT on top of it lowers AUROC again"
+    elif all(lowers):
+        parts.append(f"ABTT lowers the Task A AUROC of the fine-tuned encoder for {every}")
+    if all(v is not None for v in verdicts):
+        groups: Dict[str, List[str]] = {}
+        for name, word in verdicts:
+            groups.setdefault(word, []).append(name or "this model")
+        clauses = []
+        for i, (word, names) in enumerate(groups.items()):
+            who = names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+            target = "its pre-trained ABTT row" if i == 0 else "it"
+            clauses.append(f"{word} {target} for {who}")
+        parts.append(
+            "on five-seed routing, the fine-tuned encoder with ABTT is "
+            + " and ".join(clauses)
+        )
+    if not parts:
+        return ""
+    sentence = "; ".join(parts)
+    return " " + sentence[0].upper() + sentence[1:] + "."
 
 
 def _pairs_clause(sections: Sequence[CeilingSection]) -> str:
@@ -1065,7 +1161,8 @@ def load_extra_section(spec: str, results_dir: Path) -> CeilingSection:
     return CeilingSection(display_name, comparison, facts, mseed)
 
 
-def write_tex(sections: Sequence[CeilingSection], path: Path) -> None:
+def write_tex(sections: Sequence[CeilingSection], path: Path,
+              notes_path: Optional[Path] = None) -> None:
     """Emit the table body. Generated file: edit the generator, not this.
 
     The header names no repository path: this directory ships to Overleaf
@@ -1076,6 +1173,11 @@ def write_tex(sections: Sequence[CeilingSection], path: Path) -> None:
         raise ValueError("write_tex needs at least one non-empty comparison")
     names = [sec.display_name for sec in sections]
     subject = names[0] if len(names) == 1 else ", ".join(names[:-1]) + f" and {names[-1]}"
+    # The five-seed column is printed only when every section has its run, so
+    # a partial table never mixes seeded and unseeded rows under one header.
+    with_mseed = all(
+        sec.mseed_agg is not None and not sec.mseed_agg.empty for sec in sections
+    )
 
     lines = [
         TEX_HEADER,
@@ -1083,24 +1185,29 @@ def write_tex(sections: Sequence[CeilingSection], path: Path) -> None:
         r"\centering",
         r"\small",
         r"\setlength{\tabcolsep}{4pt}",
-        r"\begin{tabular}{lcccc}",
+        r"\begin{tabular}{lccccc}" if with_mseed else r"\begin{tabular}{lcccc}",
         r"\toprule",
-        r"& \multicolumn{2}{c}{\textbf{Task A}} & \multicolumn{2}{c}{\textbf{Task B}} \\",
-        r"\cmidrule(lr){2-3}\cmidrule(lr){4-5}",
+        (r"& \multicolumn{2}{c}{\textbf{Task A}} & \multicolumn{3}{c}{\textbf{Task B}} \\"
+         if with_mseed else
+         r"& \multicolumn{2}{c}{\textbf{Task A}} & \multicolumn{2}{c}{\textbf{Task B}} \\"),
+        (r"\cmidrule(lr){2-3}\cmidrule(lr){4-6}" if with_mseed
+         else r"\cmidrule(lr){2-3}\cmidrule(lr){4-5}"),
         r"\textbf{System} & AUROC & \makecell{Cosine\\gap} & \makecell{Assign.\\acc.} "
-        r"& \makecell{Dir.\\acc.@1} \\",
+        r"& \makecell{Dir.\\acc.@1}"
+        + (r" & \makecell{Dir.\ acc.@1\\5 seeds}" if with_mseed else "") + r" \\",
         r"\midrule",
     ]
     for i, sec in enumerate(sections):
         if i:
             lines.append(r"\midrule")
         for _, row in sec.comparison.iterrows():
-            lines.append(_row_tex(row))
+            lines.append(_row_tex(row, mseed_for_row(row, sec.mseed_agg), with_mseed))
 
     encoder = "encoder is" if len(sections) == 1 else "encoders are"
     caption = (
-        r"\caption{Supervised fine-tuning reference ceiling on " + subject +
-        r". The fine-tuned " + encoder + r" trained contrastively on "
+        r"\caption{Supervised fine-tuning reference ceiling on " + subject + "."
+        + takeaway_sentence(sections)
+        + r" The fine-tuned " + encoder + r" trained contrastively on "
         + _pairs_clause(sections) +
         r"(in-batch negatives, symmetric InfoNCE), with a dev slice carved "
         r"out of train by directory for model selection; the test split is untouched "
@@ -1110,6 +1217,17 @@ def write_tex(sections: Sequence[CeilingSection], path: Path) -> None:
         r"directory accuracy, with $\tau$ learned on train. The selected layers "
         r"are listed in Table~\ref{tab:selected_layers}."
     )
+    if with_mseed:
+        seeds = {
+            int(n) for sec in sections for n in sec.mseed_agg.get("n_seeds", pd.Series([], dtype=int))
+        }
+        n_words = {3: "three", 5: "five", 10: "ten"}
+        n_seeds = n_words.get(seeds.pop(), "several") if len(seeds) == 1 else "several"
+        caption += (
+            r" The last column repeats directory accuracy at rank 1 at the same "
+            rf"layer as a mean $\pm$ standard deviation over {n_seeds} random "
+            r"reassignments of query and reference files."
+        )
     for sec in sections:
         if sec.facts is not None:
             caption += sec.facts.abtt_caption_sentence()
@@ -1126,12 +1244,16 @@ def write_tex(sections: Sequence[CeilingSection], path: Path) -> None:
         r"\label{tab:finetune_ceiling}",
         r"\end{table}",
     ]
+    # The run notes and the five-seed readout are for the people running the
+    # ceiling, not for the paper: they go to ``notes_path`` (the run's results
+    # directory) and never into the table the submission ships (#239 review).
+    note_lines: List[str] = []
     notes: List[str] = []
     for sec in sections:
         if sec.facts is not None:
             notes += sec.facts.notes()
     if notes:
-        lines += ["", "% Notes for whoever moves these rows into the paper:"] + notes
+        note_lines += ["% Notes for whoever moves these rows into the paper:"] + notes
     mseed_lines = []
     for sec in sections:
         if sec.mseed_agg is not None and not sec.mseed_agg.empty:
@@ -1141,13 +1263,17 @@ def write_tex(sections: Sequence[CeilingSection], path: Path) -> None:
                     f"dir_acc@1 = {r['dir_acc_at_1_mean']:.3f} +/- {r['dir_acc_at_1_std']:.3f}"
                 )
     if mseed_lines:
-        lines.append("")
-        lines.append(r"% 5-seed Task B (mean +/- std over seeds 42-46), same protocol as the")
-        lines.append(r"% multi-seed appendix table:")
-        lines += mseed_lines
+        note_lines.append("")
+        note_lines.append(r"% 5-seed Task B (mean +/- std over seeds 42-46), same protocol as the")
+        note_lines.append(r"% multi-seed appendix table:")
+        note_lines += mseed_lines
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(f"  wrote {path}", flush=True)
+    if notes_path is not None and note_lines:
+        notes_path.parent.mkdir(parents=True, exist_ok=True)
+        notes_path.write_text("\n".join(note_lines) + "\n", encoding="utf-8")
+        print(f"  wrote {notes_path}", flush=True)
 
 
 # --------------------------------------------------------------------------- #
@@ -1358,7 +1484,8 @@ def main() -> None:
             facts,
             mseed_agg if not mseed_agg.empty else None,
         )
-        write_tex(extra + [mine], Path(args.tex_out))
+        write_tex(extra + [mine], Path(args.tex_out),
+                  notes_path=results_dir / f"{args.results_prefix}_ceiling_notes.txt")
 
     run_info["total_seconds"] = time.time() - t0
     write_run_info(out_dir / "run_info.json", run_info, needs_model)

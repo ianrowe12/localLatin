@@ -14,6 +14,12 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib.ticker import MaxNLocator
+
+# Embed TrueType (Type 42) fonts, never Type 3: ACL's checker and some
+# printers reject Type 3 (issue #235 item 7).
+matplotlib.rcParams["pdf.fonttype"] = 42
+matplotlib.rcParams["ps.fonttype"] = 42
 
 
 SHORT = {
@@ -49,6 +55,17 @@ METHOD_COLORS = {
     "sif_only": "#e67e22",
     "whitening": "#2ca6a4",
 }
+# Every series also gets its own linestyle and marker (issue #235 item 6), so
+# the figures survive grayscale printing and a series drawn under another one
+# (the gray baseline under SIF in the LaBSE, Qwen3 and KaLM panels) still shows.
+METHOD_STYLE = {
+    "baseline": {"linestyle": "--", "marker": "s"},
+    "sif_only": {"linestyle": ":", "marker": "^"},
+    "abtt_optimal": {"linestyle": "-", "marker": "o"},
+    "whitening": {"linestyle": "-.", "marker": "D"},
+}
+# Baseline on top: it is the series the others are read against.
+METHOD_ZORDER = {"baseline": 4, "sif_only": 3, "abtt_optimal": 2, "whitening": 2}
 
 
 def parse_args() -> argparse.Namespace:
@@ -160,10 +177,11 @@ def plot_metric(
                 x,
                 method_rows[metric],
                 color=METHOD_COLORS[method],
-                marker="o",
                 markersize=4.5,
                 linewidth=2.3,
                 label=METHOD_LABELS[method],
+                zorder=METHOD_ZORDER[method],
+                **METHOD_STYLE[method],
             )[0]
             if METHOD_LABELS[method] not in labels:
                 handles.append(line)
@@ -208,15 +226,16 @@ def plot_metric_grid_6model(
     labels are sentence case, and only the outer panels carry labels. The
     single-row figures were built against the other conventions, so changing
     them there would silently move six other figures.
+
+    Drawn at print size (issue #235 item 6): the paper sets these figures at
+    0.96 of the text width, about 6.1 in, so the canvas is 6.3 in wide and
+    every label is at least 8 pt on the page. The legend sits in the top margin.
     """
     n_rows, n_cols = 2, 3
     fig, axes = plt.subplots(
         n_rows,
         n_cols,
-        # 4.6 rather than 5.3 inches tall: these are line plots with five x ticks
-        # and four y ticks, so the shorter panels stay legible at column width
-        # and give the main text back about a third of a column.
-        figsize=(12.6, 4.6),
+        figsize=(6.3, 2.85),
         sharex=True,
         sharey=True,
         squeeze=False,
@@ -236,35 +255,41 @@ def plot_metric_grid_6model(
                 x,
                 method_rows[metric],
                 color=METHOD_COLORS[method],
-                marker="o",
-                markersize=4.5,
-                linewidth=2.3,
+                markersize=3.2,
+                markeredgewidth=0.6,
+                linewidth=1.3,
                 label=METHOD_LABELS[method],
+                zorder=METHOD_ZORDER[method],
+                **METHOD_STYLE[method],
             )[0]
             if METHOD_LABELS[method] not in labels:
                 handles.append(line)
                 labels.append(METHOD_LABELS[method])
 
-        ax.set_title(SHORT.get(model_name, model_name), fontsize=15, fontweight="bold")
+        ax.set_title(SHORT.get(model_name, model_name), fontsize=9.5,
+                     fontweight="bold", pad=3)
         if idx % n_cols == 0:
-            ax.set_ylabel(ylabel, fontsize=13)
+            ax.set_ylabel(ylabel, fontsize=9)
         if idx >= n_cols * (n_rows - 1):
-            ax.set_xlabel("Layer depth (%)", fontsize=13)
+            ax.set_xlabel("Layer depth (%)", fontsize=9)
         ax.set_xlim(0, 100)
         ax.set_xticks([0, 25, 50, 75, 100])
-        ax.tick_params(axis="both", labelsize=11)
-        ax.grid(alpha=0.25, linewidth=0.8)
+        ax.yaxis.set_major_locator(MaxNLocator(nbins=4))
+        ax.tick_params(axis="both", labelsize=8.5, length=2.5, pad=2)
+        ax.grid(alpha=0.25, linewidth=0.6)
 
     fig.legend(
         handles,
         labels,
-        loc="lower center",
+        loc="upper center",
         ncol=max(1, len(labels)),
         frameon=False,
-        fontsize=12,
-        bbox_to_anchor=(0.5, -0.02),
+        fontsize=9,
+        bbox_to_anchor=(0.5, 1.0),
+        handlelength=2.6,
+        columnspacing=1.6,
     )
-    fig.tight_layout(rect=(0, 0.1, 1, 1))
+    fig.tight_layout(rect=(0, 0, 1, 0.9), h_pad=0.5, w_pad=0.4)
     save(fig, out_dir, stem)
 
 
@@ -306,9 +331,16 @@ def _draw_density_panel(
     npz_path: Path,
     title: str,
     bins: np.ndarray,
+    title_size: float = 12,
+    tick_size: float = 10,
+    annot_size: float = 9,
+    line_scale: float = 1.0,
 ) -> float:
     """Draw a single same-vs-different cosine-similarity histogram. Returns the
     panel's top y-limit so callers can equalize per row.
+
+    The size arguments let the paper figure, drawn at column width, keep its
+    text at 8 pt or more on the page; the defaults are the diagnostic sizes.
     """
     if not npz_path.exists():
         ax.axis("off")
@@ -325,7 +357,7 @@ def _draw_density_panel(
         color="#c0392b",
         density=True,
         edgecolor="#7f241a",
-        linewidth=0.6,
+        linewidth=0.6 * line_scale,
         label="Different",
     )
     ax.hist(
@@ -335,15 +367,15 @@ def _draw_density_panel(
         color="#2471a3",
         density=True,
         edgecolor="#17436b",
-        linewidth=0.6,
+        linewidth=0.6 * line_scale,
         label="Same",
     )
     same_mean = float(np.mean(same))
     diff_mean = float(np.mean(diff))
-    ax.axvline(same_mean, color="#2471a3", linestyle="--", linewidth=1.3)
-    ax.axvline(diff_mean, color="#c0392b", linestyle="--", linewidth=1.3)
-    ax.set_title(title, fontsize=12, fontweight="bold")
-    ax.tick_params(axis="both", labelsize=10)
+    ax.axvline(same_mean, color="#2471a3", linestyle="--", linewidth=1.3 * line_scale)
+    ax.axvline(diff_mean, color="#c0392b", linestyle=":", linewidth=1.3 * line_scale)
+    ax.set_title(title, fontsize=title_size, fontweight="bold")
+    ax.tick_params(axis="both", labelsize=tick_size)
     ax.text(
         0.98,
         0.95,
@@ -351,8 +383,8 @@ def _draw_density_panel(
         transform=ax.transAxes,
         ha="right",
         va="top",
-        fontsize=9,
-        bbox={"facecolor": "white", "alpha": 0.75, "edgecolor": "none"},
+        fontsize=annot_size,
+        bbox={"facecolor": "white", "alpha": 0.75, "edgecolor": "none", "pad": 1},
     )
     return float(ax.get_ylim()[1])
 
@@ -373,20 +405,26 @@ def plot_density_2x2(
     else:
         last_layer, collapsed_layer = max_layer, max_layer // 2
 
+    # Rows are the two post-processing settings, columns the two layers. The
+    # paper prints this figure at column width (about 3.0 in), so it is drawn
+    # 3.2 in wide with 8 pt text (issue #235 item 8): the setting goes into the
+    # row label and the layer into the column title, which keeps every title
+    # short enough to fit its panel at that size.
     conds = [
-        ("baseline_last", f"Baseline · Last layer (L{last_layer})"),
-        ("baseline_middle", f"Baseline · Collapsed retrieval layer (L{collapsed_layer})"),
-        ("abtt_last", f"ABTT · Last layer (L{last_layer})"),
-        ("abtt_middle", f"ABTT · Collapsed retrieval layer (L{collapsed_layer})"),
+        ("baseline_last", f"Last layer (L{last_layer})"),
+        ("baseline_middle", f"Collapsed layer (L{collapsed_layer})"),
+        ("abtt_last", ""),
+        ("abtt_middle", ""),
     ]
-    fig, axes = plt.subplots(2, 2, figsize=(10.5, 7.2), sharex=True)
+    fig, axes = plt.subplots(2, 2, figsize=(3.0, 2.8), sharex=True)
     axes = axes.ravel()
     bins = np.linspace(-0.2, 1.0, 48)
     row_ymax = [0.0, 0.0]
 
     for idx, (suffix, title) in enumerate(conds):
         ymax = _draw_density_panel(
-            axes[idx], dist_dir / f"{slug}_{suffix}.npz", title, bins
+            axes[idx], dist_dir / f"{slug}_{suffix}.npz", title, bins,
+            title_size=8.5, tick_size=8.5, annot_size=8.5, line_scale=0.6,
         )
         row = idx // 2
         row_ymax[row] = max(row_ymax[row], ymax)
@@ -395,13 +433,21 @@ def plot_density_2x2(
         ymax = row_ymax[row] * 1.05 if row_ymax[row] > 0 else 1.0
         for col in range(2):
             axes[row * 2 + col].set_ylim(0, ymax)
+            axes[row * 2 + col].yaxis.set_major_locator(MaxNLocator(nbins=3))
+            axes[row * 2 + col].tick_params(length=2, pad=1.5)
 
-    axes[0].set_ylabel("Density", fontsize=12)
-    axes[2].set_ylabel("Density", fontsize=12)
-    axes[2].set_xlabel("Cosine Similarity", fontsize=12)
-    axes[3].set_xlabel("Cosine Similarity", fontsize=12)
-    axes[1].legend(loc="upper left", fontsize=9, framealpha=0.85)
-    fig.tight_layout()
+    axes[0].set_ylabel("Baseline\ndensity", fontsize=8.5)
+    axes[2].set_ylabel("ABTT\ndensity", fontsize=8.5)
+    axes[2].set_xlabel("Cosine similarity", fontsize=8.5)
+    axes[3].set_xlabel("Cosine similarity", fontsize=8.5)
+    axes[2].set_xticks([0.0, 0.5, 1.0])
+    # Legend in the top margin: every panel's upper corners hold data or the
+    # gap label at this size.
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.5, 1.0),
+               ncol=2, fontsize=8.5, frameon=False, handlelength=1.2,
+               columnspacing=1.2)
+    fig.tight_layout(pad=0.3, h_pad=0.4, w_pad=0.3, rect=(0, 0, 1, 0.92))
     save(fig, out_dir, "paper_fig_density_2x2")
 
 
@@ -588,13 +634,15 @@ def main() -> None:
     if dist_dir.exists():
         plot_density_2x2(args.feature_model, dist_dir, out_dir, results=results)
         print(f"Saved density 2x2 to {out_dir}")
+        # Diagnostic variant the paper does not input: aux_dir, not out_dir
+        # (issue #208 keeps overleaf_drafts/figures to paper inputs).
         plot_density_2x2_models(
             ["bowphs/LaTa", "bowphs/PhilTa"],
             dist_dir,
-            out_dir,
+            aux_dir,
             results=results,
         )
-        print(f"Saved density 2x2 (2-model variant) to {out_dir}")
+        print(f"Saved density 2x2 (2-model variant) to {aux_dir}")
     else:
         print(f"Warning: dist_dir {dist_dir} not found, skipping density figure.")
 
