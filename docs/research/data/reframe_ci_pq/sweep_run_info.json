@@ -1,0 +1,16 @@
+{
+  "command": "scripts/paper/reframe/ci_pq.py sweep --data_root /projects/beto/irowerojas/localLatin --out_dir runs/active/reframe/ci_pq_v2_sweep --procs 16",
+  "slurm_job_id": "22535867",
+  "host": "cn105.delta.ncsa.illinois.edu",
+  "git_head": "5245ec3c867610cd87ffef66d10cc29e7cf7b424",
+  "python": "3.10.19",
+  "numpy": "1.26.4",
+  "pandas": "2.3.3",
+  "wall_seconds": 175.0,
+  "cpu_seconds_main_process": 0.8,
+  "B": null,
+  "seed": null,
+  "finished": "2026-09-28 23:34:01",
+  "paper_grid_mismatches": 0,
+  "n_rows": 2076
+}

@@ -1,0 +1,18 @@
+{
+  "command": "scripts/paper/reframe/ci_pq.py compute --data_root /projects/beto/irowerojas/localLatin --out_dir runs/active/reframe/ci_pq_v2 --B 10000 --seed 233 --workers 16 --procs 16",
+  "slurm_job_id": "22535867",
+  "host": "cn105.delta.ncsa.illinois.edu",
+  "git_head": "5245ec3c867610cd87ffef66d10cc29e7cf7b424",
+  "python": "3.10.19",
+  "numpy": "1.26.4",
+  "pandas": "2.3.3",
+  "wall_seconds": 1717.6,
+  "cpu_seconds_main_process": 252.0,
+  "B": 10000,
+  "seed": 233,
+  "finished": "2026-09-28 23:31:05",
+  "n_configs": 74,
+  "n_cells": 66,
+  "n_test_dirs": 514,
+  "reproduction_mismatches": 0
+}

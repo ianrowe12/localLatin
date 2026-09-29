@@ -1,0 +1,35 @@
+% generated table
+\begin{table*}[t]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{1.8pt}
+\begin{tabular}{lrrrrrrrr}
+\toprule
+& \multicolumn{4}{c}{\textbf{Task A AUROC}} & \multicolumn{4}{c}{\textbf{Task A cosine gap}} \\
+\cmidrule(lr){2-5}\cmidrule(lr){6-9}
+\textbf{Model} & Base & SIF & ABTT & SIF+ABTT & Base & SIF & ABTT & SIF+ABTT \\
+\midrule
+LaTa & 0.938 & 0.948 & \textbf{0.971} & 0.966 & 0.237 & 0.366 & 0.525 & \textbf{0.580} \\
+ & {\scriptsize [.910,.963]} & {\scriptsize [.915,.974]} & {\scriptsize [.948,.991]} & {\scriptsize [.938,.989]} & {\scriptsize [.222,.253]} & {\scriptsize [.342,.390]} & {\scriptsize [.491,.559]} & {\scriptsize [.541,.617]} \\
+PhilTa & 0.939 & 0.955 & \textbf{0.983} & 0.982 & 0.231 & 0.319 & 0.540 & \textbf{0.573} \\
+ & {\scriptsize [.918,.958]} & {\scriptsize [.935,.972]} & {\scriptsize [.969,.993]} & {\scriptsize [.969,.993]} & {\scriptsize [.217,.247]} & {\scriptsize [.300,.339]} & {\scriptsize [.508,.571]} & {\scriptsize [.538,.608]} \\
+mT5-base & 0.838 & 0.845 & \textbf{0.975} & 0.974 & 0.081 & 0.036 & \textbf{0.536} & 0.519 \\
+ & {\scriptsize [.810,.866]} & {\scriptsize [.816,.876]} & {\scriptsize [.954,.992]} & {\scriptsize [.950,.993]} & {\scriptsize [.072,.092]} & {\scriptsize [.031,.042]} & {\scriptsize [.498,.574]} & {\scriptsize [.480,.559]} \\
+LaBSE & 0.956 & 0.956 & \textbf{0.987} & 0.976 & 0.183 & 0.184 & \textbf{0.611} & 0.580 \\
+ & {\scriptsize [.932,.977]} & {\scriptsize [.931,.977]} & {\scriptsize [.977,.995]} & {\scriptsize [.960,.989]} & {\scriptsize [.171,.195]} & {\scriptsize [.172,.197]} & {\scriptsize [.575,.646]} & {\scriptsize [.543,.617]} \\
+Qwen3-0.6B & 0.966 & 0.942 & \textbf{0.973} & 0.972 & 0.024 & 0.053 & \textbf{0.553} & 0.540 \\
+ & {\scriptsize [.950,.981]} & {\scriptsize [.919,.963]} & {\scriptsize [.948,.990]} & {\scriptsize [.947,.991]} & {\scriptsize [.023,.026]} & {\scriptsize [.048,.060]} & {\scriptsize [.513,.590]} & {\scriptsize [.499,.580]} \\
+KaLM-mini & 0.972 & 0.964 & 0.981 & \textbf{0.981} & 0.056 & 0.056 & \textbf{0.568} & 0.535 \\
+ & {\scriptsize [.955,.986]} & {\scriptsize [.944,.982]} & {\scriptsize [.963,.993]} & {\scriptsize [.962,.995]} & {\scriptsize [.053,.060]} & {\scriptsize [.051,.062]} & {\scriptsize [.529,.605]} & {\scriptsize [.496,.573]} \\
+\midrule
+LaTa (fine-tuned) & \textbf{0.984} & -- & 0.970 & -- & 0.387 & -- & \textbf{0.548} & -- \\
+ & {\scriptsize [.973,.992]} &  & {\scriptsize [.947,.990]} &  & {\scriptsize [.368,.406]} &  & {\scriptsize [.511,.583]} &  \\
+Qwen3-0.6B (fine-tuned) & \textbf{0.996} & -- & 0.994 & -- & 0.684 & -- & \textbf{0.716} & -- \\
+ & {\scriptsize [.993,.999]} &  & {\scriptsize [.989,.998]} &  & {\scriptsize [.653,.714]} &  & {\scriptsize [.680,.751]} &  \\
+KaLM-mini (fine-tuned) & \textbf{0.997} & -- & 0.994 & -- & 0.636 & -- & \textbf{0.651} & -- \\
+ & {\scriptsize [.993,.999]} &  & {\scriptsize [.988,.998]} &  & {\scriptsize [.605,.666]} &  & {\scriptsize [.612,.687]} &  \\
+\bottomrule
+\end{tabular}
+\caption{Task A pairwise duplicate detection for all six models under four post-processing settings. Each cell is a test-set score at the layer chosen by training-set AUROC, listed in Table~\ref{tab:selected_layers}; ABTT uses $D$ tuned on train. Baseline AUROC spans 0.838 to 0.972, and ABTT lifts every model into a 0.971 to 0.987 band. Cosine gap is defined in Figure~\ref{fig:gap}. Per-layer grids: Appendix Tables~\ref{tab:taskA_main}, \ref{tab:taskA_appendix}, and~\ref{tab:taskA_appendix_sif}. Below the rule, reference systems on the same split with the same evaluation code: LaTa, Qwen3-0.6B, and KaLM-mini fine-tuned contrastively on 499 of the 565 positive train pairs (a 28-directory dev carve takes the rest), a ceiling at this training budget (setup: Appendix~\ref{app:reference_systems}). ABTT moves the fine-tuned encoders' AUROC 0.984 to 0.970 for LaTa (gap 0.387 to 0.548), 0.996 to 0.994 for Qwen3-0.6B (gap 0.684 to 0.716), and 0.997 to 0.994 for KaLM-mini (gap 0.636 to 0.651). Bracketed rows: 95\% percentile intervals from a directory-level bootstrap ($B=10{,}000$ resamples of the 514 test directories with replacement, seed 233); all cells with intervals are in Table~\ref{tab:headline_ci}.}
+\label{tab:taskA_headline}
+\end{table*}
