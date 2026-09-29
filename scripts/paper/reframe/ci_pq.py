@@ -449,6 +449,48 @@ def build_units(src: Sources, cfg: Config, D: Optional[int], tau: Optional[float
     return u
 
 
+# TF-IDF minus the best of the six ABTT cells, with the best cell re-chosen in
+# every replicate. The replicate maximum sits above the maximum of the point
+# estimates (by about 0.45 DirAcc@1 points here), so the interval is biased
+# toward zero. Kept in the CSV for transparency, never quoted: the text uses
+# the fixed per-model contrasts (group tfidf_minus_abtt).
+MAX_OVER_MODELS_GROUP = "tfidf_minus_replicate_max_abtt"
+MAX_OVER_MODELS_NOTE = ("max-over-models statistic, best ABTT cell re-chosen in each "
+                        "replicate; biased upward, not used in the text")
+
+
+def d_field(method: str, D) -> object:
+    """D where it is a fitted quantity (ABTT variants, centering's 0), else blank.
+
+    The evaluator reports its default D = 10 on Base and SIF rows, where no
+    component is removed; printing it there reads as a fitted value.
+    """
+    if D is None or not (method.endswith("abtt_optimal") or method.endswith("center")):
+        return ""
+    return int(float(D))
+
+
+def normalize_published(name: str, df: pd.DataFrame) -> pd.DataFrame:
+    """Apply the two labelling rules above to a CSV written by an older run.
+
+    Only labels change: D is blanked where it is not fitted, and the
+    replicate-max rows are renamed. No number is touched.
+    """
+    df = df.copy()
+    if name in ("headline_ci.csv", "pq_cells.csv") and "D" in df.columns:
+        if "method" in df.columns:
+            methods = df["method"].astype(str)
+        else:
+            methods = df["config"].astype(str).str.split(":").str[-1]
+        df["D"] = [d_field(m, None if pd.isna(D) or D == "" else D)
+                   for m, D in zip(methods, df["D"])]
+    if name == "headline_ci_diffs.csv":
+        mask = df["group"].isin(["tfidf_minus_best_abtt", MAX_OVER_MODELS_GROUP])
+        df.loc[mask, "group"] = MAX_OVER_MODELS_GROUP
+        df.loc[mask, "note"] = MAX_OVER_MODELS_NOTE
+    return df
+
+
 def _close(a, b, tol=1e-9) -> bool:
     try:
         return abs(float(a) - float(b)) <= tol
@@ -696,7 +738,7 @@ def cmd_compute(args: argparse.Namespace) -> None:
             _, fmt, scale = METRICS[m]
             r = {"task": c.task, "row": c.row, "setting": c.setting, "kind": c.kind,
                  "metric": m, "layer": c.config.layer if c.kind != "lex" else "",
-                 "D": units[c.config].D if units[c.config].D is not None else "",
+                 "D": d_field(c.config.method, units[c.config].D),
                  "config": c.config.tag(), "scale": scale, "fmt": fmt}
             r.update(ci_row(c.config.tag(), m))
             rows.append(r)
@@ -790,13 +832,13 @@ def cmd_compute(args: argparse.Namespace) -> None:
                     if tf is not None:
                         d = reps[(tf, m)] - mat.max(axis=0)
                         lo, hi = C.percentile_ci(d)
-                        diffs.append({"group": "tfidf_minus_best_abtt", "label": "six models",
+                        diffs.append({"group": MAX_OVER_MODELS_GROUP, "label": "six models",
                                       "task": task, "metric": m, "a": tf, "b": "max ABTT",
                                       "estimate": point[(tf, m)] - pt.max(), "ci_lo": lo,
                                       "ci_hi": hi, "se": float(d.std(ddof=1)),
                                       "share_le_0": float((d <= 0).mean()),
                                       "share_ge_0": float((d >= 0).mean()),
-                                      "note": "best ABTT cell re-chosen in each replicate"})
+                                      "note": MAX_OVER_MODELS_NOTE})
             if "Base" in spreads and "ABTT" in spreads:
                 d = spreads["Base"][1] - spreads["ABTT"][1]
                 lo, hi = C.percentile_ci(d)
@@ -824,7 +866,7 @@ def cmd_compute(args: argparse.Namespace) -> None:
         r = {"config": tag, "row": c.row if c else DISPLAY.get(cfg.source, cfg.source),
              "setting": c.setting if c else cfg.method, "kind": cfg.kind,
              "layer": cfg.layer if cfg.kind != "lex" else "", "method": cfg.method,
-             "D": u.D if u.D is not None else "", "headline": c is not None}
+             "D": d_field(cfg.method, u.D), "headline": c is not None}
         s = u.pair_scores.astype(np.float64)
         r.update(tau_paper=u.tau, pair_cos_mean=float(s.mean()), pair_cos_sd=float(s.std()),
                  maxcos_sd=float(u.tb.max_cos.std()),
@@ -1053,9 +1095,14 @@ def cmd_publish(args: argparse.Namespace) -> None:
     PUBLISH_DIR.mkdir(parents=True, exist_ok=True)
     for name in PUBLISHED:
         p = src_dir / name
-        if p.exists():
+        if not p.exists():
+            continue
+        if name in ("headline_ci.csv", "pq_cells.csv", "headline_ci_diffs.csv"):
+            normalize_published(name, pd.read_csv(p, dtype=str, keep_default_na=False)).to_csv(
+                PUBLISH_DIR / name, index=False)
+        else:
             shutil.copy2(p, PUBLISH_DIR / name)
-            print(f"published {name}")
+        print(f"published {name}")
     if args.sweep_dir:
         for name in ("sweep_selected.csv", "sweep_run_info.json"):
             p = data_root / args.sweep_dir / name

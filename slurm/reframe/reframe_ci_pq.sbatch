@@ -6,7 +6,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=48g
-#SBATCH --time=01:30:00
+#SBATCH --time=00:45:00
 #SBATCH --output=slurm/logs/reframe_ci_pq_%j.out
 #SBATCH --error=slurm/logs/reframe_ci_pq_%j.err
 

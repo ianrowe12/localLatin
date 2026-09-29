@@ -184,6 +184,24 @@ def test_compact_table_handles_lexical_rows():
 
 
 @needs_published
+def test_published_labels():
+    """D only where fitted; the replicate-max rows are labelled as unused."""
+    import ci_pq
+
+    ci = pd.read_csv(PUBLISHED / "headline_ci.csv")
+    assert ci.loc[ci["setting"].isin(["Base", "SIF"]), "D"].isna().all()
+    assert ci.loc[ci["setting"].isin(["ABTT", "SIF+ABTT"]), "D"].notna().all()
+    diffs = pd.read_csv(PUBLISHED / "headline_ci_diffs.csv")
+    assert "tfidf_minus_best_abtt" not in set(diffs["group"])
+    rm = diffs[diffs["group"] == ci_pq.MAX_OVER_MODELS_GROUP]
+    assert len(rm) and (rm["note"] == ci_pq.MAX_OVER_MODELS_NOTE).all()
+    raw = pd.read_csv(PUBLISHED / "headline_ci.csv", dtype=str, keep_default_na=False)
+    again = ci_pq.normalize_published("headline_ci.csv", raw)
+    # idempotent: labels only, text preserved
+    assert again.to_csv(index=False) == raw.to_csv(index=False)
+
+
+@needs_published
 def test_every_printed_cell_was_reproduced():
     checks = pd.read_csv(PUBLISHED / "reproduction_cells.csv")
     configs = pd.read_csv(PUBLISHED / "reproduction_configs.csv")

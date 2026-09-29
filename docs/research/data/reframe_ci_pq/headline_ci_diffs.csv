@@ -211,16 +211,16 @@ abtt_minus_center_at_abtt_layer,KaLM-mini,A,auroc,zs:KaLM-Embedding/KaLM-embeddi
 center_minus_base_at_base_layer,KaLM-mini,A,auroc,zs:KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5:L23:center,zs:KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5:L23:baseline,0.002726034101866559,-0.010341804500546786,0.0135075960566085,0.006067190610781992,0.2982,0.7018,,10000,233
 spread_across_models,Base,A,auroc,max,min,0.13400287637055364,0.11043909582065678,0.1581805065354389,0.012229675420584406,,,max minus min over six models,10000,233
 spread_across_models,ABTT,A,auroc,max,min,0.015225727152849866,0.006026982810998919,0.033866798148973885,0.007061126885870561,,,max minus min over six models,10000,233
-tfidf_minus_best_abtt,six models,A,auroc,lex:TF-IDF char 3-5,max ABTT,0.00030926199070857585,-0.004431102479879364,0.004206662661558124,0.002171326726770987,0.5,0.5,best ABTT cell re-chosen in each replicate,10000,233
+tfidf_minus_replicate_max_abtt,six models,A,auroc,lex:TF-IDF char 3-5,max ABTT,0.00030926199070857585,-0.004431102479879364,0.004206662661558124,0.002171326726770987,0.5,0.5,"max-over-models statistic, best ABTT cell re-chosen in each replicate; biased upward, not used in the text",10000,233
 spread_across_models,SIF+ABTT,A,auroc,max,min,0.016209129635572417,0.007222349523753252,0.037419086161883906,0.007892277964029549,,,max minus min over six models,10000,233
 spread_base_minus_abtt,six models,A,auroc,Base spread,ABTT spread,0.11877714921770377,0.08721398466530676,0.14320206827236198,0.01422937296788336,0.0,1.0,,10000,233
 spread_across_models,Base,B,assign,max,min,0.4032634032634032,0.35696350771796653,0.4473988439306359,0.023269561413679807,,,max minus min over six models,10000,233
 spread_across_models,ABTT,B,assign,max,min,0.03263403263403264,0.018018018018018056,0.058465467922871876,0.01034990719062995,,,max minus min over six models,10000,233
-tfidf_minus_best_abtt,six models,B,assign,lex:TF-IDF char 3-5,max ABTT,0.0011655011655011815,-0.018692135322730497,0.012658592428396382,0.007975723998623329,0.6477,0.4131,best ABTT cell re-chosen in each replicate,10000,233
+tfidf_minus_replicate_max_abtt,six models,B,assign,lex:TF-IDF char 3-5,max ABTT,0.0011655011655011815,-0.018692135322730497,0.012658592428396382,0.007975723998623329,0.6477,0.4131,"max-over-models statistic, best ABTT cell re-chosen in each replicate; biased upward, not used in the text",10000,233
 spread_across_models,SIF+ABTT,B,assign,max,min,0.0174825174825175,0.010368663594470084,0.04260355029585805,0.00835517327177666,,,max minus min over six models,10000,233
 spread_base_minus_abtt,six models,B,assign,Base spread,ABTT spread,0.37062937062937057,0.314633125218812,0.4157958858675478,0.02584905635302638,0.0,1.0,,10000,233
 spread_across_models,Base,B,dir1,max,min,0.39277389277389274,0.34619655425990126,0.43743078626799553,0.023348461910880886,,,max minus min over six models,10000,233
 spread_across_models,ABTT,B,dir1,max,min,0.03263403263403264,0.018071949196333877,0.060212883707201875,0.010868193726922326,,,max minus min over six models,10000,233
-tfidf_minus_best_abtt,six models,B,dir1,lex:TF-IDF char 3-5,max ABTT,0.004662004662004726,-0.016786839285570426,0.01622342179389351,0.00838341354662612,0.5127,0.544,best ABTT cell re-chosen in each replicate,10000,233
+tfidf_minus_replicate_max_abtt,six models,B,dir1,lex:TF-IDF char 3-5,max ABTT,0.004662004662004726,-0.016786839285570426,0.01622342179389351,0.00838341354662612,0.5127,0.544,"max-over-models statistic, best ABTT cell re-chosen in each replicate; biased upward, not used in the text",10000,233
 spread_across_models,SIF+ABTT,B,dir1,max,min,0.019813519813519864,0.011560693641618491,0.0457927526000023,0.008850154339898655,,,max minus min over six models,10000,233
 spread_base_minus_abtt,six models,B,dir1,Base spread,ABTT spread,0.3601398601398601,0.30378211094163377,0.4043534332589038,0.02565613542988121,0.0,1.0,,10000,233

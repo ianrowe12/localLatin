@@ -235,7 +235,9 @@ def render_diffs(diffs: pd.DataFrame, info: Dict) -> str:
         "sits at its own train-selected layer. The two centering contrasts compare baseline, "
         "centering alone ($D=0$) and ABTT at the layer of the ABTT cell, the Task A ABTT layer "
         "for $\\Delta$ AUROC and the Task B ABTT layer for the two routing columns. Spread: the largest "
-        "minus the smallest of the six zero-shot models. Task B in points. "
+        "minus the smallest of the six zero-shot models. Task B in points. Differences are "
+        "computed at full precision, so they can differ by one unit in the last digit from "
+        "the difference of the rounded cells. "
         + FIXED_CLAUSE
     )
     lines += [r"\bottomrule", r"\end{tabular}", f"\\caption{{{caption}}}",
