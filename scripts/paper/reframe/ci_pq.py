@@ -411,13 +411,14 @@ def paper_reproduce(src: Sources, cfg: Config, results: pd.DataFrame,
 
 CHECK_KEYS = ("tau", "D", "aucroc", "gap", "overall_assignment_acc", "dir_acc_at_1",
               "train_aucroc", "train_dir_acc_at_1")
-# Counts, tau and D must agree exactly. Continuous scores may differ in the
+# Counts, tau and D must agree exactly (1e-12 only absorbs the last-ulp error of
+# pandas' default CSV float parser). Continuous scores may differ in the
 # eighth digit: cosines are float32 matrix products, and a different BLAS
 # thread count (the paper's run vs this one) changes their last bit, which can
 # reorder a few near-tied pairs. 1e-6 is far below the printed precision,
 # which is checked separately cell by cell.
-TOL = {"tau": 0.0, "D": 0.0, "overall_assignment_acc": 0.0, "dir_acc_at_1": 0.0,
-       "train_dir_acc_at_1": 0.0, "aucroc": 1e-6, "gap": 1e-6, "train_aucroc": 1e-6}
+TOL = {"tau": 1e-12, "D": 0.0, "overall_assignment_acc": 1e-12, "dir_acc_at_1": 1e-12,
+       "train_dir_acc_at_1": 1e-12, "aucroc": 1e-6, "gap": 1e-6, "train_aucroc": 1e-6}
 
 
 def build_units(src: Sources, cfg: Config, D: Optional[int], tau: Optional[float],
