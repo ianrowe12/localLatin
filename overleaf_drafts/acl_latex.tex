@@ -121,7 +121,7 @@ Open-set routing (Task~B) files each witness under a known source or flags it as
 The embedding-trained models show a second regime.
 In them every passage shares a large mean vector, which raises every cosine (mean pairwise cosine 0.59 to 0.97), while variance stays spread over many directions.
 These models rank well, yet the projection still raises the share of witnesses LaBSE files correctly as known or new from 83.3 to 90.8 percent.
-Section~\ref{sec:repair} tests whether this gain goes beyond ranking.
+Section~\ref{sec:repair} shows that this gain holds without any threshold and does not come from the shared mean vector.
 
 This paper makes four contributions.
 (1)~We give the first per-layer retrieval profile of T5 encoder states in isolation that we know of: in our panel, T5 encoders collapse to or near chance at mid-depth. A $2 \times 2$ control crosses T5 pretraining with an embedding objective \pending{P2x2: raw encoder-only and embedding-trained T5 cells}.
@@ -233,7 +233,7 @@ LaBERTa and PhilBERTa share authors and pretraining data with LaTa and PhilTa \c
 Sentence-T5 \citep{ni2022sentencet5} fills the embedding-trained T5 cell, and T5-v1.1-base \citep{raffel2020t5} is its matched raw partner.
 
 \paragraph{Lexical reference.}
-Character 3--5-gram TF-IDF, fit on training files, reaches 0.987 AUROC on Task~A, tying the best pre-trained encoder cell, and 89.9 DirAcc@1 on Task~B, above every pre-trained one.
+Character 3--5-gram TF-IDF, fit on training files, reaches 0.987 AUROC on Task~A, tying the best pre-trained encoder cell, and 89.9 DirAcc@1 on Task~B, level with the best pre-trained ones.
 In every tercile of n-gram overlap among positive test pairs (terciles cut on the TF-IDF score itself), it ranks a witness's partner first at least as often as every baseline and ABTT encoder configuration at its train-selected layer.
 The equivalence signal is therefore present in the surface text.
 Our claims concern where the retrieval signal sits inside encoders and what masks it, not whether embeddings beat n-grams on this corpus.
@@ -353,7 +353,7 @@ Because SIF differs from mean pooling in two ways, the token audit of Section~\r
 The panel therefore shows two regimes.
 In the embedding-trained models every passage shares a large mean vector, which raises every cosine, and variance spreads over many directions.
 These models rank well but still gain from the projection.
-Their baseline AUROC is 0.806 to 0.972, and ABTT adds 0.007 to 0.031 at their respective train-selected layers (Section~\ref{sec:repair}).
+Their baseline AUROC is 0.806 to 0.972, and ABTT adds 0.007 to 0.031 at their respective train-selected layers, a gain within bootstrap noise for Qwen3-0.6B and KaLM-mini (Section~\ref{sec:repair}).
 In the middle layers of the T5 encoders one direction takes most of the variance, and cosine ranking falls to or near chance.
 The cosines there are spread across both signs rather than moderate.
 At mT5-base's collapsed layers the 5th percentile of test cosines lies between $-0.83$ and $-0.77$, the median between 0.84 and 0.90, and the standard deviation about 0.75.
@@ -600,7 +600,7 @@ ABTT (Section~\ref{sec:postproc}) subtracts the training mean and removes the to
 \paragraph{ABTT restores every layer.}
 ABTT lifts every layer of every model to a pairwise AUROC between 0.96 and 0.99, including the T5 layers that sit at chance.
 At the train-selected layers of Table~\ref{tab:taskA_headline}, baseline AUROC spans 0.838 to 0.972, and ABTT moves every model into a band from 0.971 to 0.987.
-The gain is largest where the baseline is weakest: mT5-base gains 0.137, while KaLM-mini gains 0.009.
+The gain is largest where the baseline is weakest: mT5-base gains 0.137 (95\% CI 0.109 to 0.166), while KaLM-mini gains 0.009 ($-0.002$ to $0.021$), within noise.
 At each T5 encoder's worst baseline layer, ABTT recovers AUROC to within 1.0 point of that model's best ABTT layer.
 Because ABTT is a linear projection fit on training vectors, this shows that the retrieval signal was linearly present in every layer.
 The character 3--5-gram TF-IDF reference reaches 0.987 on the same split (Table~\ref{tab:lexical_baselines}).
@@ -614,49 +614,59 @@ Under the baseline, DirAcc@1 spans 39.3 points across models, so model choice do
 ABTT compresses that spread to 3.3 points, from 86.1 to 89.4.
 Assignment accuracy moves from a 40.3-point spread to a band from 88.5 to 91.7.
 Over five random reassignments of query and reference files, the baseline spread of 36.6 points falls to 1.7 under SIF+ABTT, with standard deviations of at most 1.0.
-The lexical reference routes at 89.9 on the single split, above every ABTT cell (86.1 to 89.4), and at 91.1 over five seeds, above every SIF+ABTT cell (88.9 to 90.6).
-Surface overlap remains the strongest router on this corpus.
+The lexical reference routes at 89.9 on the single split, level with the best of the ABTT cells, which span 86.1 to 89.4, and at 91.1 over five seeds, against 88.9 to 90.6 for the SIF+ABTT cells.
+Surface overlap routes as well as the best repaired encoder on this corpus.
 Under SIF+ABTT every model places the correct directory in a two-item shortlist for more than 95 percent of queries (Table~\ref{tab:taskb}, Appendix~\ref{app:sif_variants}).
-The single-split cells in both headline tables carry no intervals yet: \pending{CI: directory-level bootstrap intervals on every headline cell}.
+Directory-level bootstrap intervals (Appendix~\ref{app:ci_pq}, Table~\ref{tab:headline_ci}) span about $\pm 0.02$ AUROC and $\pm 3$ points of routing accuracy per cell.
+Every routing gain from ABTT excludes zero, as do the AUROC gains of the three T5 encoders and LaBSE; those of Qwen3-0.6B (0.966 to 0.973; 95\% CI of the gain $-0.010$ to $0.019$) and KaLM-mini (0.972 to 0.981; $-0.002$ to $0.021$) do not (Table~\ref{tab:headline_ci_diffs}).
+The spread in DirAcc@1 falls from 39.3 (34.6 to 43.7) to 3.3 (1.8 to 6.0) points, and the lexical reference is not distinguishable from the best ABTT cells ($+0.5$; 95\% CI $-1.4$ to $2.5$ against Qwen3-0.6B, $-1.3$ to $2.3$ against KaLM-mini); only LaTa's ABTT cell is significantly below it.
 
 \paragraph{The offset regime and the open-set decision.}
 The embedding-trained models do not collapse, yet ABTT still changes their routing.
 At their respective train-selected layers, their baseline AUROC was already 0.96 to 0.97.
 Under ABTT, assignment accuracy rises from 83.3 to 90.8 for LaBSE, from 82.3 to 91.5 for Qwen3-0.6B, and from 87.5 to 91.7 for KaLM-mini.
-ABTT also improves their ranking: LaBSE's AUROC rises from 0.956 to 0.987, and DirAcc@1 gains 3.5 to 9.1 points across the three.
-Whether centering alone, which removes the shared offset, accounts for this is what the $D=0$ check below tests.
+ABTT also improves LaBSE's ranking, from 0.956 to 0.987 AUROC, while the AUROC gains of Qwen3-0.6B and KaLM-mini are within noise; DirAcc@1 gains 3.5 to 9.1 points across the three.
+Centering alone, which removes the shared offset, does not account for this (below).
 
 If an offset only added a constant to every cosine, order would be preserved and a threshold fit on training files would absorb it.
 A shared offset vector need not act as such a constant.
 Its effect on each cosine depends on the passage's norm and its projection onto the offset, so it can reorder pairs.
-LaBSE's AUROC gain under ABTT, which removes the mean and ten components, is consistent with this, and the $D=0$ check isolates the mean.
+LaBSE's AUROC gain under ABTT does not come from the mean: centering alone leaves its AUROC unchanged ($-0.002$, $-0.009$ to $0.004$), and the gain arrives with the ten removed components ($+0.029$, $0.013$ to $0.048$).
 A cost to the open-set decision beyond ranking would need offsets that differ by query, such as hub vectors that sit close to many queries \citep{radovanovic2010hubs}, or a shift between the training and test score distributions.
 The threshold grid offers a mundane alternative.
-We fit $\tau$ over 200 evenly spaced values in $[0,1]$, a step of about 0.005, while the test cosines of Qwen3-0.6B spread with a standard deviation as small as 0.007.
-One grid step can then span most of a standard deviation, and ABTT could help routing simply by spreading the cosines.
-Five checks on cached embeddings test these readings: \pending{PQ: threshold-free existing-vs-new AUROC, oracle-vs-train threshold gap, hubness statistic, centering-only $D=0$, and a threshold refit on a fine or quantile grid}.
-Until they run, we do not attribute the routing gain to the offset geometry.
+We fit $\tau$ over 200 evenly spaced values in $[0,1]$, a step of about 0.005, while at layer 27 the test cosines of Qwen3-0.6B spread with a standard deviation of only 0.007.
+At such a layer one grid step spans most of a standard deviation, and ABTT could help routing simply by spreading the cosines.
+Five checks on cached embeddings test these readings (Table~\ref{tab:pq_routing}, Appendix~\ref{app:ci_pq}).
+The gain does not depend on the threshold.
+With no threshold at all, the AUROC of each file's best-match cosine for existing against new files rises from the baseline cell to the ABTT cell by 0.037 (95\% CI 0.021 to 0.055) for LaBSE, 0.055 (0.034 to 0.077) for Qwen3-0.6B, and 0.027 (0.012 to 0.043) for KaLM-mini.
+At their baseline cells the train-fit $\tau$ gives assignment accuracy within 1.0 point of the best test threshold (upper bounds 1.1 to 3.5), and the gain survives when both settings use their best test thresholds (7.0, 8.9, and 4.4 points).
+Refitting $\tau$ as the exact best-F1 cut leaves the three ABTT cells unchanged and moves the baselines by $-1.3$ to $+0.3$ points.
+Layer 27 is not a routing cell: at Qwen3-0.6B's routing cells the test cosines spread with a standard deviation of 0.043 (layer 28, raw) and 0.086 after ABTT (layer 5; 0.034 raw).
+Nor does the shared offset produce the gain.
+At each baseline cell's layer, centering alone ($D=0$) changes assignment accuracy by $-4.7$ points ($-7.4$ to $-2.0$) for LaBSE, $+2.6$ ($-0.4$ to $5.5$) for Qwen3-0.6B, and $-1.9$ ($-3.7$ to $-0.1$) for KaLM-mini, and at the ABTT layer of each of the three the removed components add 12.0 to 25.9 points on top of centering.
+From the baseline cell to the ABTT cell hubness also falls \citep{radovanovic2010hubs}: the skewness of the 10-occurrence distribution drops from 2.0--2.5 to 0.6--1.1, while centering alone at the ABTT layer leaves it near 1.8.
+We therefore read the routing gain as better separation of known from new witnesses by their best match, carried by the top components beyond the mean; whether the reduced hubness causes it remains untested.
 
 \paragraph{SIF.}
 SIF never matches ABTT on any model or task; we use it only as the diagnostic of Section~\ref{sec:geometry} (full sweeps in Appendix~\ref{app:sif_variants}).
 
-\paragraph{Where the repair costs.}
-On pairwise ranking, ABTT lowers AUROC for every fine-tuned model.
-Fine-tuned LaTa falls from 0.984 to 0.970.
-Fine-tuned Qwen3-0.6B and KaLM-mini fall by 0.002 to 0.003, a margin we cannot separate from noise until the intervals land; for Qwen3-0.6B the two rows also sit at different train-selected layers.
-The same projection still raises their routing: DirAcc@1 rises from 81.6 to 85.2 for fine-tuned LaTa, from 90.8 to 91.4 for Qwen3-0.6B, and from 91.7 to 92.5 for KaLM-mini (Table~\ref{tab:finetune_ceiling}).
-The ranking loss is consistent with \citet{rajaee2021finetuning}, who found that removing top directions lowers the STS performance of BERT after Siamese fine-tuning.
+\paragraph{Where the repair stops helping.}
+ABTT does not help fine-tuned ranking: AUROC falls by 0.002 to 0.014 in point estimate, and every 95\% interval includes zero.
+Fine-tuned LaTa falls from 0.984 to 0.970 ($-0.014$, $-0.032$ to $+0.001$), and Qwen3-0.6B and KaLM-mini fall by 0.002 and 0.003 ($-0.005$ to $+0.001$; $-0.007$ to $+0.001$); for Qwen3-0.6B the two rows also sit at different train-selected layers (28 and 27).
+The same projection raises fine-tuned LaTa's DirAcc@1 from 81.6 to 85.2 ($+3.6$, 1.0 to 6.3); the rises for Qwen3-0.6B (90.8 to 91.4) and KaLM-mini (91.7 to 92.5) are within noise (Table~\ref{tab:finetune_ceiling}).
+The direction of the ranking loss is consistent with \citet{rajaee2021finetuning}, who found that removing top directions lowers the STS performance of BERT after Siamese fine-tuning.
 \citet{reichbauer2026alignment} find, by contrast, that whitening still helps fine-tuned Latin and Greek encoders.
-Why the projection costs ranking in fine-tuned models is the subspace question of Section~\ref{sec:localizing}: if fine-tuning moves task signal into the top components, then removing them removes signal (E3).
+Whether the projection costs ranking in fine-tuned models is the subspace question of Section~\ref{sec:localizing}: if fine-tuning moves task signal into the top components, then removing them removes signal (E3).
 E3 finds that fine-tuning does move signal there: at layer 12 the removed subspace of fine-tuned LaTa ranks at 0.953, against 0.868 before fine-tuning and 0.900 for the next ten components.
 
 Fine-tuning on 499 training pairs also beats the training-free projection for the embedding-trained models.
 Over five random reassignments of query and reference files, fine-tuned Qwen3-0.6B with ABTT routes at 92.3 against 90.5 for its zero-shot ABTT row, and KaLM-mini at 93.0 against 90.9; for LaTa the two tie at 87.7 (Appendix~\ref{app:reference_systems}).
+On the single split the DirAcc@1 differences are $+2.0$ (0.0 to 4.0) and $+3.1$ (1.2 to 5.2).
 
 \paragraph{Practitioner rule.}
-On this testbed, a top-$D$ projection fit on training vectors helped every pre-trained encoder at every layer and hurt ranking in contrastively fine-tuned ones.
+On this testbed, a top-$D$ projection fit on training vectors helped every pre-trained encoder at every layer and did not help ranking in contrastively fine-tuned ones.
 A high top-PC share (0.76 or more here) flags a collapsed layer; mean pairwise cosine did not.
-Neither statistic chooses among healthy layers, and a character n-gram reference routes better than every pre-trained configuration on this corpus.
+Neither statistic chooses among healthy layers, and a character n-gram reference routes as well as the best pre-trained configuration on this corpus.
 
 \section{Discussion}
 \label{sec:discussion}
@@ -690,7 +700,7 @@ Token attributions at the train-selected layers are reported in Appendix~\ref{ap
 \clearpage
 \section*{Limitations}
 
-The study uses one labeled corpus in one language and one domain: medieval Latin canon law. A label-free check extends the geometry, but not the retrieval result, to one English register (Section~\ref{sec:objective}). The 1,705-witness corpus is large for this field but small by current NLP standards. We test six models, and others may behave differently. In the models we have run, architecture and training objective are confounded, so we cannot yet say whether the mid-depth collapse follows from T5 pretraining or from the absence of an embedding objective; the controlled panel of Section~\ref{sec:objective} is designed to separate them (P2x2). The headline cells carry no confidence intervals until the directory-level bootstrap is run (CI), so small differences, such as the ABTT drops on fine-tuned Qwen3-0.6B and KaLM-mini, should not be read as effects. ABTT needs enough text to estimate principal components, so smaller archives need separate study.
+The study uses one labeled corpus in one language and one domain: medieval Latin canon law. A label-free check extends the geometry, but not the retrieval result, to one English register (Section~\ref{sec:objective}). The 1,705-witness corpus is large for this field but small by current NLP standards. We test six models, and others may behave differently. In the models we have run, architecture and training objective are confounded, so we cannot yet say whether the mid-depth collapse follows from T5 pretraining or from the absence of an embedding objective; the controlled panel of Section~\ref{sec:objective} is designed to separate them (P2x2). The bootstrap intervals resample test directories with the layer, threshold, and projections held fixed, so they cover test-set sampling but not the choice of split; they span about $\pm 0.02$ AUROC and $\pm 3$ routing points, and differences below that, including the ABTT drops on the fine-tuned encoders and the lexical reference's lead, are not established effects. The printed routing accuracies are precise to a few files: refitting the threshold on a finer grid moves 45 of the 66 printed routing numbers, by a median of 3 files (0.35 points); ABTT, SIF+ABTT, and fine-tuned cells move by at most 0.8, and Base and SIF cells by up to 2.6 (Appendix~\ref{app:ci_pq}). ABTT needs enough text to estimate principal components, so smaller archives need separate study.
 
 Task~B measures ranking quality and a single threshold decision. It does not measure the full judgment a working scholar brings to deciding whether a witness belongs to an existing directory. The attribution analysis in the appendix is local to fixed query-candidate scores and failed its pre-registered threshold; its consistent effect is a leave-one-out rank faithfulness gain, and the ERASER-style rationale metrics are mixed.
 
@@ -849,7 +859,20 @@ Three encoders are fine-tuned under one recipe, LaTa, Qwen3-0.6B and KaLM-mini. 
 \input{tables/lexical_baselines}
 
 \paragraph{The parameter-free repair matches contrastive fine-tuning on LaTa routing, but supervision clears it on Qwen3-0.6B and KaLM-mini.}
-Fine-tuning LaTa on the positive train pairs (499 after a directory-level dev carve; setup above) gives an uncorrected Task A AUROC of 0.984, above every zero-shot baseline row (0.838 to 0.972), and 83.4 assignment accuracy; with ABTT on top it reaches 87.8 assignment accuracy and 85.2 DirAcc@1, below every zero-shot ABTT cell (88.5 to 91.7 and 86.1 to 89.4). ABTT also lowers that row's AUROC from 0.984 to 0.970 while widening its cosine gap from 0.387 to 0.548, consistent with fine-tuning already removing part of the common component: the repair is not free on every row, and it matches what the available supervision buys on routing at this budget. The same recipe lands elsewhere on the other two encoders we fine-tuned: Qwen3-0.6B reaches 92.1 assignment accuracy and 91.4 DirAcc@1 with ABTT, and KaLM-mini 93.4 and 92.5, both above every zero-shot ABTT cell. Over five Task B query and reference reseedings the fine-tuned encoder with ABTT beats its zero-shot ABTT row by 1.8 points on Qwen3-0.6B ($0.923 \pm 0.002$ against $0.905 \pm 0.004$) and by 2.1 points on KaLM-mini ($0.930 \pm 0.005$ against $0.909 \pm 0.006$), while on LaTa the two are 0.877 and 0.877. So the match is a statement about LaTa, not about post-processing in general; it does not survive on the model with the best zero-shot cell in Table~\ref{tab:taskB_headline}. All three ceilings are also flattered: 206 of the 535 test queries whose directory already exists (38.5 percent) sit in a directory that supplied a training pair, and witnesses inside a directory are near-duplicates, so read each margin as an upper bound.
+Fine-tuning LaTa on the positive train pairs (499 after a directory-level dev carve; setup above) gives an uncorrected Task A AUROC of 0.984, above every zero-shot baseline row (0.838 to 0.972), and 83.4 assignment accuracy; with ABTT on top it reaches 87.8 assignment accuracy and 85.2 DirAcc@1, below every zero-shot ABTT cell (88.5 to 91.7 and 86.1 to 89.4). ABTT also lowers that row's AUROC from 0.984 to 0.970 in point estimate (within the bootstrap interval of Appendix~\ref{app:ci_pq}) while widening its cosine gap from 0.387 to 0.548, consistent with fine-tuning already removing part of the common component: the repair does not help every row, and it matches what the available supervision buys on routing at this budget. The same recipe lands elsewhere on the other two encoders we fine-tuned: Qwen3-0.6B reaches 92.1 assignment accuracy and 91.4 DirAcc@1 with ABTT, and KaLM-mini 93.4 and 92.5, both above every zero-shot ABTT cell. Over five Task B query and reference reseedings the fine-tuned encoder with ABTT beats its zero-shot ABTT row by 1.8 points on Qwen3-0.6B ($0.923 \pm 0.002$ against $0.905 \pm 0.004$) and by 2.1 points on KaLM-mini ($0.930 \pm 0.005$ against $0.909 \pm 0.006$), while on LaTa the two are 0.877 and 0.877. So the match is a statement about LaTa, not about post-processing in general; it does not survive on the model with the best zero-shot cell in Table~\ref{tab:taskB_headline}. All three ceilings are also flattered: 206 of the 535 test queries whose directory already exists (38.5 percent) sit in a directory that supplied a training pair, and witnesses inside a directory are near-duplicates, so read each margin as an upper bound.
+
+\section{Bootstrap Intervals and Routing Checks}
+\label{app:ci_pq}
+
+\paragraph{Intervals.} A bootstrap replicate draws the 514 test directories with replacement ($B=10{,}000$, seed 233). A drawn directory keeps every file and pair: a directory drawn $c$ times weights its files and within-directory pairs by $c$ and its pairs with a directory drawn $c'$ times by $cc'$, and no pair is formed between two copies of one directory. The layer, threshold, ABTT components, $D$, and SIF weights stay fit on the training split, and every score is computed once on the full test set, so a replicate only reweights test pairs and files. Intervals are 95\% percentiles; a paired difference recomputes both cells on each replicate. Before resampling, every cell was recomputed with the paper's evaluation code and matched its printed value. Table~\ref{tab:headline_ci} gives every cell and Table~\ref{tab:headline_ci_diffs} the contrasts quoted in Section~\ref{sec:repair}.
+
+\paragraph{Routing checks.} Table~\ref{tab:pq_routing} reports, at the Task~B cells, the AUROC of each test file's maximum cosine for existing against new files (no threshold), the gap between the best test threshold and the training threshold, the skewness of the 10-occurrence distribution \citep{radovanovic2010hubs}, centering alone ($D=0$), and assignment accuracy with $\tau$ refit as the exact best-F1 cut over all training pair scores.
+
+\paragraph{Threshold grid.} We keep the published grid of 200 evenly spaced thresholds in $[0,1]$. Every finer grid optimizes the same training objective, the best F1 over same- against different-directory training pairs, and differs only in resolution. With the layer and $D$ fixed, a grid of 10,001 values moves 45 of the 66 printed routing numbers, by a median of 3 files (0.35 points); ABTT, SIF+ABTT, and fine-tuned cells move by at most 0.8 points, and Base and SIF cells by up to 2.6 (mT5-base's baseline). The exact best-F1 cut moves 48 of them. Refitting would trade one set of differences of one to a few files for another and changes no conclusion of Section~\ref{sec:repair}.
+
+\input{tables/headline_ci}
+\input{tables/headline_ci_diffs}
+\input{tables/pq_routing}
 
 \section{Token Attribution at Retrieval-Selected Layers}
 \label{app:attribution}
