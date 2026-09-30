@@ -684,8 +684,9 @@ def facts(w: pd.DataFrame, coords: pd.DataFrame, shares: pd.DataFrame,
     a("")
     a("## Definitions")
     a("- Vectors: mean-pooled hidden states (`hidden_mean_tokempty`), raw as cached, from the "
-      "cache passed as `--bases_root`. On Delta these are James's re-extraction, not Ian's "
-      "files, so the reproduction gates below show differences near 1e-7 and not exactly 0.")
+      "cache passed to `compute` as `--bases_root`. When that cache is a re-extraction and not "
+      "the files behind the published CSVs, the reproduction gates below show differences "
+      "near 1e-7 and not exactly 0.")
     a("- Every statistic (coordinate ranking, mean, SD, principal components) is fit on the "
       "847 training passages and applied to train and test. The intervention acts on the raw "
       "vectors; L2 normalization happens afterwards inside the metric. Nothing is centered "
