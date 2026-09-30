@@ -1,4 +1,4 @@
-"""Issue #248: the architecture-by-objective panel (p2x2_panel.py).
+"""Issue #248: the P2x2 panel (p2x2_panel.py); the paper reports its two matched pairs.
 
 The synthetic tests build a toy split and toy caches whose rows are stored in a different
 order from the split, so they pin filename alignment, the minimum / maximum / range rules,
@@ -24,7 +24,6 @@ pytest.importorskip("sklearn")
 import p2x2_panel as p2  # noqa: E402
 import raw_auroc_layers as ral  # noqa: E402
 
-FT_TEX = REPO / "overleaf_drafts" / "tables" / "ft_lata_layerwise.tex"
 TOY_MODELS = [
     ("LaTa", "bowphs/LaTa", "T5, raw", "none", "panel"),
     ("LaBERTa", "bowphs/LaBerta", "Enc., raw", "none", "p2x2"),
@@ -323,38 +322,19 @@ def test_fmt_cell_single_range_and_collapsing_range():
     assert p2.fmt_cell([1.0007, 1.8054, 1.3619], 2, 2) == "1.00--1.81"
 
 
-def test_read_ft_cells_from_the_tracked_table():
-    ft = p2.read_ft_cells(FT_TEX)
-    assert ft["auroc"] == "0.50--0.57" and (ft["auroc_lo"], ft["auroc_hi"]) == (0.499, 0.569)
-    assert (ft["pc1_max"], ft["pc1_max_layer"]) == (0.945, 4)
-    assert (ft["erank_min"], ft["erank_min_layer"]) == (1.42, 8)
-
-
-def test_read_ft_cells_rejects_missing_short_or_changed_tables(tmp_path):
-    with pytest.raises(SystemExit, match="not found"):
-        p2.read_ft_cells(tmp_path / "absent.tex")
-    text = FT_TEX.read_text()
-    short = tmp_path / "short.tex"
-    short.write_text("\n".join(x for x in text.splitlines() if not x.startswith("7 &")))
-    with pytest.raises(SystemExit, match=r"layer\(s\) \[7\]"):
-        p2.read_ft_cells(short)
-    changed = tmp_path / "changed.tex"
-    changed.write_text(text.replace("4 & 0.500 & 0.499 & 0.952 & 0.945", "4 & 0.500 & 0.499 & 0.952 & 0.960"))
-    with pytest.raises(SystemExit, match="differ from the cells the paper prints"):
-        p2.read_ft_cells(changed)
-
-
 # ----------------------------------------------------------------------------- render
 def _render(tmp_path: Path, df: pd.DataFrame, tag: str = "r"):
     out, tab = tmp_path / tag / "out", tmp_path / tag / "tab"
     out.mkdir(parents=True)
     df.to_csv(out / "p2x2_layers.csv", index=False)
-    assert p2.main(["--stage", "render", "--out_dir", str(out), "--tab_dir", str(tab),
-                    "--ft_tex", str(FT_TEX)]) == 0
+    assert p2.main(["--stage", "render", "--out_dir", str(out), "--tab_dir", str(tab)]) == 0
     return out, tab
 
 
-def test_render_panel_table_rows(tmp_path):
+NOT_IN_PAPER = ("mT5-base", "T5-v1.1", "T5-base", "Sentence-T5", "LaBSE", "SPhilBERTa", "fine-tuned")
+
+
+def test_render_panel_table_is_the_two_pairs(tmp_path):
     out, tab = _render(tmp_path, printed_df())
     tex = (tab / "panel_2x2.tex").read_text()
     lines = tex.splitlines()
@@ -362,43 +342,56 @@ def test_render_panel_table_rows(tmp_path):
     assert lines[2] == r"\begin{table}[t]" and lines[-1] == r"\end{table}"
     assert r"\label{tab:panel_2x2}" in tex
     body = lines[lines.index(r"\midrule") + 1:lines.index(r"\bottomrule")]
-    assert [x.split(" & ")[0] for x in body] == [
-        "T5, raw", "T5, raw", "T5, raw", "T5, raw+FT", "T5, emb.", r"\midrule", "Enc., raw",
-        "Enc., emb."]
-    assert body[0] == r"T5, raw & \makecell[l]{LaTa, PhilTa,\\mT5-base} & 0.50--0.65 & 0.86--1.00 \\"
-    assert body[1] == r"T5, raw & T5-v1.1-base & 0.489 & 0.975 \\"
-    assert body[2].startswith("T5, raw & T5-base & ")
-    assert body[3] == r"T5, raw+FT & LaTa (fine-tuned) & 0.50--0.57 & 0.945 \\"
     summ = p2.summarize(printed_df()).set_index("model")
-    st5 = summ.loc["Sentence-T5"]
-    assert body[4] == rf"T5, emb. & Sentence-T5 & {st5.auroc_min:.3f} & {st5.pc1_max:.3f} \\"
-    assert body[6].startswith("Enc., raw & LaBERTa, PhilBERTa & ")
-    lo, hi = sorted([summ.loc["LaBSE", "auroc_min"], summ.loc["SPhilBERTa", "auroc_min"]])
-    assert body[7].startswith(f"Enc., emb. & LaBSE, SPhilBERTa & {lo:.2f}--{hi:.2f} & ")
-    assert all(x.count("&") == 3 for x in body if x != r"\midrule")
+
+    def cells(name):
+        x = summ.loc[name]
+        return f"{x.auroc_min:.3f} & {x.pc1_max:.3f} & {x.erank_min:.2f}"
+
+    assert body == [
+        r"\multicolumn{5}{@{}l}{\textit{Latin}} \\",
+        rf"LaTa & T5 & {cells('LaTa')} \\",
+        rf"LaBERTa & Enc. & {cells('LaBERTa')} \\",
+        r"\midrule",
+        r"\multicolumn{5}{@{}l}{\textit{Ancient Greek, Latin, English}} \\",
+        rf"PhilTa & T5 & {cells('PhilTa')} \\",
+        rf"PhilBERTa & Enc. & {cells('PhilBERTa')} \\",
+    ]
+    assert body[1].endswith(r"0.496 & 0.952 & 1.26 \\")   # the printed LaTa cells
+    assert body[5].endswith(r"0.538 & 0.858 & 1.40 \\")   # the printed PhilTa cells
     caption = [x for x in lines if x.startswith(r"\caption{")][0]
-    for phrase in ("lowest Task~A test AUROC", "unmodified mean-pooled vectors",
-                   "peak top-PC", "847 training passages", "two decimals",
-                   "T5-base is the raw partner of Sentence-T5", "original T5 checkpoint",
-                   "layers 2--11", "range of the per-model values"):
+    for phrase in ("matched pairs", "same authors", "same pretraining data", "embedding objective",
+                   "span corruption", "masked language modeling", "tokenizer",
+                   "pretraining languages", "lowest Task~A test AUROC",
+                   "unmodified mean-pooled vectors", "peak top-PC", "847 training passages",
+                   "lowest effective rank"):
         assert phrase in caption, phrase
+    for name in NOT_IN_PAPER:
+        assert name not in tex, name
     assert "—" not in tex and "pendingnum" not in tex   # no em-dashes, nothing pending
 
 
-def test_render_layerwise_table(tmp_path):
+def test_render_layerwise_table_holds_the_encoder_only_siblings(tmp_path):
     out, tab = _render(tmp_path, printed_df())
-    lines = (tab / "p2x2_layerwise.tex").read_text().splitlines()
-    assert lines[0] == "% generated table" and lines[2] == r"\begin{table*}[t]"
-    assert r"\label{tab:p2x2_layerwise}" in lines and lines[-1] == r"\end{table*}"
+    tex = (tab / "p2x2_layerwise.tex").read_text()
+    lines = tex.splitlines()
+    assert lines[0] == "% generated table" and lines[2] == r"\begin{table}[t]"
+    assert r"\label{tab:p2x2_layerwise}" in lines and lines[-1] == r"\end{table}"
     header = [x for x in lines if x.startswith("& \\multicolumn")][0]
-    assert [header.index(n) for n in p2.LAYERWISE_MODELS] == sorted(header.index(n) for n in p2.LAYERWISE_MODELS)
-    assert "LaBSE" not in header and "LaTa" not in header
+    assert header == r"& \multicolumn{3}{c}{LaBERTa} & \multicolumn{3}{c}{PhilBERTa} \\"
     body = lines[lines.index(r"\midrule") + 1:lines.index(r"\bottomrule")]
     assert [int(x.split(" & ")[0]) for x in body] == list(range(1, 13))
-    assert all(x.count("&") == 18 for x in body)
-    assert body[1].startswith("2 & 0.489 & 0.960 & ") and body[8].startswith("9 & ")
-    assert " & 0.975 & " in body[8]
-    assert "—" not in "\n".join(lines)
+    assert all(x.count("&") == 6 for x in body)
+    by = printed_df().set_index(["model", "layer"])
+    x = by.loc[("PhilBERTa", 6)]
+    assert body[5].endswith(rf"{x.aucroc:.3f} & {x.pc1:.3f} & {x.erank:.2f} \\")
+    caption = [x for x in lines if x.startswith(r"\caption{")][0]
+    for phrase in ("encoder-only siblings", "every space as its own token",
+                   "no sequence-boundary tokens", "0.0003"):
+        assert phrase in caption, phrase
+    for name in NOT_IN_PAPER + ("LaTa &", "PhilTa &"):
+        assert name not in tex, name
+    assert "—" not in tex
 
 
 def test_render_facts(tmp_path):
@@ -406,17 +399,18 @@ def test_render_facts(tmp_path):
     out, _ = _render(tmp_path, df)
     text = (out / "p2x2_facts.md").read_text()
     assert "Partial run" not in text and "Reproduction gate" not in text   # no p2x2_repro.csv
+    assert "## In the paper (tab:panel_2x2): the two matched pairs" in text
+    assert "## Full panel, not in the paper" in text
+    assert "| Latin | LaTa | T5 | 0.496 (6) | 0.952 (4) |" in text
+    assert "| Ancient Greek, Latin, English | PhilBERTa | Enc. |" in text
     row = [x for x in text.splitlines() if x.startswith("| T5-v1.1-base |")][0]
     assert "| 0.489 (2) |" in row and "| 0.975 (9) |" in row and "| 10 | 2-11 |" in row
-    assert "| T5, raw | LaTa, PhilTa, mT5-base | 0.50 to 0.65 | 0.86 to 1.00 |" in text
-    assert "| T5, raw+FT | LaTa (fine-tuned) | 0.50 to 0.57 | 0.945 | 1.42 |" in text
     per_layer = [x for x in text.splitlines() if x.startswith("- LaBSE: ")][0]
     assert per_layer.count(";") == 11 and per_layer.startswith("- LaBSE: 1: 0.806 / ")
     res, geo, t5 = gate_refs(tmp_path, df)
     _, records, _ = p2.reproduction_gate(df, res, geo, t5)
     pd.DataFrame(records).to_csv(out / "p2x2_repro.csv", index=False)
-    assert p2.main(["--stage", "render", "--out_dir", str(out), "--tab_dir", str(tmp_path / "t2"),
-                    "--ft_tex", str(FT_TEX)]) == 0
+    assert p2.main(["--stage", "render", "--out_dir", str(out), "--tab_dir", str(tmp_path / "t2")]) == 0
     text = (out / "p2x2_facts.md").read_text()
     assert "| a | aucroc | LaTa, PhilTa, mT5-base, LaBSE | 48 | 0.00e+00 |" in text
     assert "| c | aucroc | T5-v1.1-base | 12 |" in text
@@ -432,16 +426,18 @@ def test_render_is_byte_identical_across_runs(tmp_path):
 
 def test_render_partial_csv_marks_missing_cells(tmp_path, capsys):
     four = printed_df()
-    four = four[four.source == "panel"]
+    four = four[four.source == "panel"]   # LaTa, PhilTa, mT5-base, LaBSE: no encoder-only sibling
     out, tab = _render(tmp_path, four)
     assert "WARNING: partial CSV" in capsys.readouterr().out
     lines = (tab / "panel_2x2.tex").read_text().splitlines()
     body = lines[lines.index(r"\midrule") + 1:lines.index(r"\bottomrule")]
-    assert body[0].endswith(r" & 0.50--0.65 & 0.86--1.00 \\")
-    assert body[1] == "T5, raw & T5-v1.1-base & " + " & ".join([p2.PENDING] * 2) + r" \\"
-    assert p2.PENDING in body[7] and "0.806" not in body[7]   # LaBSE alone is not the cell
+    assert body[1].endswith(r" & 0.496 & 0.952 & 1.26 \\")
+    assert body[2] == r"LaBERTa &  & " + " & ".join([p2.PENDING] * 3) + r" \\"
+    assert body[6].startswith(r"PhilBERTa &  & " + p2.PENDING)
     assert not (tab / "p2x2_layerwise.tex").exists()
-    assert "**Partial run: no rows for T5-v1.1-base" in (out / "p2x2_facts.md").read_text()
+    facts = (out / "p2x2_facts.md").read_text()
+    assert "**Partial run: no rows for T5-v1.1-base" in facts
+    assert "| Latin | LaBERTa | | not computed |" in facts
 
 
 # ----------------------------------------------------------------- real caches (opt-in)

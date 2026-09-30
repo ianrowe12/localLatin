@@ -3,21 +3,20 @@
 \begin{table}[t]
 \centering
 \footnotesize
-\setlength{\tabcolsep}{2pt}
-\begin{tabular}{@{}llcc@{}}
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}llccc@{}}
 \toprule
-Cell & Models & AUROC$_{\min}$ & PC1$_{\max}$ \\
+Model & Arch. & AUROC$_{\min}$ & PC1$_{\max}$ & Rank$_{\min}$ \\
 \midrule
-T5, raw & \makecell[l]{LaTa, PhilTa,\\mT5-base} & 0.50--0.65 & 0.86--1.00 \\
-T5, raw & T5-v1.1-base & 0.489 & 0.975 \\
-T5, raw & T5-base & 0.816 & 0.545 \\
-T5, raw+FT & LaTa (fine-tuned) & 0.50--0.57 & 0.945 \\
-T5, emb. & Sentence-T5 & 0.800 & 0.943 \\
+\multicolumn{5}{@{}l}{\textit{Latin}} \\
+LaTa & T5 & 0.496 & 0.952 & 1.36 \\
+LaBERTa & Enc. & 0.826 & 0.254 & 57.87 \\
 \midrule
-Enc., raw & LaBERTa, PhilBERTa & 0.83--0.88 & 0.16--0.25 \\
-Enc., emb. & LaBSE, SPhilBERTa & 0.81--0.89 & 0.13--0.52 \\
+\multicolumn{5}{@{}l}{\textit{Ancient Greek, Latin, English}} \\
+PhilTa & T5 & 0.538 & 0.858 & 1.81 \\
+PhilBERTa & Enc. & 0.883 & 0.162 & 82.12 \\
 \bottomrule
 \end{tabular}
-\caption{Architecture-by-objective panel, read on the Latin corpus with no post-hoc correction. AUROC$_{\min}$ is the lowest Task~A test AUROC over the 12 layers of the unmodified mean-pooled vectors. PC1$_{\max}$ is the peak top-PC share over layers, the largest share of centered variance on the first principal component of the 847 training passages. A row with one model gives its value, to three decimals. A row with several models gives the range of the per-model values, to two decimals (three if the two ends would print alike). For fine-tuned LaTa, the AUROC entry is the range over layers 2--11. Enc.\ is encoder-only, emb.\ is embedding-trained, and FT is contrastive fine-tuning on training pairs. T5-base is the raw partner of Sentence-T5, which starts from the original T5 checkpoint.}
+\caption{Two matched pairs of raw pre-trained encoders, read on the Latin corpus with no post-hoc correction. Within a pair the models come from the same authors and the same pretraining data, and neither has an embedding objective. They differ in architecture with its pretraining objective, a T5 encoder trained with span corruption against a RoBERTa-style encoder-only model (Enc.) trained with masked language modeling, and in tokenizer. The row above each pair names its pretraining languages. AUROC$_{\min}$: the lowest Task~A test AUROC over the 12 layers of the unmodified mean-pooled vectors. PC1$_{\max}$: the peak top-PC share over layers, the largest share of centered variance on the first principal component of the 847 training passages. Rank$_{\min}$: the lowest effective rank over layers on the same passages.}
 \label{tab:panel_2x2}
 \end{table}

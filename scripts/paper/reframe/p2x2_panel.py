@@ -12,9 +12,12 @@ The geometry is ``gen_ft_geometry.layer_stats``, which wraps ``pca_stats`` / ``c
 of scripts/resubmit/run_layer_geometry_diagnostics.py unchanged. Rows are aligned to the split
 by filename (``AlignmentResolver`` reads the ``meta.csv`` beside each cache), never by position.
 
-The 2x2: T5 encoder against encoder-only model, crossed with raw pre-training against an
-embedding objective. LaTa, PhilTa, mT5-base and LaBSE come from the paper's cache
-(``--bases_root``); the other six were extracted for this issue (``--p2x2_bases``).
+The run covers the planned 2x2 (T5 encoder against encoder-only model, crossed with raw
+pre-training against an embedding objective): LaTa, PhilTa, mT5-base and LaBSE from the
+paper's cache (``--bases_root``), the other six extracted for this issue (``--p2x2_bases``).
+The paper reports the architecture dimension only (author decision, 2026-09-30): two matched
+pairs of raw models from the same authors and pretraining data, LaTa with LaBERTa and PhilTa
+with PhilBERTa (``PAIRS``). The other six models stay in the CSV and the facts file.
 
 Stages:
   compute  reads embeddings (CPU), runs the reproduction gate, writes under --out_dir:
@@ -26,12 +29,14 @@ Stages:
              a. AUROC of LaTa, PhilTa, mT5-base, LaBSE = published baseline cells (1e-6)
              b. their train top-PC share and effective rank = geometry_per_layer.csv
              c. T5-v1.1-base AUROC = the committed #244 CPU extraction (1e-4)
-             d. the cells the paper already prints (PRINTED, PRINTED_RANGES)
+             d. cells already published in the paper or in the #244 CSV (PRINTED,
+                PRINTED_RANGES)
            A model left out by --models is reported as SKIPPED, not as a failure.
-  render   reads those CSVs and the tracked fine-tuned LaTa table only, writes
-             overleaf_drafts/tables/panel_2x2.tex       (label tab:panel_2x2)
-             overleaf_drafts/tables/p2x2_layerwise.tex  (label tab:p2x2_layerwise)
-             <out_dir>/p2x2_facts.md
+  render   reads those CSVs only, writes
+             overleaf_drafts/tables/panel_2x2.tex       the two pairs (label tab:panel_2x2)
+             overleaf_drafts/tables/p2x2_layerwise.tex  LaBERTa and PhilBERTa per layer
+                                                        (label tab:p2x2_layerwise)
+             <out_dir>/p2x2_facts.md                    all ten models
 
 Run from the repo root; the caches are gitignored, so point the two roots at a checkout that
 has them:
@@ -43,7 +48,6 @@ has them:
 from __future__ import annotations
 
 import argparse
-import re
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
@@ -64,7 +68,6 @@ BASES_ROOT = Path("runs/active/resubmit_bases")
 P2X2_BASES = Path("runs/active/reframe/p2x2/bases")
 OUT_DIR = Path("runs/active/reframe/p2x2")
 TAB_DIR = Path("overleaf_drafts/tables")
-FT_TEX = TAB_DIR / "ft_lata_layerwise.tex"
 SUBDIR = "hidden_mean_tokempty"
 LAYERS = tuple(range(1, 13))
 AUROC_FLOOR = 0.80  # the paper's "stays above 0.80 at every layer" reading
@@ -89,8 +92,8 @@ PUBLISHED_TOL = 1e-6   # a: AUROC against phase_resubmit_results.csv
 GEOMETRY_TOL = 1e-6    # b: top-PC share (absolute) and effective rank (relative)
 T5V11_TOL = 1e-4       # c: a re-extraction on other hardware against the #244 CPU extraction
 T5V11 = "T5-v1.1-base"
-# d: cells the paper already prints, to three decimals. A layer is checked where the paper
-# (or tab:gen_geometry, for the T5-v1.1-base peak) names it.
+# d: cells already published in the paper or in the #244 CSV, to three decimals. A layer is
+# checked where the paper (or tab:gen_geometry, for the T5-v1.1-base peak) names it.
 PRINTED: Dict[str, Dict[str, float]] = {
     "LaTa": {"auroc_min": 0.496, "auroc_min_layer": 6},
     "PhilTa": {"auroc_min": 0.538, "auroc_min_layer": 10},
@@ -101,27 +104,19 @@ PRINTED: Dict[str, Dict[str, float]] = {
 RAW_T5_PANEL = ("LaTa", "PhilTa", "mT5-base")
 PRINTED_RANGES = {RAW_T5_PANEL: {"auroc_min": "0.50--0.65", "pc1_max": "0.86--1.00"}}
 
-# tab:panel_2x2 rows: (cell, models sharing the row). FT_ROW is fine-tuned LaTa, whose vectors
-# are not in the P2x2 caches: its cells are read from the tracked ft_lata_layerwise.tex, a
-# generated table of issue #238 (gen_ft_geometry.py), and must equal what Sec. 6 prints.
-FT_ROW = "LaTa (fine-tuned)"
-MIDRULE = ("midrule", ())
-PANEL_ROWS: List[Tuple[str, Tuple[str, ...]]] = [
-    ("T5, raw", RAW_T5_PANEL),
-    ("T5, raw", (T5V11,)),
-    ("T5, raw", ("T5-base",)),
-    ("T5, raw+FT", (FT_ROW,)),
-    ("T5, emb.", ("Sentence-T5",)),
-    MIDRULE,
-    ("Enc., raw", ("LaBERTa", "PhilBERTa")),
-    ("Enc., emb.", ("LaBSE", "SPhilBERTa")),
+# The paper reports the architecture dimension only (author decision, 2026-09-30): two
+# matched pairs of raw models from the same authors and the same pretraining data.
+# tab:panel_2x2 holds these four models; the other six stay in the CSV and the facts file.
+PAIRS: List[Tuple[str, str, str]] = [  # pretraining languages, T5 model, encoder-only model
+    ("Latin", "LaTa", "LaBERTa"),
+    ("Ancient Greek, Latin, English", "PhilTa", "PhilBERTa"),
 ]
-FT_LAYERS = tuple(range(2, 12))  # the fine-tuned LaTa AUROC range is over layers 2 to 11
-FT_PRINTED = {"auroc": "0.50--0.57", "pc1_max": "0.945"}
+PAPER_MODELS = tuple(m for _, t5, enc in PAIRS for m in (t5, enc))
+ARCH = {"T5, raw": "T5", "Enc., raw": "Enc."}  # cell -> the Arch. column
 PENDING = r"\pendingnum{P2x2}"  # a cell whose model is not in the CSV (partial runs)
 
-# tab:p2x2_layerwise: the models no other per-layer table of the paper covers.
-LAYERWISE_MODELS = (T5V11, "T5-base", "Sentence-T5", "LaBERTa", "PhilBERTa", "SPhilBERTa")
+# tab:p2x2_layerwise: the encoder-only siblings; LaTa and PhilTa have per-layer tables elsewhere.
+LAYERWISE_MODELS = ("LaBERTa", "PhilBERTa")
 
 
 # --------------------------------------------------------------------------- compute
@@ -368,94 +363,54 @@ def fmt_cell(values: Sequence[float], single_nd: int = 3, range_nd: int = 2) -> 
     return a
 
 
-FT_LINE = re.compile(r"^\s*(\d+)((?:\s*&\s*[0-9.]+){6})\s*\\\\\s*$")
-
-
-def read_ft_cells(path: Path) -> Dict:
-    """Fine-tuned LaTa cells from the generated tab:ft_lata_layerwise (columns: layer, AUROC
-    PT, AUROC FT, top-PC share PT, FT, effective rank PT, FT)."""
-    path = Path(path)
-    if not path.exists():
-        raise SystemExit(f"{path} not found: the fine-tuned LaTa row of tab:panel_2x2 is read "
-                         "from that generated table (pass --ft_tex)")
-    rows = {}
-    for line in path.read_text().splitlines():
-        m = FT_LINE.match(line)
-        if m:
-            rows[int(m.group(1))] = [float(v) for v in m.group(2).replace("&", " ").split()]
-    absent = [layer for layer in LAYERS if layer not in rows]
-    if absent:
-        raise SystemExit(f"{path}: no table row for layer(s) {absent}")
-    auroc = {layer: rows[layer][1] for layer in LAYERS}
-    pc1 = {layer: rows[layer][3] for layer in LAYERS}
-    erank = {layer: rows[layer][5] for layer in LAYERS}
-    mid = [auroc[layer] for layer in FT_LAYERS]
-    pk = max(LAYERS, key=lambda layer: (pc1[layer], -layer))
-    rk = min(LAYERS, key=lambda layer: (erank[layer], layer))
-    cells = {"auroc_lo": min(mid), "auroc_hi": max(mid), "auroc": fmt_cell([min(mid), max(mid)]),
-             "pc1_max": pc1[pk], "pc1_max_layer": pk, "erank_min": erank[rk],
-             "erank_min_layer": rk, "source": str(path)}
-    got = {"auroc": cells["auroc"], "pc1_max": f"{cells['pc1_max']:.3f}"}
-    if got != FT_PRINTED:
-        raise SystemExit(f"{path}: fine-tuned LaTa cells {got} differ from the cells the paper "
-                         f"prints {FT_PRINTED}")
-    return cells
-
-
-def _models_tex(names: Sequence[str]) -> str:
-    """Two names on one line; three or more break after the second (makecell)."""
-    if len(names) <= 2:
-        return ", ".join(names)
-    return r"\makecell[l]{" + ", ".join(names[:2]) + r",\\" + ", ".join(names[2:]) + "}"
-
-
-def panel_rows(summ: pd.DataFrame, ft: Dict) -> List[Optional[Dict]]:
-    """The rows of tab:panel_2x2 (None marks the rule between the two architectures)."""
+def panel_rows(summ: pd.DataFrame) -> List[Optional[Dict]]:
+    """The rows of tab:panel_2x2: the two pairs, None between them for the rule. Each pair
+    opens with a group row naming its pretraining languages (the ``data`` key; a column for
+    them would push the table past one ACL column)."""
     s = summ.set_index("model") if len(summ) else summ
     out: List[Optional[Dict]] = []
-    for cell, names in PANEL_ROWS:
-        if (cell, names) == MIDRULE:
+    for i, (data, t5, enc) in enumerate(PAIRS):
+        if i:
             out.append(None)
-        elif names == (FT_ROW,):
-            out.append({"cell": cell, "models": FT_ROW, "auroc": ft["auroc"],
-                        "pc1": f"{ft['pc1_max']:.3f}", "erank": f"{ft['erank_min']:.2f}"})
-        elif all(n in s.index for n in names):
-            out.append({"cell": cell, "models": _models_tex(names),
-                        "auroc": fmt_cell([s.loc[n, "auroc_min"] for n in names]),
-                        "pc1": fmt_cell([s.loc[n, "pc1_max"] for n in names]),
-                        "erank": fmt_cell([s.loc[n, "erank_min"] for n in names], 2, 2)})
-        else:
-            out.append({"cell": cell, "models": _models_tex(names), "auroc": PENDING,
-                        "pc1": PENDING, "erank": PENDING})
+        out.append({"data": data})
+        for name in (t5, enc):
+            row = {"model": name, "arch": "", "auroc": PENDING, "pc1": PENDING, "erank": PENDING}
+            if name in s.index:
+                row.update(arch=ARCH[s.loc[name, "cell"]],
+                           auroc=fmt_cell([s.loc[name, "auroc_min"]]),
+                           pc1=fmt_cell([s.loc[name, "pc1_max"]]),
+                           erank=fmt_cell([s.loc[name, "erank_min"]], 2, 2))
+            out.append(row)
     return out
 
 
-def write_panel_table(summ: pd.DataFrame, ft: Dict, path: Path) -> None:
+def write_panel_table(summ: pd.DataFrame, path: Path) -> None:
     n = f"{int(summ['n_train'].iloc[0]):,}".replace(",", "{,}") if len(summ) else "847"
     lines = [HEADER, "% python scripts/paper/reframe/p2x2_panel.py --stage render",
              r"\begin{table}[t]", r"\centering", r"\footnotesize",
-             r"\setlength{\tabcolsep}{2pt}", r"\begin{tabular}{@{}llcc@{}}", r"\toprule",
-             r"Cell & Models & AUROC$_{\min}$ & PC1$_{\max}$ \\", r"\midrule"]
-    # No effective-rank column: with it the table overflows one ACL column by about 50pt.
-    # Effective rank is in tab:p2x2_layerwise and p2x2_facts.md.
-    for row in panel_rows(summ, ft):
+             r"\setlength{\tabcolsep}{3pt}", r"\begin{tabular}{@{}llccc@{}}", r"\toprule",
+             r"Model & Arch. & AUROC$_{\min}$ & PC1$_{\max}$ & Rank$_{\min}$ \\",
+             r"\midrule"]
+    for row in panel_rows(summ):
         if row is None:
             lines.append(r"\midrule")
+        elif "data" in row:
+            lines.append(r"\multicolumn{5}{@{}l}{\textit{" + row["data"] + r"}} \\")
         else:
-            lines.append(f"{row['cell']} & {row['models']} & {row['auroc']} & {row['pc1']} \\\\")
+            lines.append(f"{row['model']} & {row['arch']} & {row['auroc']} & {row['pc1']} & "
+                         f"{row['erank']} \\\\")
     lines += [r"\bottomrule", r"\end{tabular}",
-              r"\caption{Architecture-by-objective panel, read on the Latin corpus with no "
-              r"post-hoc correction. AUROC$_{\min}$ is the lowest Task~A test AUROC over the 12 "
-              r"layers of the unmodified mean-pooled vectors. PC1$_{\max}$ is the peak top-PC "
+              r"\caption{Two matched pairs of raw pre-trained encoders, read on the Latin corpus "
+              r"with no post-hoc correction. Within a pair the models come from the same authors "
+              r"and the same pretraining data, and neither has an embedding objective. They differ "
+              r"in architecture with its pretraining objective, a T5 encoder trained with span "
+              r"corruption against a RoBERTa-style encoder-only model (Enc.) trained with masked "
+              r"language modeling, and in tokenizer. The row above each pair names its "
+              r"pretraining languages. AUROC$_{\min}$: the lowest Task~A test AUROC over "
+              r"the 12 layers of the unmodified mean-pooled vectors. PC1$_{\max}$: the peak top-PC "
               r"share over layers, the largest share of centered variance on the first principal "
-              r"component of the " + n + r" training passages. A row with one model gives its "
-              r"value, to three decimals. A row with several "
-              r"models gives the range of the per-model values, to two decimals (three if the "
-              r"two ends would print alike). For fine-tuned "
-              r"LaTa, the AUROC entry is the range over layers 2--11. Enc.\ is encoder-only, "
-              r"emb.\ is embedding-trained, and FT is contrastive fine-tuning on training pairs. "
-              r"T5-base is the raw partner of Sentence-T5, which starts from the original T5 "
-              r"checkpoint.}",
+              r"component of the " + n + r" training passages. Rank$_{\min}$: the lowest "
+              r"effective rank over layers on the same passages.}",
               r"\label{tab:panel_2x2}", r"\end{table}"]
     path.write_text("\n".join(lines) + "\n")
 
@@ -471,8 +426,8 @@ def write_layerwise_table(df: pd.DataFrame, path: Path) -> bool:
     head = " & ".join(r"\multicolumn{3}{c}{" + name + "}" for name in names)
     rules = "".join(rf"\cmidrule(lr){{{2 + 3 * i}-{4 + 3 * i}}}" for i in range(len(names)))
     lines = [HEADER, "% python scripts/paper/reframe/p2x2_panel.py --stage render",
-             r"\begin{table*}[t]", r"\centering", r"\scriptsize",
-             r"\setlength{\tabcolsep}{2pt}",  # 3pt overflows the ACL text width by about 20pt
+             r"\begin{table}[t]", r"\centering", r"\footnotesize",
+             r"\setlength{\tabcolsep}{3pt}",
              r"\begin{tabular}{@{}r" + "ccc" * len(names) + r"@{}}", r"\toprule",
              "& " + head + r" \\", rules,
              "Layer & " + " & ".join(["AUROC & PC1 & Rank"] * len(names)) + r" \\", r"\midrule"]
@@ -483,31 +438,51 @@ def write_layerwise_table(df: pd.DataFrame, path: Path) -> bool:
             cells.append(f"{x['aucroc']:.3f} & {x['pc1']:.3f} & {x['erank']:.2f}")
         lines.append(f"{layer} & " + " & ".join(cells) + r" \\")
     lines += [r"\bottomrule", r"\end{tabular}",
-              r"\caption{Per-layer readouts of the models added for the architecture-by-objective "
-              r"panel (Table~\ref{tab:panel_2x2}), on the Latin corpus with no post-hoc "
-              r"correction. AUROC: Task~A test pairwise AUROC of cosine on mean-pooled vectors. "
-              r"PC1: top-PC share, the share of centered variance on the first principal "
-              r"component of the " + n + r" training passages. Rank: entropy effective rank of "
-              r"the same passages. T5-v1.1-base, T5-base, LaBERTa and PhilBERTa are raw "
-              r"pre-trained encoders; Sentence-T5 and SPhilBERTa are embedding-trained.}",
-              r"\label{tab:p2x2_layerwise}", r"\end{table*}"]
+              r"\caption{Per-layer readouts of LaBERTa and PhilBERTa, the encoder-only siblings "
+              r"of LaTa and PhilTa in the matched pairs of Table~\ref{tab:panel_2x2}, on the Latin "
+              r"corpus with no post-hoc correction. AUROC: Task~A test pairwise AUROC of cosine "
+              r"on mean-pooled vectors. PC1: top-PC share, the share of centered variance on the "
+              r"first principal component of the " + n + r" training passages. Rank: entropy "
+              r"effective rank of the same passages. Two facts about the inputs: LaBERTa's "
+              r"tokenizer encodes every space as its own token, so the indentation of the corpus "
+              r"files becomes tokens, which the pooling filter drops from the mean; PhilBERTa's "
+              r"published tokenizer adds no sequence-boundary tokens, so the two whitespace-only "
+              r"files of the corpus pool to zero vectors, and dropping those two files changes no "
+              r"AUROC by more than 0.0003.}",
+              r"\label{tab:p2x2_layerwise}", r"\end{table}"]
     path.write_text("\n".join(lines) + "\n")
     return True
 
 
-def facts(df: pd.DataFrame, summ: pd.DataFrame, ft: Dict, rep: Optional[pd.DataFrame],
-          path: Path) -> None:
+def facts(df: pd.DataFrame, summ: pd.DataFrame, rep: Optional[pd.DataFrame], path: Path) -> None:
     L = ["# P2x2 numbers (generated)", "",
          "Generated by `scripts/paper/reframe/p2x2_panel.py --stage render` from "
          "`p2x2_layers.csv`. Unmodified mean-pooled vectors, Latin corpus. AUROC: Task A test "
          "AUROC. Top-PC share (PC1), effective rank and mean pairwise cosine: the training "
-         "passages. Minima and maxima take the first layer on ties.", ""]
+         "passages. Minima and maxima take the first layer on ties.", "",
+         "The paper reports the four models of the two matched pairs only (author decision, "
+         "2026-09-30); the results of the other six models are kept here and in "
+         "`p2x2_layers.csv`.", ""]
     w = L.append
     absent = [m[0] for m in MODELS if m[0] not in set(summ["model"])]
     if absent:
         w(f"**Partial run: no rows for {', '.join(absent)}.**")
         w("")
-    w("## Per model")
+    w("## In the paper (tab:panel_2x2): the two matched pairs")
+    w("| data | model | arch. | AUROC min (layer) | PC1 max (layer) | eff rank min (layer) |")
+    w("|---|---|---|---|---|---|")
+    s = summ.set_index("model") if len(summ) else summ
+    for data, t5, enc in PAIRS:
+        for name in (t5, enc):
+            if name in s.index:
+                x = s.loc[name]
+                w(f"| {data} | {name} | {ARCH[x['cell']]} | {x['auroc_min']:.3f} "
+                  f"({int(x['auroc_min_layer'])}) | {x['pc1_max']:.3f} ({int(x['pc1_max_layer'])}) "
+                  f"| {x['erank_min']:.2f} ({int(x['erank_min_layer'])}) |")
+            else:
+                w(f"| {data} | {name} | | not computed | not computed | not computed |")
+    w("")
+    w("## Full panel, not in the paper")
     w("| model | HF id | cell | emb. objective | source | layers | n train | AUROC min (layer) | "
       "AUROC max (layer) | AUROC first layer | AUROC last layer | PC1 max (layer) | "
       "eff rank at PC1 max | AUROC at PC1 max | eff rank min (layer) | "
@@ -523,30 +498,12 @@ def facts(df: pd.DataFrame, summ: pd.DataFrame, ft: Dict, rep: Optional[pd.DataF
           f"{x.high_pc1_layers.replace('--', '-')} | {x.n_low_auroc} | "
           f"{x.low_auroc_layers.replace('--', '-')} |")
     w("")
-    w("## Table rows (tab:panel_2x2)")
-    w("| cell | models | AUROC min | PC1 max | eff rank min |")
-    w("|---|---|---|---|---|")
-    for (cell, names), row in zip(PANEL_ROWS, panel_rows(summ, ft)):
-        if row is None:
-            continue
-        shown = [("not computed" if row[k] == PENDING else row[k].replace("--", " to "))
-                 for k in ("auroc", "pc1", "erank")]
-        w(f"| {cell} | {', '.join(names)} | {shown[0]} | {shown[1]} | {shown[2]} |")
-    w("")
-    w(f"- {FT_ROW}: read from `{ft['source']}` (generated by gen_ft_geometry.py, issue #238), "
-      f"not recomputed here. AUROC over layers {FT_LAYERS[0]}-{FT_LAYERS[-1]}: "
-      f"{ft['auroc_lo']:.3f} to {ft['auroc_hi']:.3f}; peak top-PC share {ft['pc1_max']:.3f} "
-      f"(layer {ft['pc1_max_layer']}); lowest effective rank {ft['erank_min']:.2f} "
-      f"(layer {ft['erank_min_layer']}).")
-    w("- Range rule: a row with several models gives the lowest and highest per-model value at "
-      "two decimals (three when the two ends agree at two).")
-    w("")
     w("## Per layer: AUROC / top-PC share / effective rank / mean pairwise cosine")
     for x in summ.itertuples():
-        s = df[df["model"] == x.model].sort_values("layer")
+        s_ = df[df["model"] == x.model].sort_values("layer")
         w(f"- {x.model}: " + "; ".join(
             f"{int(r.layer)}: {r.aucroc:.3f} / {r.pc1:.3f} / {r.erank:.2f} / {r.mean_cos:.3f}"
-            for r in s.itertuples()))
+            for r in s_.itertuples()))
     w("")
     if rep is not None and len(rep):
         w("## Reproduction gate (p2x2_repro.csv)")
@@ -561,8 +518,8 @@ def facts(df: pd.DataFrame, summ: pd.DataFrame, ft: Dict, rep: Optional[pd.DataF
         w("Gate a: AUROC against `phase_resubmit_results.csv` (hidden, mean, baseline). Gate b: "
           "train top-PC share and effective rank against `geometry_per_layer.csv` (train, raw). "
           "Gate c: T5-v1.1-base AUROC against the committed `raw_auroc_layers.csv` (source gen, "
-          "a CPU extraction by gen_extract.py). Gate d, the printed cells, is checked at compute "
-          "time and has no row here.")
+          "a CPU extraction by gen_extract.py). Gate d, the published cells, is checked at "
+          "compute time and has no row here.")
         w("")
     path.write_text("\n".join(L) + "\n")
 
@@ -577,12 +534,11 @@ def render(args) -> int:
             rep = pd.read_csv(rep_p)
         except pd.errors.EmptyDataError:
             rep = None
-    ft = read_ft_cells(args.ft_tex)
     summ = summarize(df)
     tab_dir.mkdir(parents=True, exist_ok=True)
-    write_panel_table(summ, ft, tab_dir / "panel_2x2.tex")
+    write_panel_table(summ, tab_dir / "panel_2x2.tex")
     wrote = write_layerwise_table(df, tab_dir / "p2x2_layerwise.tex")
-    facts(df, summ, ft, rep, out_dir / "p2x2_facts.md")
+    facts(df, summ, rep, out_dir / "p2x2_facts.md")
     absent = [m[0] for m in MODELS if m[0] not in set(df["model"])]
     if absent:
         print(f"WARNING: partial CSV, no rows for {', '.join(absent)}; their table cells "
@@ -607,7 +563,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--models", nargs="*", default=None, help="display names, default all ten")
     ap.add_argument("--out_dir", type=Path, default=OUT_DIR)
     ap.add_argument("--tab_dir", type=Path, default=TAB_DIR)
-    ap.add_argument("--ft_tex", type=Path, default=FT_TEX)
     args = ap.parse_args(argv)
     if args.stage in ("compute", "all"):
         status = compute(args)

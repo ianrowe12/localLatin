@@ -198,21 +198,21 @@ We therefore keep ABTT as the reference.
 \centering
 \footnotesize
 \setlength{\tabcolsep}{3pt}
-\begin{tabular}{lllllr}
+\begin{tabular}{lllll}
 \toprule
-\textbf{Model} & \textbf{Arch.} & \textbf{Data} & \textbf{Emb.\ obj.} & \textbf{L} & \textbf{Status} \\
+\textbf{Model} & \textbf{Arch.} & \textbf{Data} & \textbf{Emb.\ obj.} & \textbf{L} \\
 \midrule
-LaTa & T5 & Latin & none & 12 & run \\
-PhilTa & T5 & Grc/La/En & none & 12 & run \\
-mT5-base & T5 & 101 lang. & none & 12 & run \\
-T5-v1.1-base & T5 & English & none & 12 & run \\
+LaTa & T5 & Latin & none & 12 \\
+PhilTa & T5 & Grc/La/En & none & 12 \\
+mT5-base & T5 & 101 lang. & none & 12 \\
+T5-v1.1-base & T5 & English & none & 12 \\
 \midrule
-LaBERTa & Enc. & Latin & none & 12 & run \\
-PhilBERTa & Enc. & Grc/La/En & none & 12 & run \\
+LaBERTa & Enc. & Latin & none & 12 \\
+PhilBERTa & Enc. & Grc/La/En & none & 12 \\
 \midrule
-LaBSE & Enc. & 109 lang. & contrastive & 12 & run \\
-Qwen3-0.6B & Dec. & multiling. & contrastive & 28 & run \\
-KaLM-mini & Dec. & multiling. & contrastive & 24 & run \\
+LaBSE & Enc. & 109 lang. & contrastive & 12 \\
+Qwen3-0.6B & Dec. & multiling. & contrastive & 28 \\
+KaLM-mini & Dec. & multiling. & contrastive & 24 \\
 \bottomrule
 \end{tabular}
 \caption{The model panel. Arch.: a T5 encoder with span-corruption pretraining, or an encoder-only model (Enc.) with masked-language-model pretraining; LaBERTa and PhilBERTa are RoBERTa-style. Emb.\ obj.: the embedding objective trained after pretraining, if any. Blocks: raw T5 encoders; their raw encoder-only siblings LaBERTa and PhilBERTa, which form two matched pairs with LaTa and PhilTa (same authors and pretraining data; Section~\ref{sec:objective}); embedding-trained controls, of which Qwen3-0.6B and KaLM-mini are decoders (Dec.). The six models of the main analysis are LaTa, PhilTa, mT5-base, and the three controls. T5-v1.1-base serves the label-free geometry check on Latin and English text (Section~\ref{sec:objective}). Data: pretraining languages (Grc/La/En: Ancient Greek, Latin, English). L: transformer blocks read (encoder blocks for T5). KaLM-mini runs its decoder with bidirectional attention.}
