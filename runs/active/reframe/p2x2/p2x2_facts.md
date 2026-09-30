@@ -26,6 +26,21 @@ The paper reports the four models of the two matched pairs only (author decision
 | LaBSE | `sentence-transformers/LaBSE` | Enc., emb. | contrastive | panel | 1-12 | 847 | 0.806 (1) | 0.960 (11) | 0.806 | 0.956 | 0.524 (8) | 16.19 | 0.879 | 16.19 (8) | 0 | none | 0 | none |
 | SPhilBERTa | `bowphs/SPhilBerta` | Enc., emb. | distillation | p2x2 | 1-12 | 847 | 0.892 (1) | 0.983 (10) | 0.892 | 0.983 | 0.127 (11) | 64.67 | 0.982 | 64.67 (11) | 0 | none | 0 | none |
 
+## All-zero pooled vectors
+Rows that pool to a zero vector (the whitespace-only corpus files under a tokenizer that adds no special tokens) score cosine 0 against every other row. The shift is the largest |AUROC - AUROC without those rows| over the layers.
+| model | zero rows (max over layers) | largest AUROC shift |
+|---|---|---|
+| LaTa | 0 | 0.000000 |
+| PhilTa | 0 | 0.000000 |
+| mT5-base | 0 | 0.000000 |
+| T5-v1.1-base | 0 | 0.000000 |
+| T5-base | 0 | 0.000000 |
+| Sentence-T5 | 0 | 0.000000 |
+| LaBERTa | 0 | 0.000000 |
+| PhilBERTa | 2 | 0.000274 |
+| LaBSE | 0 | 0.000000 |
+| SPhilBERTa | 2 | 0.000253 |
+
 ## Per layer: AUROC / top-PC share / effective rank / mean pairwise cosine
 - LaTa: 1: 0.934 / 0.050 / 134.33 / 0.502; 2: 0.563 / 0.771 / 4.61 / 0.294; 3: 0.513 / 0.935 / 1.59 / 0.258; 4: 0.500 / 0.952 / 1.38 / 0.226; 5: 0.496 / 0.943 / 1.41 / 0.227; 6: 0.496 / 0.934 / 1.44 / 0.226; 7: 0.498 / 0.937 / 1.43 / 0.228; 8: 0.502 / 0.950 / 1.36 / 0.224; 9: 0.503 / 0.943 / 1.40 / 0.226; 10: 0.505 / 0.942 / 1.43 / 0.231; 11: 0.508 / 0.939 / 1.47 / 0.239; 12: 0.938 / 0.081 / 132.22 / 0.578
 - PhilTa: 1: 0.939 / 0.060 / 138.46 / 0.616; 2: 0.911 / 0.068 / 109.72 / 0.710; 3: 0.601 / 0.764 / 4.34 / 0.572; 4: 0.551 / 0.831 / 2.17 / 0.505; 5: 0.542 / 0.846 / 1.94 / 0.526; 6: 0.541 / 0.858 / 1.81 / 0.548; 7: 0.542 / 0.845 / 1.88 / 0.553; 8: 0.542 / 0.829 / 1.98 / 0.554; 9: 0.539 / 0.846 / 1.89 / 0.575; 10: 0.538 / 0.847 / 1.90 / 0.584; 11: 0.539 / 0.838 / 1.99 / 0.577; 12: 0.911 / 0.077 / 136.14 / 0.655

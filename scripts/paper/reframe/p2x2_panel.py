@@ -22,7 +22,11 @@ with PhilBERTa (``PAIRS``). The other six models stay in the CSV and the facts f
 Stages:
   compute  reads embeddings (CPU), runs the reproduction gate, writes under --out_dir:
              p2x2_layers.csv   model, model_id, cell, emb_objective, source, layer, aucroc,
-                               n_train, pc1, erank, pc10, mean_cos
+                               n_train, pc1, erank, pc10, mean_cos, n_zero_rows, aucroc_nozero
+                               (n_zero_rows: all-zero pooled vectors, the whitespace-only files
+                               under a tokenizer that adds no special tokens; aucroc_nozero:
+                               Task A AUROC with those rows dropped, equal to aucroc when there
+                               are none)
              p2x2_repro.csv    every gated cell: value, reference, difference
            The gate is a hard failure (exit 1). When it fails the rows go to
            p2x2_layers.rejected.csv instead, so render never reads ungated numbers.
@@ -48,6 +52,7 @@ has them:
 from __future__ import annotations
 
 import argparse
+import math
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
@@ -100,6 +105,9 @@ PRINTED: Dict[str, Dict[str, float]] = {
     "mT5-base": {"auroc_min": 0.654, "auroc_min_layer": 5},
     "LaBSE": {"auroc_min": 0.806, "pc1_max": 0.524},
     T5V11: {"auroc_min": 0.489, "auroc_min_layer": 2, "pc1_max": 0.975, "pc1_max_layer": 9},
+    # The encoder-only siblings, as tab:panel_2x2 and Section 6 print them (#248).
+    "LaBERTa": {"auroc_min": 0.826, "auroc_min_layer": 1, "pc1_max": 0.254, "pc1_max_layer": 9},
+    "PhilBERTa": {"auroc_min": 0.883, "auroc_min_layer": 6, "pc1_max": 0.162, "pc1_max_layer": 6},
 }
 RAW_T5_PANEL = ("LaTa", "PhilTa", "mT5-base")
 PRINTED_RANGES = {RAW_T5_PANEL: {"auroc_min": "0.50--0.65", "pc1_max": "0.86--1.00"}}
@@ -133,7 +141,7 @@ def score_models(split: pd.DataFrame, bases_root: Path, p2x2_bases: Path,
     for p in (REPO / "src",):
         if str(p) not in sys.path:
             sys.path.insert(0, str(p))
-    from embedding_alignment import AlignmentResolver
+    from embedding_alignment import STATUS_UNVERIFIED, AlignmentResolver
     from raw_auroc_layers import task_a_auroc
 
     known = [m[0] for m in MODELS]
@@ -156,12 +164,22 @@ def score_models(split: pd.DataFrame, bases_root: Path, p2x2_bases: Path,
     for name, model_id, cell, objective, source in chosen:
         d = run_dir(source, model_id, bases_root, p2x2_bases)
         for layer in LAYERS:
-            emb = resolver.load(d / f"hidden_layer{layer}_embeddings.npy")
+            path = d / f"hidden_layer{layer}_embeddings.npy"
+            if resolver.aligner_for(path).status == STATUS_UNVERIFIED:
+                raise SystemExit(f"{path}: no meta.csv beside the cache, so its rows cannot be "
+                                 "matched to the split by filename; refusing to score it by "
+                                 "row position")
+            emb = resolver.load(path)
             s = layer_stats(emb[train])
+            nonzero = np.any(emb != 0, axis=1)
+            auc = task_a_auroc(emb, split)
+            auc_nz = auc if nonzero.all() else task_a_auroc(
+                emb[nonzero], split[nonzero].reset_index(drop=True))
             rows.append({"model": name, "model_id": model_id, "cell": cell,
                          "emb_objective": objective, "source": source, "layer": layer,
-                         "aucroc": task_a_auroc(emb, split), "n_train": s["n"], "pc1": s["pc1"],
-                         "erank": s["erank"], "pc10": s["pc10"], "mean_cos": s["mean_cos"]})
+                         "aucroc": auc, "n_train": s["n"], "pc1": s["pc1"],
+                         "erank": s["erank"], "pc10": s["pc10"], "mean_cos": s["mean_cos"],
+                         "n_zero_rows": int((~nonzero).sum()), "aucroc_nozero": auc_nz})
             print(f"{name:13s} L{layer:<2d} AUROC {rows[-1]['aucroc']:.4f}  PC1 {s['pc1']:.4f}  "
                   f"rank {s['erank']:.2f}", flush=True)
     print(resolver.summary())
@@ -219,6 +237,8 @@ def summarize(df: pd.DataFrame) -> pd.DataFrame:
             "auroc_at_pc1_max": float(by_layer.loc[int(pk["layer"]), "aucroc"]),
             "n_high_pc1": len(high), "high_pc1_layers": _ranges(high),
             "n_low_auroc": len(low), "low_auroc_layers": _ranges(low),
+            "n_zero_rows": int(s["n_zero_rows"].max()),
+            "auroc_zero_shift": float((s["aucroc"] - s["aucroc_nozero"]).abs().max()),
         })
     return pd.DataFrame(out)
 
@@ -415,11 +435,19 @@ def write_panel_table(summ: pd.DataFrame, path: Path) -> None:
     path.write_text("\n".join(lines) + "\n")
 
 
+def zero_row_bound(df: pd.DataFrame) -> str:
+    """The largest |AUROC - AUROC without the all-zero rows| over the rows of ``df``, rounded
+    up to four decimals so the printed bound is never below the true value."""
+    shift = float((df["aucroc"] - df["aucroc_nozero"]).abs().max())
+    return f"{math.ceil(shift * 1e4) / 1e4:.4f}"
+
+
 def write_layerwise_table(df: pd.DataFrame, path: Path) -> bool:
     """Per-layer AUROC, top-PC share and effective rank of LAYERWISE_MODELS present in df."""
     names = [n for n in LAYERWISE_MODELS if n in set(df["model"])]
     if not names:
         return False
+    shift = zero_row_bound(df[df["model"].isin(names)])
     by = df.set_index(["model", "layer"]).sort_index()
     layers = sorted(df.loc[df["model"].isin(names), "layer"].unique())
     n = f"{int(df.loc[df['model'].isin(names), 'n_train'].iloc[0]):,}".replace(",", "{,}")
@@ -447,8 +475,8 @@ def write_layerwise_table(df: pd.DataFrame, path: Path) -> bool:
               r"tokenizer encodes every space as its own token, so the indentation of the corpus "
               r"files becomes tokens, which the pooling filter drops from the mean; PhilBERTa's "
               r"published tokenizer adds no sequence-boundary tokens, so the two whitespace-only "
-              r"files of the corpus pool to zero vectors, and dropping those two files changes no "
-              r"AUROC by more than 0.0003.}",
+              r"files of the corpus pool to zero vectors, and scoring without those two files "
+              r"changes no AUROC by more than " + shift + r".}",
               r"\label{tab:p2x2_layerwise}", r"\end{table}"]
     path.write_text("\n".join(lines) + "\n")
     return True
@@ -497,6 +525,15 @@ def facts(df: pd.DataFrame, summ: pd.DataFrame, rep: Optional[pd.DataFrame], pat
           f"{x.erank_min:.2f} ({x.erank_min_layer}) | {x.n_high_pc1} | "
           f"{x.high_pc1_layers.replace('--', '-')} | {x.n_low_auroc} | "
           f"{x.low_auroc_layers.replace('--', '-')} |")
+    w("")
+    w("## All-zero pooled vectors")
+    w("Rows that pool to a zero vector (the whitespace-only corpus files under a tokenizer "
+      "that adds no special tokens) score cosine 0 against every other row. The shift is the "
+      "largest |AUROC - AUROC without those rows| over the layers.")
+    w("| model | zero rows (max over layers) | largest AUROC shift |")
+    w("|---|---|---|")
+    for x in summ.itertuples():
+        w(f"| {x.model} | {x.n_zero_rows} | {x.auroc_zero_shift:.6f} |")
     w("")
     w("## Per layer: AUROC / top-PC share / effective rank / mean pairwise cosine")
     for x in summ.itertuples():

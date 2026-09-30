@@ -93,7 +93,8 @@ def layers_fixture(models=None) -> pd.DataFrame:
             rows.append({"model": name, "model_id": model_id, "cell": cell,
                          "emb_objective": objective, "source": source, "layer": layer,
                          "aucroc": round(auc, 6), "n_train": 847, "pc1": round(pc1, 6),
-                         "erank": round(1.2 / pc1, 6), "pc10": 0.99, "mean_cos": 0.5})
+                         "erank": round(1.2 / pc1, 6), "pc10": 0.99, "mean_cos": 0.5,
+                         "n_zero_rows": 0, "aucroc_nozero": round(auc, 6)})
     return pd.DataFrame(rows)
 
 
@@ -137,7 +138,15 @@ def printed_df() -> pd.DataFrame:
     put(p2.T5V11, "aucroc", 0.52, 2, 0.4886)
     put(p2.T5V11, "pc1", 0.96, 9, 0.9752)
     df.loc[(df.model == p2.T5V11) & df.layer.isin([1, 12]), "pc1"] = 0.2
+    put("LaBERTa", "aucroc", 0.90, 1, 0.8258)
+    put("LaBERTa", "pc1", 0.20, 9, 0.2536)
+    put("PhilBERTa", "aucroc", 0.92, 6, 0.8830)
+    put("PhilBERTa", "pc1", 0.12, 6, 0.1617)
     df["erank"] = (1.2 / df["pc1"]).round(6)
+    df["aucroc_nozero"] = df["aucroc"]
+    # PhilBERTa carries two zero rows; scoring without them moves its layer-6 AUROC by 0.00025.
+    df.loc[df.model == "PhilBERTa", "n_zero_rows"] = 2
+    df.loc[(df.model == "PhilBERTa") & (df.layer == 6), "aucroc_nozero"] = 0.8830 - 0.00025
     return df
 
 
@@ -182,8 +191,10 @@ def test_summarize_minimum_maximum_and_ties():
         "model": ["A"] * 4, "model_id": ["o/a"] * 4, "cell": ["T5, raw"] * 4,
         "emb_objective": ["none"] * 4, "source": ["p2x2"] * 4, "layer": [1, 2, 3, 4],
         "aucroc": [0.9, 0.5, 0.5, 0.95], "n_train": [10] * 4, "pc1": [0.2, 0.7, 0.7, 0.6],
-        "erank": [50.0, 1.5, 1.2, 1.2], "pc10": [0.9] * 4, "mean_cos": [0.5] * 4})
+        "erank": [50.0, 1.5, 1.2, 1.2], "pc10": [0.9] * 4, "mean_cos": [0.5] * 4,
+        "n_zero_rows": [0, 2, 2, 0], "aucroc_nozero": [0.9, 0.5004, 0.5, 0.95]})
     x = p2.summarize(df).iloc[0]
+    assert (x.n_zero_rows, round(x.auroc_zero_shift, 6)) == (2, 0.0004)
     assert (x.auroc_min, x.auroc_min_layer) == (0.5, 2)       # first layer on ties
     assert (x.auroc_max, x.auroc_max_layer) == (0.95, 4)
     assert (x.auroc_first, x.auroc_last) == (0.9, 0.95)
@@ -296,7 +307,8 @@ def test_compute_exits_nonzero_and_withholds_the_csv_on_gate_failure(tmp_path, m
     assert "reproduction gate passed" in capsys.readouterr().out
     got = pd.read_csv(out / "p2x2_layers.csv")
     assert list(got.columns) == ["model", "model_id", "cell", "emb_objective", "source", "layer",
-                                 "aucroc", "n_train", "pc1", "erank", "pc10", "mean_cos"]
+                                 "aucroc", "n_train", "pc1", "erank", "pc10", "mean_cos",
+                                 "n_zero_rows", "aucroc_nozero"]
     assert len(got) == 6 and len(pd.read_csv(out / "p2x2_repro.csv")) == 9
 
     wrong = pd.read_csv(res)
@@ -387,8 +399,8 @@ def test_render_layerwise_table_holds_the_encoder_only_siblings(tmp_path):
     assert body[5].endswith(rf"{x.aucroc:.3f} & {x.pc1:.3f} & {x.erank:.2f} \\")
     caption = [x for x in lines if x.startswith(r"\caption{")][0]
     for phrase in ("encoder-only siblings", "every space as its own token",
-                   "no sequence-boundary tokens", "0.0003"):
-        assert phrase in caption, phrase
+                   "no sequence-boundary tokens", "changes no AUROC by more than 0.0003."):
+        assert phrase in caption, phrase   # 0.00025 rounds up to the printed bound
     for name in NOT_IN_PAPER + ("LaTa &", "PhilTa &"):
         assert name not in tex, name
     assert "—" not in tex
@@ -414,6 +426,29 @@ def test_render_facts(tmp_path):
     text = (out / "p2x2_facts.md").read_text()
     assert "| a | aucroc | LaTa, PhilTa, mT5-base, LaBSE | 48 | 0.00e+00 |" in text
     assert "| c | aucroc | T5-v1.1-base | 12 |" in text
+
+
+def test_zero_row_bound_rounds_up():
+    df = pd.DataFrame({"aucroc": [0.5, 0.883, 0.9], "aucroc_nozero": [0.5, 0.88274, 0.9]})
+    assert p2.zero_row_bound(df) == "0.0003"
+    assert p2.zero_row_bound(df.iloc[[0]]) == "0.0000"
+
+
+def test_committed_tables_regenerate_from_the_committed_csv(tmp_path):
+    """The tracked tables and facts file are what the tracked CSV renders (a stale commit
+    of one without the other fails here)."""
+    csv = REPO / p2.OUT_DIR / "p2x2_layers.csv"
+    if not csv.exists() or "aucroc_nozero" not in pd.read_csv(csv, nrows=1).columns:
+        pytest.skip("committed p2x2_layers.csv absent or from an older compute stage")
+    out, tab = tmp_path / "out", tmp_path / "tab"
+    out.mkdir()
+    for name in ("p2x2_layers.csv", "p2x2_repro.csv"):
+        if (REPO / p2.OUT_DIR / name).exists():
+            (out / name).write_bytes((REPO / p2.OUT_DIR / name).read_bytes())
+    assert p2.main(["--stage", "render", "--out_dir", str(out), "--tab_dir", str(tab)]) == 0
+    for name in ("panel_2x2.tex", "p2x2_layerwise.tex"):
+        assert (tab / name).read_bytes() == (REPO / p2.TAB_DIR / name).read_bytes(), name
+    assert (out / "p2x2_facts.md").read_bytes() == (REPO / p2.OUT_DIR / "p2x2_facts.md").read_bytes()
 
 
 def test_render_is_byte_identical_across_runs(tmp_path):
