@@ -486,7 +486,38 @@ Prediction: r >= 1 for the top coordinates at the collapsed T5 layers; r < 1 at 
 
 ## 9. Concentration of the variance and of the dominant direction (descriptive)
 This section is descriptive and was added after the ablation results were seen. No prediction is attached to it and it changes no verdict above. It says how the dominant direction is spread over coordinates, given that zeroing 10 coordinates repairs no collapsed layer while standardization recovers most of the gain.
-- `e1_concentration.csv` not found: rerun `compute`.
+- All on the raw training vectors. `var top k` = share of the total variance (sum over coordinates of the per-coordinate variance) held by the k coordinates of largest variance. For v, the unit first principal component of the centered training vectors: `n50` and `n90` = number of coordinates, taken in decreasing v_i^2, needed for the cumulative v_i^2 to reach 0.5 and 0.9; `PR` = participation ratio 1 / sum v_i^4 (1 = one coordinate, m = spread evenly over m coordinates); `PC1 mass on top 10` = sum of v_i^2 over the 10 coordinates of largest variance, the ones the k=10 variance zeroing removes.
+### Over the collapsed T5 layers: median (min to max), n = 26
+- LaTa (10 layers):
+  - variance share of the top k coordinates by variance: k=1 0.210 (0.183 to 0.221); k=3 0.553 (0.394 to 0.576); k=5 0.729 (0.511 to 0.746); k=10 0.893 (0.698 to 0.901); k=50 0.980 (0.824 to 0.983); k=100 0.984 (0.851 to 0.986)
+  - PC1: n50 3 (3 to 3); n90 10 (9 to 12); participation ratio 7.3 (6.9 to 8.4); mass on the top 10 coordinates by variance 0.919 (0.875 to 0.922)
+- PhilTa (9 layers):
+  - variance share of the top k coordinates by variance: k=1 0.127 (0.090 to 0.132); k=3 0.328 (0.246 to 0.339); k=5 0.488 (0.381 to 0.493); k=10 0.773 (0.611 to 0.779); k=50 0.974 (0.830 to 0.978); k=100 0.980 (0.861 to 0.984)
+  - PC1: n50 5 (5 to 6); n90 12 (12 to 22); participation ratio 11.7 (11.4 to 15.3); mass on the top 10 coordinates by variance 0.835 (0.759 to 0.853)
+- mT5-base (7 layers):
+  - variance share of the top k coordinates by variance: k=1 0.357 (0.349 to 0.361); k=3 0.826 (0.821 to 0.833); k=5 0.984 (0.983 to 0.985); k=10 0.996 (0.995 to 0.996); k=50 0.998 (0.997 to 0.998); k=100 0.998 (0.998 to 0.999)
+  - PC1: n50 2 (2 to 2); n90 4 (4 to 4); participation ratio 3.7 (3.7 to 3.8); mass on the top 10 coordinates by variance 0.996 (0.995 to 0.997)
+- all collapsed (26 layers):
+  - variance share of the top k coordinates by variance: k=1 0.209 (0.090 to 0.361); k=3 0.540 (0.246 to 0.833); k=5 0.721 (0.381 to 0.985); k=10 0.891 (0.611 to 0.996); k=50 0.979 (0.824 to 0.998); k=100 0.984 (0.851 to 0.999)
+  - PC1: n50 3 (2 to 6); n90 10 (4 to 22); participation ratio 7.4 (3.7 to 15.3); mass on the top 10 coordinates by variance 0.918 (0.759 to 0.997)
+### Single layers
+- LaTa L6 (worst baseline layer): var top 1/3/5/10/50/100 0.211 / 0.546 / 0.723 / 0.895 / 0.981 / 0.985; PC1: n50 3, n90 10, PR 7.3, mass on top 10 0.921; width 768; top-PC share 0.934
+- PhilTa L10 (worst baseline layer): var top 1/3/5/10/50/100 0.127 / 0.338 / 0.493 / 0.779 / 0.975 / 0.981; PC1: n50 5, n90 12, PR 11.5, mass on top 10 0.853; width 768; top-PC share 0.847
+- mT5-base L5 (worst baseline layer): var top 1/3/5/10/50/100 0.349 / 0.833 / 0.983 / 0.995 / 0.997 / 0.998; PC1: n50 2, n90 4, PR 3.8, mass on top 10 0.995; width 768; top-PC share 1.000
+- LaBSE L1 (worst baseline layer): var top 1/3/5/10/50/100 0.123 / 0.196 / 0.256 / 0.335 / 0.457 / 0.527; PC1: n50 3, n90 150, PR 6.0, mass on top 10 0.628; width 768; top-PC share 0.263
+- Qwen3-0.6B L1 (worst baseline layer): var top 1/3/5/10/50/100 0.014 / 0.032 / 0.047 / 0.080 / 0.274 / 0.438; PC1: n50 82, n90 403, PR 128.4, mass on top 10 0.123; width 1024; top-PC share 0.100
+- KaLM-mini L5 (worst baseline layer): var top 1/3/5/10/50/100 0.219 / 0.420 / 0.436 / 0.455 / 0.556 / 0.629; PC1: n50 1, n90 2, PR 2.2, mass on top 10 0.943; width 896; top-PC share 0.419
+- mT5-base L1 (massive coordinates without collapse): var top 1/3/5/10/50/100 0.082 / 0.183 / 0.218 / 0.246 / 0.335 / 0.418; PC1: n50 29, n90 274, PR 18.2, mass on top 10 0.411; width 768; top-PC share 0.229
+- LaBSE L12 (train-selected layer): var top 1/3/5/10/50/100 0.010 / 0.026 / 0.039 / 0.056 / 0.145 / 0.238; PC1: n50 73, n90 312, PR 158.6, mass on top 10 0.148; width 768; top-PC share 0.154
+- Qwen3-0.6B L26 (train-selected layer): var top 1/3/5/10/50/100 0.030 / 0.054 / 0.063 / 0.079 / 0.162 / 0.239; PC1: n50 108, n90 417, PR 254.0, mass on top 10 0.072; width 1024; top-PC share 0.098
+- KaLM-mini L23 (train-selected layer): var top 1/3/5/10/50/100 0.027 / 0.038 / 0.044 / 0.056 / 0.134 / 0.216; PC1: n50 63, n90 352, PR 37.3, mass on top 10 0.236; width 896; top-PC share 0.110
+### Over the layers that are not collapsed: median (min to max)
+- LaTa (2 layers): var top 10 0.058 (0.024 to 0.092); PC1 n50 65 (37 to 93), n90 302 (262 to 343), participation ratio 160.6 (69.3 to 252.0), mass on top 10 0.104 (0.051 to 0.156)
+- PhilTa (3 layers): var top 10 0.078 (0.036 to 0.126); PC1 n50 55 (6 to 79), n90 278 (155 to 321), participation ratio 82.1 (18.4 to 161.2), mass on top 10 0.158 (0.097 to 0.574)
+- mT5-base (5 layers): var top 10 0.234 (0.140 to 0.781); PC1 n50 22 (2 to 50), n90 247 (20 to 303), participation ratio 20.0 (4.8 to 47.2), mass on top 10 0.412 (0.264 to 0.866)
+- LaBSE (12 layers): var top 10 0.233 (0.056 to 0.414); PC1 n50 12 (2 to 73), n90 226 (132 to 312), participation ratio 14.8 (4.3 to 158.6), mass on top 10 0.469 (0.148 to 0.737)
+- Qwen3-0.6B (28 layers): var top 10 0.096 (0.060 to 0.124); PC1 n50 26 (7 to 125), n90 326 (261 to 454), participation ratio 50.2 (10.8 to 306.1), mass on top 10 0.318 (0.043 to 0.498)
+- KaLM-mini (24 layers): var top 10 0.271 (0.030 to 0.455); PC1 n50 2 (1 to 100), n90 107 (2 to 389), participation ratio 3.7 (2.2 to 229.6), mass on top 10 0.755 (0.081 to 0.947)
 
 ## 10. All layers
 Columns: base; mag k = zeroed top k by mean |x|; var k = zeroed top k by variance; standardized; D=0; ABTT D=1, 3, 10. * marks a collapsed layer.
