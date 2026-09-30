@@ -65,20 +65,31 @@ All pass at their default tolerance (`e1_gate_check.csv`, facts section 0).
 | Gate | Reference | Cells | Tolerance | Largest difference |
 |---|---|---|---|---|
 | 1 base AUROC | `phase_resubmit_results.csv` (published baseline) | 100 | 1e-6 | 2.31e-7 (Qwen3-0.6B) |
-| 2a D=0 (centering) AUROC | H1 CSV | 100 | 1e-5 | 3.60e-6 (mT5-base layer 5) |
+| 2a D=0 (centering) AUROC | H1 CSV | 100 | 1e-6; 1e-5 at the 7 near-rank-one cells | 3.60e-6 (mT5-base layer 5) |
 | 2b ABTT D=1, 3, 10 AUROC | H1 CSV | 300 | 1e-6 | 5.37e-7 (mT5-base) |
 | 3 base top-PC share | `geometry_per_layer.csv` (train, raw) | 100 | 1e-4 | 2.42e-7 (KaLM-mini) |
 
-**Why centering has its own tolerance.** Two mT5-base D=0 cells differ from H1
-by more than 1e-6: layer 5 by 3.6e-6 and layer 9 by 1.05e-6. No other D=0 cell
-exceeds 1e-6, and outside mT5-base the largest difference is 8.2e-8. At the collapsed mT5-base layers the centered
-vectors are near rank one (top-PC share 0.999 or more), and these cells are
-not stable at 1e-6: on one cache they move by 1e-6 to 1e-5 between float32 and
-float64 arithmetic or when every cached value moves by one float32 ulp, and by
-up to 3e-7 with the BLAS thread count (diagnostic job 22572037). The
-independent recomputation (next section) gives 0.67010057 in float64 against
-0.67009702 in float32 at layer 5. Doing either the training mean or the cosine
-in float64 removes the gap (0.67010099 and 0.67010054), so it is float32
+A NaN on either side of a comparison fails its gate, and so does an expected
+model with no rows. `compute --check` gates the CSV it has just written, so
+`compute`, `check` and `render` regenerate the tracked files byte for byte.
+
+**Why seven centering cells have their own tolerance.** A D=0 cell is held to
+1e-5 instead of 1e-6 only where that model-layer's own base training top-PC
+share is at least 0.99 (`GATE_CENTER_SHARE`), that is where the centered
+vectors are near rank one. In the panel these are the seven collapsed mT5-base
+layers, 5 to 11 (share 0.9997 or more); the other 93 D=0 cells are held to
+1e-6 and pass, the largest difference outside mT5-base being 8.2e-8. Two of
+the seven differ from H1 by more than 1e-6: layer 5 by 3.6e-6 and layer 9 by
+1.05e-6. Diagnostic job 22572037 measured, on one cache, how far the D=0 cell
+of mT5-base layers 5, 6 and 9 moves under changes that should not matter:
+up to 3.4e-6 when every cached value moves by one float32 ulp, up to 3e-7
+with the BLAS thread count, and 2.4e-6, 1.1e-5 and 3.7e-7 between float32 and
+float64 arithmetic. The tolerance is sized to two float32 runs on two
+extractions, which is what the gate compares; it is not a bound on float32
+against float64, which at layer 6 (1.1e-5) exceeds it. The independent
+recomputation (next section) gives 0.67010057 in float64 against 0.67009702
+in float32 at layer 5. Doing either the training mean or the cosine in
+float64 removes the gap (0.67010099 and 0.67010054), so it is float32
 rounding at a near-rank-one layer and needs both steps in float32. The cells
 agree with H1 to five decimals. The tolerance is `GATE_TOL_CENTER` in the
 script, with this reason beside it.
