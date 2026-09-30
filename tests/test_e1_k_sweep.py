@@ -116,3 +116,16 @@ def test_gram_fallback_equals_the_svd_geometry(monkeypatch):
     got = ks.geometry(tr)
     for c in ("pc1_share_train", "pc10_share_train", "eff_rank_train"):
         assert got[c] == pytest.approx(ref[c], rel=1e-8)
+
+
+@pytest.mark.skipif(not (OUT / ks.SWEEP_NAME).exists() or not (OUT / e1.ABL_NAME).exists(),
+                    reason="sweep or ablation CSV not checked out")
+def test_paper_figure_renders(tmp_path):
+    pytest.importorskip("matplotlib")
+    sweep = pd.read_csv(OUT / ks.SWEEP_NAME)
+    abl = e1.read_abl(OUT / e1.ABL_NAME)
+    w = e1.wide(abl[abl["model"].isin(sweep["model"].unique())])
+    out = tmp_path / "fig_e1_k_sweep.pdf"
+    ks.paper_figure(sweep, w, out)
+    assert out.exists() and out.stat().st_size > 0
+    assert ks.PAPER_FIG == Path("overleaf_drafts/figures/fig_e1_k_sweep.pdf")

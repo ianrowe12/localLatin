@@ -421,7 +421,20 @@ Centering alone restores none (AUROC change $-0.044$ to $+0.022$); ABTT restores
 By the rule above, 9 layers fall under ``a few coordinates, but more than five'' and 17 under ``only a projection repairs'', but the gloss of the second branch, an axis spread over many coordinates of similar variance, does not fit the data.
 A descriptive measure, added after we saw these results and carrying no prediction, shows a concentrated direction: at the collapsed layers the ten highest-variance coordinates hold a median 89 percent of the training variance (61 to 99.6 percent) and a median 92 percent of the first principal component's squared loading (76 to 99.7 percent), and 90 percent of that loading sits on 4 to 22 coordinates.
 Yet after those ten are zeroed, one direction still holds 0.324 to 0.995 of the remaining variance (at least 0.6 at 24 of the 26 layers), and AUROC stays below 0.80.
-Most of the dominant direction's loading thus sits on about ten coordinates, yet zeroing them leaves one direction dominant; we did not test whether it is the same direction, or why it still dominates the remainder.
+We added a wider sweep after reading these results.
+It carries no prediction and leaves the pre-registered grid and the verdicts above unchanged.
+At every layer of the six models it zeroes the top $k$ coordinates at 16 values of $k$ from 1 to 400 under both rankings, and $k$ random coordinates over five seeds as a control; at $k \in \{1,3,5,10\}$ it reproduces Table~\ref{tab:e1_coordinate_ablation} exactly (Figure~\ref{fig:e1_k_sweep}).
+Under the variance ranking, zeroing repairs none of the 26 collapsed layers through $k = 30$, 2 at $k = 50$, 7 at $k = 100$, 16 at $k = 200$, and 19 at $k = 300$ and at $k = 400$.
+The 19 are every collapsed LaTa and PhilTa layer (10 and 9), and their smallest repairing $k$ runs from 50 to 300, or 7 to 39 percent of the 768 coordinates.
+Under the same ranking the median AUROC over the 26 layers at $k = 400$ is 0.923, against 0.887 for standardization and 0.964 for ABTT with $D=3$.
+Top-PC share falls below 0.2 at 19 of the 26 layers by $k = 100$, where only 7 are repaired, so the share drops before AUROC recovers.
+None of the 7 mT5-base layers is repaired at any $k$ up to 400: under the variance ranking their best AUROC is 0.779 to 0.869, and their top-PC share stays at or above 0.2 (0.949 at layer~5).
+Standardization repairs three of them (layers 9 to 11, AUROC 0.919 to 0.922) while zeroing does not.
+The first component of mT5-base is also the most concentrated of the three models (90 percent of its loading on 4 coordinates), and its ten highest-variance coordinates hold a median 99.6 percent of the training variance, yet after 400 are zeroed one direction still holds 0.949 of the remaining variance at layer~5; whether it is the raw direction or another, and why it survives, we did not test.
+Zeroing 400 random coordinates removes a median 55 percent of the training variance yet leaves the median AUROC at 0.538, against 0.541 at baseline, and from $k = 3$ on the variance ranking beats the random control at all 130 (layer, seed) cells.
+At the train-selected layers of LaBSE, Qwen3-0.6B and KaLM-mini, zeroing by variance changes AUROC by at most 0.012 at any $k$.
+The counts of the rule stand (9 and 17 layers), but both glosses are revised post hoc.
+At the LaTa and PhilTa layers of either branch the nuisance direction is concentrated in its head, yet repair by zeroing needs 50 to 300 coordinates; at the mT5-base layers no set of up to 400 coordinates repairs it, whether or not standardization does.
 LaBSE and Qwen3-0.6B behave as predicted, and so does KaLM-mini, which we added to this experiment after the predictions were written and hold to the same bound: at their train-selected layers the largest absolute AUROC change over the eight zeroings is 0.004 for LaBSE, 0.007 for Qwen3-0.6B and 0.002 for KaLM-mini, and at their weakest layers zeroing recovers $-18$ to 18 percent of the $D=10$ gain, against 36 to 80 percent for centering alone.
 The prediction for $r$ fails as stated: the three largest-magnitude coordinates all have $r \geq 1$ at 18 of the 26 collapsed layers (10 of 10 in LaTa, 7 of 7 in mT5-base, 1 of 9 in PhilTa).
 In PhilTa one of the three lies between 0.81 and 0.96 at layers 5 to 10 while the other two exceed 1, and the lowest values at layers 3 and 4 are 0.21 and 0.61.
@@ -429,6 +442,13 @@ Chosen by variance, the top three all have $r \geq 1$ at all 26 layers.
 As predicted, the three largest-magnitude coordinates have $r < 1$ at mT5-base layer~1 (0.05 to 0.12) and at every layer of Qwen3-0.6B (at most 0.20); the same holds for LaBSE and KaLM-mini (at most 0.39).
 
 \input{tables/e1_coordinate_ablation}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{fig_e1_k_sweep.pdf}
+\caption{Task~A test AUROC (top) and top-PC share of the training vectors (bottom) against the number $k$ of zeroed residual coordinates on a logarithmic axis, one color per model at its lowest-AUROC baseline layer (in parentheses in the legend). Coordinates are ranked by variance across training passages; the dotted line in the same color zeroes $k$ random coordinates instead (mean over five seeds). Rankings and top-PC share are fit on training embeddings only; the gray horizontal line marks chance (AUROC 0.5). Filled markers and solid lines: T5 encoders; hollow markers and dashed lines: embedding-trained models. LaTa and PhilTa pass AUROC 0.90 only after 200 and 150 coordinates are zeroed (0.924 and 0.937 at $k=400$). mT5-base reaches only 0.779 at $k=400$, where its top-PC share is still 0.949. Random zeroing moves the T5 layers by at most 0.010 from their baseline, and zeroing by variance moves the embedding-trained models by at most 0.038. The sweep was added after the E1 results and carries no prediction.}
+\label{fig:e1_k_sweep}
+\end{figure}
 
 \paragraph{Token audit (E2).}
 The account names a carrier: some tokens hold the massive values.
@@ -509,7 +529,8 @@ E1 decides the first two.
 The first occurs at 17 of the 26 collapsed layers; at the other 9, standardization repairs and zeroing $k \le 5$ does not.
 The second does not occur: the three largest-magnitude coordinates of Qwen3-0.6B have $r \le 0.20$ at every layer.
 For what causes the collapse, our claim therefore reduces to the geometric description and the repair.
-One qualification applies to the first outcome: the dominant direction is not evenly distributed, since about ten coordinates hold most of its loading, yet zeroing them leaves one direction dominant (E1).
+One qualification applies to the first outcome: the dominant direction is not evenly distributed, since about ten coordinates hold most of its loading.
+Yet LaTa and PhilTa are repaired only after tens to hundreds of variance-ranked coordinates are zeroed, and no number up to 400 repairs mT5-base (E1, Figure~\ref{fig:e1_k_sweep}).
 Section~\ref{sec:objective} turns from the coordinates to a second question: whether the collapse follows the architecture or the missing embedding objective.
 
 \section{Objective or Architecture?}

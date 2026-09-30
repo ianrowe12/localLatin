@@ -22,10 +22,13 @@ specific to the top coordinates or does zeroing any k coordinates do as well?
   render   ``facts_e1_k_sweep.md`` and ``e1_k_sweep.pdf`` (AUROC and top-PC share
            against k at each model's worst baseline layer). Reference lines (base,
            standardization, ABTT D=3 and D=10) are read from ``e1_coordinate_ablation.csv``.
+           Also the paper figure ``overleaf_drafts/figures/fig_e1_k_sweep.pdf``
+           (``fig:e1_k_sweep``): the variance ranking and the random seed mean for all six
+           models at their worst baseline layer, in the style of ``fig_d_ablation``.
 
 Outputs, in runs/active/reframe/e1/ (small, force-added): e1_k_sweep.csv,
-e1_k_sweep_gate.csv, facts_e1_k_sweep.md, e1_k_sweep.pdf. Nothing is written to
-overleaf_drafts/.
+e1_k_sweep_gate.csv, facts_e1_k_sweep.md, e1_k_sweep.pdf. ``render`` also writes
+overleaf_drafts/figures/fig_e1_k_sweep.pdf (``--paper_fig`` redirects it).
 
   python scripts/paper/reframe/e1_k_sweep.py compute --check --workers 16 \
       --bases_root runs/active/resubmit_bases
@@ -55,6 +58,8 @@ SWEEP_NAME = "e1_k_sweep.csv"
 GATE_NAME = "e1_k_sweep_gate.csv"
 FACTS_NAME = "facts_e1_k_sweep.md"
 FIG_NAME = "e1_k_sweep.pdf"
+PAPER_FIG = asw.FIG_DIR / "fig_e1_k_sweep.pdf"
+PAPER_XTICKS = (1, 3, 10, 30, 100, 400)
 
 K_SWEEP = (1, 2, 3, 5, 7, 10, 15, 20, 30, 50, 75, 100, 150, 200, 300, 400)
 N_SEEDS = 5
@@ -428,6 +433,63 @@ def figure(sweep: pd.DataFrame, w: pd.DataFrame, path: Path) -> None:
     plt.close(fig)
 
 
+def paper_figure(sweep: pd.DataFrame, w: pd.DataFrame, path: Path) -> None:
+    """Single-column paper figure: test AUROC (top) and top-PC share of the zeroed TRAIN
+    vectors (bottom) against k, each model at its worst baseline layer. Zeroing by variance
+    is the solid (T5) or dashed (embedding-trained) line with markers; the random control is
+    the seed mean, dotted, in the model's color."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
+    from matplotlib.ticker import NullFormatter
+
+    asw.style()
+    c = curves(sweep)
+    fig, axes = plt.subplots(2, 1, figsize=(3.0, 3.55), sharex=True)
+    handles = []
+    for _mid, name, t5, colr, mk in e1.MODELS:
+        x = e1.worst_layer(w, name)
+        if x is None:
+            continue
+        v = _curve(c, x["model"], int(x["layer"]), "variance")
+        r = _curve(c, x["model"], int(x["layer"]), "random")
+        ls = "-" if t5 else "--"
+        mstyle = dict(marker=mk, markersize=2.8, markerfacecolor=colr if t5 else "white",
+                      markeredgecolor=colr, markeredgewidth=0.7)
+        for ax, col in ((axes[0], "aucroc"), (axes[1], "pc1_share_train")):
+            ax.plot(r["k"], r[col], color=colr, lw=0.9, linestyle=":", zorder=2)
+            ax.plot(v["k"], v[col], color=colr, lw=1.1, linestyle=ls, zorder=3, **mstyle)
+        handles.append(Line2D([0], [0], color=colr, lw=1.1, linestyle=ls, **mstyle,
+                              label=f"{name} ({int(x['layer'])})"))
+    axes[0].set_ylabel("Test AUROC")
+    axes[1].set_ylabel("Top-PC share (train)")
+    axes[0].axhline(0.5, color="#888888", lw=0.6, zorder=1)
+    axes[0].set_ylim(0.45, 1.0)
+    axes[1].set_ylim(0.0, 1.0)
+    for ax in axes:
+        ax.grid(True, zorder=0)
+        ax.set_xscale("log")
+    axes[1].set_xticks(PAPER_XTICKS)
+    axes[1].set_xticklabels([str(k) for k in PAPER_XTICKS])
+    axes[1].xaxis.set_minor_formatter(NullFormatter())
+    axes[1].set_xlabel("Coordinates zeroed $k$")
+    # Legend columns fill top to bottom: T5 encoders then the line meaning "zeroed by
+    # variance" on the left, embedding-trained models then "random" on the right.
+    n_t5 = sum(1 for m in e1.MODELS if m[2] and e1.worst_layer(w, m[1]) is not None)
+    key = [Line2D([0], [0], color="#444444", lw=1.1, linestyle="-", label="by variance"),
+           Line2D([0], [0], color="#444444", lw=0.9, linestyle=":", label="random (5 seeds)")]
+    handles = handles[:n_t5] + [key[0]] + handles[n_t5:] + [key[1]]
+    fig.legend(handles=handles, loc="upper center", ncol=2, frameon=False,
+               bbox_to_anchor=(0.54, 1.0), handletextpad=0.4, columnspacing=0.8,
+               handlelength=2.0)
+    fig.tight_layout(rect=(0, 0, 1, 0.79), h_pad=0.4)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(path, bbox_inches="tight", metadata={"CreationDate": None})
+    plt.close(fig)
+
+
 def cmd_render(args) -> int:
     sweep = pd.read_csv(args.out_dir / SWEEP_NAME)
     abl = e1.read_abl(args.out_dir / e1.ABL_NAME)
@@ -438,6 +500,8 @@ def cmd_render(args) -> int:
     print(f"wrote {args.out_dir / FACTS_NAME}")
     figure(sweep, w, args.out_dir / FIG_NAME)
     print(f"wrote {args.out_dir / FIG_NAME}")
+    paper_figure(sweep, w, args.paper_fig)
+    print(f"wrote {args.paper_fig}")
     return 0
 
 
@@ -447,6 +511,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     for name in ("compute", "check", "render"):
         p = sub.add_parser(name)
         p.add_argument("--out_dir", type=Path, default=OUT_DIR)
+        if name == "render":
+            p.add_argument("--paper_fig", type=Path, default=PAPER_FIG)
         if name == "compute":
             p.add_argument("--split_csv", type=Path, default=e1.SPLIT_CSV)
             p.add_argument("--bases_root", type=Path, default=e1.BASES_ROOT)
