@@ -298,5 +298,5 @@ box.
    zeroing them.
 6. **Related work**: nothing presupposes that the account holds here. The
    sentence on outlier dimensions describes prior work and stands.
-7. **Page budget**: the E1 paragraph grew by about 20 sentences and the paper
-   by one page.
+7. **Page budget**: the E1 findings take 13 sentences where the brief asked for 8
+   to 12, and the paper grew from 57 to 58 pages.

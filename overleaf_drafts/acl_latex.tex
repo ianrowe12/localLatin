@@ -70,7 +70,7 @@ The repair matches, but does not exceed, a character n-gram reference.
 Contrastive fine-tuning of LaTa improves its last layer but not its collapsed middle layers.
 At the collapsed layers one direction holds most of the variance, but removing it alone restores only part of the ranking; removing two to five restores nearly all of it.
 We test whether a few massive, passage-varying residual coordinates cause the collapse.
-Zeroing up to ten of them restores none of the 26 collapsed layers to AUROC 0.90, while per-coordinate standardization restores 9.
+Zeroing up to ten of them restores none of the 26 collapsed layers to AUROC 0.90 or above, while per-coordinate standardization restores 9.
 We also test whether T5 pretraining or the missing embedding objective produces the collapse \pending{E2, P2x2: one-sentence result}.
 We release the frozen testbed and split, the evaluation code, and lexical reference scores.
 \end{abstract}
@@ -128,7 +128,7 @@ Section~\ref{sec:repair} shows that this gain holds without any threshold and do
 This paper makes four contributions.
 (1)~We give the first per-layer retrieval profile of T5 encoder states in isolation that we know of: in our panel, T5 encoders collapse to or near chance at mid-depth. A $2 \times 2$ control crosses T5 pretraining with an embedding objective \pending{P2x2: raw encoder-only and embedding-trained T5 cells}.
 (2)~We compare anisotropy statistics with retrieval layer by layer. Top-PC share and effective rank separate collapsed from healthy layers, whereas mean pairwise cosine is lower at collapsed layers than at healthy ones. A train-only projection restores every layer, which shows that the signal was present in the layer but masked.
-(3)~We give a falsifiable test of the massive-coordinate account for mean-pooled passage retrieval (coordinate ablation, token audit, subspace split, and a $D$ ablation), and find that the nuisance spans two to five directions, which rank below the retained directions in every pre-trained model. The account's main prediction fails: zeroing up to ten top coordinates restores none of the 26 collapsed layers to AUROC 0.90, while per-coordinate standardization restores 9 and a three-component projection all 26 \pending{E2: token audit result}.
+(3)~We give a falsifiable test of the massive-coordinate account for mean-pooled passage retrieval (coordinate ablation, token audit, subspace split, and a $D$ ablation), and find that the nuisance spans two to five directions, which rank below the retained directions in every pre-trained model. The account's main prediction fails: zeroing up to ten top coordinates restores none of the 26 collapsed layers to AUROC 0.90 or above, while per-coordinate standardization restores 9 and a three-component projection all 26 \pending{E2: token audit result}.
 (4)~We release the frozen testbed and split, the evaluation code, and lexical reference scores (Section~\ref{sec:testbed}).
 
 \input{related_work}
@@ -413,26 +413,18 @@ The account then reduces to ``a few dominant directions'', which is what Section
 Centering alone tests whether the shared offset matters at all at these layers.
 Table~\ref{tab:e1_coordinate_ablation} gives AUROC (top block) and top-PC share (bottom block) for each model at its worst baseline layer.
 We find that the main prediction fails.
-Zeroing restores none of the 26 collapsed T5 layers to AUROC 0.90 under either ranking, for $k \le 5$ or for $k = 10$; the best cell is 0.736 for $k \le 5$ and 0.794 for $k = 10$.
-Top-PC share after zeroing $k = 5$ stays at 0.568 to 0.998, against a threshold of 0.2 for the predicted fall.
-The two rankings nearly coincide at these layers: they share on average 2.4 of their top 3 and 9.1 of their top 10 coordinates, and the median AUROC difference between them is 0.000, so the prediction that ranking by mean magnitude helps less gets no verdict.
-Standardization partly works: it restores 9 of the 26 layers (1 of 10 in LaTa, 5 of 9 in PhilTa, 3 of 7 in mT5-base).
-Over all 26 it reaches AUROC 0.798 to 0.946 and recovers a median 79 percent of the $D=10$ gain, and it brings top-PC share below 0.2 at 14.
+Zeroing restores none of the 26 collapsed T5 layers to AUROC 0.90 or above under either ranking, for $k \le 5$ or for $k = 10$: the best cell is 0.736 for $k \le 5$ and 0.794 for $k = 10$, and top-PC share at $k = 5$ stays at 0.568 to 0.998 against a threshold of 0.2.
+The two rankings nearly coincide at these layers (on average 2.4 of the top 3 and 9.1 of the top 10 coordinates are shared; median AUROC difference 0.000), so the prediction that ranking by mean magnitude helps less gets no verdict.
+Standardization partly works: it restores 9 of the 26 layers (1 of 10 in LaTa, 5 of 9 in PhilTa, 3 of 7 in mT5-base), reaches AUROC 0.798 to 0.946 over the 26, recovers a median 79 percent of the $D=10$ gain, and brings top-PC share below 0.2 at 14.
 Centering alone restores none (AUROC change $-0.044$ to $+0.022$); ABTT restores 1 of 26 with $D=1$ and all 26 with $D=3$.
-By the rule above, 9 layers fall under ``a few coordinates, but more than five'' and 17 under ``only a projection repairs''.
-The gloss of the second branch, an axis spread over many coordinates of similar variance, does not fit the data.
-A descriptive measure, added after we saw these results and carrying no prediction, shows that the dominant direction is concentrated.
-At the collapsed layers the ten highest-variance coordinates hold a median 89 percent of the training variance (61 to 99.6 percent) and a median 92 percent of the first principal component's squared loading (76 to 99.7 percent); 90 percent of that loading sits on 4 to 22 coordinates.
+By the rule above, 9 layers fall under ``a few coordinates, but more than five'' and 17 under ``only a projection repairs'', but the gloss of the second branch, an axis spread over many coordinates of similar variance, does not fit the data.
+A descriptive measure, added after we saw these results and carrying no prediction, shows a concentrated direction: at the collapsed layers the ten highest-variance coordinates hold a median 89 percent of the training variance (61 to 99.6 percent) and a median 92 percent of the first principal component's squared loading (76 to 99.7 percent), and 90 percent of that loading sits on 4 to 22 coordinates.
 Yet after those ten are zeroed, one direction still dominates what remains (top-PC share 0.324 to 0.995), and AUROC stays below 0.80.
-The dominant direction is thus concentrated on about ten coordinates but not confined to them, and removing the coordinates is not the same as removing the direction.
-We did not test why one direction still dominates the remainder.
-The embedding-trained models behave as predicted.
-At their train-selected layers the largest absolute AUROC change over the eight zeroings is 0.004 for LaBSE, 0.007 for Qwen3-0.6B and 0.002 for KaLM-mini.
-At their weakest layers zeroing recovers $-18$ to 18 percent of the $D=10$ gain, against 36 to 80 percent for centering alone.
+The dominant direction is thus concentrated on about ten coordinates but not confined to them, and removing the coordinates is not the same as removing the direction; we did not test why one direction still dominates the remainder.
+The embedding-trained models behave as predicted: at their train-selected layers the largest absolute AUROC change over the eight zeroings is 0.004 for LaBSE, 0.007 for Qwen3-0.6B and 0.002 for KaLM-mini, and at their weakest layers zeroing recovers $-18$ to 18 percent of the $D=10$ gain, against 36 to 80 percent for centering alone.
 The prediction for $r$ fails as stated: the three largest-magnitude coordinates all have $r \geq 1$ at 18 of the 26 collapsed layers (10 of 10 in LaTa, 7 of 7 in mT5-base, 1 of 9 in PhilTa).
-At PhilTa layers 5 to 10, one of the three lies between 0.81 and 0.96 while the other two exceed 1; at layers 3 and 4 the values below 1 are 0.21 to 0.61.
-When the top three are chosen by variance, all have $r \geq 1$ at all 26 layers.
-As predicted, $r < 1$ at mT5-base layer~1 (0.05 to 0.12) and at every layer of Qwen3-0.6B (at most 0.20), LaBSE and KaLM-mini (at most 0.39).
+In PhilTa one of the three lies between 0.81 and 0.96 at layers 5 to 10 while the other two exceed 1, and the lowest values at layers 3 and 4 are 0.21 and 0.61.
+Chosen by variance, the top three all have $r \geq 1$ at all 26 layers; as predicted, $r < 1$ at mT5-base layer~1 (0.05 to 0.12) and at every layer of Qwen3-0.6B (at most 0.20), LaBSE and KaLM-mini (at most 0.39).
 
 \input{tables/e1_coordinate_ablation}
 
