@@ -200,8 +200,11 @@ def test_figure_regenerates_byte_identically(tmp_path):
 def _bases_root():
     for root in (REPO_ROOT / "runs/active/resubmit_bases",
                  Path("/u/irowerojas/localLatin/runs/active/resubmit_bases")):
-        if (root / "phase9_bases/bowphs_LaTa" / asw.SUBDIR / "hidden_layer12_embeddings.npy").exists():
-            return root
+        try:
+            if (root / "phase9_bases/bowphs_LaTa" / asw.SUBDIR / "hidden_layer12_embeddings.npy").exists():
+                return root
+        except OSError:  # an unreadable path (PermissionError on another user's home) is absent
+            continue
     return None
 
 
