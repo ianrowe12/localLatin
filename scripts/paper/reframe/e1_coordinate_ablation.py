@@ -43,6 +43,12 @@ CSVs are written):
   2. center and ABTT D=1, 3, 10 = runs/active/reframe/h1/h1_d_ablation.csv within 1e-6;
   3. base top-PC share = the train raw-view value of
      runs/active/resubmit/layer_diagnostics/geometry_per_layer.csv within 1e-4.
+The AUROC tolerance is --tol_auroc. On a re-extracted cache gate 2 misses 1e-6 at the D=0
+cells of collapsed mT5-base layers (3.6e-6 at layer 5 on Delta, 2026-09-30). Those cells
+are numerically unstable at that level: measured on the same cache, they move by 1e-6 to
+1e-5 under float64 arithmetic or a one-ulp change of the cached values, and by up to 3e-7
+under another BLAS thread count, while other cells move by 1e-8 to 1e-7. The default
+tolerance is left at 1e-6 so that the miss stays visible.
 
 Outputs (small CSVs, force-added; embeddings are never written):
   runs/active/reframe/e1/e1_coordinate_ablation.csv   long format, one row per
@@ -389,8 +395,10 @@ def cmd_compute(args) -> int:
 # --------------------------------------------------------------------------- #
 
 def gate_table(abl: pd.DataFrame, res: pd.DataFrame, h1: pd.DataFrame, geom: pd.DataFrame,
-               complete: bool = True) -> pd.DataFrame:
-    """One row per (gate, model): cells compared, cells missing, max |difference|.
+               complete: bool = True, tol_auroc: float = GATE_TOL_AUROC,
+               tol_pc1: float = GATE_TOL_PC1) -> pd.DataFrame:
+    """One row per (gate, model): cells compared, cells missing, max |difference|, and
+    the cells over the tolerance by name.
 
     ``complete`` also requires every published layer of a computed model to be present
     (turn it off for a --layers subset).
@@ -409,37 +417,44 @@ def gate_table(abl: pd.DataFrame, res: pd.DataFrame, h1: pd.DataFrame, geom: pd.
         published = sorted(pub.loc[mid].index) if mid in pub.index.get_level_values(0) else []
         absent = [x for x in published if x not in mine] if complete else []
         specs = [
-            ("1 base AUROC vs published baseline", GATE_TOL_AUROC,
-             [(float(ours.loc[(mid, x, "base"), "aucroc"]), pub.get((mid, x))) for x in mine]),
-            ("2 center and ABTT D=1,3,10 AUROC vs H1", GATE_TOL_AUROC,
-             [(float(ours.loc[(mid, x, tag), "aucroc"]), h1i.get((mid, x, v, D)))
-              for x in mine for tag, (v, D) in h1_keys.items()]),
-            ("3 base top-PC share vs geometry_per_layer (train, raw)", GATE_TOL_PC1,
-             [(float(ours.loc[(mid, x, "base"), "pc1_share_train"]), gi.get((mid, x)))
+            ("1 base AUROC vs published baseline", tol_auroc,
+             [(f"L{x} base", float(ours.loc[(mid, x, "base"), "aucroc"]), pub.get((mid, x)))
               for x in mine]),
+            ("2 center and ABTT D=1,3,10 AUROC vs H1", tol_auroc,
+             [(f"L{x} {TAG_LABEL[tag]}", float(ours.loc[(mid, x, tag), "aucroc"]),
+               h1i.get((mid, x, v, D)))
+              for x in mine for tag, (v, D) in h1_keys.items()]),
+            ("3 base top-PC share vs geometry_per_layer (train, raw)", tol_pc1,
+             [(f"L{x} base", float(ours.loc[(mid, x, "base"), "pc1_share_train"]),
+               gi.get((mid, x))) for x in mine]),
         ]
         for name, tol, cells in specs:
-            diffs = [abs(a - float(b)) for a, b in cells if b is not None]
-            n_missing = sum(1 for _, b in cells if b is None)
-            mx = max(diffs) if diffs else float("nan")
-            ok = bool(diffs) and n_missing == 0 and not absent and mx <= tol
+            diffs = [(lab, abs(a - float(b))) for lab, a, b in cells if b is not None]
+            n_missing = sum(1 for _, _, b in cells if b is None)
+            mx = max(d for _, d in diffs) if diffs else float("nan")
+            over = [(lab, d) for lab, d in diffs if d > tol]
+            ok = bool(diffs) and n_missing == 0 and not absent and not over
             rows.append({"gate": name, "model": mid, "n_cells": len(diffs),
                          "n_missing_reference": n_missing,
                          "n_published_layers_absent": len(absent),
-                         "max_abs_diff": mx, "tolerance": tol, "ok": ok})
+                         "max_abs_diff": mx, "tolerance": tol,
+                         "n_over_tolerance": len(over),
+                         "cells_over_tolerance": "; ".join(f"{lab} {d:.2e}" for lab, d in over),
+                         "ok": ok})
     return pd.DataFrame(rows)
 
 
 def run_gates(abl: pd.DataFrame, args, complete: bool, write: bool) -> int:
     gates = gate_table(abl, pd.read_csv(args.results_csv), pd.read_csv(args.h1_csv),
-                       pd.read_csv(args.geom_csv), complete=complete)
+                       pd.read_csv(args.geom_csv), complete=complete, tol_auroc=args.tol_auroc)
     if write:
         gates.to_csv(args.out_dir / GATE_NAME, index=False, float_format="%.6g")
     for g in gates.itertuples():
         print(f"gate {g.gate} | {DISP.get(g.model, g.model)}: {g.n_cells} cells, "
               f"max |diff| {g.max_abs_diff:.2e} (tol {g.tolerance:.0e}), "
               f"missing reference {g.n_missing_reference}, published layers absent "
-              f"{g.n_published_layers_absent}: {'ok' if g.ok else 'FAIL'}")
+              f"{g.n_published_layers_absent}: {'ok' if g.ok else 'FAIL'}"
+              + (f" [over tolerance: {g.cells_over_tolerance}]" if g.n_over_tolerance else ""))
     if gates.empty or not gates["ok"].all():
         print("REPRODUCTION GATES FAILED")
         return GATE_EXIT
@@ -706,7 +721,20 @@ def facts(w: pd.DataFrame, coords: pd.DataFrame, shares: pd.DataFrame,
     else:
         for g in gates.itertuples():
             a(f"- gate {g.gate}, {DISP.get(g.model, g.model)}: {g.n_cells} cells, max |diff| "
-              f"{g.max_abs_diff:.2e} (tolerance {g.tolerance:.0e}): {_verdict(bool(g.ok))}")
+              f"{g.max_abs_diff:.2e} (tolerance {g.tolerance:.0e}): {_verdict(bool(g.ok))}"
+              + (f"; cells over tolerance: {g.cells_over_tolerance}" if g.n_over_tolerance
+                 else ""))
+        if not gates["ok"].all():
+            a("- A gate FAILED. Read the cells it names before quoting numbers that depend on "
+              "them. Known case: D=0 (centering) at the collapsed mT5-base layers. Measured on "
+              "the Delta cache (2026-09-30), the same cell moves by 1e-6 to 1e-5 when the "
+              "arithmetic is done in float64 instead of float32, when every cached value is "
+              "moved by one float32 ulp, and by up to 3e-7 when the BLAS thread count changes, "
+              "while other cells move by 1e-8 to 1e-7 under the same changes. A 1e-6 match "
+              "against a CSV computed from another extraction is then not attainable for "
+              "those cells; they agree to 5 decimals. The likely reason, not verified here, is "
+              "that the centered vectors are almost rank one there (top-PC share 0.999 or "
+              "more), so many centered cosines lie within rounding distance of each other.")
     a("")
 
     a("## 1. Table rows: each model at its worst baseline layer")
@@ -885,13 +913,21 @@ def facts(w: pd.DataFrame, coords: pd.DataFrame, shares: pd.DataFrame,
         lower = sum(int(((coll[f"auc_{zero_tag('variance', k)}"]
                           - coll[f"auc_{zero_tag('mean_abs', k)}"]) < -1e-9).sum()) for k in KS)
         total = n_coll * len(KS)
-        v = "PASS" if higher > lower else "FAIL" if lower > higher else "NO DIFFERENCE"
-        a(f"- **{v}** (criterion: more cells higher than lower): over the {total} (collapsed "
-          "layer, k) cells, variance ranking gives the "
-          f"higher AUROC in {higher}, the lower in {lower}, the same in {total - higher - lower}.")
+        meds = [float((coll[f"auc_{zero_tag('variance', k)}"]
+                       - coll[f"auc_{zero_tag('mean_abs', k)}"]).median()) for k in KS]
+        n_rest = {r: int(sum(1 for _, x in coll.iterrows()
+                             if first_k(x, r, "auc", lambda v: v >= RESTORE_AUROC) is not None))
+                  for r in RANKINGS}
+        summary = (f"variance ranking gives the higher AUROC in {higher}, the lower in {lower}, "
+                   f"the same in {total - higher - lower} of the {total} (collapsed layer, k) "
+                   "cells; median difference per k "
+                   + ", ".join(f"{m:+.3f}" for m in meds)
+                   + f"; layers restored to >= {RESTORE_AUROC:.2f} at some k <= {KS[-1]}: "
+                   f"{n_rest['variance']} by variance, {n_rest['mean_abs']} by mean |x|")
+        a("- **NO VERDICT** (the paragraph gives no size for \"less\", and a sign count would "
+          f"overstate differences this small): {summary}.")
         verdicts.append(("zeroing by mean |x| helps less than zeroing by variance at collapsed "
-                         "T5 layers", f"{v} (variance higher in {higher}, lower in {lower} of "
-                         f"{total} cells)"))
+                         "T5 layers", f"NO VERDICT ({summary})"))
         a("- per collapsed layer, shared coordinates among the top 1/3/5/10 of the two rankings:")
         for m in T5:
             t = coll[coll["m"] == m]
@@ -1145,7 +1181,7 @@ def cmd_render(args) -> int:
         gates = None
         if all(p.exists() for p in (args.results_csv, args.h1_csv, args.geom_csv)):
             gates = gate_table(abl, pd.read_csv(args.results_csv), pd.read_csv(args.h1_csv),
-                               pd.read_csv(args.geom_csv))
+                               pd.read_csv(args.geom_csv), tol_auroc=args.tol_auroc)
         args.facts_md.parent.mkdir(parents=True, exist_ok=True)
         facts(w, coords, shares, gates, parse_selected_layers(args.selected_tex),
               args.facts_md, omitted=omitted)
@@ -1162,6 +1198,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         p.add_argument("--results_csv", type=Path, default=RES_CSV)
         p.add_argument("--h1_csv", type=Path, default=H1_CSV)
         p.add_argument("--geom_csv", type=Path, default=GEOM_CSV)
+        p.add_argument("--tol_auroc", type=float, default=GATE_TOL_AUROC,
+                       help="AUROC tolerance of gates 1 and 2 (default 1e-6)")
 
     p = sub.add_parser("compute", help="ablate, score and write the three CSVs")
     refs(p)

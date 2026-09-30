@@ -24,6 +24,7 @@
 #   MODELS         '|'-separated display names or ids (default: all six);
 #                  '|' because --export splits on commas
 #   ALLOW_MISSING  1 = skip a model whose cache is absent instead of failing
+#   TOL_AUROC      AUROC tolerance of reproduction gates 1 and 2 (default 1e-6)
 #
 # From a checkout without Ian's paths (pick the account with sbatch --test-only):
 #   CODE_ROOT=$PWD BASES_ROOT=<checkout>/runs/active/resubmit_bases \
@@ -38,6 +39,7 @@ BASES_ROOT="${BASES_ROOT:-/projects/beto/irowerojas/localLatin/runs/active/resub
 PY="${PY:-/u/irowerojas/.conda/envs/localLatin/bin/python}"
 MODELS="${MODELS:-}"
 ALLOW_MISSING="${ALLOW_MISSING:-0}"
+TOL_AUROC="${TOL_AUROC:-}"
 NPROC="${SLURM_CPUS_PER_TASK:-16}"
 cd "$CODE_ROOT" || exit 1
 mkdir -p slurm/logs
@@ -52,11 +54,14 @@ echo "python: $PY"
 EXTRA=()
 if [ -n "$MODELS" ]; then EXTRA+=(--models "${MODELS//|/,}"); fi
 if [ "$ALLOW_MISSING" = "1" ]; then EXTRA+=(--allow_missing); fi
+TOL=()
+if [ -n "$TOL_AUROC" ]; then TOL+=(--tol_auroc "$TOL_AUROC"); fi
 
 echo "=== compute + reproduction gates ==="
 RC=0
 $PY scripts/paper/reframe/e1_coordinate_ablation.py compute --check \
-  --bases_root "$BASES_ROOT" --workers "$NPROC" ${EXTRA[@]+"${EXTRA[@]}"} || RC=$?
+  --bases_root "$BASES_ROOT" --workers "$NPROC" \
+  ${EXTRA[@]+"${EXTRA[@]}"} ${TOL[@]+"${TOL[@]}"} || RC=$?
 
 # 3 = the CSVs were written but a reproduction gate failed: still render, so the
 # facts file shows which gate and by how much, then exit non-zero.
@@ -66,7 +71,7 @@ if [ "$RC" -ne 0 ] && [ "$RC" -ne 3 ]; then
 fi
 
 echo "=== render ==="
-$PY scripts/paper/reframe/e1_coordinate_ablation.py render
+$PY scripts/paper/reframe/e1_coordinate_ablation.py render ${TOL[@]+"${TOL[@]}"}
 
 echo "=== done (gate exit $RC) ==="
 exit "$RC"
