@@ -606,7 +606,9 @@ def write_table(w: pd.DataFrame, path: Path) -> List[str]:
     omitted = [name for name, x in rows if x is None]
     rows = [(name, x) for name, x in rows if x is not None]
     lines = [asw.HEADER, r"\begin{table*}[t]", r"\centering", r"\footnotesize",
-             r"\setlength{\tabcolsep}{4pt}", r"\begin{tabular}{@{}lcccccccccccccc@{}}",
+             # 3pt, not 4pt: with numbers in every cell the 15 columns overflow \textwidth
+             # by 13.7pt at 4pt.
+             r"\setlength{\tabcolsep}{3pt}", r"\begin{tabular}{@{}lcccccccccccccc@{}}",
              r"\toprule",
              r" & & & \multicolumn{4}{c}{Zeroed, ranked by mean $|x|$} & "
              r"\multicolumn{4}{c}{Zeroed, ranked by variance} & & & & \\",
