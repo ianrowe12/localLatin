@@ -1,0 +1,23 @@
+% generated table
+% python scripts/paper/reframe/p2x2_panel.py --stage render
+\begin{table}[t]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{2pt}
+\begin{tabular}{@{}llcc@{}}
+\toprule
+Cell & Models & AUROC$_{\min}$ & PC1$_{\max}$ \\
+\midrule
+T5, raw & \makecell[l]{LaTa, PhilTa,\\mT5-base} & 0.50--0.65 & 0.86--1.00 \\
+T5, raw & T5-v1.1-base & 0.489 & 0.975 \\
+T5, raw & T5-base & 0.816 & 0.545 \\
+T5, raw+FT & LaTa (fine-tuned) & 0.50--0.57 & 0.945 \\
+T5, emb. & Sentence-T5 & 0.800 & 0.943 \\
+\midrule
+Enc., raw & LaBERTa, PhilBERTa & 0.83--0.88 & 0.16--0.25 \\
+Enc., emb. & LaBSE, SPhilBERTa & 0.81--0.89 & 0.13--0.52 \\
+\bottomrule
+\end{tabular}
+\caption{Architecture-by-objective panel, read on the Latin corpus with no post-hoc correction. AUROC$_{\min}$ is the lowest Task~A test AUROC over the 12 layers of the unmodified mean-pooled vectors. PC1$_{\max}$ is the peak top-PC share over layers, the largest share of centered variance on the first principal component of the 847 training passages. A row with one model gives its value, to three decimals. A row with several models gives the range of the per-model values, to two decimals (three if the two ends would print alike). For fine-tuned LaTa, the AUROC entry is the range over layers 2--11. Enc.\ is encoder-only, emb.\ is embedding-trained, and FT is contrastive fine-tuning on training pairs. T5-base is the raw partner of Sentence-T5, which starts from the original T5 checkpoint.}
+\label{tab:panel_2x2}
+\end{table}

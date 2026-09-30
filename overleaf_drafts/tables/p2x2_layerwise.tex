@@ -1,0 +1,29 @@
+% generated table
+% python scripts/paper/reframe/p2x2_panel.py --stage render
+\begin{table*}[t]
+\centering
+\scriptsize
+\setlength{\tabcolsep}{2pt}
+\begin{tabular}{@{}rcccccccccccccccccc@{}}
+\toprule
+& \multicolumn{3}{c}{T5-v1.1-base} & \multicolumn{3}{c}{T5-base} & \multicolumn{3}{c}{Sentence-T5} & \multicolumn{3}{c}{LaBERTa} & \multicolumn{3}{c}{PhilBERTa} & \multicolumn{3}{c}{SPhilBERTa} \\
+\cmidrule(lr){2-4}\cmidrule(lr){5-7}\cmidrule(lr){8-10}\cmidrule(lr){11-13}\cmidrule(lr){14-16}\cmidrule(lr){17-19}
+Layer & AUROC & PC1 & Rank & AUROC & PC1 & Rank & AUROC & PC1 & Rank & AUROC & PC1 & Rank & AUROC & PC1 & Rank & AUROC & PC1 & Rank \\
+\midrule
+1 & 0.848 & 0.403 & 25.93 & 0.855 & 0.228 & 60.39 & 0.884 & 0.590 & 13.93 & 0.826 & 0.170 & 87.15 & 0.893 & 0.092 & 134.77 & 0.892 & 0.086 & 148.56 \\
+2 & 0.489 & 0.958 & 1.20 & 0.864 & 0.250 & 56.16 & 0.891 & 0.774 & 4.90 & 0.832 & 0.193 & 75.32 & 0.905 & 0.096 & 109.71 & 0.911 & 0.084 & 121.07 \\
+3 & 0.493 & 0.970 & 1.15 & 0.864 & 0.234 & 59.86 & 0.889 & 0.850 & 3.04 & 0.839 & 0.184 & 78.12 & 0.913 & 0.112 & 97.87 & 0.928 & 0.095 & 103.50 \\
+4 & 0.505 & 0.970 & 1.15 & 0.849 & 0.305 & 44.48 & 0.879 & 0.911 & 1.99 & 0.830 & 0.191 & 74.89 & 0.903 & 0.124 & 98.85 & 0.935 & 0.101 & 101.22 \\
+5 & 0.515 & 0.970 & 1.15 & 0.848 & 0.412 & 28.33 & 0.879 & 0.930 & 1.71 & 0.828 & 0.191 & 72.73 & 0.885 & 0.151 & 95.27 & 0.941 & 0.109 & 97.00 \\
+6 & 0.523 & 0.970 & 1.15 & 0.843 & 0.489 & 19.44 & 0.876 & 0.943 & 1.56 & 0.834 & 0.198 & 68.46 & 0.883 & 0.162 & 97.28 & 0.945 & 0.109 & 94.93 \\
+7 & 0.533 & 0.970 & 1.16 & 0.849 & 0.526 & 16.41 & 0.879 & 0.936 & 1.60 & 0.836 & 0.228 & 61.98 & 0.896 & 0.149 & 97.34 & 0.962 & 0.086 & 92.89 \\
+8 & 0.536 & 0.970 & 1.16 & 0.847 & 0.545 & 14.85 & 0.858 & 0.908 & 1.83 & 0.844 & 0.248 & 58.96 & 0.905 & 0.157 & 94.21 & 0.973 & 0.089 & 95.09 \\
+9 & 0.533 & 0.975 & 1.14 & 0.836 & 0.534 & 15.35 & 0.827 & 0.829 & 2.31 & 0.857 & 0.254 & 57.87 & 0.911 & 0.140 & 92.12 & 0.981 & 0.110 & 84.84 \\
+10 & 0.531 & 0.974 & 1.14 & 0.826 & 0.513 & 15.64 & 0.809 & 0.705 & 2.91 & 0.873 & 0.245 & 61.55 & 0.919 & 0.120 & 89.92 & 0.983 & 0.113 & 78.91 \\
+11 & 0.522 & 0.973 & 1.16 & 0.816 & 0.494 & 15.26 & 0.800 & 0.659 & 3.13 & 0.892 & 0.233 & 65.75 & 0.913 & 0.143 & 82.12 & 0.982 & 0.127 & 64.67 \\
+12 & 0.772 & 0.235 & 43.31 & 0.843 & 0.121 & 87.95 & 0.874 & 0.180 & 68.34 & 0.910 & 0.154 & 85.69 & 0.923 & 0.083 & 105.56 & 0.983 & 0.122 & 68.44 \\
+\bottomrule
+\end{tabular}
+\caption{Per-layer readouts of the models added for the architecture-by-objective panel (Table~\ref{tab:panel_2x2}), on the Latin corpus with no post-hoc correction. AUROC: Task~A test pairwise AUROC of cosine on mean-pooled vectors. PC1: top-PC share, the share of centered variance on the first principal component of the 847 training passages. Rank: entropy effective rank of the same passages. T5-v1.1-base, T5-base, LaBERTa and PhilBERTa are raw pre-trained encoders; Sentence-T5 and SPhilBERTa are embedding-trained.}
+\label{tab:p2x2_layerwise}
+\end{table*}
