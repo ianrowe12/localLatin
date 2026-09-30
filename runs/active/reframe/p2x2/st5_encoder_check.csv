@@ -1,0 +1,14 @@
+layer,max_abs_diff,max_abs_ref,n_passages,weights_max_abs_diff,dtype,device
+0,0,560,16,0,torch.float32,cuda
+1,0,2905.94,16,0,torch.float32,cuda
+2,0,5259.09,16,0,torch.float32,cuda
+3,0,7422.18,16,0,torch.float32,cuda
+4,0,11811.1,16,0,torch.float32,cuda
+5,0,16158.3,16,0,torch.float32,cuda
+6,0,20666.8,16,0,torch.float32,cuda
+7,0,24296.4,16,0,torch.float32,cuda
+8,0,27484.6,16,0,torch.float32,cuda
+9,0,36002.6,16,0,torch.float32,cuda
+10,0,56135.7,16,0,torch.float32,cuda
+11,0,82491.9,16,0,torch.float32,cuda
+12,0,2.12638,16,0,torch.float32,cuda
