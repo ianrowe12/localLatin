@@ -33,7 +33,7 @@ Short version:
 | Jobs | 22572008 (five cached models, 76 model-layers, 2 min 46 s), 22572072 (all six, 100 model-layers, 3 min 50 s), 22572402 (final run with the concentration measure, 3 min 35 s, exit 0), all on `cpu-interactive`. The first two exited with the gate code because two D=0 cells missed 1e-6 (below); their ablation, coordinate and cosine-share CSVs equal those of the final run |
 | Inputs | `runs/active/resubmit/data/phase_resubmit_split.csv`; mean-pooled hidden states `runs/active/resubmit_bases/phase9_bases/<slug>/hidden_mean_tokempty/`, re-extracted on Delta in James's checkout (Ian's cache is not readable from it) |
 | Outputs | `runs/active/reframe/e1/e1_coordinate_ablation.csv` (1,400 rows: base and 13 interventions at 100 model-layers), `e1_top_coordinates.csv`, `e1_cosine_shares.csv`, `e1_concentration.csv`, `e1_gate_check.csv`, `facts_e1.md`; `overleaf_drafts/tables/e1_coordinate_ablation.tex` |
-| Tests | `tests/test_e1_coordinate_ablation.py` (25 tests: synthetic guards, gate behavior, byte-identical regeneration of the table from the committed CSV) |
+| Tests | `tests/test_e1_coordinate_ablation.py` (31 tests: synthetic guards, gate behavior, byte-identical regeneration of the table from the committed CSV) |
 
 Regenerate the table and the facts file from the committed CSVs with
 `python scripts/paper/reframe/e1_coordinate_ablation.py render` (seconds, no
@@ -192,10 +192,9 @@ prediction and changes no verdict. At the 26 collapsed layers, median (range):
 So the gloss of the rule's last branch does not fit: the dominant direction is
 not spread over many coordinates of similar variance. It is concentrated on
 about ten coordinates but not confined to them. After those ten are zeroed,
-one direction still dominates what remains (top-PC share 0.324 to 0.995) and
-AUROC stays at 0.775 or less. Removing the coordinates is not the same as
-removing the direction. Why the remainder is still dominated by one direction
-was not tested.
+one direction still holds 0.324 to 0.995 of the remaining variance (at least
+0.6 at 24 of the 26 layers) and AUROC stays at 0.775 or less. Whether it is
+the same direction, and why it still dominates the remainder, was not tested.
 
 ### Embedding-trained models: PASS
 
@@ -231,8 +230,8 @@ What the share measures: the mean over distinct pairs of a coordinate's
 contribution equals the square of that coordinate's mean over L2-normalized
 passages minus its variance divided by n - 1. It therefore credits a
 coordinate for shifting all passages together, not for varying between them.
-A low share at a collapsed layer and a high one at a healthy layer is what the
-offset-against-variation distinction predicts. It is not evidence that three
+A low share at a collapsed layer and a high one at a healthy layer is
+consistent with the offset-against-variation distinction. It is not evidence that three
 coordinates dominate similarity at LaTa layer 7.
 
 ## Deviations from the handoff
@@ -240,8 +239,8 @@ coordinates dominate similarity at LaTa layer 7.
 1. **KaLM-mini added.** The handoff's E1 row names five models; the run covers
    all six. The paper's prediction sentence for the embedding-trained models
    still names LaBSE and Qwen3-0.6B only, as written before the results; the
-   findings say that KaLM-mini was added to the panel after the predictions
-   were written and is held to the same bound.
+   findings say that KaLM-mini was added to this experiment after the
+   predictions were written and is held to the same bound.
 2. **Concentration measure added post hoc.** Not in the handoff or the
    paragraph. The paper says it is descriptive and carried no prediction.
 3. **A quoted number does not reproduce.** The draft said that at LaTa layer 7
@@ -312,8 +311,8 @@ box.
    read against the failed zeroing.
 4. **Sec. 5 preamble**: "The testable content is that this direction is
    aligned with a few coordinates and has token carriers." Unchanged; E1 finds
-   the direction concentrated on about ten coordinates but not removable by
-   zeroing them.
+   most of the direction's loading on about ten coordinates, and one direction
+   still dominant after they are zeroed.
 5. **Related work**: nothing presupposes that the account holds here. The
    sentence on outlier dimensions describes prior work and stands.
 6. **Page budget**: the E1 findings take 13 sentences where the brief asked for 8
