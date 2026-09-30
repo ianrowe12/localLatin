@@ -71,7 +71,7 @@ Contrastive fine-tuning of LaTa improves its last layer but not its collapsed mi
 At the collapsed layers one direction holds most of the variance, but removing it alone restores only part of the ranking; removing two to five restores nearly all of it.
 We test whether a few massive, passage-varying residual coordinates cause the collapse.
 Zeroing up to ten of them restores none of the 26 collapsed layers to AUROC 0.90 or above, while per-coordinate standardization restores 9 \pending{E2: one-clause result}.
-We also test whether T5 pretraining or the missing embedding objective produces the collapse \pending{P2x2: one-sentence result}.
+The encoder-only siblings of LaTa and PhilTa, pre-trained on the same data and also without an embedding objective, retrieve at every layer (lowest AUROC 0.83 and 0.88).
 We release the frozen testbed and split, the evaluation code, and lexical reference scores.
 \end{abstract}
 
@@ -92,10 +92,8 @@ The Carolingian Canon Law project \citep[CCL;][]{firey2009ccl} has already made 
 Its labels are expert-assigned by the project and checked by collation in its parallel display, so they are independent of any model.
 A character n-gram reference retrieves at least as well as every pre-trained encoder configuration we test, so the equivalence signal is present in the surface text.
 A retrieval failure therefore points to the representation rather than to the data.
-% If P2x2 does not land, drop the next four sentences (the matched comparison rests on it).
 Latin also has dedicated encoders in two architectures.
 The T5 models LaTa and PhilTa have encoder-only siblings, LaBERTa and PhilBERTa, trained by the same authors on the same data \citep{riemenschneider2023lata}.
-Latin BERT \citep{bamman2020latinbert} is a further encoder-only model.
 This allows a matched comparison of architectures (Section~\ref{sec:objective}).
 
 The layerwise view shows a failure that the usual diagnostic misses.
@@ -114,7 +112,8 @@ Contrastive fine-tuning raises LaTa's last layer from 0.938 to 0.984 AUROC, yet 
 Prior work shows that a few residual coordinates of very large magnitude can dominate cosine similarity \citep{timkey2021rogue}.
 In decoder language models they persist through the middle layers \citep{sun2024massive}, and in T5 encoders they grow with depth \citep{zhao2025outlier}.
 We test whether mean pooling turns these coordinates into values that vary from passage to passage and so drown out content (Section~\ref{sec:localizing}).
-We also test whether T5 pretraining or the missing embedding objective produces the collapse (Section~\ref{sec:objective}).
+We also compare LaTa and PhilTa with their encoder-only siblings, which share their pretraining data and also lack an embedding objective (Section~\ref{sec:objective}).
+In both pairs the T5 encoder collapses and its encoder-only sibling does not.
 A label-free check finds the same low-rank middle layers on English court opinions, including in a T5 encoder pretrained on English alone.
 
 We measure the geometry on two tasks.
@@ -126,7 +125,7 @@ These models rank well, yet the projection still raises the share of witnesses L
 Section~\ref{sec:repair} shows that this gain holds without any threshold and does not come from the shared mean vector.
 
 This paper makes four contributions.
-(1)~We give the first per-layer retrieval profile of T5 encoder states in isolation that we know of: in our panel, T5 encoders collapse to or near chance at mid-depth. A $2 \times 2$ control crosses T5 pretraining with an embedding objective \pending{P2x2: raw encoder-only and embedding-trained T5 cells}.
+(1)~We give the first per-layer retrieval profile of T5 encoder states in isolation that we know of: in our panel, T5 encoders collapse to or near chance at mid-depth. In two matched pairs that share pretraining data and have no embedding objective, the T5 encoder collapses and its encoder-only sibling does not (lowest AUROC 0.83 and 0.88).
 (2)~We compare anisotropy statistics with retrieval layer by layer. Top-PC share and effective rank separate collapsed from healthy layers, whereas mean pairwise cosine is lower at collapsed layers than at healthy ones. A train-only projection restores every layer, which shows that the signal was present in the layer but masked.
 (3)~We give a falsifiable test of the massive-coordinate account for mean-pooled passage retrieval (coordinate ablation, token audit, subspace split, and a $D$ ablation), and find that the nuisance spans two to five directions, which rank below the retained directions in every pre-trained model. The account's main prediction fails: zeroing up to ten top coordinates restores none of the 26 collapsed layers to AUROC 0.90 or above, while per-coordinate standardization restores 9 and a three-component projection all 26 \pending{E2: token audit result}.
 (4)~We release the frozen testbed and split, the evaluation code, and lexical reference scores (Section~\ref{sec:testbed}).
@@ -208,31 +207,32 @@ PhilTa & T5 & Grc/La/En & none & 12 & run \\
 mT5-base & T5 & 101 lang. & none & 12 & run \\
 T5-v1.1-base & T5 & English & none & 12 & run \\
 \midrule
-LaBERTa & Enc. & Latin & none & 12 & \pendingnum{P2x2} \\
-PhilBERTa & Enc. & Grc/La/En & none & 12 & \pendingnum{P2x2} \\
-Latin BERT & Enc. & Latin & none & 12 & \pendingnum{P2x2} \\
+LaBERTa & Enc. & Latin & none & 12 & run \\
+PhilBERTa & Enc. & Grc/La/En & none & 12 & run \\
 \midrule
-\makecell[l]{Sentence-T5\\(or GTR-T5)} & T5 & English & contrastive & 12 & \pendingnum{P2x2} \\
 LaBSE & Enc. & 109 lang. & contrastive & 12 & run \\
-\midrule
 Qwen3-0.6B & Dec. & multiling. & contrastive & 28 & run \\
 KaLM-mini & Dec. & multiling. & contrastive & 24 & run \\
 \bottomrule
 \end{tabular}
-\caption{The model panel as a $2 \times 2$ design. Arch.: a T5 encoder with span-corruption pretraining, or an encoder-only model (Enc.) with masked-language-model pretraining; LaBERTa and PhilBERTa are RoBERTa-style. Emb.\ obj.: the embedding objective trained after pretraining, if any. Blocks: raw T5 encoders; raw encoder-only models; embedding-trained T5 and encoder-only models; embedding-trained decoders (Dec.) outside the design. T5-v1.1-base is the matched raw partner of Sentence-T5. Data: pretraining languages (Grc/La/En: Ancient Greek, Latin, English). L: transformer blocks read (encoder blocks for T5). KaLM-mini runs its decoder with bidirectional attention. \pendingnum{P2x2}: not yet run.}
+\caption{The model panel. Arch.: a T5 encoder with span-corruption pretraining, or an encoder-only model (Enc.) with masked-language-model pretraining; LaBERTa and PhilBERTa are RoBERTa-style. Emb.\ obj.: the embedding objective trained after pretraining, if any. Blocks: raw T5 encoders; their raw encoder-only siblings LaBERTa and PhilBERTa, which form two matched pairs with LaTa and PhilTa (same authors and pretraining data; Section~\ref{sec:objective}); embedding-trained controls, of which Qwen3-0.6B and KaLM-mini are decoders (Dec.). The six models of the main analysis are LaTa, PhilTa, mT5-base, and the three controls. T5-v1.1-base serves the label-free geometry check on Latin and English text (Section~\ref{sec:objective}). Data: pretraining languages (Grc/La/En: Ancient Greek, Latin, English). L: transformer blocks read (encoder blocks for T5). KaLM-mini runs its decoder with bidirectional attention.}
 \label{tab:model_panel}
 \end{table}
 
 \paragraph{Model panel.}
-Table~\ref{tab:model_panel} crosses two factors.
-The first is the architecture with its pretraining objective: a T5 encoder with span-corruption pretraining, or an encoder-only model with masked-language-model pretraining.
+Table~\ref{tab:model_panel} lists the models.
+The main analysis covers six.
+The T5 encoders are the Latin LaTa, its trilingual sibling PhilTa \citep{riemenschneider2023lata}, and mT5-base \citep{xue2021mt5}.
+The controls are LaBSE \citep{feng2022labse}, Qwen3-0.6B \citep{qwen3embedding2025}, and KaLM-mini \citep{kalm2025embedding}.
+These six models confound two factors.
+The first is the architecture with its pretraining objective, which for the T5 encoders is span corruption.
 The second is whether a contrastive embedding objective follows pretraining.
-The T5 encoders we have run are the Latin LaTa, its trilingual sibling PhilTa \citep{riemenschneider2023lata}, and mT5-base \citep{xue2021mt5}.
-The controls we have run are LaBSE \citep{feng2022labse}, Qwen3-0.6B \citep{qwen3embedding2025}, and KaLM-mini \citep{kalm2025embedding}.
-In the models run so far the two factors are confounded: every T5 encoder is raw and every control is embedding-trained, so a T5-only collapse could reflect either.
-The pending rows break the confound.
-LaBERTa and PhilBERTa share authors and pretraining data with LaTa and PhilTa \citep{riemenschneider2023lata}, and Latin BERT \citep{bamman2020latinbert} is a second raw Latin encoder.
-Sentence-T5 \citep{ni2022sentencet5} fills the embedding-trained T5 cell, and T5-v1.1-base \citep{raffel2020t5} is its matched raw partner.
+Every T5 encoder is raw and every control is embedding-trained, so a collapse found only in the T5 encoders could reflect either factor.
+Two matched pairs serve as the control: LaTa with LaBERTa, and PhilTa with PhilBERTa.
+Within each pair the two models come from the same authors and the same pretraining data \citep{riemenschneider2023lata}, and neither has an embedding objective.
+They differ in architecture together with its pretraining objective, a T5 encoder-decoder with span corruption against a RoBERTa-style encoder-only model with masked language modeling, and in the tokenizer each ships with.
+We chose LaBERTa and PhilBERTa because of this match.
+T5-v1.1-base \citep{raffel2020t5} serves the label-free geometry check of Section~\ref{sec:objective}.
 
 \paragraph{Lexical reference.}
 Character 3--5-gram TF-IDF, fit on training files, reaches 0.987 AUROC on Task~A, tying the best pre-trained encoder cell, and 89.9 DirAcc@1 on Task~B, level with the best pre-trained ones.
@@ -263,7 +263,8 @@ By this definition, 26 of the 36 T5 layers collapse: layers 2--11 of LaTa, 3--11
 We set this cutoff after inspecting test AUROC; it describes the profiles and selects no headline cell.
 Each T5 encoder recovers at its last layer, where LaTa reaches 0.938.
 The three embedding-trained models never fall below 0.806, and they improve broadly with depth to a best layer of 0.960 to 0.972.
-In our panel the collapse is thus confined to the T5 encoders, which are also the only models without an embedding objective (Section~\ref{sec:objective}).
+Among these six models the collapse is thus confined to the T5 encoders, which are also the only ones without an embedding objective.
+Section~\ref{sec:objective} adds two matched pairs in which neither model has one.
 ABTT, fit on training embeddings, restores every layer of every model (Section~\ref{sec:repair}).
 The question is whether a geometry statistic would have flagged the collapsed layers.
 
@@ -509,64 +510,54 @@ The first occurs at 17 of the 26 collapsed layers; at the other 9, standardizati
 The second does not occur: the three largest-magnitude coordinates of Qwen3-0.6B have $r \le 0.20$ at every layer.
 For what causes the collapse, our claim therefore reduces to the geometric description and the repair.
 One qualification applies to the first outcome: the dominant direction is not evenly distributed, since about ten coordinates hold most of its loading, yet zeroing them leaves one direction dominant (E1).
-Section~\ref{sec:objective} turns from the coordinates to a second question: whether T5 pretraining or the missing embedding objective produces them.
+Section~\ref{sec:objective} turns from the coordinates to a second question: whether the collapse follows the architecture or the missing embedding objective.
 
 \section{Objective or Architecture?}
 \label{sec:objective}
 
-Our panel confounds two factors.
-Every T5 we have run is a raw pre-trained encoder.
+The six models of the main analysis confound two factors.
+Every T5 encoder among them is a raw pre-trained encoder.
 Every model that does not collapse is embedding-trained: LaBSE, Qwen3-0.6B and KaLM-mini.
-The collapse may follow T5 pretraining, or it may follow the absence of an embedding objective.
-The panel so far cannot separate the two, so the claim that collapse is T5-specific holds only in our panel.
+The collapse may follow the architecture with its pretraining objective, or it may follow the absence of an embedding objective.
+These six models cannot separate the two.
 
-Table~\ref{tab:model_panel} gives the design.
-The LaTa--LaBERTa and PhilTa--PhilBERTa pairs hold data and authors fixed and vary the architecture factor.
-The embedding-trained T5 cell holds Sentence-T5 (or GTR-T5) \citep{ni2022sentencet5,ni2022gtr}.
-Its matched raw partner is T5-v1.1-base on the Latin corpus, since Sentence-T5 starts from an English T5 checkpoint rather than from LaTa.
+Two matched pairs vary the first factor and hold the second fixed (Table~\ref{tab:model_panel}).
+LaTa pairs with LaBERTa, both pre-trained on Latin.
+PhilTa pairs with PhilBERTa, both pre-trained on Ancient Greek, Latin and English.
+Within each pair the two models come from the same authors and the same pretraining data \citep{riemenschneider2023lata}, and neither has an embedding objective.
+They differ in architecture together with its pretraining objective: a T5 encoder-decoder trained with span corruption, against a RoBERTa-style encoder-only model trained with masked language modeling.
+They also differ in the tokenizer each ships with.
 
-The raw encoder-only cell is the discriminating test.
-Both accounts predict that the raw T5s collapse and that LaBSE does not.
-If LaBERTa and PhilBERTa keep retrieval at every depth, the collapse follows T5 pretraining.
-If they collapse, it follows the missing embedding objective.
-The embedding-trained T5 cell is weaker evidence, because its loss, like our fine-tuning below, attaches at the output.
-A Sentence-T5 that collapses at mid-depth is then predicted by both accounts, while one that stays healthy favors the objective account.
-We read this cell against LaBSE's healthy middle layers and against raw T5-v1.1-base.
-An English model may also retrieve Latin poorly at every layer for reasons unrelated to collapse, so for this cell the label-free top-PC share and effective rank are the primary readout.
-Table~\ref{tab:panel_2x2} reports the lowest baseline AUROC over layers and the peak top-PC share of each cell.
-We find \pending{P2x2: lowest baseline AUROC and peak top-PC share over layers for LaBERTa, PhilBERTa, Latin BERT and Sentence-T5; expected under the architecture account: the raw encoder-only models stay above 0.80 AUROC at every layer, while Sentence-T5 and T5-v1.1-base reach a top-PC share above 0.8 at mid-depth}.
+The encoder-only siblings are the discriminating test.
+If they collapse as their T5 siblings do, the collapse follows something the pair shares, such as the absence of an embedding objective.
+If they keep retrieval at every depth, it follows something that differs within the pair.
+We fixed the criterion before the run: a sibling keeps retrieval if it stays above 0.80 AUROC at every layer.
+Both do (Table~\ref{tab:panel_2x2}; per layer in Table~\ref{tab:p2x2_layerwise}, Appendix~\ref{app:layer_diagnostics}).
+LaBERTa's lowest baseline AUROC is 0.826, at layer 1, and PhilBERTa's is 0.883, at layer 6.
+Their T5 siblings fall to 0.496 (LaTa, layer 6) and 0.538 (PhilTa, layer 10).
+The geometry splits the same way.
+Top-PC share peaks at 0.952 in LaTa (layer 4) and 0.858 in PhilTa (layer 6), against 0.254 in LaBERTa (layer 9) and 0.162 in PhilBERTa (layer 6).
+It reaches the 0.6 that marks the collapsed layers (Section~\ref{sec:geometry}) at layers 2 to 11 of LaTa and 3 to 11 of PhilTa, and at no layer of either sibling.
+Effective rank falls to 1.36 in LaTa and 1.81 in PhilTa, and never below 57.87 in LaBERTa or 82.12 in PhilBERTa.
+
+In both pairs the T5 encoder collapses at mid-depth and its encoder-only sibling does not.
+The collapse thus follows what differs within each pair: the architecture with its pretraining objective, and the tokenizer.
+Pretraining data and the absence of an embedding objective are held fixed, so neither produces the collapse by itself.
+The comparison has two limits.
+The pairs vary architecture, pretraining objective and tokenizer together, so they do not say which of these matters.
+They also hold the embedding objective fixed at none: beyond the small-scale fine-tuning below, our panel does not vary it within the T5 architecture.
 % CONDITIONAL: cite mikkelsen2026 as contrast if the 2x2 panel supports a T5-specific account
 
-% PLACEHOLDER TABLE: filled by P2x2 (embedding-trained T5 and raw encoder-only rows)
-\begin{table}[t]
-\centering
-\footnotesize
-\setlength{\tabcolsep}{2pt}
-\begin{tabular}{@{}llcc@{}}
-\toprule
-Cell & Models & AUROC$_{\min}$ & PC1$_{\max}$ \\
-\midrule
-T5, raw      & \makecell[l]{LaTa, PhilTa,\\mT5-base} & 0.50--0.65 & 0.86--1.00 \\
-T5, raw      & T5-v1.1-base           & 0.489 & 0.975 \\
-T5, raw+FT   & LaTa (fine-tuned)      & 0.50--0.57 & 0.945 \\
-T5, emb.     & Sentence-T5            & \pendingnum{P2x2} & \pendingnum{P2x2} \\
-\midrule
-Enc., raw    & \makecell[l]{LaBERTa, PhilBERTa,\\Latin BERT} & \pendingnum{P2x2} & \pendingnum{P2x2} \\
-Enc., emb.   & LaBSE                  & 0.806 & 0.524 \\
-\bottomrule
-\end{tabular}
-\caption{Architecture-by-objective panel. AUROC$_{\min}$ is the lowest Task~A test AUROC over layers of the unmodified mean-pooled vectors (a range when the cell holds several models; for fine-tuned LaTa, the range over layers 2--11). PC1$_{\max}$ is the peak top-PC share over layers, the largest share of centered training variance on the first principal component. Enc.\ is encoder-only, emb.\ is embedding-trained, and FT is contrastive fine-tuning on training pairs. T5-v1.1-base is read on the Latin corpus as the raw partner of Sentence-T5.}
-\label{tab:panel_2x2}
-\end{table}
+\input{tables/panel_2x2}
 
-Fine-tuning gives a first piece of evidence.
+Fine-tuning addresses the second factor, the embedding objective, on the T5 side.
 Contrastive fine-tuning on 499 of the training pairs (Appendix~\ref{app:reference_systems}) raises LaTa's last layer from 0.938 to 0.984 AUROC (Table~\ref{tab:finetune_ceiling}).
 Its layers 2 to 11 still collapse, at AUROC 0.50 to 0.57.
 Their geometry barely moves: the peak top-PC share is 0.945 after fine-tuning against 0.952 before (Table~\ref{tab:ft_lata_layerwise}, Appendix~\ref{app:reference_systems}).
 Supervision attached to the output thus leaves the intermediate layers unrepaired.
 A similar output-only pattern is reported for a multilingual encoder: after sentence-level tuning it has no large outlier dimension at the output layer, while the base model's top outlier persists, reduced, at layer 8 \citep{haemmerl2023anisotropy}.
 This result does not separate the two accounts: small-scale supervision at the output may leave intermediate layers untouched under either.
-Our fine-tuning runs at most eight epochs on 499 pairs, far less than the large-scale contrastive training behind Sentence-T5, so the raw encoder-only cell remains the test.
+Our fine-tuning runs at most eight epochs on 499 pairs, so it does not settle what large-scale embedding training would do to the middle layers.
 
 All retrieval evidence comes from one labeled corpus.
 The geometry, however, needs no labels, so we can cross model with text.
@@ -580,6 +571,7 @@ The English sample is 1,705 public-domain passages of US court opinions from the
 On English, mT5-base reaches a top-PC share of at least 0.999 with effective rank 1.0 at layers 5 to 11, as on Latin, and PhilTa reaches 0.85 to 0.89 at layers 4 to 11 (0.83 to 0.86 on Latin).
 PhilTa's effective rank is 1.8 to 2.3 on both texts, as on Latin, rather than near 1.
 T5-v1.1-base, pretrained on English alone, is low-rank from layer 2 to layer 11 on both texts, at top-PC share 0.93 to 0.95 on English and 0.96 to 0.97 on Latin.
+On the Latin corpus its lowest baseline AUROC is 0.489, at layer 2.
 In every cell the first and last layers stay high-rank.
 Neither fail condition occurs: in these cells the low-rank middle layers appear on both texts, whether or not the input is in the model's pretraining language.
 This check speaks to geometry only.
@@ -684,7 +676,10 @@ Choosing among healthy layers still needs a train-only task signal.
 Several observations remain open.
 In LaTa's middle layers the raw cosine gap is negative ($-0.05$ to $-0.07$), so same-directory pairs score slightly below different-directory pairs on average, while AUROC stays at chance.
 Section~\ref{sec:geometry} shows that the standardized gap does not account for it, and the token audit (E2) tests a length account.
-Architecture and training objective are confounded in the models we have run, so the T5 attribution stays provisional until the controlled panel of Section~\ref{sec:objective} lands.
+The matched pairs of Section~\ref{sec:objective} narrow the attribution of the collapse without settling it.
+In both pairs the T5 encoder collapses and its encoder-only sibling does not, with pretraining data and the absence of an embedding objective held fixed.
+The pairs vary architecture, pretraining objective and tokenizer together, so they do not say which of these matters.
+Beyond the small-scale fine-tuning of LaTa, our panel does not vary the embedding objective within the T5 architecture.
 % CONDITIONAL: cite mikkelsen2026 as contrast if the 2x2 panel supports a T5-specific account
 
 For the editor who needs to route new witnesses, the repair narrows the choice of model (Section~\ref{sec:repair}).
@@ -699,7 +694,7 @@ Token attributions at the train-selected layers are reported in Appendix~\ref{ap
 \clearpage
 \section*{Limitations}
 
-The study uses one labeled corpus in one language and one domain: medieval Latin canon law. A label-free check extends the geometry, but not the retrieval result, to one English register (Section~\ref{sec:objective}). The 1,705-witness corpus is large for this field but small by current NLP standards. We test six models, and others may behave differently. In the models we have run, architecture and training objective are confounded, so we cannot yet say whether the mid-depth collapse follows from T5 pretraining or from the absence of an embedding objective; the controlled panel of Section~\ref{sec:objective} is designed to separate them (P2x2). The bootstrap intervals resample test directories with the layer, threshold, and projections held fixed, so they cover test-set sampling but not the choice of split; they span about $\pm 0.02$ AUROC and $\pm 3$ routing points per cell, and differences whose paired interval includes zero, among them the ABTT drops on the fine-tuned encoders and the lexical reference's lead over the best ABTT cells, are not established effects. The printed routing accuracies are precise to a few files: refitting the threshold on a finer grid moves 45 of the 66 printed routing numbers, by a median of 3 files (0.35 points); ABTT, SIF+ABTT, and fine-tuned cells move by at most 0.8, and Base and SIF cells by up to 2.6 (Appendix~\ref{app:ci_pq}). ABTT needs enough text to estimate principal components, so smaller archives need separate study.
+The study uses one labeled corpus in one language and one domain: medieval Latin canon law. A label-free check extends the geometry, but not the retrieval result, to one English register (Section~\ref{sec:objective}). The 1,705-witness corpus is large for this field but small by current NLP standards. We test six models, and others may behave differently. LaBERTa and PhilBERTa add a control beyond those six: paired with LaTa and PhilTa, they give two matched pairs, and in both the T5 encoder collapses at mid-depth while its encoder-only sibling, pre-trained on the same data and also without an embedding objective, does not (Section~\ref{sec:objective}). The pairs vary architecture, pretraining objective and tokenizer together, so we do not say which of the three produces the collapse, and they hold the embedding objective fixed at none. The bootstrap intervals resample test directories with the layer, threshold, and projections held fixed, so they cover test-set sampling but not the choice of split; they span about $\pm 0.02$ AUROC and $\pm 3$ routing points per cell, and differences whose paired interval includes zero, among them the ABTT drops on the fine-tuned encoders and the lexical reference's lead over the best ABTT cells, are not established effects. The printed routing accuracies are precise to a few files: refitting the threshold on a finer grid moves 45 of the 66 printed routing numbers, by a median of 3 files (0.35 points); ABTT, SIF+ABTT, and fine-tuned cells move by at most 0.8, and Base and SIF cells by up to 2.6 (Appendix~\ref{app:ci_pq}). ABTT needs enough text to estimate principal components, so smaller archives need separate study.
 
 Task~B measures ranking quality and a single threshold decision. It does not measure the full judgment a working scholar brings to deciding whether a witness belongs to an existing directory. The attribution analysis in the appendix is local to fixed query-candidate scores and failed its pre-registered threshold; its consistent effect is a leave-one-out rank faithfulness gain, and the ERASER-style rationale metrics are mixed.
 
@@ -768,6 +763,10 @@ Top-PC share and effective rank correlate with the ABTT gain across all 100 mode
 \caption{Label-free layer geometry of three T5 encoders on the Latin corpus (solid, filled markers) and on English US court opinions matched to the Latin passages in mT5 token length (dashed, hollow markers), read on 847 passages per cell. (a)~Top-PC share, the share of centered variance on the first principal component; the dotted line is the 0.6 threshold that marks every collapsed Latin layer (one false alarm, mT5-base layer~4). (b)~Entropy effective rank, log scale. Every model is low-rank from layer 2 to 4 through layer 11 on both texts and recovers at layer 12.}
 \label{fig:gen_geometry}
 \end{figure*}
+
+\paragraph{Encoder-only siblings.} Table~\ref{tab:p2x2_layerwise} gives the per-layer readouts of LaBERTa and PhilBERTa, the encoder-only siblings of LaTa and PhilTa in the matched pairs of Section~\ref{sec:objective}, with no post-hoc correction. Neither model has a collapsed layer: baseline AUROC runs from 0.826 (layer 1) to 0.910 (layer 12) in LaBERTa and from 0.883 (layer 6) to 0.923 (layer 12) in PhilBERTa. Top-PC share peaks at 0.254 in LaBERTa (layer 9) and 0.162 in PhilBERTa (layer 6), below the 0.6 that marks every collapsed T5 layer, and effective rank stays at or above 57.87 and 82.12.
+
+\input{tables/p2x2_layerwise}
 
 \section{Score Distributions at the Collapsed Retrieval Layer}
 \label{app:score_distributions}
