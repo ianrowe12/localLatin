@@ -227,7 +227,10 @@ coordinates dominate similarity at LaTa layer 7.
 ## Deviations from the handoff
 
 1. **KaLM-mini added.** The handoff's E1 row names five models; the run covers
-   all six.
+   all six. The paper's prediction sentence for the embedding-trained models
+   still names LaBSE and Qwen3-0.6B only, as written before the results; the
+   findings say that KaLM-mini was added to the panel after the predictions
+   were written and is held to the same bound.
 2. **Concentration measure added post hoc.** Not in the handoff or the
    paragraph. The paper says it is descriptive and carried no prediction.
 3. **A quoted number does not reproduce.** The draft said that at LaTa layer 7
@@ -252,6 +255,12 @@ coordinates dominate similarity at LaTa layer 7.
    in its settings, does not repair the collapse here; a diagonal rescaling
    recovers most of the gain at some layers; a three-component projection
    repairs all.
+7. **One summary criterion changed after the results were read.** The script
+   first coded the verdict for "ranking by mean magnitude helps less" as PASS
+   when more cells were higher than lower under the variance ranking. That
+   criterion would have printed PASS on 29 higher against 25 lower of 104
+   cells, with a median difference of 0.000. Commit `4de64d9` replaced it with
+   NO VERDICT plus the counts. No k, ranking or paper threshold changed.
 
 ## Paper edits
 
@@ -262,15 +271,16 @@ sentence.
 
 | # | Where | Region | Change |
 |---|---|---|---|
-| 1 | Abstract, line 72 | outside | The sentence with `\pending{E1, E2, P2x2: ...}` becomes three: the test, the E1 outcome (zeroing up to ten restores none of 26, standardization 9), and the pretraining-or-objective question with `\pending{E2, P2x2: one-sentence result}` |
+| 1 | Abstract, line 72 | outside | The sentence with `\pending{E1, E2, P2x2: ...}` becomes three: the test, the E1 outcome (zeroing up to ten restores none of 26, standardization 9), and the pretraining-or-objective question. The E1 sentence keeps `\pending{E2: one-clause result}` and the last keeps `\pending{P2x2: one-sentence result}` |
 | 2 | Contribution (3), line 129 | outside | `\pending{E1, E2: ...}` replaced by the E1 outcome plus `\pending{E2: token audit result}` |
 | 3 | Sec. 5 preamble, lines 381 to 385 | outside | "Preliminary evidence fits this account." removed. LaTa layer 7 magnitudes 5,000 and 36 replaced by 805, 780, 753 and 9.5. mT5-base layer 1 magnitudes added. Both `\pendingnum{E1: ...}` shares filled (0.22, 0.86, with the mean pairwise cosines), followed by what the share measures. The hypothesis and the r prediction are unchanged |
-| 4 | E1 paragraph, lines 397 and 404 | James | KaLM-mini added to the model list and to the embedding-trained prediction. "0.007 to 0.031" kept: the headline table gives ABTT gains of 0.031 (LaBSE), 0.007 (Qwen3-0.6B) and 0.009 (KaLM-mini) |
+| 4 | E1 paragraph, line 397 | James | KaLM-mini added to the model list. The prediction sentence (line 404) is unchanged and names LaBSE and Qwen3-0.6B; the findings disclose that KaLM-mini was added afterwards and is held to the same bound. "0.007 to 0.031" kept: the headline table gives ABTT gains of 0.031 (LaBSE), 0.007 (Qwen3-0.6B) and 0.009 (KaLM-mini) |
 | 5 | E1 paragraph, lines 409 and 410 | James | Table sentence names both blocks. `\pending{E1: ...}` replaced by the findings |
 | 6 | Placeholder table, lines 412 to 432 | James | Replaced by `\input{tables/e1_coordinate_ablation}` |
 | 7 | Scope, after line 508 | outside | Five sentences added after the unchanged falsifiers: the first occurs at 17 of 26 (at the other 9 standardization repairs, zeroing does not), the second does not occur (Qwen3-0.6B r at most 0.20), the claim about the cause reduces to the geometric description and the repair, with the concentration qualification |
 | 8 | Discussion, line 673 | outside | `\pending{E1, E2: ...}` replaced by the E1 answer plus `\pending{E2: whether specific tokens carry these coordinates}` |
-| 9 | Discussion, line 679 | outside | "a few massive coordinates carry much of the pooled cosine" becomes "three massive coordinates carry 0.86 of the mean pairwise cosine", with r 0.05 to 0.12 |
+| 9 | Discussion, lines 678 and 679 | outside | Two sentences leave the "Several observations remain open" list, since E1 decides them, and follow the E1 answer in the first paragraph. The Qwen3-0.6B and KaLM-mini sentence no longer defers r to E2: their three largest-magnitude coordinates have r < 1 at every layer. "a few massive coordinates carry much of the pooled cosine" becomes "three massive coordinates carry 0.86 of the mean pairwise cosine", with r 0.05 to 0.12 |
+| 10 | E2 paragraph, `\pending` marker | James | The marker says the ratio r of the pooled coordinates is reported under E1 and drops "Qwen3-0.6B coordinates have r < 1" from its expected results. The E2 design text is unchanged |
 
 Build: `/projects/bimc/swong2/setup/build_paper.sh` gives 58 pages (57
 before), no undefined reference or citation, no duplicate label, no overfull
@@ -284,19 +294,16 @@ box.
 2. **Introduction, line 114**: "We test whether mean pooling turns these
    coordinates into values that vary from passage to passage and so drown out
    content". Still true as a statement of the test; the outcome could be added.
-3. **Discussion, line 678**: "the E2 audit tests whether their coordinates
-   shift passages together instead of varying across them". E1 already
-   measures this on the pooled vectors: r is below 1 for the top three
-   coordinates at every layer of Qwen3-0.6B and KaLM-mini.
-4. **E2 paragraph** (James's region, left for the E2 pass): its `\pending`
-   still lists "ratio r of the pooled coordinates" and "Qwen3-0.6B coordinates
-   have r < 1", both now reported under E1. Its premise "some tokens hold the
-   massive values" should be read against the failed zeroing.
-5. **Sec. 5 preamble**: "The testable content is that this direction is
+3. **E2 paragraph** (James's region, left for the E2 pass): its design text
+   still says the audit records "the ratio r of the pooled coordinates" and
+   tests Qwen3-0.6B's r, both now reported under E1 (the `\pending` marker
+   points there). Its premise "some tokens hold the massive values" should be
+   read against the failed zeroing.
+4. **Sec. 5 preamble**: "The testable content is that this direction is
    aligned with a few coordinates and has token carriers." Unchanged; E1 finds
    the direction concentrated on about ten coordinates but not removable by
    zeroing them.
-6. **Related work**: nothing presupposes that the account holds here. The
+5. **Related work**: nothing presupposes that the account holds here. The
    sentence on outlier dimensions describes prior work and stands.
-7. **Page budget**: the E1 findings take 13 sentences where the brief asked for 8
+6. **Page budget**: the E1 findings take 13 sentences where the brief asked for 8
    to 12, and the paper grew from 57 to 58 pages.
