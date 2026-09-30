@@ -24,8 +24,8 @@
 #   MODELS         '|'-separated display names or ids (default: all six);
 #                  '|' because --export splits on commas
 #   ALLOW_MISSING  1 = skip a model whose cache is absent instead of failing
-#   TOL_AUROC      AUROC tolerance of reproduction gates 1 and 2b (default 1e-6);
-#                  the D=0 cells (gate 2a) have their own 1e-5, set in the script
+#   TOL_AUROC      AUROC tolerance of reproduction gates 1, 2a and 2b (default 1e-6);
+#                  D=0 cells of near-rank-one layers have their own 1e-5, set in the script
 #
 # From a checkout without Ian's paths (pick the account with sbatch --test-only):
 #   CODE_ROOT=$PWD BASES_ROOT=<checkout>/runs/active/resubmit_bases \
@@ -72,7 +72,8 @@ if [ "$RC" -ne 0 ] && [ "$RC" -ne 3 ]; then
 fi
 
 echo "=== render ==="
-$PY scripts/paper/reframe/e1_coordinate_ablation.py render ${TOL[@]+"${TOL[@]}"}
+$PY scripts/paper/reframe/e1_coordinate_ablation.py render \
+  ${EXTRA[@]+"${EXTRA[@]}"} ${TOL[@]+"${TOL[@]}"}
 
 echo "=== done (gate exit $RC) ==="
 exit "$RC"

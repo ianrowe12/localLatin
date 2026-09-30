@@ -1,25 +1,25 @@
-gate,model,n_cells,n_missing_reference,n_published_layers_absent,max_abs_diff,tolerance,n_over_tolerance,cells_over_tolerance,strict_tolerance,n_over_strict,cells_over_strict,ok
-1 base AUROC vs published baseline,bowphs/LaTa,12,0,0,2.74266e-08,1e-06,0,,1e-06,0,,True
-2a D=0 (center) AUROC vs H1,bowphs/LaTa,12,0,0,8.2245e-08,1e-05,0,,1e-06,0,,True
-"2b ABTT D=1,3,10 AUROC vs H1",bowphs/LaTa,36,0,0,1.6457e-07,1e-06,0,,1e-06,0,,True
-"3 base top-PC share vs geometry_per_layer (train, raw)",bowphs/LaTa,12,0,0,6.92492e-09,0.0001,0,,0.0001,0,,True
-1 base AUROC vs published baseline,bowphs/PhilTa,12,0,0,7.54231e-08,1e-06,0,,1e-06,0,,True
-2a D=0 (center) AUROC vs H1,bowphs/PhilTa,12,0,0,5.94067e-08,1e-05,0,,1e-06,0,,True
-"2b ABTT D=1,3,10 AUROC vs H1",bowphs/PhilTa,36,0,0,1.30259e-07,1e-06,0,,1e-06,0,,True
-"3 base top-PC share vs geometry_per_layer (train, raw)",bowphs/PhilTa,12,0,0,8.63723e-08,0.0001,0,,0.0001,0,,True
-1 base AUROC vs published baseline,google/mt5-base,12,0,0,1.897e-07,1e-06,0,,1e-06,0,,True
-2a D=0 (center) AUROC vs H1,google/mt5-base,12,0,0,3.60431e-06,1e-05,0,,1e-06,2,L5 D=0 3.60e-06; L9 D=0 1.05e-06,True
-"2b ABTT D=1,3,10 AUROC vs H1",google/mt5-base,36,0,0,5.37137e-07,1e-06,0,,1e-06,0,,True
-"3 base top-PC share vs geometry_per_layer (train, raw)",google/mt5-base,12,0,0,4.33333e-08,0.0001,0,,0.0001,0,,True
-1 base AUROC vs published baseline,sentence-transformers/LaBSE,12,0,0,9.37074e-08,1e-06,0,,1e-06,0,,True
-2a D=0 (center) AUROC vs H1,sentence-transformers/LaBSE,12,0,0,3.65298e-08,1e-05,0,,1e-06,0,,True
-"2b ABTT D=1,3,10 AUROC vs H1",sentence-transformers/LaBSE,36,0,0,3.88164e-08,1e-06,0,,1e-06,0,,True
-"3 base top-PC share vs geometry_per_layer (train, raw)",sentence-transformers/LaBSE,12,0,0,1.29896e-08,0.0001,0,,0.0001,0,,True
-1 base AUROC vs published baseline,Qwen/Qwen3-Embedding-0.6B,28,0,0,2.3084e-07,1e-06,0,,1e-06,0,,True
-2a D=0 (center) AUROC vs H1,Qwen/Qwen3-Embedding-0.6B,28,0,0,4.80352e-08,1e-05,0,,1e-06,0,,True
-"2b ABTT D=1,3,10 AUROC vs H1",Qwen/Qwen3-Embedding-0.6B,84,0,0,7.54655e-08,1e-06,0,,1e-06,0,,True
-"3 base top-PC share vs geometry_per_layer (train, raw)",Qwen/Qwen3-Embedding-0.6B,28,0,0,4.09482e-08,0.0001,0,,0.0001,0,,True
-1 base AUROC vs published baseline,KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,24,0,0,9.82785e-08,1e-06,0,,1e-06,0,,True
-2a D=0 (center) AUROC vs H1,KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,24,0,0,6.62852e-08,1e-05,0,,1e-06,0,,True
-"2b ABTT D=1,3,10 AUROC vs H1",KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,72,0,0,5.25648e-08,1e-06,0,,1e-06,0,,True
-"3 base top-PC share vs geometry_per_layer (train, raw)",KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,24,0,0,2.42038e-07,0.0001,0,,0.0001,0,,True
+gate,model,n_cells,n_missing_reference,n_published_layers_absent,max_abs_diff,tolerance,n_over_tolerance,cells_over_tolerance,relaxed_tolerance,n_relaxed_cells,relaxed_cells,n_within_relaxed,cells_within_relaxed,ok
+1 base AUROC vs published baseline,bowphs/LaTa,12,0,0,2.74563e-08,1e-06,0,,,0,,0,,True
+2a D=0 (center) AUROC vs H1,bowphs/LaTa,12,0,0,8.22e-08,1e-06,0,,,0,,0,,True
+"2b ABTT D=1,3,10 AUROC vs H1",bowphs/LaTa,36,0,0,1.646e-07,1e-06,0,,,0,,0,,True
+"3 base top-PC share vs geometry_per_layer (train, raw)",bowphs/LaTa,12,0,0,6.91923e-09,0.0001,0,,,0,,0,,True
+1 base AUROC vs published baseline,bowphs/PhilTa,12,0,0,7.54608e-08,1e-06,0,,,0,,0,,True
+2a D=0 (center) AUROC vs H1,bowphs/PhilTa,12,0,0,5.94e-08,1e-06,0,,,0,,0,,True
+"2b ABTT D=1,3,10 AUROC vs H1",bowphs/PhilTa,36,0,0,1.303e-07,1e-06,0,,,0,,0,,True
+"3 base top-PC share vs geometry_per_layer (train, raw)",bowphs/PhilTa,12,0,0,8.63481e-08,0.0001,0,,,0,,0,,True
+1 base AUROC vs published baseline,google/mt5-base,12,0,0,1.89671e-07,1e-06,0,,,0,,0,,True
+2a D=0 (center) AUROC vs H1,google/mt5-base,12,0,0,3.6043e-06,1e-06,0,,1e-05,7,L5 D=0; L6 D=0; L7 D=0; L8 D=0; L9 D=0; L10 D=0; L11 D=0,2,L5 D=0 3.60e-06; L9 D=0 1.05e-06,True
+"2b ABTT D=1,3,10 AUROC vs H1",google/mt5-base,36,0,0,5.371e-07,1e-06,0,,,0,,0,,True
+"3 base top-PC share vs geometry_per_layer (train, raw)",google/mt5-base,12,0,0,4.33706e-08,0.0001,0,,,0,,0,,True
+1 base AUROC vs published baseline,sentence-transformers/LaBSE,12,0,0,9.37139e-08,1e-06,0,,,0,,0,,True
+2a D=0 (center) AUROC vs H1,sentence-transformers/LaBSE,12,0,0,3.65e-08,1e-06,0,,,0,,0,,True
+"2b ABTT D=1,3,10 AUROC vs H1",sentence-transformers/LaBSE,36,0,0,3.88e-08,1e-06,0,,,0,,0,,True
+"3 base top-PC share vs geometry_per_layer (train, raw)",sentence-transformers/LaBSE,12,0,0,1.29912e-08,0.0001,0,,,0,,0,,True
+1 base AUROC vs published baseline,Qwen/Qwen3-Embedding-0.6B,28,0,0,2.30864e-07,1e-06,0,,,0,,0,,True
+2a D=0 (center) AUROC vs H1,Qwen/Qwen3-Embedding-0.6B,28,0,0,4.8e-08,1e-06,0,,,0,,0,,True
+"2b ABTT D=1,3,10 AUROC vs H1",Qwen/Qwen3-Embedding-0.6B,84,0,0,7.55e-08,1e-06,0,,,0,,0,,True
+"3 base top-PC share vs geometry_per_layer (train, raw)",Qwen/Qwen3-Embedding-0.6B,28,0,0,4.09376e-08,0.0001,0,,,0,,0,,True
+1 base AUROC vs published baseline,KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,24,0,0,9.82563e-08,1e-06,0,,,0,,0,,True
+2a D=0 (center) AUROC vs H1,KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,24,0,0,6.63e-08,1e-06,0,,,0,,0,,True
+"2b ABTT D=1,3,10 AUROC vs H1",KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,72,0,0,5.26e-08,1e-06,0,,,0,,0,,True
+"3 base top-PC share vs geometry_per_layer (train, raw)",KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,24,0,0,2.42076e-07,0.0001,0,,,0,,0,,True

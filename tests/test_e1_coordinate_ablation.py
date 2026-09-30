@@ -314,56 +314,195 @@ def _references(abl):
     return pd.DataFrame(res), pd.DataFrame(h1), pd.DataFrame(geom)
 
 
-def test_gates_pass_on_matching_references_and_fail_on_drift():
+def _gt(*args, **kwargs):
+    """gate_table for the two-model fixture (its default expects all six panel models)."""
+    kwargs.setdefault("expected", [LATA, LABSE])
+    return e1.gate_table(*args, **kwargs)
+
+
+def _gate_fixture():
+    """Fixture frame with known base top-PC shares: LaTa layer 1 at 0.3, layer 2 at 0.999."""
     abl, _, _ = _fixture_frames()
-    res, h1, geom = _references(abl)
-    g = e1.gate_table(abl, res, h1, geom)
+    for layer, share in ((1, 0.3), (2, 0.999)):
+        abl.loc[(abl.model == LATA) & (abl.layer == layer) & (abl.tag == "base"),
+                "pc1_share_train"] = share
+    return abl, *_references(abl)
+
+
+def _drift(h1, model, layer, variant, D, by):
+    out = h1.copy()
+    sel = (out.model == model) & (out.layer == layer) & (out.variant == variant) & (out.D == D)
+    assert sel.sum() == 1
+    out.loc[sel, "aucroc"] += by
+    return out
+
+
+def test_gates_pass_on_matching_references_and_fail_on_drift():
+    abl, res, h1, geom = _gate_fixture()
+    g = _gt(abl, res, h1, geom)
     assert len(g) == 4 * 2 and g.ok.all()
     assert (g.max_abs_diff == 0).all()
     assert list(g[g.gate.str.startswith("2a")].n_cells) == [2, 2]  # D=0, two layers
     assert list(g[g.gate.str.startswith("2b")].n_cells) == [6, 6]  # ABTT D=1,3,10
-    assert (g[g.gate.str.startswith("2a")].tolerance == e1.GATE_TOL_CENTER).all()
-    assert (g[~g.gate.str.startswith(("2a", "3"))].tolerance == e1.GATE_TOL_AUROC).all()
-    assert (g.n_over_strict == 0).all()
+    assert (g[~g.gate.str.startswith("3")].tolerance == e1.GATE_TOL_AUROC).all()
+    assert (g.n_over_tolerance == 0).all() and (g.n_within_relaxed == 0).all()
 
-    drift = h1.copy()
-    drift.loc[(drift.model == LATA) & (drift.D == 3) & (drift.layer == 2), "aucroc"] += 5e-6
-    g = e1.gate_table(abl, res, drift, geom)
+    drift = _drift(h1, LATA, 2, "abtt", 3, 5e-6)
+    g = _gt(abl, res, drift, geom)
     bad = g[~g.ok]
     assert len(bad) == 1 and bad.iloc[0].model == LATA and bad.iloc[0].gate.startswith("2b")
     # the failing cell is named, and a looser tolerance is an explicit argument
     assert bad.iloc[0].n_over_tolerance == 1
     assert bad.iloc[0].cells_over_tolerance.startswith("L2 ABTT D=3 5.00e-06")
     assert (g[g.ok].n_over_tolerance == 0).all()
-    assert e1.gate_table(abl, res, drift, geom, tol_auroc=1e-5).ok.all()
-
-    # D=0 cells alone have the looser tolerance: 5e-6 passes but is listed, 5e-5 fails
-    center = h1.copy()
-    sel = (center.model == LATA) & (center.variant == "center") & (center.layer == 1)
-    center.loc[sel, "aucroc"] += 5e-6
-    g = e1.gate_table(abl, res, center, geom)
-    assert g.ok.all()
-    listed = g[g.n_over_strict > 0]
-    assert len(listed) == 1 and listed.iloc[0].gate.startswith("2a")
-    assert listed.iloc[0].cells_over_strict.startswith("L1 D=0 5.00e-06")
-    assert listed.iloc[0].strict_tolerance == e1.GATE_TOL_AUROC
-    center.loc[sel, "aucroc"] += 5e-5
-    g = e1.gate_table(abl, res, center, geom)
-    bad = g[~g.ok]
-    assert len(bad) == 1 and bad.iloc[0].gate.startswith("2a") and bad.iloc[0].model == LATA
-    # a looser --tol_auroc never tightens the D=0 tolerance
-    loose = e1.gate_table(abl, res, h1, geom, tol_auroc=1e-4)
-    assert (loose[loose.gate.str.startswith("2a")].tolerance == 1e-4).all()
+    assert _gt(abl, res, drift, geom, tol_auroc=1e-5).ok.all()
 
     # a published layer that was not computed fails the gate unless a layer subset was asked
     extra = pd.concat([res, res[res.layer == 2].assign(layer=3)], ignore_index=True)
-    assert not e1.gate_table(abl, extra, h1, geom).ok.any()
-    assert e1.gate_table(abl, extra, h1, geom, complete=False).ok.all()
+    assert not _gt(abl, extra, h1, geom).ok.any()
+    assert _gt(abl, extra, h1, geom, complete=False).ok.all()
 
     # a missing reference cell is a failure, never a silent skip
-    g = e1.gate_table(abl, res, h1, geom[geom.layer != 1])
+    g = _gt(abl, res, h1, geom[geom.layer != 1])
     assert not g[g.gate.str.startswith("3")].ok.any()
     assert g[~g.gate.str.startswith("3")].ok.all()
+
+
+def test_d0_tolerance_is_relaxed_only_at_near_rank_one_layers():
+    abl, res, h1, geom = _gate_fixture()
+    g = _gt(abl, res, h1, geom)
+    relaxed = g[g.n_relaxed_cells > 0]
+    # only the D=0 cell of the layer with top-PC share 0.999 has the looser tolerance
+    assert len(relaxed) == 1 and relaxed.iloc[0].model == LATA
+    assert relaxed.iloc[0].gate.startswith("2a") and relaxed.iloc[0].relaxed_cells == "L2 D=0"
+    assert relaxed.iloc[0].relaxed_tolerance == e1.GATE_TOL_CENTER == 1e-5
+    assert relaxed.iloc[0].tolerance == 1e-6
+    assert g[g.n_relaxed_cells == 0].relaxed_tolerance.isna().all()
+
+    # 9e-6 on a D=0 cell at top-PC share 0.3: FAIL
+    g = _gt(abl, res, _drift(h1, LATA, 1, "center", 0, 9e-6), geom)
+    bad = g[~g.ok]
+    assert len(bad) == 1 and bad.iloc[0].model == LATA and bad.iloc[0].gate.startswith("2a")
+    assert bad.iloc[0].cells_over_tolerance == "L1 D=0 9.00e-06"
+    assert bad.iloc[0].n_within_relaxed == 0
+    # the same drift at top-PC share 0.999: passes, and is still listed
+    g = _gt(abl, res, _drift(h1, LATA, 2, "center", 0, 9e-6), geom)
+    assert g.ok.all()
+    listed = g[g.n_within_relaxed > 0]
+    assert len(listed) == 1 and listed.iloc[0].gate.startswith("2a")
+    assert listed.iloc[0].cells_within_relaxed == "L2 D=0 9.00e-06"
+    assert listed.iloc[0].max_abs_diff == pytest.approx(9e-6, rel=1e-6)
+    # beyond the relaxed tolerance it fails there too
+    g = _gt(abl, res, _drift(h1, LATA, 2, "center", 0, 5e-5), geom)
+    assert list(g[~g.ok].gate.str[:2]) == ["2a"]
+    # another model's D=0 cell (share about 0.19) has no exception
+    g = _gt(abl, res, _drift(h1, LABSE, 2, "center", 0, 9e-6), geom)
+    assert list(g[~g.ok].model) == [LABSE]
+    # the exception is for D=0 only: an ABTT cell of the near-rank-one layer stays at 1e-6
+    g = _gt(abl, res, _drift(h1, LATA, 2, "abtt", 1, 9e-6), geom)
+    assert list(g[~g.ok].gate.str[:2]) == ["2b"]
+    # the threshold is inclusive, and just below it there is no exception
+    for share, ok in ((e1.GATE_CENTER_SHARE, True), (e1.GATE_CENTER_SHARE - 1e-6, False)):
+        edge = abl.copy()
+        edge.loc[(edge.model == LATA) & (edge.layer == 1) & (edge.tag == "base"),
+                 "pc1_share_train"] = share
+        g = _gt(edge, res, _drift(h1, LATA, 1, "center", 0, 9e-6), _references(edge)[2])
+        assert bool(g.ok.all()) is ok
+    # a looser --tol_auroc applies to every cell and never tightens the D=0 exception
+    loose = _gt(abl, res, _drift(h1, LATA, 1, "center", 0, 9e-6), geom, tol_auroc=1e-4)
+    assert loose.ok.all() and (loose[~loose.gate.str.startswith("3")].tolerance == 1e-4).all()
+
+
+def test_a_nan_cell_fails_its_gate():
+    abl, res, h1, geom = _gate_fixture()
+
+    def failing(g):
+        return sorted((row.model, row.gate[:2].strip()) for row in g[~g.ok].itertuples())
+
+    # NaN in our own cell
+    ours = abl.copy()
+    ours.loc[(ours.model == LATA) & (ours.layer == 1) & (ours.tag == "base"), "aucroc"] = np.nan
+    g = _gt(ours, res, h1, geom)
+    assert failing(g) == [(LATA, "1")]
+    bad = g[~g.ok].iloc[0]
+    assert np.isnan(bad.max_abs_diff) and bad.n_over_tolerance == 1
+    assert bad.cells_over_tolerance == "L1 base nan"
+    # NaN in the reference cell, for every gate
+    ref = res.copy()
+    ref.loc[(ref.model == LABSE) & (ref.layer == 2) & (ref.method == "baseline"),
+            "aucroc"] = np.nan
+    assert failing(_gt(abl, ref, h1, geom)) == [(LABSE, "1")]
+    nan_h1 = h1.copy()
+    nan_h1.loc[(nan_h1.model == LATA) & (nan_h1.layer == 2) & (nan_h1.D == 3), "aucroc"] = np.nan
+    g = _gt(abl, res, nan_h1, geom)
+    assert failing(g) == [(LATA, "2b")] and np.isnan(g[~g.ok].iloc[0].max_abs_diff)
+    nan_geom = geom.copy()
+    nan_geom.loc[(nan_geom.model == LABSE) & (nan_geom.layer == 1) & (nan_geom.split == "train")
+                 & (nan_geom["view"] == "raw"), "pc1_variance_ratio"] = np.nan
+    assert failing(_gt(abl, res, h1, nan_geom)) == [(LABSE, "3")]
+    # a NaN D=0 cell is not rescued by the near-rank-one exception
+    ours = abl.copy()
+    ours.loc[(ours.model == LATA) & (ours.layer == 2) & (ours.tag == "center"), "aucroc"] = np.nan
+    g = _gt(ours, res, h1, geom)
+    assert failing(g) == [(LATA, "2a")] and g[~g.ok].iloc[0].n_within_relaxed == 0
+    nan_h1 = h1.copy()
+    nan_h1.loc[(nan_h1.model == LATA) & (nan_h1.layer == 2) & (nan_h1.D == 0), "aucroc"] = np.nan
+    assert failing(_gt(abl, res, nan_h1, geom)) == [(LATA, "2a")]
+    # a NaN top-PC share of our own fails gate 3 and grants no exception
+    ours = abl.copy()
+    ours.loc[(ours.model == LATA) & (ours.layer == 2) & (ours.tag == "base"),
+             "pc1_share_train"] = np.nan
+    g = _gt(ours, res, _drift(h1, LATA, 2, "center", 0, 9e-6), geom)
+    assert failing(g) == [(LATA, "2a"), (LATA, "3")]
+
+
+def test_an_expected_model_without_rows_fails_the_gates():
+    abl, res, h1, geom = _gate_fixture()
+    only = abl[abl.model == LATA]
+    g = e1.gate_table(only, res, h1, geom, expected=[LATA, LABSE])
+    assert not g.ok.all()
+    missing = g[~g.ok]
+    assert len(missing) == 1 and missing.iloc[0].model == LABSE
+    assert missing.iloc[0].gate.startswith("0") and missing.iloc[0].n_cells == 0
+    assert "no rows: FAIL" in e1.gate_line(missing.iloc[0])
+    # an explicit subset, or no expectation at all, gates only what was asked for
+    assert e1.gate_table(only, res, h1, geom, expected=[LATA]).ok.all()
+    assert e1.gate_table(only, res, h1, geom, expected=None).ok.all()
+    # the default expects the whole panel
+    g = e1.gate_table(abl, res, h1, geom)
+    assert sorted(g[g.gate.str.startswith("0")].model) == sorted(
+        m for m in e1.ALL_MODEL_IDS if m not in (LATA, LABSE))
+    assert g[~g.gate.str.startswith("0")].ok.all()
+
+
+def _write_refs(abl, tmp_path):
+    paths = []
+    for name, frame in zip(("res.csv", "h1.csv", "geom.csv"), _references(abl)):
+        frame.to_csv(tmp_path / name, index=False)
+        paths.append(str(tmp_path / name))
+    return ["--results_csv", paths[0], "--h1_csv", paths[1], "--geom_csv", paths[2]]
+
+
+def test_check_cli_requires_every_model_and_is_idempotent(tmp_path, capsys):
+    abl, _, _ = _fixture_frames()
+    out = tmp_path / "e1"
+    out.mkdir()
+    abl.to_csv(out / e1.ABL_NAME, index=False, float_format="%.10g")
+    refs = _write_refs(e1.read_abl(out / e1.ABL_NAME), tmp_path)
+    base = ["check", "--out_dir", str(out), *refs]
+    # four of the six panel models have no rows
+    assert e1.main(base) == e1.GATE_EXIT
+    said = capsys.readouterr().out
+    assert "KaLM-mini: no rows: FAIL" in said and "REPRODUCTION GATES FAILED" in said
+    assert not pd.read_csv(out / e1.GATE_NAME).ok.all()
+    # an explicit subset or --allow_missing accepts it
+    assert e1.main(base + ["--allow_missing"]) == 0
+    assert e1.main(base + ["--models", "LaTa,LaBSE"]) == 0
+    first = (out / e1.GATE_NAME).read_bytes()
+    assert e1.main(base + ["--models", "LaTa,LaBSE"]) == 0
+    assert (out / e1.GATE_NAME).read_bytes() == first
+    assert e1.main(base + ["--models", "LaTa,LaBSE", "--no_write"]) == 0
+    assert pd.read_csv(out / e1.GATE_NAME).ok.all()
 
 
 # --------------------------------------------------------------------------- #
@@ -444,6 +583,73 @@ def test_missing_cache_is_an_error_unless_allowed(tmp_path, capsys):
     assert e1.build_tasks(tmp_path, [LATA], [2], allow_missing=False) == [(str(tmp_path), LATA, 2)]
 
 
+def _fake_cache(tmp_path, layers=(1, 2)):
+    """A tiny split CSV and a LaTa cache whose row order differs from the split's."""
+    tr, te, tr_ids, te_ids = _synthetic()
+    n = len(tr) + len(te)
+    names = [f"f{i:03d}.txt" for i in range(n)]
+    counts = pd.Series(te_ids).value_counts()
+    split = pd.DataFrame({
+        "filename": names, "folder_id": list(tr_ids) + list(te_ids),
+        "split": ["train"] * len(tr) + ["test"] * len(te),
+        "has_test_partner": [False] * len(tr) + [bool(counts[i] > 1) for i in te_ids]})
+    split.to_csv(tmp_path / "split.csv", index=False)
+    run = tmp_path / "bases" / "phase9_bases" / asw.slug(LATA) / asw.SUBDIR
+    run.mkdir(parents=True)
+    order = np.random.default_rng(11).permutation(n)
+    pd.DataFrame({"path": [f"data/x/{names[i]}" for i in order]}).to_csv(run / "meta.csv",
+                                                                       index=False)
+    for layer in layers:
+        x = np.vstack([tr, te]).copy()
+        x[:, 0] *= layer  # a different nuisance scale per layer
+        np.save(run / f"hidden_layer{layer}_embeddings.npy", x[order])
+    return tmp_path / "split.csv", tmp_path / "bases"
+
+
+def test_compute_check_gates_the_written_csv_so_check_rewrites_nothing(tmp_path, capsys):
+    """compute --check and check must write the same gate file, byte for byte.
+
+    The references are built from the ablation CSV as written (10 significant digits), so
+    every difference is exactly 0 only if compute gates the re-read CSV. Gating the
+    in-memory frame leaves differences near 1e-11 and the two commands then disagree.
+    """
+    split_csv, bases = _fake_cache(tmp_path)
+    out = tmp_path / "e1"
+    run = ["compute", "--out_dir", str(out), "--models", "LaTa", "--workers", "1",
+           "--bases_root", str(bases), "--split_csv", str(split_csv)]
+    saved = dict(asw._CTX)
+    try:
+        assert e1.main(run) == 0  # no --check: the references do not exist yet
+        names = (e1.ABL_NAME, e1.COORD_NAME, e1.SHARE_NAME, e1.CONC_NAME)
+        first = {n: (out / n).read_bytes() for n in names}
+        refs = _write_refs(e1.read_abl(out / e1.ABL_NAME), tmp_path)
+        assert e1.main(run + ["--check", *refs]) == 0
+    finally:
+        asw._CTX.clear()
+        asw._CTX.update(saved)
+    assert {n: (out / n).read_bytes() for n in names} == first  # compute is deterministic
+    abl = e1.read_abl(out / e1.ABL_NAME)
+    assert sorted(abl.layer.unique()) == [1, 2] and set(abl.model) == {LATA}
+    assert list(abl[abl.layer == 1].tag) == e1.ALL_TAGS
+    gate_file = (out / e1.GATE_NAME).read_bytes()
+    written = pd.read_csv(out / e1.GATE_NAME)
+    assert written.ok.all() and (written.max_abs_diff == 0).all()
+    capsys.readouterr()
+    check = ["check", "--out_dir", str(out), "--models", "LaTa", *refs]
+    assert e1.main(check) == 0 and (out / e1.GATE_NAME).read_bytes() == gate_file
+    assert e1.main(check) == 0 and (out / e1.GATE_NAME).read_bytes() == gate_file
+    # the zero rows of the real compute are the tested ranking function's choice
+    tr = np.load(bases / "phase9_bases" / asw.slug(LATA) / asw.SUBDIR
+                 / "hidden_layer1_embeddings.npy")
+    order = pd.read_csv(bases / "phase9_bases" / asw.slug(LATA) / asw.SUBDIR / "meta.csv")
+    split = pd.read_csv(split_csv)
+    pos = {Path(p).name: i for i, p in enumerate(order["path"])}
+    aligned = tr[[pos[f] for f in split.filename]]
+    top = e1.rank_coords(aligned[(split["split"] == "train").to_numpy()], "variance")[:3]
+    row = abl[(abl.layer == 1) & (abl.tag == "zero_variance_k3")].iloc[0]
+    assert row.coords == ";".join(str(i) for i in top)
+
+
 # --------------------------------------------------------------------------- #
 # render
 # --------------------------------------------------------------------------- #
@@ -477,6 +683,25 @@ def test_table_renders_from_a_fixture_and_omits_absent_models(tmp_path):
     share = [c.strip() for c in rows[2].rstrip("\\ ").split("&")][2:]
     assert share == [f"{raw.loc[(int(base.idxmin()), t), 'pc1_share_train']:.3f}"
                      for t in e1.TABLE_TAGS]
+    # the caption defines "collapsed" where it uses it, with the count read from the data,
+    # and its takeaway sentence quotes the cells of the T5 rows shown
+    cap = next(ln for ln in tex.splitlines() if ln.startswith(r"\caption{"))
+    assert cap.endswith("}") and "--" not in cap and chr(0x2014) not in cap
+    n_coll = int(w["collapsed"].sum())
+    assert n_coll == 2
+    assert (f"At the collapsed T5 layers (baseline AUROC below 0.70, {n_coll} layers), one "
+            "component recovers a median 45 percent of the AUROC gain of $D{=}10$, and three "
+            r"recover at least 80 percent at every layer (Table~\ref{tab:d_ablation}).") in cap
+    zeroed = max(float(cells[2 + e1.TABLE_TAGS.index(e1.zero_tag(r, 10))])
+                 for r in e1.RANKINGS)
+    std = cells[2 + e1.TABLE_TAGS.index("standardize")]
+    d3 = cells[2 + e1.TABLE_TAGS.index("abtt_D3")]
+    assert (f"In the one T5 row, AUROC stays at or below {zeroed:.3f} after zeroing ten "
+            f"coordinates under either ranking, while standardization reaches {std} and ABTT "
+            f"with three components {d3}. ") in cap
+    # without a T5 model neither sentence is printed
+    e1.write_table(w[w.m == "LaBSE"].reset_index(drop=True), out)
+    assert "T5" not in out.read_text()
 
 
 def test_render_cli_writes_table_and_facts_and_names_omitted_models(tmp_path, capsys):
@@ -504,6 +729,12 @@ def test_render_cli_writes_table_and_facts_and_names_omitted_models(tmp_path, ca
     facts = (out_dir / e1.FACTS_NAME).read_text()
     assert chr(0x2014) not in facts
     assert "ABSENT from the CSV" in facts and "KaLM-mini" in facts
+    # the header owns up to the one criterion changed after the results were read
+    head = facts.split("## Definitions")[0]
+    assert "Nothing here was tuned" not in head
+    assert "Changed after the results were read: one summary criterion." in head
+    hi, lo, tot = e1.sign_counts(e1.wide(abl)[lambda t: t.collapsed])
+    assert tot == 8 and f"on {hi} cells higher against {lo} lower of {tot}." in head
     assert "## 2. Collapsed T5 layers" in facts and "### LaBSE" in facts
     # the concentration section is labelled descriptive and post hoc, and adds no verdict
     sec = facts.split("## 9. Concentration")[1].split("## 10. All layers")[0]
@@ -539,26 +770,47 @@ needs_results = pytest.mark.skipif(not (E1_DIR / e1.ABL_NAME).exists(),
 
 
 @needs_results
-def test_committed_results_pass_the_reproduction_gates():
-    """Every gate holds at its default tolerance.
+def test_committed_results_pass_the_reproduction_gates(tmp_path):
+    """Every gate holds at its default tolerance, for all six models.
 
-    The D=0 cells of gate 2 have their own tolerance of 1e-5 (GATE_TOL_CENTER in the
-    script explains why). Outside that exception nothing may be over 1e-6: the only cells
-    between the two tolerances are D=0 cells of mT5-base.
+    Every AUROC cell is held to 1e-6, except the D=0 cells of near-rank-one layers, which
+    are held to 1e-5 (GATE_TOL_CENTER in the script explains why). In the panel those are
+    the seven collapsed mT5-base layers, and only such cells may be over 1e-6.
     """
     if not all(p.exists() for p in REFS):
         pytest.skip("reference CSVs not checked out")
     abl = e1.read_abl(E1_DIR / e1.ABL_NAME)
     g = e1.gate_table(abl, *(pd.read_csv(p) for p in REFS))
-    assert len(g) and g.ok.all(), g[~g.ok].to_string()
-    assert (g[g.gate.str.startswith("2a")].tolerance == 1e-5).all()
-    assert (g[g.gate.str.startswith(("1", "2b"))].tolerance == 1e-6).all()
-    for row in g[g.n_over_strict > 0].itertuples():
-        assert row.model == "google/mt5-base" and row.gate.startswith("2a"), row
-        assert all(" D=0 " in f"{cell} " for cell in row.cells_over_strict.split("; ")), row
-    # the gate file the script wrote says the same
-    written = pd.read_csv(E1_DIR / e1.GATE_NAME)
-    assert written.ok.all() and list(written.gate) == list(g.gate)
+    assert len(g) == 4 * len(e1.ALL_MODEL_IDS) and g.ok.all(), g[~g.ok].to_string()
+    assert (g[~g.gate.str.startswith("3")].tolerance == 1e-6).all()
+    relaxed = g[g.n_relaxed_cells > 0]
+    assert list(relaxed.model) == ["google/mt5-base"] and relaxed.iloc[0].gate.startswith("2a")
+    assert relaxed.iloc[0].relaxed_cells == "; ".join(f"L{x} D=0" for x in range(5, 12))
+    assert relaxed.iloc[0].relaxed_tolerance == 1e-5
+    assert list(g[g.n_within_relaxed > 0].index) == list(relaxed.index)
+    # check must leave the committed gate file untouched: regenerate it and compare bytes
+    e1.write_gates(g, tmp_path / "gates.csv")
+    assert (tmp_path / "gates.csv").read_bytes() == (E1_DIR / e1.GATE_NAME).read_bytes()
+
+
+@needs_results
+def test_committed_facts_regenerate_byte_identically(tmp_path, capsys):
+    committed = E1_DIR / e1.FACTS_NAME
+    selected = REPO_ROOT / e1.SELECTED_TEX
+    if not (committed.exists() and selected.exists() and all(p.exists() for p in REFS)):
+        pytest.skip("facts file or its inputs not checked out")
+    rc = e1.main(["render", "--out_dir", str(E1_DIR), "--tab_dir", str(tmp_path),
+                  "--facts_md", str(tmp_path / "facts.md"), "--selected_tex", str(selected),
+                  "--results_csv", str(REFS[0]), "--h1_csv", str(REFS[1]),
+                  "--geom_csv", str(REFS[2])])
+    capsys.readouterr()
+    assert rc == 0
+    assert (tmp_path / "facts.md").read_text() == committed.read_text()
+    # its gate lines are the committed gate file's rows, to the printed digit
+    gates = pd.read_csv(E1_DIR / e1.GATE_NAME)
+    text = committed.read_text()
+    for row in gates.itertuples():
+        assert f"- {e1.gate_line(row)}" in text
 
 
 @needs_results

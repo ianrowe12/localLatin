@@ -40,13 +40,16 @@ Reproduction gates (``compute --check`` or ``check``; exit status 3 on failure, 
 CSVs are written):
   1. base AUROC = the baseline cells (repr hidden, pooling mean) of
      runs/active/resubmit/results/phase_resubmit_results.csv, within 1e-6, every layer;
-  2a. center (D=0) = runs/active/reframe/h1/h1_d_ablation.csv within 1e-5;
+  2a. center (D=0) = runs/active/reframe/h1/h1_d_ablation.csv within 1e-6, or within
+      1e-5 at a model-layer whose own base top-PC share is 0.99 or more;
   2b. ABTT D=1, 3, 10 = the same CSV within 1e-6;
   3. base top-PC share = the train raw-view value of
      runs/active/resubmit/layer_diagnostics/geometry_per_layer.csv within 1e-4.
---tol_auroc sets the tolerance of gates 1 and 2b. The D=0 cells have their own, looser
-tolerance (GATE_TOL_CENTER below, with the reason); the gate CSV and the facts file list
-every D=0 cell that is over 1e-6 but within it.
+--tol_auroc sets the tolerance of gates 1, 2a and 2b. The D=0 cells of near-rank-one
+layers have a looser one (GATE_TOL_CENTER below, with the reason); the gate CSV and the
+facts file list every such cell that is over 1e-6 but within it. A NaN on either side of
+a comparison fails its gate, and so does an expected model with no rows. compute --check
+gates the CSV it has just written, so compute, check and render report identical numbers.
 
 Concentration (descriptive, added after the ablation results were seen, no prediction
 attached): how much of the training variance the top-k coordinates by variance hold, and
@@ -109,6 +112,7 @@ FACTS_NAME = "facts_e1.md"
 TABLE_NAME = "e1_coordinate_ablation.tex"
 
 MODELS = asw.MODELS
+ALL_MODEL_IDS = tuple(m[0] for m in MODELS)
 DISP = {m[0]: m[1] for m in MODELS}
 ORDER = [m[1] for m in MODELS]
 T5 = [m[1] for m in MODELS if m[2]]
@@ -129,15 +133,26 @@ RESTORE_K = 5  # "zeroing the top k <= 5 coordinates"
 SHARE_BAR = 0.2  # "top-PC share < 0.2"
 STABLE_DELTA = 0.03  # embedding-trained models: |change| at most 0.03
 GATE_TOL_AUROC = 1e-6
-# D=0 (centering) cells of gate 2 get their own tolerance. On the Delta re-extraction two
-# of them miss 1e-6 against the H1 CSV: mT5-base layer 5 by 3.6e-6 and layer 9 by 1.05e-6
-# (every other gate-2 cell is within 5.4e-7). The centered vectors at the collapsed
-# mT5-base layers are near rank one (top-PC share 0.999 or more), and the cells are not
-# stable at 1e-6: on the same cache, float64 instead of float32 arithmetic moves layer 5
-# by 2.4e-6 and layer 6 by 1.1e-5, a one-ulp change of the cached values moves them by up
-# to 3.4e-6, and the BLAS thread count moves layer 9 by 3e-7 (diagnostic job 22572037,
-# /projects/bimc/swong2/setup/e1_gate2_diag.py). The cells agree to 5 decimals.
+# A D=0 (centering) cell of gate 2 is held to GATE_TOL_CENTER instead of 1e-6 only at a
+# model-layer whose own base training top-PC share is at least GATE_CENTER_SHARE, that is
+# where the centered vectors are near rank one. In the panel these are the seven collapsed
+# mT5-base layers (share 0.9997 or more); every other D=0 cell stays at 1e-6.
+# Why: on the Delta re-extraction two of those cells miss 1e-6 against the H1 CSV,
+# mT5-base layer 5 by 3.6e-6 and layer 9 by 1.05e-6, while every other gate-2 cell is
+# within 5.4e-7. Both sides of that comparison are float32 runs of the same code on two
+# extractions of the vectors. Diagnostic job 22572037
+# (/projects/bimc/swong2/setup/e1_gate2_diag.py) measured, on one cache, how far the D=0
+# cell of mT5-base layers 5, 6 and 9 moves under changes that should not matter:
+#   * every cached value moved by one float32 ulp (5 seeds): up to 3.4e-6, 1.5e-6, 1.0e-6;
+#   * 16 BLAS threads instead of 1: 8e-8, 2e-7, 3e-7;
+#   * float64 instead of float32 arithmetic: 2.4e-6, 1.1e-5, 3.7e-7.
+# The three other cells it tested (mT5-base layer 1, LaTa layer 6, Qwen3-0.6B layer 1) moved
+# by at most 8e-8 under all three. So 1e-6 is below what two float32 runs can agree on at
+# these layers, and 1e-5 covers the observed misses and the one-ulp sensitivity with a
+# margin of about 3. It is NOT a bound on float32 against float64: at layer 6 that
+# difference (1.1e-5) is larger than this tolerance. The cells agree with H1 to 5 decimals.
 GATE_TOL_CENTER = 1e-5
+GATE_CENTER_SHARE = 0.99
 GATE_TOL_PC1 = 1e-4
 GATE_EXIT = 3  # exit status of a failed gate: the CSVs are written, the numbers disagree
 
@@ -176,15 +191,19 @@ def coord_stats(train: np.ndarray) -> Dict[str, np.ndarray]:
             "variance": x.var(axis=0, ddof=SD_DDOF), "r": r}
 
 
-def rank_coords(train: np.ndarray, ranking: str) -> np.ndarray:
+def rank_coords(train: np.ndarray, ranking: str,
+                stats: Optional[Dict[str, np.ndarray]] = None) -> np.ndarray:
     """All coordinate indices, largest score first, from TRAIN vectors only.
 
     ``mean_abs`` scores a coordinate by its mean absolute value over training passages,
-    ``variance`` by its variance across them. Ties keep the lower index first.
+    ``variance`` by its variance across them. Ties keep the lower index first. ``stats``
+    may pass ``coord_stats(train)`` when the caller already has it.
     """
     if ranking not in RANKINGS:
         raise ValueError(f"unknown ranking {ranking!r}; expected one of {RANKINGS}")
-    return np.argsort(-coord_stats(train)[ranking], kind="stable")
+    if stats is None:
+        stats = coord_stats(train)
+    return np.argsort(-stats[ranking], kind="stable")
 
 
 def zero_coords(train: np.ndarray, test: np.ndarray, idx: Sequence[int]
@@ -289,7 +308,7 @@ def layer_rows(model_id: str, layer: int, tr: np.ndarray, te: np.ndarray,
     """
     key = {"model": model_id, "layer": int(layer)}
     stats = coord_stats(tr)
-    order = {r: np.argsort(-stats[r], kind="stable") for r in RANKINGS}
+    order = {r: rank_coords(tr, r, stats) for r in RANKINGS}
 
     abl: List[Dict] = []
 
@@ -441,8 +460,10 @@ def cmd_compute(args) -> int:
           f"({len(abl_df)} ablation rows, {len(tasks)} model-layers) in {time.time() - t0:.0f}s")
     if not args.check:
         return 0
-    complete = layers is None
-    return run_gates(abl_df, args, complete=complete, write=True)
+    # Gate the frame as re-read from the CSV (written at %.10g), not the in-memory one, so
+    # that compute --check, check and render compute the gate numbers from the same values.
+    return run_gates(read_abl(args.out_dir / ABL_NAME), args, complete=layers is None,
+                     write=True)
 
 
 # --------------------------------------------------------------------------- #
@@ -451,18 +472,23 @@ def cmd_compute(args) -> int:
 
 def gate_table(abl: pd.DataFrame, res: pd.DataFrame, h1: pd.DataFrame, geom: pd.DataFrame,
                complete: bool = True, tol_auroc: float = GATE_TOL_AUROC,
-               tol_pc1: float = GATE_TOL_PC1, tol_center: float = GATE_TOL_CENTER
-               ) -> pd.DataFrame:
+               tol_pc1: float = GATE_TOL_PC1, tol_center: float = GATE_TOL_CENTER,
+               expected: Optional[Sequence[str]] = ALL_MODEL_IDS) -> pd.DataFrame:
     """One row per (gate, model): cells compared, cells missing, max |difference|, and
-    the cells over the tolerance by name.
+    the cells over their tolerance by name.
 
-    Gate 2 is split: the D=0 cells (2a) are held to ``tol_center`` (see GATE_TOL_CENTER),
-    the ABTT cells (2b) to ``tol_auroc``. ``strict_tolerance`` is the tolerance a gate
-    would have without that exception, and ``cells_over_strict`` names the cells over it,
-    so a D=0 cell between the two tolerances is listed although its gate passes.
+    Gate 2 is split into the D=0 cells (2a) and the ABTT cells (2b), both held to
+    ``tol_auroc``, except that a D=0 cell of a near-rank-one model-layer (own base training
+    top-PC share >= GATE_CENTER_SHARE) is held to ``tol_center`` (see GATE_TOL_CENTER).
+    ``relaxed_cells`` names the cells with that exception and ``cells_within_relaxed`` the
+    ones that are over ``tolerance`` but within it, so they stay visible although the gate
+    passes.
 
-    ``complete`` also requires every published layer of a computed model to be present
-    (turn it off for a --layers subset).
+    A NaN on either side of a comparison counts as over tolerance. ``expected`` lists the
+    model ids that must have rows (default: all six); one with none gets a failing gate-0
+    row. Pass None to gate only the models that are present. ``complete`` also requires
+    every published layer of a computed model to be present (turn it off for a --layers
+    subset).
     """
     tol_center = max(tol_center, tol_auroc)
     ours = abl.set_index(["model", "layer", "tag"])
@@ -472,32 +498,53 @@ def gate_table(abl: pd.DataFrame, res: pd.DataFrame, h1: pd.DataFrame, geom: pd.
     g = geom[(geom["split"] == "train") & (geom["view"] == "raw") & (geom["pooling"] == "mean")]
     gi = g.set_index(["model", "layer"])["pc1_variance_ratio"]
     abtt_keys = {"abtt_D1": ("abtt", 1), "abtt_D3": ("abtt", 3), "abtt_D10": ("abtt", 10)}
+    present = set(abl["model"])
+    wanted = set(expected) if expected is not None else set()
+    known = list(ALL_MODEL_IDS) + sorted((present | wanted) - set(ALL_MODEL_IDS))
+    nan = float("nan")
     rows = []
-    for mid in [m[0] for m in MODELS if m[0] in set(abl["model"])]:
-        mine = sorted(abl.loc[abl["model"] == mid, "layer"].unique())
+    for mid in [m for m in known if m in present or m in wanted]:
         published = sorted(pub.loc[mid].index) if mid in pub.index.get_level_values(0) else []
+        if mid not in present:
+            rows.append({"gate": "0 expected model has rows in the ablation CSV", "model": mid,
+                         "n_cells": 0, "n_missing_reference": 0,
+                         "n_published_layers_absent": len(published), "max_abs_diff": nan,
+                         "tolerance": nan, "n_over_tolerance": 0, "cells_over_tolerance": "",
+                         "relaxed_tolerance": nan, "n_relaxed_cells": 0, "relaxed_cells": "",
+                         "n_within_relaxed": 0, "cells_within_relaxed": "", "ok": False})
+            continue
+        mine = sorted(abl.loc[abl["model"] == mid, "layer"].unique())
         absent = [x for x in published if x not in mine] if complete else []
+
+        def center_tol(x) -> float:
+            share = float(ours.loc[(mid, x, "base"), "pc1_share_train"])
+            return tol_center if share >= GATE_CENTER_SHARE else tol_auroc
+
+        # each cell: (label, ours, reference or None, tolerance of this cell)
         specs = [
-            ("1 base AUROC vs published baseline", tol_auroc, tol_auroc,
-             [(f"L{x} base", float(ours.loc[(mid, x, "base"), "aucroc"]), pub.get((mid, x)))
-              for x in mine]),
-            ("2a D=0 (center) AUROC vs H1", tol_center, tol_auroc,
+            ("1 base AUROC vs published baseline", tol_auroc,
+             [(f"L{x} base", float(ours.loc[(mid, x, "base"), "aucroc"]), pub.get((mid, x)),
+               tol_auroc) for x in mine]),
+            ("2a D=0 (center) AUROC vs H1", tol_auroc,
              [(f"L{x} D=0", float(ours.loc[(mid, x, "center"), "aucroc"]),
-               h1i.get((mid, x, "center", 0))) for x in mine]),
-            ("2b ABTT D=1,3,10 AUROC vs H1", tol_auroc, tol_auroc,
+               h1i.get((mid, x, "center", 0)), center_tol(x)) for x in mine]),
+            ("2b ABTT D=1,3,10 AUROC vs H1", tol_auroc,
              [(f"L{x} {TAG_LABEL[tag]}", float(ours.loc[(mid, x, tag), "aucroc"]),
-               h1i.get((mid, x, v, D)))
+               h1i.get((mid, x, v, D)), tol_auroc)
               for x in mine for tag, (v, D) in abtt_keys.items()]),
-            ("3 base top-PC share vs geometry_per_layer (train, raw)", tol_pc1, tol_pc1,
+            ("3 base top-PC share vs geometry_per_layer (train, raw)", tol_pc1,
              [(f"L{x} base", float(ours.loc[(mid, x, "base"), "pc1_share_train"]),
-               gi.get((mid, x))) for x in mine]),
+               gi.get((mid, x)), tol_pc1) for x in mine]),
         ]
-        for name, tol, strict, cells in specs:
-            diffs = [(lab, abs(a - float(b))) for lab, a, b in cells if b is not None]
-            n_missing = sum(1 for _, _, b in cells if b is None)
-            mx = max(d for _, d in diffs) if diffs else float("nan")
-            over = [(lab, d) for lab, d in diffs if d > tol]
-            over_strict = [(lab, d) for lab, d in diffs if d > strict]
+        for name, tol, cells in specs:
+            diffs = [(lab, abs(a - float(b)), t) for lab, a, b, t in cells if b is not None]
+            n_missing = sum(1 for _, _, b, _ in cells if b is None)
+            # np.max keeps a NaN difference visible (the builtin max can hide it), and
+            # "not d <= t" counts a NaN as over tolerance ("d > t" would let it pass).
+            mx = float(np.max([d for _, d, _ in diffs])) if diffs else nan
+            over = [(lab, d) for lab, d, t in diffs if not d <= t]
+            within = [(lab, d) for lab, d, t in diffs if d <= t and not d <= tol]
+            relaxed = [lab for lab, _, _, t in cells if t > tol]
             ok = bool(diffs) and n_missing == 0 and not absent and not over
             rows.append({"gate": name, "model": mid, "n_cells": len(diffs),
                          "n_missing_reference": n_missing,
@@ -505,27 +552,61 @@ def gate_table(abl: pd.DataFrame, res: pd.DataFrame, h1: pd.DataFrame, geom: pd.
                          "max_abs_diff": mx, "tolerance": tol,
                          "n_over_tolerance": len(over),
                          "cells_over_tolerance": "; ".join(f"{lab} {d:.2e}" for lab, d in over),
-                         "strict_tolerance": strict,
-                         "n_over_strict": len(over_strict),
-                         "cells_over_strict": "; ".join(f"{lab} {d:.2e}"
-                                                        for lab, d in over_strict),
+                         "relaxed_tolerance": tol_center if relaxed else nan,
+                         "n_relaxed_cells": len(relaxed),
+                         "relaxed_cells": "; ".join(relaxed),
+                         "n_within_relaxed": len(within),
+                         "cells_within_relaxed": "; ".join(f"{lab} {d:.2e}"
+                                                           for lab, d in within),
                          "ok": ok})
     return pd.DataFrame(rows)
 
 
+def write_gates(gates: pd.DataFrame, path: Path) -> None:
+    gates.to_csv(path, index=False, float_format="%.6g")
+
+
+def gate_line(g) -> str:
+    """One gate row in words, shared by the log and the facts file."""
+    name = DISP.get(g.model, g.model)
+    if g.gate.startswith("0"):
+        return f"gate {g.gate}, {name}: no rows: FAIL"
+    text = (f"gate {g.gate}, {name}: {g.n_cells} cells, max |diff| {g.max_abs_diff:.2e} "
+            f"(tolerance {g.tolerance:.0e}")
+    if g.n_relaxed_cells:
+        text += (f"; {g.relaxed_tolerance:.0e} at the {g.n_relaxed_cells} near-rank-one "
+                 f"cells {g.relaxed_cells}")
+    text += f"): {'PASS' if g.ok else 'FAIL'}"
+    if g.n_missing_reference or g.n_published_layers_absent:
+        text += (f"; missing reference cells {g.n_missing_reference}, published layers absent "
+                 f"{g.n_published_layers_absent}")
+    if g.n_over_tolerance:
+        text += f"; cells over tolerance: {g.cells_over_tolerance}"
+    if g.n_within_relaxed:
+        text += (f"; cells over {g.tolerance:.0e} but within {g.relaxed_tolerance:.0e}: "
+                 f"{g.cells_within_relaxed}")
+    return text
+
+
+def expected_models(args) -> Optional[List[str]]:
+    """Model ids that must have rows: the --models selection, or None under --allow_missing."""
+    if args.allow_missing:
+        return None
+    return asw.pick_models(args.models, MODELS)
+
+
+def gates_for(abl: pd.DataFrame, args, complete: bool = True) -> pd.DataFrame:
+    return gate_table(abl, pd.read_csv(args.results_csv), pd.read_csv(args.h1_csv),
+                      pd.read_csv(args.geom_csv), complete=complete, tol_auroc=args.tol_auroc,
+                      expected=expected_models(args))
+
+
 def run_gates(abl: pd.DataFrame, args, complete: bool, write: bool) -> int:
-    gates = gate_table(abl, pd.read_csv(args.results_csv), pd.read_csv(args.h1_csv),
-                       pd.read_csv(args.geom_csv), complete=complete, tol_auroc=args.tol_auroc)
+    gates = gates_for(abl, args, complete=complete)
     if write:
-        gates.to_csv(args.out_dir / GATE_NAME, index=False, float_format="%.6g")
+        write_gates(gates, args.out_dir / GATE_NAME)
     for g in gates.itertuples():
-        print(f"gate {g.gate} | {DISP.get(g.model, g.model)}: {g.n_cells} cells, "
-              f"max |diff| {g.max_abs_diff:.2e} (tol {g.tolerance:.0e}), "
-              f"missing reference {g.n_missing_reference}, published layers absent "
-              f"{g.n_published_layers_absent}: {'ok' if g.ok else 'FAIL'}"
-              + (f" [over tolerance: {g.cells_over_tolerance}]" if g.n_over_tolerance else "")
-              + (f" [over {g.strict_tolerance:.0e} but within the D=0 tolerance: "
-                 f"{g.cells_over_strict}]" if g.ok and g.n_over_strict else ""))
+        print(gate_line(g))
     if gates.empty or not gates["ok"].all():
         print("REPRODUCTION GATES FAILED")
         return GATE_EXIT
@@ -534,9 +615,8 @@ def run_gates(abl: pd.DataFrame, args, complete: bool, write: bool) -> int:
 
 
 def cmd_check(args) -> int:
-    abl = pd.read_csv(args.out_dir / ABL_NAME, keep_default_na=False,
-                      na_values=["nan", "NaN"])
-    return run_gates(abl, args, complete=True, write=not args.no_write)
+    return run_gates(read_abl(args.out_dir / ABL_NAME), args, complete=True,
+                     write=not args.no_write)
 
 
 # --------------------------------------------------------------------------- #
@@ -585,18 +665,44 @@ def f3(x) -> str:
     return "--" if x is None or not np.isfinite(x) else f"{x:.3f}"
 
 
-CAPTION = (
-    r"\caption{Coordinate ablation at each model's worst baseline layer (L). Top block: "
-    r"Task~A test AUROC for the unmodified mean-pooled vectors (Base); after zeroing the $k$ "
-    r"residual coordinates with the largest mean absolute training value, or with the largest "
-    r"variance across training passages; after per-coordinate standardization with training "
-    r"statistics (Std.); after centering alone ($D{=}0$); and after ABTT with one or three "
-    r"components (ABTT$_{D=1}$, ABTT$_{D=3}$), the two reference repairs. Bottom block: top-PC "
-    r"share of the training vectors after the same interventions, the share of their centered "
-    r"variance on the first principal component; centering leaves it unchanged by definition. "
-    r"At the collapsed T5 layers, one component recovers a median 45 percent of the AUROC gain "
-    r"of $D{=}10$, and three recover at least 80 percent at every layer "
-    r"(Table~\ref{tab:d_ablation}). All statistics are fit on training embeddings only.}")
+_COUNT_WORD = {1: "one", 2: "two", 3: "three", 5: "five", 10: "ten"}
+
+
+def _span(values: Sequence[float]) -> str:
+    lo, hi = f3(min(values)), f3(max(values))
+    return lo if lo == hi else f"{lo} to {hi}"
+
+
+def caption(w: pd.DataFrame, rows: Sequence[Tuple[str, pd.Series]]) -> str:
+    """Caption of tab:e1_coordinate_ablation; its counts and ranges are read from the data."""
+    text = (
+        r"\caption{Coordinate ablation at each model's worst baseline layer (L). Top block: "
+        r"Task~A test AUROC for the unmodified mean-pooled vectors (Base); after zeroing the "
+        r"$k$ residual coordinates with the largest mean absolute training value, or with the "
+        r"largest variance across training passages; after per-coordinate standardization "
+        r"with training statistics (Std.); after centering alone ($D{=}0$); and after ABTT "
+        r"with one or three components (ABTT$_{D=1}$, ABTT$_{D=3}$), the two reference "
+        r"repairs. Bottom block: top-PC share of the training vectors after the same "
+        r"interventions, the share of their centered variance on the first principal "
+        r"component; centering leaves it unchanged by definition. ")
+    t5_rows = [x for name, x in rows if name in T5]
+    if t5_rows:
+        zeroed = [x[f"auc_{zero_tag(r, KS[-1])}"] for x in t5_rows for r in RANKINGS]
+        n = _COUNT_WORD.get(len(t5_rows), str(len(t5_rows)))
+        k_word = _COUNT_WORD.get(KS[-1], str(KS[-1]))
+        text += (
+            f"In the {n} T5 row{'s' if len(t5_rows) > 1 else ''}, AUROC stays at or below "
+            f"{f3(max(zeroed))} after zeroing {k_word} coordinates under either ranking, while "
+            f"standardization reaches {_span([x['auc_standardize'] for x in t5_rows])} and "
+            f"ABTT with three components {_span([x['auc_abtt_D3'] for x in t5_rows])}. ")
+    n_coll = int(w["collapsed"].sum())
+    if n_coll:
+        text += (
+            f"At the collapsed T5 layers (baseline AUROC below {COLLAPSE_AUROC:.2f}, {n_coll} "
+            r"layers), one component recovers a median 45 percent of the AUROC gain of "
+            r"$D{=}10$, and three recover at least 80 percent at every layer "
+            r"(Table~\ref{tab:d_ablation}). ")
+    return text + "All statistics are fit on training embeddings only.}"
 
 
 def write_table(w: pd.DataFrame, path: Path) -> List[str]:
@@ -625,8 +731,8 @@ def write_table(w: pd.DataFrame, path: Path) -> List[str]:
             lines.append(f"{name} & {int(x['layer'])} & "
                          + " & ".join(f3(x.get(f"{prefix}_{tag}")) for tag in TABLE_TAGS)
                          + r" \\")
-    lines += [r"\bottomrule", r"\end{tabular}", CAPTION, r"\label{tab:e1_coordinate_ablation}",
-              r"\end{table*}"]
+    lines += [r"\bottomrule", r"\end{tabular}", caption(w, rows),
+              r"\label{tab:e1_coordinate_ablation}", r"\end{table*}"]
     path.write_text("\n".join(lines) + "\n")
     return omitted
 
@@ -812,6 +918,19 @@ def concentration_lines(w: pd.DataFrame, conc: Optional[pd.DataFrame]) -> List[s
     return L
 
 
+def sign_counts(coll: pd.DataFrame) -> Tuple[int, int, int]:
+    """(higher, lower, total) over the (collapsed layer, k) cells: variance-ranked zeroing
+    against mean-|x|-ranked zeroing, by test AUROC."""
+    higher = lower = 0
+    for k in KS:
+        if coll.empty:
+            break
+        d = coll[f"auc_{zero_tag('variance', k)}"] - coll[f"auc_{zero_tag('mean_abs', k)}"]
+        higher += int((d > 1e-9).sum())
+        lower += int((d < -1e-9).sum())
+    return higher, lower, len(coll) * len(KS)
+
+
 def facts(w: pd.DataFrame, coords: pd.DataFrame, shares: pd.DataFrame,
           gates: Optional[pd.DataFrame], selected_tex: Dict[str, int], path: Path,
           omitted: Sequence[str] = (), conc: Optional[pd.DataFrame] = None) -> None:
@@ -827,10 +946,23 @@ def facts(w: pd.DataFrame, coords: pd.DataFrame, shares: pd.DataFrame,
       f"`{ABL_NAME}`, `{COORD_NAME}`, `{SHARE_NAME}` and `{CONC_NAME}` in this directory. "
       "Every number below "
       "is a cell of one of those CSVs or a difference or count of such cells. AUROC is Task A "
-      "test AUROC unless marked train. Nothing here was tuned after the results were read: "
-      f"k in {list(KS)}, the two rankings and the thresholds ({RESTORE_AUROC:.2f} AUROC, "
-      f"k <= {RESTORE_K}, top-PC share < {SHARE_BAR:.1f}, |change| <= {STABLE_DELTA:.2f}, collapsed = "
-      f"baseline AUROC < {COLLAPSE_AUROC:.2f}) are the ones in the Sec. 5 paragraph.")
+      "test AUROC unless marked train. k in "
+      f"{list(KS)}, the two rankings and the thresholds ({RESTORE_AUROC:.2f} AUROC, "
+      f"k <= {RESTORE_K}, top-PC share < {SHARE_BAR:.1f}, |change| <= {STABLE_DELTA:.2f}, "
+      f"collapsed = baseline AUROC < {COLLAPSE_AUROC:.2f}) are the ones in the Sec. 5 paragraph "
+      "and were not changed after the results were read.")
+    hi, lo, tot = sign_counts(coll)
+    old = "PASS" if hi > lo else "FAIL" if lo > hi else "NO DIFFERENCE"
+    a("")
+    a("Changed after the results were read: one summary criterion. The line for \"zeroing by "
+      "mean |x| helps less than zeroing by variance\" (section 3) was coded to print PASS when "
+      "the variance ranking gave the higher AUROC in more (collapsed layer, k) cells than the "
+      "lower. It now prints NO VERDICT and the numbers."
+      + (f" The old criterion would have printed {old} on {hi} cells higher against {lo} lower "
+         f"of {tot}." if tot else "")
+      + " Two things were also added after the results were read and are marked where they "
+      "appear: the looser gate tolerance for D=0 cells of near-rank-one layers (section 0) "
+      "and the descriptive section 9.")
     a("")
     a("## Definitions")
     a("- Vectors: mean-pooled hidden states (`hidden_mean_tokempty`), raw as cached, from the "
@@ -871,22 +1003,21 @@ def facts(w: pd.DataFrame, coords: pd.DataFrame, shares: pd.DataFrame,
         a("- gates: reference CSVs not found, not evaluated")
     else:
         for g in gates.itertuples():
-            a(f"- gate {g.gate}, {DISP.get(g.model, g.model)}: {g.n_cells} cells, max |diff| "
-              f"{g.max_abs_diff:.2e} (tolerance {g.tolerance:.0e}): {_verdict(bool(g.ok))}"
-              + (f"; cells over tolerance: {g.cells_over_tolerance}" if g.n_over_tolerance
-                 else "")
-              + (f"; cells over {g.strict_tolerance:.0e} but within this tolerance: "
-                 f"{g.cells_over_strict}" if g.ok and g.n_over_strict else ""))
-        a(f"- D=0 tolerance. The D=0 (centering) cells of gate 2 are held to "
-          f"{GATE_TOL_CENTER:.0e}, the ABTT cells to {GATE_TOL_AUROC:.0e} (defaults; see "
-          "`GATE_TOL_CENTER` in the script). On the Delta re-extraction two D=0 cells are over "
-          "1e-6: mT5-base layer 5 (3.6e-6) and layer 9 (1.05e-6). The centered vectors at the "
-          "collapsed mT5-base layers are near rank one (top-PC share 0.999 or more), and "
-          "those cells are not stable at 1e-6: on the same cache they move by 1e-6 to 1e-5 "
-          "when the arithmetic is done in float64 instead of float32 or when every cached "
-          "value is moved by one float32 ulp, and by up to 3e-7 when the BLAS thread count "
-          "changes, while other cells move by 1e-8 to 1e-7 (diagnostic job 22572037). The "
-          "cells agree with H1 to 5 decimals.")
+            a("- " + gate_line(g))
+        a(f"- D=0 tolerance (added after the first run). Gate 2 holds every cell to "
+          f"{GATE_TOL_AUROC:.0e}, except that a D=0 (centering) cell is held to "
+          f"{GATE_TOL_CENTER:.0e} at a model-layer whose own base training top-PC share is at "
+          f"least {GATE_CENTER_SHARE} (`GATE_TOL_CENTER` and `GATE_CENTER_SHARE` in the "
+          "script); the gate lines above name those cells. On the Delta re-extraction two of "
+          "them are over 1e-6: mT5-base layer 5 (3.6e-6) and layer 9 (1.05e-6). Diagnostic "
+          "job 22572037 measured on one cache how far the D=0 cell of mT5-base layers 5, 6 "
+          "and 9 moves under changes that should not matter: a one-ulp change of every "
+          "cached float32 value moves it by up to 3.4e-6, 1.5e-6 and 1.0e-6 (5 seeds); 16 "
+          "BLAS threads instead of 1 by 8e-8, 2e-7 and 3e-7; float64 instead of float32 "
+          "arithmetic by 2.4e-6, 1.1e-5 and 3.7e-7. Three other cells (mT5-base layer 1, LaTa "
+          "layer 6, Qwen3-0.6B layer 1) moved by at most 8e-8 under all three. The tolerance "
+          "covers two float32 runs; it is not a bound on float32 against float64, which "
+          "differ by more than it at layer 6. The cells agree with H1 to 5 decimals.")
         if not gates["ok"].all():
             a("- A gate FAILED. Read the cells it names before quoting numbers that depend on "
               "them.")
@@ -1337,8 +1468,7 @@ def cmd_render(args) -> int:
     if args.facts_md is not None:
         gates = None
         if all(p.exists() for p in (args.results_csv, args.h1_csv, args.geom_csv)):
-            gates = gate_table(abl, pd.read_csv(args.results_csv), pd.read_csv(args.h1_csv),
-                               pd.read_csv(args.geom_csv), tol_auroc=args.tol_auroc)
+            gates = gates_for(abl, args)
         args.facts_md.parent.mkdir(parents=True, exist_ok=True)
         conc_path = args.out_dir / CONC_NAME
         conc = pd.read_csv(conc_path) if conc_path.exists() else None
@@ -1358,16 +1488,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         p.add_argument("--h1_csv", type=Path, default=H1_CSV)
         p.add_argument("--geom_csv", type=Path, default=GEOM_CSV)
         p.add_argument("--tol_auroc", type=float, default=GATE_TOL_AUROC,
-                       help="AUROC tolerance of gates 1 and 2b (default 1e-6); the D=0 "
-                            "cells of gate 2a keep their own 1e-5 unless this is larger")
+                       help="AUROC tolerance of gates 1, 2a and 2b (default 1e-6); D=0 cells "
+                            "of near-rank-one layers keep 1e-5 unless this is larger")
+        p.add_argument("--models", default="",
+                       help="comma list of ids or display names (default all six); the "
+                            "gates fail if one of them has no rows")
+        p.add_argument("--allow_missing", action="store_true",
+                       help="compute: skip a model whose cache is missing instead of failing; "
+                            "gates: do not require every model to have rows")
 
     p = sub.add_parser("compute", help="ablate, score and write the result CSVs")
     refs(p)
     p.add_argument("--split_csv", type=Path, default=SPLIT_CSV)
     p.add_argument("--bases_root", type=Path, default=BASES_ROOT)
-    p.add_argument("--models", default="", help="comma list of ids or display names (default all six)")
-    p.add_argument("--allow_missing", action="store_true",
-                   help="skip a model whose cache is missing instead of failing")
     p.add_argument("--layers", default="", help="comma list of layers (default all)")
     p.add_argument("--workers", type=int, default=int(os.environ.get("SLURM_CPUS_PER_TASK", 1)))
     p.add_argument("--check", action="store_true",
