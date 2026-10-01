@@ -6,7 +6,7 @@ Three layers of checks, none of which loads a model, a tokenizer or an embedding
   to 1 and equal Cov(s_g, s) / Var(s)); the token-mix explained variance on a direction
   carried by one token type and on a passage-level shift; the subspace readouts under a
   rotation of the basis; the pooling-arm weight lookups against sif_weights_from_ids; the
-  matched random sampler; the frozen decision rules; the gates; the merge-by-model CSV
+  count-nearest and mass-matched random samplers; the frozen decision rules; the gates; the merge-by-model CSV
   writer; the table and the facts file from a tiny fabricated fixture.
 * toy tensors (skipped without torch): every pooling arm against the extraction CLIs'
   own pooling functions, and the whole audit of a fake encoder against a fake cache.
@@ -378,7 +378,7 @@ def test_every_arm_equals_the_cli_pooling_function(cli_name, fn_name):
 
 
 # --------------------------------------------------------------------------- #
-# matched random control and ablation arms
+# random controls (count-nearest, mass-matched) and ablation arms
 # --------------------------------------------------------------------------- #
 
 def test_matched_random_draws_the_nearest_counts_without_replacement():
@@ -439,7 +439,7 @@ def test_ablation_arms_are_nested_seeded_and_exclude_every_carrier():
     draws = [tuple(a["types"]) for a in arms if a["kind"] == "control" and a["m"] == 100
              and a["ranking"] == "pc1"]
     assert len(set(draws)) == e2.CONTROL_DRAWS
-    # matched in train frequency: the control's counts track the carriers'
+    # count-nearest control: its types' train counts track the carriers'
     ctl = next(a["types"] for a in arms if a["kind"] == "control" and a["m"] == 100)
     assert np.abs(count[ctl] - count[carriers["pc1"]]).mean() < 25
     # the mass-matched control: per (ranking, m, draw), disjoint from the m carriers it is

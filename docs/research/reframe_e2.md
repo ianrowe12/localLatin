@@ -56,7 +56,7 @@ Short version:
 | Smoke job | 22597799, `gpuA40x4-interactive`, 4 min 56 s, exit 0: `LIMIT=64`, LaTa and Qwen3-0.6B, gates skipped, written to `runs/active/reframe/e2/smoke_limit64/` |
 | Rerun with the mass-matched control | 22600488 (LaTa, PhilTa, mT5-base, LaBSE; 12 min 47 s) and 22600797 (Qwen3-0.6B, KaLM-mini; 13 min 51 s), `gpuA40x4-interactive`, after a smoke run 22600177 (`gpuA100x4-interactive`, 4 min 32 s, `LIMIT=64`, exit 0, at `aaf98b1`). The two job logs print HEAD `e8eadf6`, which differs from `aaf98b1` only in the paper source and this document, so the audit code is that of `aaf98b1`. Both exited 3 again, for gate 2a. Results committed in `43f4827`: only `e2_token_ablation.csv`, `facts_e2.md` and the table changed; the pooling, direction, carrier, length and gate CSVs are byte-identical to the first run |
 | SIF diagnostic jobs | 22598639 (11 min 2 s) and 22599010 (13 min 50 s), `gpuA40x4-interactive`; script and logs in `/projects/bimc/swong2/setup/e2_sif_diag/` (outside the repository) |
-| Replication job | 22599178, `gpuA40x4-interactive`, 4 min 52 s, exit 0; `/projects/bimc/swong2/setup/e2_replicate.py`, log `/projects/bimc/swong2/setup/logs/e2_replicate_22599178.out` |
+| Replication jobs | 22599178 (4 min 52 s, 32 cells) and, after the rerun, 22601256 (4 min 18 s, 36 cells), `gpuA40x4-interactive`, both exit 0; `/projects/bimc/swong2/setup/e2_replicate.py`, logs `/projects/bimc/swong2/setup/logs/e2_replicate_22599178.out` and `e2_replicate_22601256.out` |
 | Account | `beto-delta-gpu` / `beto-delta-cpu` for every job |
 | Inputs | `runs/active/resubmit/data/phase_resubmit_split.csv`; the six models from the HuggingFace cache (transformers 4.57.6, offline); cached mean-pooled vectors `runs/active/resubmit_bases/phase9_bases/<slug>/hidden_mean_tokempty/` and, for five models, SIF-pooled vectors `hidden_sif_tokempty/` (James's re-extraction; none for KaLM-mini); `phase_resubmit_results.csv` for the published cells |
 | Outputs | `runs/active/reframe/e2/`: `e2_pooling_arms.csv` (500 rows: 5 arms at 100 model-layers), `e2_direction_audit.csv` (8,800 rows), `e2_carriers.csv` (9,000 rows: top 30 token types per PC), `e2_token_ablation.csv` (11,000 rows after the rerun; 6,000 in the first run), `e2_length.csv`, `e2_gate_check.csv`, `facts_e2.md`; `e2_zeroing_followup.csv` (800 rows), `e2_zeroing_gate_check.csv`, `facts_e2_zeroing.md`; `overleaf_drafts/tables/e2_token_audit.tex` |
@@ -103,7 +103,7 @@ r and the Qwen3-0.6B r test left E2 because E1 reports them.
   the passages of a split. Group shares (special, 100 most frequent, other)
   are Cov(s_group, s) / Var(s) and sum to 1. Carriers are token types ranked
   by that share on training passages. The same quantities on the 20 random
-  directions are the matched control; span(PC2, PC3) and span(PC1, PC2, PC3)
+  directions are the control; span(PC2, PC3) and span(PC1, PC2, PC3)
   get joint readouts that do not depend on the basis inside the subspace.
 - **Token ablation.** Token types ranked on training passages by PC1 share
   (`pc1`) and by the mean of the PC1, PC2 and PC3 shares (`pc123`); mean
@@ -256,6 +256,20 @@ loading, keep lookup, token probabilities, `EmbeddingCleaner`, the alignment
 resolver) and computes every metric itself. It recomputed 32 cells at LaTa
 layer 6, PhilTa layer 10 and mT5-base layer 5; all 32 agree with the committed
 CSVs (AUROC within 1e-6, audit quantities within 1e-4).
+
+After the rerun the script was extended and run again (job 22601256, 258 s,
+log `/projects/bimc/swong2/setup/logs/e2_replicate_22601256.out`): the same 32
+cells against the regenerated CSVs, plus four cells for the mass-matched
+control under the `pc123` ranking, with the replication's own seeds and
+draws. A control cell agrees if the two five-draw means differ by less than
+0.03 and both are below 0.90. All 36 agree.
+
+| Mass-matched control cell | Replication mean (5 draws) | CSV mean (5 draws) | Carrier arm |
+|---|---|---|---|
+| LaTa L6, m = 3 | 0.4935 | 0.4935 | 0.9198 |
+| PhilTa L10, m = 3 | 0.5385 | 0.5385 | 0.8551 |
+| PhilTa L10, m = 30 | 0.5406 | 0.5401 | 0.9162 |
+| mT5-base L5, m = 3 | 0.6547 | 0.6546 | 0.6918 |
 
 | Cells | Quantity | LaTa L6 | PhilTa L10 | mT5-base L5 |
 |---|---|---|---|---|
@@ -620,7 +634,7 @@ results in `43f4827`).**
   asked for and the first pass left out, is reported as |rho| <= 0.36.
 - Long sentences were split (guidelines, section 4): the E2 paragraph now has
   25 design sentences and 36 findings sentences with the same content plus
-  the additions above.
+  the additions above (27 and 36 after the second pass).
 
 **After the rerun (second pass).** The sentences on the ablation's control in
 the paper and here were rewritten for the mass-matched control, the "restores"

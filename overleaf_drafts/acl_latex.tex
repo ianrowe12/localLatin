@@ -130,7 +130,7 @@ Section~\ref{sec:repair} shows that this gain holds without any threshold and do
 This paper makes four contributions.
 (1)~We give the first per-layer retrieval profile of T5 encoder states in isolation that we know of: in our panel, T5 encoders collapse to or near chance at mid-depth. A $2 \times 2$ control crosses T5 pretraining with an embedding objective \pending{P2x2: raw encoder-only and embedding-trained T5 cells}.
 (2)~We compare anisotropy statistics with retrieval layer by layer. Top-PC share and effective rank separate collapsed from healthy layers, whereas mean pairwise cosine is lower at collapsed layers than at healthy ones. A train-only projection restores every layer, which shows that the signal was present in the layer but masked.
-(3)~We give a falsifiable test of the massive-coordinate account for mean-pooled passage retrieval (coordinate ablation, token audit, subspace split, and a $D$ ablation), and find that the nuisance spans two to five directions, which rank below the retained directions in every pre-trained model. The account's main prediction fails: zeroing up to ten top coordinates restores none of the 26 collapsed layers to AUROC 0.90 or above, while per-coordinate standardization restores 9 and a three-component projection all 26. The token audit finds that mean pooling without at most 30 token types restores every collapsed layer of LaTa and PhilTa (three types, 11 percent of test tokens, suffice in LaTa; PhilTa's 30 are a median 33 percent), and finds no such token set in mT5-base.
+(3)~We give a falsifiable test of the massive-coordinate account for mean-pooled passage retrieval (coordinate ablation, token audit, subspace split, and a $D$ ablation), and find that the nuisance spans two to five directions, which rank below the retained directions in every pre-trained model. The account's main prediction fails: zeroing up to ten top coordinates restores none of the 26 collapsed layers to AUROC 0.90 or above, while per-coordinate standardization restores 9 and a three-component projection all 26. The token audit finds that mean pooling without at most 30 token types restores every collapsed layer of LaTa and PhilTa (three types, 11 percent of test tokens, suffice in LaTa; PhilTa's 30 are a median 33 percent, and for PhilTa this ablation is the only support), and finds no such token set in mT5-base.
 (4)~We release the frozen testbed and split, the evaluation code, and lexical reference scores (Section~\ref{sec:testbed}).
 
 \input{related_work}
@@ -430,7 +430,7 @@ A follow-up, designed after we saw the E1 results, shows that it is what remains
 The new top direction is the part of the first component outside those ten coordinates (median cosine 0.999 with that remainder).
 It holds a median 0.72 of the remaining variance, although zeroing leaves only 0.7 percent of the variance along the original first axis.
 Passage scores on the old and the new top direction agree linearly (median absolute Pearson correlation 0.99 on test passages) but less in rank: the absolute Spearman correlation ranges from 0.31 to 0.99 (median 0.87), with a median of 0.45 in mT5-base and 4 of the 26 layers below 0.5.
-A high Pearson with a low Spearman correlation points to a few extreme passages driving the agreement in mT5-base.
+A high Pearson with a low Spearman correlation suggests that a few extreme passages drive the agreement in mT5-base; we did not test this.
 The ten coordinates hold a median 0.50 of the second component's squared loading and 0.18 of the third's, so parts of those components survive zeroing, but they are not why it fails.
 Removing them while keeping the first restores 0 of the 26 layers.
 Zeroing followed by removal of one, two or three components fit on the zeroed vectors restores 9, 21 and 26 layers, against 1, 13 and 26 without zeroing; these intervention cells were added post hoc and carry no prediction.
@@ -462,10 +462,10 @@ The token mix carries the first component if it explains at least half.
 We also split that variance into the shares of special tokens, of the 100 most frequent tokens and of all other tokens, and list the token types with the largest shares.
 A share is a covariance share: the covariance of a group's or a type's part of the score with the whole score, divided by the score's variance.
 The shares of the three groups sum to one, but a single share can fall below zero or exceed one.
-We repeat each quantity on 20 random directions, drawn orthogonal to the top ten principal components, as a matched control, and on the joint span of the components.
+We repeat each quantity on 20 random directions, drawn orthogonal to the top ten principal components, as a control, and on the joint span of the components.
 For the ablation, we rank token types on training passages by their share of the first component's score variance, or by the mean of their shares on the first three components, and mean-pool without the top $m$ types, $m \in \{1,3,10,30,100\}$.
 The ablation restores a layer if AUROC reaches 0.90 for some $m$.
-Its control is mass-matched: it drops random other token types that hold at least as many training tokens as the dropped ones, in five draws.
+Its control is mass-matched: it drops random other token types, sampled in proportion to their training count, that hold at least as many training tokens as the dropped ones, in five draws.
 We added this control on review after a first run, whose control drew as many token types as were dropped, each of the nearest eligible training count, but dropped far fewer tokens.
 The length check addresses LaTa's negative raw gap (Section~\ref{sec:geometry}): the length account holds if the first component's score correlates with log token count at $|\rho| \ge 0.5$ and same-directory pairs differ more in log length than different-directory pairs.
 We expected frequent tokens to hold the largest share in LaTa and PhilTa, so that the frequency weights alone rescue them and dropping special tokens does not.

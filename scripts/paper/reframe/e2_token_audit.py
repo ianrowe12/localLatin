@@ -90,8 +90,8 @@ minus sign and no negative zero.
 Added after the first full run, on review, because the count-nearest control was not
 mass-matched: the mass-matched control (``control_mass`` rows of the ablation CSV). The
 carriers are the most frequent token types, so the types nearest to them in train count
-hold far fewer tokens (LaTa, pc123 ranking, m = 3: 7,022 train tokens against 728 in the
-first full run). The new control draws token types with probability
+hold far fewer tokens (LaTa, pc123 ranking, m = 3: 7,022 train tokens against 828, the
+median over layers of the draw mean). The new control draws token types with probability
 proportional to train count, from the train types outside the dropped carriers, until
 they hold at least as many train tokens. R3 and the carrier arms are unchanged. The
 table's Drop cell is chosen on train AUROC (it was the highest test AUROC) and its Rand.
@@ -1761,10 +1761,10 @@ def caption(gates: Optional[pd.DataFrame] = None) -> str:
         r"training-only token frequencies (SIF" + published + r"); and mean pooling without "
         r"the 100 most frequent training tokens (No freq.). Token ablation: test AUROC of "
         r"mean pooling after dropping the $m$ token types that contribute most to the top "
-        r"principal components (Drop), where $m$ between 1 and 100 and one of two rankings "
-        r"are chosen by training AUROC, and the mean test AUROC of five random sets of other "
-        r"token types that hold at least as many training tokens as the dropped types "
-        r"(Rand.). Token-mix EV: the share of the variance "
+        r"principal components (Drop), with $m$ (1 to 100) and the ranking (one of two) "
+        r"chosen by training AUROC, and the mean test AUROC of five random sets of other "
+        r"token types, sampled in proportion to training count, that hold at least as many "
+        r"training tokens as the dropped types (Rand.). Token-mix EV: the share of the variance "
         r"of the first principal component's score across test passages that is explained by "
         r"which token types a passage contains, with one mean per token type fit on training "
         r"tokens (PC1), next to the mean of the same quantity over 20 random directions "
