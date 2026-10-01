@@ -614,3 +614,836 @@ def merge_write(path: Path, new: pd.DataFrame) -> pd.DataFrame:
     df.to_csv(tmp, index=False, float_format="%.10g")
     os.replace(tmp, path)
     return df
+
+
+# --------------------------------------------------------------------------- #
+# audit: split, caches and encoders
+# --------------------------------------------------------------------------- #
+
+@dataclass
+class Context:
+    """The passages of one run, in split-CSV order (the first --limit of each split)."""
+
+    sp: pd.DataFrame            # the selected split rows, index reset
+    sel: np.ndarray             # their row numbers in the full split CSV
+    tr: np.ndarray              # train mask over ``sp``
+    te: np.ndarray              # test mask over ``sp``
+    resolver: AlignmentResolver  # aligns a cache to the FULL split by filename
+    split_path: Path            # the CSV the metric workers load (asw._init)
+    limit: int
+
+
+def limit_rows(split: pd.DataFrame, limit: int) -> np.ndarray:
+    """Row numbers of the first ``limit`` train and first ``limit`` test passages (all
+    rows when ``limit`` is 0), in split order."""
+    if not limit:
+        return np.arange(len(split))
+    parts = [np.flatnonzero((split["split"] == name).to_numpy())[:limit]
+             for name in ("train", "test")]
+    return np.sort(np.concatenate(parts))
+
+
+def build_context(split_csv: Path, out_dir: Path, limit: int) -> Context:
+    full = pd.read_csv(split_csv)
+    sel = limit_rows(full, limit)
+    sp = full.iloc[sel].reset_index(drop=True)
+    split_path = Path(split_csv)
+    if limit:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        split_path = out_dir / f"split_limit{limit}.csv"
+        sp.to_csv(split_path, index=False)
+    return Context(sp=sp, sel=sel, tr=(sp["split"] == "train").to_numpy(),
+                   te=(sp["split"] == "test").to_numpy(), resolver=AlignmentResolver(full),
+                   split_path=split_path, limit=int(limit))
+
+
+def cache_dir(bases_root: Path, model_id: str, subdir: str) -> Path:
+    return Path(bases_root) / "phase9_bases" / asw.slug(model_id) / subdir
+
+
+def load_cached(ctx: Context, bases_root: Path, model_id: str, subdir: str, layer: int
+                ) -> Optional[np.ndarray]:
+    """The cached vectors of the run's passages, aligned by filename; None if absent."""
+    suffix = "_sif" if subdir == SIF_SUBDIR else ""
+    path = cache_dir(bases_root, model_id, subdir) / f"hidden_layer{layer}_embeddings{suffix}.npy"
+    if not path.exists():
+        return None
+    return ctx.resolver.load(path)[ctx.sel]
+
+
+def forward_order(run_dir: Path, sp: pd.DataFrame) -> np.ndarray:
+    """Rows of ``sp`` in the order the cache was extracted, so that the batches (and their
+    padding) are the extraction's. Falls back to split order without a manifest."""
+    manifest = find_manifest(run_dir)
+    if manifest is None:
+        print(f"WARNING: no row-order manifest in {run_dir}; batching in split order",
+              flush=True)
+        return np.arange(len(sp))
+    pos = {str(f): i for i, f in enumerate(sp["filename"])}
+    order = [pos[name] for name in load_row_order(manifest) if name in pos]
+    if len(order) != len(sp):
+        raise SystemExit(f"ERROR: {manifest} lists {len(order)} of the {len(sp)} passages")
+    return np.array(order, dtype=np.int64)
+
+
+@dataclass
+class Encoder:
+    """What the audit needs from a model; open_encoder builds it from HuggingFace, the
+    tests from toy tensors.
+
+    ``batches()`` yields (rows, input_ids [B, T], attention_mask [B, T], hidden_states)
+    with ``rows`` the passage indices of the batch and hidden_states[layer] a [B, T, d]
+    tensor, the same batches on every call.
+    """
+
+    batches: Callable[[], Iterator]
+    keep_lookup: np.ndarray
+    special_ids: List[int]
+    token_probs: Dict[int, float]
+    describe: Callable[[int], Tuple[str, str]]  # token id -> (vocabulary piece, decoded)
+    reference_pool: Optional[Callable] = None   # the CLI's pooling function (self-check)
+    close: Optional[Callable[[], None]] = None
+
+
+def open_encoder(model_id: str, ctx: Context, bases_root: Path) -> Encoder:
+    """Load a model and tokenizer exactly as its extraction CLI does (EXTRACT), with the
+    CLI's keep lookup, special ids and train-only SIF token probabilities."""
+    import torch
+    from canon_retrieval import load_texts
+    from sif_abtt import token_probabilities
+    from token_filtering import build_token_keep_lookup
+
+    cli_name, trust = EXTRACT[model_id]
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    if cli_name == "hidden":
+        import extract_hidden_cli as cli
+        from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
+
+        tokenizer = AutoTokenizer.from_pretrained(model_id)
+        model = AutoModelForSeq2SeqLM.from_pretrained(model_id)
+        net = model.get_encoder() if hasattr(model, "get_encoder") else model.encoder
+        reference_pool = cli.pool_hidden
+    else:
+        import extract_encoder_cli as cli
+        from transformers import AutoModel, AutoTokenizer
+
+        tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=trust)
+        net = AutoModel.from_pretrained(model_id, trust_remote_code=trust)
+        reference_pool = cli.pool_embeddings
+    net.to(device)
+    net.eval()
+    keep_lookup = build_token_keep_lookup(tokenizer, TOKEN_FILTER)
+    paths = ctx.sp["path"].tolist()
+    train_texts = load_texts(ctx.sp.loc[ctx.tr, "path"].tolist())
+    token_probs = token_probabilities(tokenizer, train_texts, batch_size=128,
+                                      max_length=MAX_LENGTH, token_keep_lookup=keep_lookup)
+    order = forward_order(cache_dir(bases_root, model_id, MEAN_SUBDIR), ctx.sp)
+
+    def batches():
+        for start in range(0, len(order), BATCH_SIZE):
+            rows = order[start:start + BATCH_SIZE]
+            enc = tokenizer(load_texts([paths[i] for i in rows]), truncation=True,
+                            max_length=MAX_LENGTH, padding=True, return_tensors="pt")
+            input_ids = enc["input_ids"].to(device)
+            attention_mask = enc["attention_mask"].to(device)
+            with torch.no_grad():
+                out = net(input_ids=input_ids, attention_mask=attention_mask,
+                          output_hidden_states=True, return_dict=True)
+            yield rows, input_ids, attention_mask, out.hidden_states
+
+    def describe(token_id: int) -> Tuple[str, str]:
+        return (str(tokenizer.convert_ids_to_tokens(int(token_id))),
+                str(tokenizer.decode([int(token_id)])))
+
+    def close() -> None:
+        net.to("cpu")
+        if device == "cuda":
+            torch.cuda.empty_cache()
+
+    print(f"  loaded {DISP.get(model_id, model_id)} on {device} ({cli_name} CLI"
+          f"{', trust_remote_code' if trust else ''}); vocabulary {len(keep_lookup)}, "
+          f"{len(token_probs)} train token types, {len(set(tokenizer.all_special_ids))} "
+          f"special ids", flush=True)
+    return Encoder(batches=batches, keep_lookup=keep_lookup,
+                   special_ids=sorted(set(int(i) for i in tokenizer.all_special_ids)),
+                   token_probs=token_probs, describe=describe,
+                   reference_pool=reference_pool, close=close)
+
+
+# --------------------------------------------------------------------------- #
+# audit: the two forward passes
+# --------------------------------------------------------------------------- #
+
+def pass_one(enc: Encoder, layers: Sequence[int], dirs: Dict[int, Dict],
+             lookups: Dict[str, np.ndarray], frequent: np.ndarray, n_passages: int) -> Dict:
+    """Pooled vectors of the five arms and the token projections on every direction.
+
+    Returns pooled [arm, layer, N, d] float32 (no fallback applied), the weight total and
+    the special / frequent weight of every passage under each arm [arm, N], the flat kept
+    tokens (pid, tid, first), their contributions c_t per layer ([n_tok, K] float64), the
+    projections of the float64 mean-pooled vectors [layer, N, K] (score identity), the
+    attention length of every passage, and the largest difference to the CLI's own
+    pooling function on the first batch.
+    """
+    import torch
+    from token_filtering import torch_token_keep_mask
+
+    n_arm, n_layer, k = len(ARMS), len(layers), len(DIRECTIONS)
+    pooled = None
+    total = np.zeros((n_arm, n_passages))
+    special_w = np.zeros((n_arm, n_passages))
+    frequent_w = np.zeros((n_arm, n_passages))
+    n_att = np.zeros(n_passages, dtype=np.int64)
+    s_pool = np.zeros((n_layer, n_passages, k))
+    pid: List[np.ndarray] = []
+    tid: List[np.ndarray] = []
+    first: List[np.ndarray] = []
+    contrib: List[List[np.ndarray]] = [[] for _ in layers]
+    selfcheck = {"mean": float("nan"), "sif": float("nan")}
+    for rows, input_ids, attention_mask, hidden_states in enc.batches():
+        rows = np.asarray(rows, dtype=np.int64)
+        dev = input_ids.device
+        first_batch = pooled is None
+        if first_batch:
+            d = hidden_states[layers[0]].shape[-1]
+            pooled = np.zeros((n_arm, n_layer, n_passages, d), dtype=np.float32)
+            w_arm = [torch.as_tensor(lookups[a], device=dev, dtype=torch.float32) for a in ARMS]
+            vocab = len(enc.keep_lookup)
+            is_special = torch.zeros(vocab, device=dev)
+            is_special[torch.as_tensor(enc.special_ids, device=dev, dtype=torch.long)] = 1.0
+            is_frequent = torch.zeros(vocab, device=dev)
+            is_frequent[torch.as_tensor(frequent, device=dev, dtype=torch.long)] = 1.0
+            mu = [torch.as_tensor(dirs[x]["mu"], device=dev, dtype=torch.float64) for x in layers]
+            w_dir = [torch.as_tensor(dirs[x]["W"], device=dev, dtype=torch.float64)
+                     for x in layers]
+        keep = torch_token_keep_mask(input_ids, attention_mask, enc.keep_lookup)
+        att = attention_mask.float()
+        wm = [att * w[input_ids] for w in w_arm]
+        sp_tok, fr_tok = is_special[input_ids], is_frequent[input_ids]
+        for a, w in enumerate(wm):
+            total[a, rows] = w.sum(dim=1).double().cpu().numpy()
+            special_w[a, rows] = (w * sp_tok).sum(dim=1).double().cpu().numpy()
+            frequent_w[a, rows] = (w * fr_tok).sum(dim=1).double().cpu().numpy()
+        n_att[rows] = attention_mask.sum(dim=1).cpu().numpy()
+        kept = keep > 0
+        b_idx, t_idx = torch.nonzero(kept, as_tuple=True)  # row-major, as kept-mask indexing
+        first_t = torch.argmax(kept.int(), dim=1)
+        pid.append(rows[b_idx.cpu().numpy()])
+        tid.append(input_ids[kept].cpu().numpy())
+        first.append((t_idx == first_t[b_idx]).cpu().numpy())
+        keep64 = keep.double()
+        count = keep64.sum(dim=1, keepdim=True).clamp(min=1.0)
+        vecs, scores = [], []
+        for li, layer in enumerate(layers):
+            h = hidden_states[layer]
+            vecs.append(torch.stack([pool_weighted(h, w) for w in wm]))  # [arm, B, d]
+            h64 = h.double()
+            proj = (h64 - mu[li]) @ w_dir[li].T                           # [B, T, K]
+            contrib[li].append(proj[kept].cpu().numpy())
+            mean64 = (h64 * keep64.unsqueeze(-1)).sum(dim=1) / count
+            scores.append((mean64 - mu[li]) @ w_dir[li].T)                # [B, K]
+            if first_batch and enc.reference_pool is not None:
+                # the two reference arms against the CLI's own function
+                ref = enc.reference_pool(h, attention_mask, "mean", input_ids=input_ids,
+                                         token_keep_lookup=enc.keep_lookup)
+                dm = float((vecs[-1][ARMS.index("mean")] - ref).abs().max())
+                ref = enc.reference_pool(h, attention_mask, "sif", input_ids=input_ids,
+                                         token_probs=enc.token_probs, sif_a=SIF_A,
+                                         special_ids=set(enc.special_ids),
+                                         token_keep_lookup=enc.keep_lookup)
+                ds = float((vecs[-1][ARMS.index("sif")] - ref).abs().max())
+                selfcheck = {"mean": float(np.nanmax([selfcheck["mean"], dm])),
+                             "sif": float(np.nanmax([selfcheck["sif"], ds]))}
+        pooled[:, :, rows] = torch.stack(vecs, dim=1).float().cpu().numpy()
+        s_pool[:, rows] = torch.stack(scores).cpu().numpy()
+    if pooled is None:
+        raise SystemExit("ERROR: the encoder yielded no batch")
+    return {"pooled": pooled, "total": total, "special_w": special_w,
+            "frequent_w": frequent_w, "n_att": n_att, "s_pool": s_pool,
+            "pid": np.concatenate(pid), "tid": np.concatenate(tid),
+            "first": np.concatenate(first), "contrib": contrib, "selfcheck": selfcheck}
+
+
+def pass_two(enc: Encoder, layers: Sequence[int], drop: np.ndarray, mean_ref: np.ndarray
+             ) -> Dict:
+    """Mean pooling with token types dropped: ``drop`` is bool [layer, arm, vocab].
+
+    A passage left with no token gets its mean-pooled vector. Returns vectors
+    [layer, arm, N, d] float32, kept-token counts [layer, arm, N], and the largest
+    difference of this pass's mean pooling to pass 1's (``mean_ref`` [layer, N, d]).
+    """
+    import torch
+    from token_filtering import torch_token_keep_mask
+
+    n_layer, n_arm, _ = drop.shape
+    n_passages, d = mean_ref.shape[1], mean_ref.shape[2]
+    out = np.zeros((n_layer, n_arm, n_passages, d), dtype=np.float32)
+    kept_n = np.zeros((n_layer, n_arm, n_passages), dtype=np.float32)
+    drop_t = None
+    pass_diff = 0.0
+    for rows, input_ids, attention_mask, hidden_states in enc.batches():
+        rows = np.asarray(rows, dtype=np.int64)
+        if drop_t is None:
+            drop_t = torch.as_tensor(drop, device=input_ids.device)
+        keep = torch_token_keep_mask(input_ids, attention_mask, enc.keep_lookup)
+        vecs, counts = [], []
+        for li, layer in enumerate(layers):
+            h = hidden_states[layer]
+            mean_vec = pool_weighted(h, keep)                               # [B, d]
+            ref = torch.as_tensor(mean_ref[li, rows], device=h.device)
+            pass_diff = max(pass_diff, float((mean_vec.float() - ref).abs().max()))
+            k2 = keep.unsqueeze(0) * (~drop_t[li][:, input_ids]).to(keep.dtype)  # [arm, B, T]
+            n2 = k2.sum(dim=2)                                              # [arm, B]
+            v = torch.einsum("abt,btd->abd", k2.to(h.dtype), h) / n2.clamp(min=1.0).unsqueeze(-1)
+            v = torch.where((n2 == 0).unsqueeze(-1), mean_vec.unsqueeze(0), v)
+            vecs.append(v)
+            counts.append(n2)
+        out[:, :, rows] = torch.stack(vecs).float().cpu().numpy()
+        kept_n[:, :, rows] = torch.stack(counts).float().cpu().numpy()
+    return {"pooled": out, "kept_n": kept_n, "pass_diff": pass_diff}
+
+
+# --------------------------------------------------------------------------- #
+# audit: readouts of one model
+# --------------------------------------------------------------------------- #
+
+def _metric_task(task) -> Tuple[Tuple, Dict[str, float]]:
+    """One metric cell in a worker: the E1 metric block and train geometry ("full"), or
+    Task A test and train AUROC alone ("auroc"; the same number as the block's)."""
+    key, mode, train, test = task
+    if mode == "full":
+        m = asw._metrics(train, test)
+        return key, {**{c: m[c] for c in asw.KEEP if c in m}, **e1._geometry(train)}
+    return key, {"aucroc": asw.pair_auroc(test, asw._CTX["lab_te"]),
+                 "train_aucroc": asw.pair_auroc(train, asw._CTX["lab_tr"])}
+
+
+def _vec_diff(ours: np.ndarray, ref: np.ndarray) -> Tuple[float, float]:
+    """(largest absolute difference, largest relative L2 difference over passages)."""
+    a, b = ours.astype(np.float64), ref.astype(np.float64)
+    norm = np.linalg.norm(b, axis=1)
+    rel = np.linalg.norm(a - b, axis=1)[norm > 0] / norm[norm > 0]
+    return float(np.abs(a - b).max()), float(rel.max()) if len(rel) else float("nan")
+
+
+AUDIT_NAN = ("r2_tokenmix", "ev_tokenmix_eqw", *(f"share_{g}_eqw" for g in GROUPS),
+             "share_sum_err_eqw", "share_first_eqw", "rho_logn", "rho_freqmass",
+             "identity_max_abs_diff", "identity_max_rel_diff", "cache_score_max_abs_diff")
+
+
+def layer_audit(key: Dict, contrib: np.ndarray, tok: TokenTable, dirs: Dict,
+                train_rows: np.ndarray, test_rows: np.ndarray, masses: np.ndarray,
+                s_pool: np.ndarray, cached: np.ndarray, describe: Callable,
+                type_info: Dict[str, np.ndarray], e1_agrees: int = -1
+                ) -> Tuple[List[Dict], List[Dict], np.ndarray]:
+    """Readout 2 of one model-layer: (audit rows, carrier rows, type shares [N_PC, types]).
+
+    ``contrib`` [n_tok, K] holds c_t on the K directions, ``masses`` [N, group] the token
+    mass fractions of every passage, ``s_pool`` [N, K] the projections of the float64
+    mean-pooled vectors and ``cached`` [N, d] the cached vectors (float32).
+    """
+    rows = {"train": train_rows, "test": test_rows}
+    logn = np.log(np.maximum(tok.n, 1))
+    freq_mass = masses[:, GROUPS.index("frequent")]
+    cached64 = cached.astype(np.float64)
+    norms = np.linalg.norm(cached64, axis=1)
+    s_cache = (cached64 - dirs["mu"]) @ dirs["W"].T
+    seen_train = np.bincount(tok.type_idx[train_rows[tok.pid]], minlength=len(tok.types)) > 0
+    base: Dict[str, Dict] = {}
+    for split, r in rows.items():
+        valid = r & (tok.n > 0)
+        tok_in = valid[tok.pid]
+        base[split] = {
+            "total_var": float(cached64[valid].var(axis=0).sum()) if valid.any() else np.nan,
+            **{f"mass_{g}": float(masses[valid, i].mean()) if valid.any() else np.nan
+               for i, g in enumerate(GROUPS)},
+            "unseen_token_frac": (float((~seen_train[tok.type_idx[tok_in]]).mean())
+                                  if tok_in.any() else np.nan)}
+
+    def row(name: str, kind: str, dim: int, coord: int, split: str, r: Dict) -> Dict:
+        x = r[split]
+        b = base[split]
+        with np.errstate(divide="ignore", invalid="ignore"):
+            var_share = x["var_s"] / b["total_var"] if b["total_var"] else np.nan
+        return {**key, "direction": name, "kind": kind, "dim": dim, "coord": coord,
+                "split": split, "n_passages": x["n_passages"], "var_s": x["var_s"],
+                "var_share": var_share, "ev_tokenmix": x["ev"],
+                **share_columns(x["token_share"], tok), **{c: np.nan for c in AUDIT_NAN},
+                **{k: v for k, v in b.items() if k != "total_var"},
+                "e1_rank_agrees": e1_agrees if kind == "coord" else -1}
+
+    audit: List[Dict] = []
+    carriers: List[Dict] = []
+    type_share = np.zeros((N_PC, len(tok.types)))
+    col = {name: i for i, name in enumerate(dirs["names"])}
+    for k, name in enumerate(dirs["names"]):
+        c = contrib[:, k]
+        r = audit_scores(c, tok, train_rows, test_rows)
+        s = r["s"][:, 0]
+        for split in rows:
+            valid = r[split]["valid"]
+            out = row(name, dirs["kinds"][k], 1, dirs["coords"][k], split, r)
+            out["r2_tokenmix"] = r[split]["r2"]
+            out["rho_logn"] = _spearman(s[valid], logn[valid])
+            out["rho_freqmass"] = _spearman(s[valid], freq_mass[valid])
+            if valid.any():
+                diff = np.abs(s - s_pool[:, k])[valid]
+                out["identity_max_abs_diff"] = float(diff.max())
+                out["identity_max_rel_diff"] = float(
+                    (diff / np.maximum(norms[valid], 1e-300)).max())
+                out["cache_score_max_abs_diff"] = float(np.abs(s - s_cache[:, k])[valid].max())
+            audit.append(out)
+        if k < N_PC:
+            share = np.bincount(tok.type_idx, weights=np.nan_to_num(r["train"]["token_share"]),
+                                minlength=len(tok.types))
+            type_share[k] = share
+            tr_tok = train_rows[tok.pid]
+            count = r["type_count"]
+            mean_abs = (np.bincount(tok.type_idx[tr_tok], weights=np.abs(c[tr_tok]),
+                                    minlength=len(tok.types)) / np.maximum(count, 1))
+            for rank, t in enumerate(rank_types(share, count)[:TOP_CARRIERS], start=1):
+                piece, decoded = describe(int(tok.types[t]))
+                carriers.append({**key, "direction": name, "rank": rank,
+                                 "token_id": int(tok.types[t]), "token": visible(piece),
+                                 "decoded": visible(decoded),
+                                 "group": GROUPS[int(type_info["group"][t])],
+                                 "train_count": int(count[t]),
+                                 "train_passages": int(type_info["train_passages"][t]),
+                                 "mean_c": float(r["type_mean"][t, 0]),
+                                 "mean_abs_c": float(mean_abs[t]), "share": float(share[t])})
+    for name, kind, members in SUBSPACES:
+        c = contrib[:, [col[m] for m in members]]
+        r = audit_scores(c, tok, train_rows, test_rows)
+        q = audit_scores(c, tok, train_rows, test_rows, equal_weight=True)
+        for split in rows:
+            out = row(name, kind, len(members), -1, split, r)
+            out["ev_tokenmix_eqw"] = q[split]["ev"]
+            out.update(share_columns(q[split]["token_share"], tok, suffix="_eqw"))
+            audit.append(out)
+    return audit, carriers, type_share
+
+
+def audit_model(model_id: str, enc: Encoder, ctx: Context, bases_root: Path, pool=None,
+                control_metrics: str = "auroc", e1_coords: Optional[pd.DataFrame] = None
+                ) -> Dict[str, pd.DataFrame]:
+    """All E2 rows of one model: {csv name: frame}."""
+    t0 = time.time()
+    name = DISP.get(model_id, model_id)
+    layers = asw.discover(Path(bases_root), model_id)
+    if not layers:
+        raise SystemExit(f"ERROR: no cached vectors for {name} under "
+                         f"{cache_dir(bases_root, model_id, MEAN_SUBDIR)}")
+    n_passages = len(ctx.sp)
+    tr, te = ctx.tr, ctx.te
+    seed = (RANDOM_SEED, MODEL_INDEX.get(model_id, len(MODEL_INDEX)))
+    cached = {x: load_cached(ctx, bases_root, model_id, MEAN_SUBDIR, x) for x in layers}
+    dirs = {x: fit_directions(cached[x][tr], seed=(*seed, x)) for x in layers}
+    frequent = frequent_ids(enc.token_probs)
+    lookups = arm_weight_lookups(len(enc.keep_lookup), enc.token_probs, enc.special_ids,
+                                 enc.keep_lookup)
+    print(f"  {name}: {len(layers)} layers, directions fit ({time.time() - t0:.0f}s)", flush=True)
+
+    # ---- pass 1: pooling arms and token projections
+    p1 = pass_one(enc, layers, dirs, lookups, frequent, n_passages)
+    tok = build_token_table(p1["pid"], p1["tid"], p1["first"], n_passages, enc.special_ids,
+                            frequent)
+    pooled = p1["pooled"]
+    print(f"  {name}: pass 1 done, {len(tok.pid)} kept tokens, {len(tok.types)} token types; "
+          f"first batch against the CLI pooling function: mean {p1['selfcheck']['mean']:.2e}, "
+          f"sif {p1['selfcheck']['sif']:.2e} ({time.time() - t0:.0f}s)", flush=True)
+    if not np.array_equal(tok.n, np.rint(p1["total"][ARMS.index("mean")]).astype(np.int64)):
+        raise SystemExit(f"ERROR: {name}: token table and mean-arm weights disagree on n_p")
+    # the token table's train frequencies must be the SIF probabilities (same tokenization)
+    tr_tok = tr[tok.pid] & (tok.group != GROUPS.index("special"))
+    counts = np.bincount(tok.type_idx[tr_tok], minlength=len(tok.types))
+    probs = np.array([enc.token_probs.get(int(t), 0.0) for t in tok.types])
+    prob_diff = float(np.abs(counts / max(counts.sum(), 1) - probs).max())
+    print(f"  {name}: train token frequencies against token_probabilities: max |diff| "
+          f"{prob_diff:.2e}", flush=True)
+
+    # vectors against the caches, before any fallback
+    vec = {}
+    for arm, subdir in (("mean", MEAN_SUBDIR), ("sif", SIF_SUBDIR)):
+        for li, x in enumerate(layers):
+            ref = cached[x] if arm == "mean" else load_cached(ctx, bases_root, model_id, subdir, x)
+            vec[(arm, li)] = ((np.nan, np.nan) if ref is None
+                              else _vec_diff(pooled[ARMS.index(arm), li], ref))
+    empty = p1["total"] == 0                                     # [arm, N]
+    for a, arm in enumerate(ARMS):
+        if arm not in NO_FALLBACK and empty[a].any():
+            pooled[a][:, empty[a]] = pooled[ARMS.index("mean")][:, empty[a]]
+
+    # ---- readout 2 and 4 (CPU), and the carrier rankings pass 2 needs
+    masses = np.stack([np.bincount(tok.pid[tok.group == i], minlength=n_passages)
+                       for i in range(len(GROUPS))], axis=1) / np.maximum(tok.n, 1)[:, None]
+    tr_all = tr[tok.pid]
+    pairs = np.unique(tok.type_idx[tr_all] * n_passages + tok.pid[tr_all])
+    type_group = np.zeros(len(tok.types), dtype=np.int64)
+    type_group[tok.type_idx] = tok.group
+    type_info = {"group": type_group,
+                 "train_passages": np.bincount(pairs // n_passages, minlength=len(tok.types))}
+    train_count = np.bincount(tok.type_idx[tr_all], minlength=len(tok.types))
+    key0 = {"model": model_id}
+    audit_rows: List[Dict] = []
+    carrier_rows: List[Dict] = []
+    arms_by_layer: List[List[Dict]] = []
+    for li, x in enumerate(layers):
+        contrib = np.concatenate(p1["contrib"][li])
+        p1["contrib"][li] = None
+        agrees = -1
+        if e1_coords is not None:
+            ref = e1_coords[(e1_coords["model"] == model_id) & (e1_coords["layer"] == x)
+                            & (e1_coords["ranking"] == "variance")].sort_values("rank")
+            if len(ref) >= N_COORD:
+                agrees = int(list(ref["coord"].astype(int))[:N_COORD]
+                             == dirs[x]["coords"][N_PC:N_PC + N_COORD])
+        a, c, share = layer_audit({**key0, "layer": int(x)}, contrib, tok, dirs[x], tr, te,
+                                  masses, p1["s_pool"][li], cached[x], enc.describe,
+                                  type_info, agrees)
+        audit_rows += a
+        carrier_rows += c
+        arms_by_layer.append(ablation_arms(share, train_count, seed=(*seed, x)))
+        del contrib
+    print(f"  {name}: token audit done ({time.time() - t0:.0f}s)", flush=True)
+
+    lab = {"train": asw._CTX["lab_tr"], "test": asw._CTX["lab_te"]}
+    length_rows = []
+    for split, r in (("train", tr), ("test", te)):
+        n = tok.n[r]
+        length_rows.append({**key0, "split": split, "n_passages": int(r.sum()),
+                            "n_zero_token": int((n == 0).sum()),
+                            "n_truncated": int((p1["n_att"][r] >= MAX_LENGTH).sum()),
+                            "mean_n": float(n.mean()), "median_n": float(np.median(n)),
+                            **length_stats(n, lab[split])})
+
+    # ---- pass 2: token ablation
+    n_abl = len(arms_by_layer[0])
+    drop = np.zeros((len(layers), n_abl, len(enc.keep_lookup)), dtype=bool)
+    for li, arms in enumerate(arms_by_layer):
+        for j, arm in enumerate(arms):
+            drop[li, j, tok.types[arm["types"]]] = True
+    p2 = pass_two(enc, layers, drop, pooled[ARMS.index("mean")])
+    del drop
+    print(f"  {name}: pass 2 done, mean pooling differs from pass 1 by at most "
+          f"{p2['pass_diff']:.2e} ({time.time() - t0:.0f}s)", flush=True)
+
+    # ---- metrics
+    def tasks():
+        for li in range(len(layers)):
+            for a in range(len(ARMS)):
+                yield ("arm", li, a), "full", pooled[a, li][tr], pooled[a, li][te]
+            for j, arm in enumerate(arms_by_layer[li]):
+                mode = "full" if arm["kind"] == "carrier" or control_metrics == "full" else "auroc"
+                yield (("abl", li, j), mode, p2["pooled"][li, j][tr], p2["pooled"][li, j][te])
+
+    it = pool.imap_unordered(_metric_task, tasks(), chunksize=1) if pool else map(
+        _metric_task, tasks())
+    metrics: Dict[Tuple, Dict[str, float]] = {}
+    for k, m in it:
+        metrics[k] = m
+        if k[0] == "arm" and k[2] == 0:
+            print(f"    {name} L{layers[k[1]]}: mean arm AUROC {m['aucroc']:.4f} "
+                  f"({time.time() - t0:.0f}s)", flush=True)
+
+    block = list(asw.KEEP) + ["pc1_share_train", "pc10_share_train", "eff_rank_train"]
+    total = p1["total"]
+    arm_rows, abl_rows = [], []
+    for li, x in enumerate(layers):
+        for a, arm in enumerate(ARMS):
+            m = metrics[("arm", li, a)]
+            has = total[a] > 0
+            d_abs, d_rel = vec.get((arm, li), (np.nan, np.nan))
+            arm_rows.append({
+                **key0, "layer": int(x), "arm": arm, **{c: m.get(c, np.nan) for c in block},
+                "n_no_token": int(empty[a].sum()),
+                "n_fallback": 0 if arm in NO_FALLBACK else int(empty[a].sum()),
+                "special_mass": float((p1["special_w"][a][has] / total[a][has]).mean()),
+                "frequent_mass": float((p1["frequent_w"][a][has] / total[a][has]).mean()),
+                "vec_max_abs_diff": d_abs, "vec_max_rel_diff": d_rel,
+                "cli_pool_max_abs_diff": p1["selfcheck"].get(arm, np.nan),
+                "n_train": int(tr.sum()), "n_test": int(te.sum()), "limit": ctx.limit})
+        has = tok.n > 0
+        for j, arm in enumerate(arms_by_layer[li]):
+            m = metrics[("abl", li, j)]
+            kept = p2["kept_n"][li, j]
+            dropped = 1.0 - kept[has] / tok.n[has]
+            abl_rows.append({
+                **key0, "layer": int(x), "ranking": arm["ranking"], "kind": arm["kind"],
+                "draw": arm["draw"], "m": arm["m"], "n_types": int(len(arm["types"])),
+                "types": ";".join(str(int(t)) for t in tok.types[arm["types"]]),
+                **{c: m.get(c, np.nan) for c in block},
+                "n_fallback": int(((kept == 0) & has).sum()),
+                "dropped_mass_train": float(dropped[tr[has]].mean()),
+                "dropped_mass_test": float(dropped[te[has]].mean()),
+                "train_count_dropped": int(train_count[arm["types"]].sum())})
+    print(f"  {name}: done in {time.time() - t0:.0f}s", flush=True)
+    return {ARMS_NAME: pd.DataFrame(arm_rows), AUDIT_NAME: pd.DataFrame(audit_rows),
+            CARRIER_NAME: pd.DataFrame(carrier_rows), ABL_NAME: pd.DataFrame(abl_rows),
+            LENGTH_NAME: pd.DataFrame(length_rows)}
+
+
+def cmd_audit(args) -> int:
+    model_ids = asw.pick_models(args.models, MODELS)
+    if not model_ids:
+        raise SystemExit(f"--models {args.models!r} matches none of {ORDER}")
+    for mid in model_ids:
+        if not asw.discover(args.bases_root, mid):
+            raise SystemExit(f"ERROR: no cached vectors for {DISP[mid]} under "
+                             f"{cache_dir(args.bases_root, mid, MEAN_SUBDIR)}")
+    t0 = time.time()
+    ctx = build_context(args.split_csv, args.out_dir, args.limit)
+    print(f"passages: {int(ctx.tr.sum())} train, {int(ctx.te.sum())} test"
+          + (f" (--limit {args.limit}: smoke run, gates not enforced)" if args.limit else "")
+          + f"; output {args.out_dir}", flush=True)
+    pool = None
+    if args.workers > 1:
+        # forked here, before torch is imported and before any GPU context exists
+        from multiprocessing import Pool
+
+        pool = Pool(args.workers, initializer=asw._init, initargs=(str(ctx.split_path),))
+    asw._init(str(ctx.split_path))
+    e1_coords = None
+    if not args.limit and Path(args.e1_coords_csv).exists():
+        e1_coords = pd.read_csv(args.e1_coords_csv)
+    try:
+        for mid in model_ids:
+            print(f"=== {DISP[mid]} ===", flush=True)
+            enc = open_encoder(mid, ctx, args.bases_root)
+            try:
+                frames = audit_model(mid, enc, ctx, args.bases_root, pool,
+                                     args.control_metrics, e1_coords)
+            finally:
+                if enc.close is not None:
+                    enc.close()
+                del enc
+            for name, frame in frames.items():  # after every model: a killed job keeps them
+                merge_write(args.out_dir / name, frame)
+            print(f"wrote the rows of {DISP[mid]} to {args.out_dir} ({time.time() - t0:.0f}s)",
+                  flush=True)
+    finally:
+        if pool is not None:
+            pool.close()
+            pool.join()
+    if not args.check and not args.limit:
+        return 0
+    return run_gates(args, complete=True, write=True)
+
+
+# --------------------------------------------------------------------------- #
+# Gates
+# --------------------------------------------------------------------------- #
+
+def is_limit_run(arms: pd.DataFrame) -> bool:
+    return bool("limit" in arms.columns and (arms["limit"].fillna(0) > 0).any())
+
+
+def gate_table(arms: pd.DataFrame, audit: pd.DataFrame, res: Optional[pd.DataFrame],
+               complete: bool = True, tol_auroc: float = GATE_TOL_AUROC,
+               expected: Optional[Sequence[str]] = ALL_MODEL_IDS,
+               auroc_gates: bool = True) -> pd.DataFrame:
+    """One row per (gate, model): cells compared, the largest difference and the cells
+    over tolerance by name. See the module docstring for the gates.
+
+    Every number is a cell of the two CSVs or of the published results. A NaN on either
+    side of a comparison counts as over tolerance, a missing published cell fails its
+    gate, and so does an expected model with no rows (gate 0). ``complete`` also requires
+    every published layer of a computed model. Gate 2b is reported and never fails
+    (``gated`` = 0). ``auroc_gates=False`` leaves out 1a and 2a (a --limit run scores a
+    subset of the passages, so the published cells do not apply).
+    """
+    ours = arms.set_index(["model", "layer", "arm"])
+    pub: Dict[str, Dict] = {"mean": {}, "sif": {}}
+    if res is not None:
+        for arm, pooling, method in (("mean", "mean", "baseline"), ("sif", "sif", "sif_only")):
+            r = res[(res["repr"] == "hidden") & (res["pooling"] == pooling)
+                    & (res["method"] == method)]
+            pub[arm] = {(m, int(x)): float(v) for m, x, v in zip(r["model"], r["layer"],
+                                                                 r["aucroc"])}
+    present = set(arms["model"])
+    wanted = set(expected) if expected is not None else set()
+    known = list(ALL_MODEL_IDS) + sorted((present | wanted) - set(ALL_MODEL_IDS))
+    nan = float("nan")
+    rows = []
+
+    def add(gate: str, mid: str, gated: bool, tol: float, cells, absent: int = 0,
+            note: str = "") -> None:
+        # cells: (label, difference or None when the reference is missing)
+        diffs = [(lab, float(d)) for lab, d in cells if d is not None]
+        n_missing = sum(1 for _, d in cells if d is None)
+        # np.max keeps a NaN visible, and "not d <= tol" counts a NaN as over tolerance
+        mx = float(np.max([d for _, d in diffs])) if diffs else nan
+        over = [(lab, d) for lab, d in diffs if not d <= tol]
+        ok = (bool(diffs) or not gated) and n_missing == 0 and not absent and not over
+        shown = "; ".join(f"{lab} {d:.2e}" for lab, d in over[:12])
+        if len(over) > 12:
+            shown += f"; and {len(over) - 12} more"
+        rows.append({"gate": gate, "model": mid, "gated": int(gated), "n_cells": len(diffs),
+                     "n_missing_reference": n_missing, "n_published_layers_absent": absent,
+                     "max_diff": mx, "tolerance": tol, "n_over_tolerance": len(over),
+                     "cells_over_tolerance": shown, "note": note,
+                     "ok": bool(ok) if gated else True})
+
+    for mid in [m for m in known if m in present or m in wanted]:
+        if mid not in present:
+            rows.append({"gate": "0 expected model has rows in the pooling CSV", "model": mid,
+                         "gated": 1, "n_cells": 0, "n_missing_reference": 0,
+                         "n_published_layers_absent": 0, "max_diff": nan, "tolerance": nan,
+                         "n_over_tolerance": 0, "cells_over_tolerance": "", "note": "",
+                         "ok": False})
+            continue
+        mine = sorted(int(x) for x in arms.loc[arms["model"] == mid, "layer"].unique())
+
+        def cell(x: int, arm: str, column: str) -> float:
+            return float(ours.loc[(mid, x, arm), column]) if (mid, x, arm) in ours.index else nan
+
+        for tag, arm, cache, what in (("1", "mean", MEAN_SUBDIR, "baseline"),
+                                      ("2", "sif", SIF_SUBDIR, "sif_only")):
+            if auroc_gates:
+                published = sorted(x for m, x in pub[arm] if m == mid)
+                absent = len([x for x in published if x not in mine]) if complete else 0
+                add(f"{tag}a {arm} arm AUROC vs published {what}", mid, True, tol_auroc,
+                    [(f"L{x}", None if (mid, x) not in pub[arm]
+                      else abs(cell(x, arm, "aucroc") - pub[arm][(mid, x)])) for x in mine],
+                    absent=absent)
+            rel = [(f"L{x}", cell(x, arm, "vec_max_rel_diff")) for x in mine]
+            mx_abs = [cell(x, arm, "vec_max_abs_diff") for x in mine]
+            if arm == "mean":
+                add(f"1b mean arm vectors vs cached {cache} (relative L2)", mid, True,
+                    GATE_TOL_VEC_REL, rel, note=f"max abs diff {np.max(mx_abs):.3e}")
+            else:
+                have = [(lab, d) for lab, d in rel if np.isfinite(d)]
+                finite = [v for v in mx_abs if np.isfinite(v)]
+                add(f"2b sif arm vectors vs cached {cache} (relative L2; reported, not gated)",
+                    mid, False, GATE_TOL_VEC_REL, have,
+                    note=(f"max abs diff {np.max(finite):.3e}" if finite
+                          else f"no {cache} cache"))
+        aud = audit[audit["model"] == mid]
+        single = aud[aud["dim"] == 1]
+        add("3 score identity (relative to the passage vector norm)", mid, True,
+            GATE_TOL_IDENTITY,
+            [(f"L{int(x)} {d} {s}", v) for x, d, s, v in zip(
+                single["layer"], single["direction"], single["split"],
+                single["identity_max_rel_diff"])],
+            note=(f"max abs diff {single['identity_max_abs_diff'].max():.3e}; to the cached "
+                  f"vectors' score {single['cache_score_max_abs_diff'].max():.3e}"
+                  if len(single) else ""))
+        joint = aud[aud["dim"] > 1]
+        add("4 group shares sum to 1", mid, True, GATE_TOL_SHARE_SUM,
+            [(f"L{int(x)} {d} {s}", abs(v)) for x, d, s, v in zip(
+                aud["layer"], aud["direction"], aud["split"], aud["share_sum_err"])]
+            + [(f"L{int(x)} {d} {s} equal-weight", abs(v)) for x, d, s, v in zip(
+                joint["layer"], joint["direction"], joint["split"],
+                joint["share_sum_err_eqw"])])
+    return pd.DataFrame(rows)
+
+
+def write_gates(gates: pd.DataFrame, path: Path) -> None:
+    gates.to_csv(path, index=False, float_format="%.6g")
+
+
+def gate_line(g) -> str:
+    """One gate row in words, shared by the log and the facts file."""
+    name = DISP.get(g.model, g.model)
+    if g.gate.startswith("0"):
+        return f"gate {g.gate}, {name}: no rows: FAIL"
+    if not g.gated:
+        text = (f"gate {g.gate}, {name}: {g.n_cells} cells"
+                + (f", max diff {g.max_diff:.2e} (reference {g.tolerance:.0e}; "
+                   f"{g.n_over_tolerance} over)" if g.n_cells else ""))
+    else:
+        text = (f"gate {g.gate}, {name}: {g.n_cells} cells, max diff {g.max_diff:.2e} "
+                f"(tolerance {g.tolerance:.0e}): {'PASS' if g.ok else 'FAIL'}")
+    if isinstance(g.note, str) and g.note:
+        text += f"; {g.note}"
+    if g.n_missing_reference or g.n_published_layers_absent:
+        text += (f"; missing reference cells {g.n_missing_reference}, published layers absent "
+                 f"{g.n_published_layers_absent}")
+    if g.n_over_tolerance:
+        text += f"; cells over tolerance: {g.cells_over_tolerance}"
+    return text
+
+
+def gates_passed(gates: pd.DataFrame) -> bool:
+    return bool(len(gates) and gates.loc[gates["gated"] == 1, "ok"].all())
+
+
+def gates_for(arms: pd.DataFrame, audit: pd.DataFrame, args, complete: bool = True
+              ) -> pd.DataFrame:
+    res = pd.read_csv(args.results_csv) if Path(args.results_csv).exists() else None
+    limit = is_limit_run(arms)
+    return gate_table(arms, audit, res, complete=complete and not limit,
+                      tol_auroc=args.tol_auroc, expected=e1.expected_models(args),
+                      auroc_gates=not limit)
+
+
+def run_gates(args, complete: bool, write: bool) -> int:
+    """Gate the CSVs as written (10 significant digits), so that audit --check, check and
+    render report the same numbers."""
+    arms = read_csv(args.out_dir / ARMS_NAME)
+    gates = gates_for(arms, read_csv(args.out_dir / AUDIT_NAME), args, complete=complete)
+    if write:
+        write_gates(gates, args.out_dir / GATE_NAME)
+    for g in gates.itertuples():
+        print(gate_line(g))
+    if is_limit_run(arms):
+        print("limit run: the AUROC gates are skipped and the others are not enforced")
+        return 0
+    if not gates_passed(gates):
+        print("GATES FAILED")
+        return GATE_EXIT
+    print("gates passed")
+    return 0
+
+
+def cmd_check(args) -> int:
+    return run_gates(args, complete=True, write=not args.no_write)
+
+
+# --------------------------------------------------------------------------- #
+# main
+# --------------------------------------------------------------------------- #
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    def refs(p) -> None:
+        p.add_argument("--out_dir", type=Path, default=None,
+                       help=f"default {OUT_DIR}; {OUT_DIR}/smoke_limit<N> under --limit N")
+        p.add_argument("--results_csv", type=Path, default=RES_CSV)
+        p.add_argument("--tol_auroc", type=float, default=GATE_TOL_AUROC,
+                       help="AUROC tolerance of gates 1a and 2a (default 1e-6)")
+        p.add_argument("--models", default="",
+                       help="comma list of ids or display names (default all six); the "
+                            "gates fail if one of them has no rows")
+        p.add_argument("--allow_missing", action="store_true",
+                       help="gates: do not require every model to have rows")
+
+    p = sub.add_parser("audit", help="forward passes, readouts and the result CSVs (GPU)")
+    refs(p)
+    p.add_argument("--split_csv", type=Path, default=SPLIT_CSV)
+    p.add_argument("--bases_root", type=Path, default=BASES_ROOT)
+    p.add_argument("--e1_coords_csv", type=Path, default=E1_COORD_CSV)
+    p.add_argument("--workers", type=int, default=int(os.environ.get("SLURM_CPUS_PER_TASK", 1)),
+                   help="metric worker processes (forked before torch is imported)")
+    p.add_argument("--limit", type=int, default=0,
+                   help="smoke run on the first N train and N test passages; gates skipped")
+    p.add_argument("--control_metrics", choices=("auroc", "full"), default="auroc",
+                   help="matched random controls: Task A AUROC alone (default) or the full "
+                        "metric block and geometry (about 4 times the CPU time)")
+    p.add_argument("--check", action="store_true",
+                   help="run the gates after writing; exit 3 if one fails")
+    p = sub.add_parser("check", help="gates on existing CSVs")
+    refs(p)
+    p.add_argument("--no_write", action="store_true", help=f"do not rewrite {GATE_NAME}")
+    args = ap.parse_args(argv)
+    if args.out_dir is None:
+        limit = getattr(args, "limit", 0)
+        args.out_dir = OUT_DIR / f"smoke_limit{limit}" if limit else OUT_DIR
+    if args.cmd == "audit":
+        return cmd_audit(args)
+    return cmd_check(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
