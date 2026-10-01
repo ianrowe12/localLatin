@@ -15,16 +15,21 @@ Short version:
   the PC1 score of test passages at the 10 collapsed layers (random directions
   0.18). At layer 6 the comma alone holds 0.962 of PC1's score variance over
   training passages. Mean pooling without three token types (comma, period,
-  `</s>`) restores all 10 layers; frequency-matched random types restore none.
-- **PhilTa: same leading token types, context-dependent values.** The token
-  ablation restores all 9 collapsed layers, but 8 of them need the top 10 to 30
-  types. The token-mix rule fails at 0 of 9 (median EV 0.42), and neither
-  single-factor pooling arm rescues any layer: the expectation "SIF weights
-  with special tokens kept rescue" is not met.
+  `</s>`; 11 percent of the test tokens) restores all 10 layers.
+  <!-- E2-RERUN: the control sentence (random types restore none) is rewritten in the second pass, with the mass-matched control -->
+  The count-matched random types of the first run restore none.
+- **PhilTa: only the ablation rule passes.** The token ablation restores all 9
+  collapsed layers, but 8 of them need the top 10 to 30 types, and at m = 30
+  the dropped types are a median 33 percent of the test tokens. The token-mix
+  rule fails at all 9 layers (median EV 0.42), and neither single-factor
+  pooling arm rescues any layer: the expectation "SIF weights with special
+  tokens kept rescue" is not met. That its leading token types (the same
+  three as LaTa's) have context-dependent values is an interpretation made
+  after the result was seen.
 - **mT5-base: the account fails.** Token-mix EV 0.066, group shares close to
-  the groups' token mass, token ablation restores 0 of 7, top-PC share 1.000
-  under every pooling arm. The expectation that the tokens SIF keeps carry the
-  direction is not met.
+  the groups' token mass, dropping up to 100 token types ranked on training
+  passages restores 0 of 7, top-PC share 1.000 under every pooling arm. The
+  expectation that the tokens SIF keeps carry the direction is not met.
 - **Length account: fails at 0 of 26.** LaTa's negative raw gap is not a
   length effect and stays unexplained.
 - **Zeroing follow-up (post hoc, belongs with E1).** After the ten top
@@ -98,8 +103,13 @@ r and the Qwen3-0.6B r test left E2 because E1 reports them.
   get joint readouts that do not depend on the basis inside the subspace.
 - **Token ablation.** Token types ranked on training passages by PC1 share
   (`pc1`) and by the mean of the PC1, PC2 and PC3 shares (`pc123`); mean
-  pooling without the top m types, m in {1, 3, 10, 30, 100}. Control: five
-  draws of random token types matched in training count.
+  pooling without the top m types, m in {1, 3, 10, 30, 100}. Control of the
+  first run: five draws of random token types matched in training count (see
+  "Review round" for why a second control was added).
+  <!-- E2-RERUN: describe the mass-matched control here in the second pass -->
+- **Score against frequent-token share.** Spearman of the PC1 score with the
+  passage's share of the 100 most frequent tokens (the handoff's second
+  readout beside log length; no rule attached).
 - **Length.** Token count n under each model's tokenizer; Spearman of the PC1
   score with log n; mean |delta log n| over the same- and different-directory
   pairs that Task A scores.
@@ -276,6 +286,12 @@ AUROC by arm at the collapsed layers:
 
 - LaTa: all three expectations met (frequent group largest at 10 of 10;
   `sif_keepspecial` rescues 10 of 10; `mean_nospecial` rescues 0 of 10).
+  The shares in the table are of the gain of the job's own `sif` arm. With
+  the published `sif_only` cell as the reference, `sif_keepspecial` recovers a
+  median 0.987 (0.982 to 1.005) and `mean_nofreq100` 1.100 (1.000 to 1.160)
+  of the gain in LaTa; PhilTa's median shares move by 0.005 or less (CSV and
+  `phase_resubmit_results.csv`). The paper gives both figures for LaTa (96 and
+  99 percent).
 - PhilTa: "`sif_keepspecial` rescues" is **NOT MET (0 of 9)**. Neither
   single-factor arm rescues; only full SIF does. "`mean_nospecial` does not
   rescue" is met (0 of 9; it lowers AUROC by a median 0.041).
@@ -306,19 +322,24 @@ AUROC by arm at the collapsed layers:
   PC2 and PC3 scores (EV below 0), although one token type holds most of
   their variance share (carriers below).
 - PhilTa: PC1 EV is above the random-direction mean at 8 of 9 layers but below
-  0.5 at all 9. The contribution of `</s>` changes sign across passages (layer
-  10: mean c -1.106e5 against mean |c| 1.561e5), so one mean per token type
-  cannot predict it. The right reading is that the carrier's value depends on
-  context, not that tokens do not carry PC1: the group shares and the ablation
-  say they do.
+  0.5 at all 9, so by the paper's own rule the token mix does not carry PC1
+  in PhilTa. The case for token carriers there rests on R3 alone.
+- **Interpretation, made after the result was seen.** The contribution of
+  `</s>` changes sign across passages (layer 10: mean c -1.106e5 against mean
+  |c| 1.561e5), so one mean per token type cannot predict it. We read this as
+  the carrier's value depending on context. The reading rests on that one
+  statistic at one layer; no test of it was planned or run, and the paper
+  labels it as post hoc.
 - mT5-base: EV 0.066 is below the random-direction mean at 6 of 7 layers (at
   layer 7 the random mean is 0.018). PC3 has EV 0.40 to 0.66, but PC3 holds
   0.000 of the training variance there.
 
 ### Token groups and carriers
 
-Share of the PC1 score variance of test passages by group, with the groups'
-token mass for scale:
+A share is a covariance share, Cov(s_group, s) / Var(s): the three group
+shares sum to 1, but one share can be negative or exceed 1 (the same holds
+for a token type's share). Share of the PC1 score variance of test passages
+by group, with the groups' token mass for scale:
 
 | Model | special | frequent | other | Mass: special / frequent / other |
 |---|---|---|---|---|
@@ -355,7 +376,9 @@ passages; facts section 9):
 
 ### R3, token ablation: restores 19 of 26 (LaTa 10 of 10, PhilTa 9 of 9, mT5-base 0 of 7)
 
-The matched random control reaches 0.90 at 0 of 26.
+<!-- E2-RERUN: the control sentence below and the Control column are from the first run's count-matched control; rewrite both in the second pass with the mass-matched control -->
+The count-matched random control of the first run reaches 0.90 at 0 of 26. It
+is not matched in token mass (see "Review round").
 
 | Model | Ranking | Restored | Smallest m | AUROC m=1 | m=3 | m=10 | m=30 | m=100 | Control |
 |---|---|---|---|---|---|---|---|---|---|
@@ -376,8 +399,19 @@ The matched random control reaches 0.90 at 0 of 26.
   restored, CSV). Layer 3 is restored at m = 3, layers 4 to 10 at m = 10,
   layer 11 at m = 30. Dropping `</s>` alone lowers AUROC to 0.50, as
   `mean_nospecial` does.
-- mT5-base: best AUROC over rankings and m is 0.724 to 0.748, with 0.357 of
-  the test tokens dropped at m = 100. Top-PC share stays at 1.000 (CSV).
+- mT5-base: at m = 100 under `pc123`, a fixed setting that needs no pick on
+  test, AUROC is 0.724 to 0.748, with a median 0.357 of the test tokens
+  dropped; no other tested setting is higher at any layer. Top-PC share stays
+  at 1.000 (CSV). What was tested is the top m <= 100 token types under two
+  rankings fit on training passages, not every token set.
+- **Token mass the ablation removes** (`dropped_mass_test` of
+  `e2_token_ablation.csv`, share of the test passages' kept tokens, `pc123`
+  ranking): LaTa m = 3, 0.113 at all 10 layers. PhilTa m = 30, where all 9
+  layers are restored, median 0.327 (0.318 to 0.346); at the smallest
+  restoring m of each layer, 0.080 (layer 3, m = 3), 0.197 to 0.206 (layers 4
+  to 10, m = 10) and 0.340 (layer 11, m = 30). mT5-base m = 100, median 0.357
+  (0.347 to 0.375). The PhilTa repair therefore removes about a third of the
+  tokens, which the paper now states wherever it makes the PhilTa claim.
 
 ### R4, length: holds at 0 of 26
 
@@ -390,6 +424,13 @@ The matched random control reaches 0.90 at 0 of 26.
   alone ranks pairs at AUROC 0.75 on test.
 - LaTa's negative raw gap is therefore not a length effect. It stays
   unexplained.
+- **Frequent-token share** (the handoff's second readout; no rule): the
+  Spearman correlation of the PC1 score with the passage's share of the 100
+  most frequent tokens is weak at every collapsed layer. Signed medians
+  (facts section 5): LaTa -0.327, PhilTa -0.332, mT5-base -0.037. As |rho|
+  (CSV): medians 0.336, 0.332 and 0.037, at most 0.358 over the 26 layers.
+  The paper reports it as |rho| <= 0.36. In LaTa the score follows the comma,
+  not the bulk of frequent tokens.
 
 ### Healthy contrast
 
@@ -419,7 +460,7 @@ At the 26 collapsed layers, k = 10, ranking by variance, median (min to max):
 | Variance left along the original PC1 axis | 0.007 (0.000 to 0.060) |
 | Remainder cosine of PC1 (new top direction against what is left of PC1 outside the ten coordinates) | 0.999 (0.972 to 1.000); above 0.9 at 26 of 26 |
 | Share of the remaining variance along that remainder | 0.717 (0.322 to 0.995) |
-| Score correlation, old against new top component, test passages | \|Pearson\| 0.991 (above 0.9 at 26 of 26); \|Spearman\| 0.867 (0.311 to 0.986; mT5-base 0.449) |
+| Score correlation, old against new top component, test passages | \|Pearson\| 0.991 (above 0.9 at 26 of 26); \|Spearman\| 0.867 (0.311 to 0.986): LaTa 0.861, PhilTa 0.978, mT5-base 0.449; below 0.5 at 4 of 26, all in mT5-base (CSV) |
 | Angle between old and new PC1 | 73.3 degrees (below 30 at 0 of 26) |
 
 Intervention cells (added post hoc, no prediction), layers restored to AUROC
@@ -432,11 +473,78 @@ Intervention cells (added post hoc, no prediction), layers restored to AUROC
 
 Removing original PCs 2 and 3 while keeping PC1 restores 0 of 26 (median
 AUROC 0.518). So the surviving PC2 and PC3 are not why zeroing fails: the new
-top direction is the old PC1 with its ten largest entries removed, and
-passages score on it almost as on the old one. The passage variable behind PC1
-is also written on the other coordinates. With E2 this reconciles E1: the
-nuisance in LaTa is carried by a few token types but is not localized on a few
-coordinates.
+top direction is the old PC1 with its ten largest entries removed. Passage
+scores on the old and the new direction agree linearly everywhere (|Pearson|
+0.99) and in rank in LaTa and PhilTa. In mT5-base the rank agreement is weak
+(median |Spearman| 0.449): a Pearson of 0.99 beside a Spearman of 0.45 points
+to a few extreme passages driving the agreement there, which was not tested
+further. PC1's direction is also written on the other coordinates. With E2
+this reconciles E1 for LaTa: its nuisance is carried by a few token types but
+is not localized on a few coordinates.
+
+## Review round (2026-10-01, after the first full run)
+
+An independent review of the branch checked the numbers of the paper edits
+and of this document against the facts files and CSVs (it reported no
+mismatch) and asked for changes of two kinds.
+
+**To the experiment (commit `8413ebc`; the audit has to be rerun, and the
+committed CSVs, facts file and table are not regenerated yet).**
+<!-- E2-RERUN: the numbers of the mass-matched control and the regenerated table cells go here and into R3 in the second pass -->
+
+- The count-nearest control of the token ablation is not matched in token
+  mass. The carriers are the most frequent token types, and the control draws
+  types of similar training count from outside the top 100 of both rankings,
+  so it drops far fewer tokens than the carrier arm. In the first run, at
+  m = 100 the control drops a median 0.137 of the test tokens against 0.416
+  for the carriers under `pc123`, and 0.105 against 0.299 under `pc1` (facts
+  section 6); the commit message puts it at about a tenth of the carriers'
+  token mass.
+- A second, mass-matched control was therefore added after the first full
+  run: per ranking and m, five seeded draws of token types sampled without
+  replacement, with probability proportional to training count, from the
+  training types outside the dropped carriers, until they hold at least as
+  many training tokens as the carriers.
+- The table's "Drop" column moves from a pick on test (the highest test AUROC
+  over m and the two rankings) to the cell chosen on training AUROC of the
+  carrier arm, and "Rand." becomes the mass-matched control at that cell. The
+  last column becomes |rho|. The caption names the SIF cells of Section 4,
+  the orthogonality of the random directions and the covariance shares.
+- Unchanged: the frozen rules R1 to R4, the carrier arms, the two rankings,
+  the pooling arms and the gates. Both changes are post hoc with respect to
+  the first run and are listed as deviation 8.
+
+**To the wording (the commit that adds this section).**
+
+- PhilTa was overclaimed outside Sec. 5. By the paper's own rule the token
+  mix carries PC1 only if it explains at least half, which fails at 0 of 9
+  PhilTa layers, and the frequency-weights expectation also fails at 0 of 9.
+  The abstract, contribution (3), the appended Sec. 4 sentence, the Scope
+  paragraph and the Discussion now say that the PhilTa claim rests on the
+  ablation, and state the token mass it removes (a median 33 percent of test
+  tokens at m = 30, against 11 percent for LaTa at m = 3).
+- The "values depend on context" reading of PhilTa is labelled in Sec. 5 as
+  an interpretation made after the result was seen, resting on the `</s>`
+  statistic at layer 10.
+- mT5-base: "none" became what was tested (dropping up to 100 token types
+  ranked on training passages restores no layer), and the E2 paragraph quotes
+  the fixed setting m = 100 under `pc123` instead of a best-on-test cell.
+- E1 follow-up: "passages score on it as on the original" was replaced by the
+  Pearson and Spearman figures with the mT5-base median (0.45), the range
+  (0.31 to 0.99) and the count below 0.5 (4 of 26).
+- Stated once in the E2 design text: the 20 random directions are orthogonal
+  to the top ten principal components; a share is a covariance share.
+- Medians are labelled as medians; the 96 percent of the SIF gain is given
+  under both references (99 percent under the Section 4 cells).
+- The score's correlation with the frequent-token share, which the handoff
+  asked for and the first pass left out, is reported as |rho| <= 0.36.
+- Long sentences were split (guidelines, section 4): the E2 paragraph now has
+  25 design sentences and 36 findings sentences with the same content plus
+  the additions above.
+- The sentences on the ablation's random control, in the paper (two
+  `% E2-RERUN` comments) and here, still describe the first run's
+  count-matched control and are rewritten after the rerun. The tracked PDF
+  was built before this round and is rebuilt after the rerun.
 
 ## Deviations
 
@@ -470,12 +578,18 @@ coordinates.
    ("constant per-token values become per-passage variation through mean
    pooling; SIF's partial rescue runs through the tokens carrying the
    outliers") is supported for LaTa: the comma's contribution has one sign and
-   the token mix explains 0.985 of the PC1 score. It is supported in part for
-   PhilTa (same token types, context-dependent values, both SIF changes
-   needed) and not for mT5-base. The paper says so and makes no claim about
-   pretraining.
-7. **Findings length.** The E2 findings take 14 sentences where the brief
-   asked for 9 to 13.
+   the token mix explains 0.985 of the PC1 score. For PhilTa only the token
+   ablation supports it (the token-mix rule and the frequency-weights
+   expectation both fail at 0 of 9), and for mT5-base nothing does. The paper
+   says so and makes no claim about pretraining.
+7. **Findings length.** The E2 findings took 14 sentences where the brief
+   asked for 9 to 13; after the review round split the long ones they take
+   36 short sentences.
+8. **Changes after the first full run (review round).** A mass-matched
+   control of the token ablation was added, and the table's "Drop" cell
+   moved from a pick on test to selection on training AUROC. Neither changes
+   a frozen rule or a carrier arm; both were decided after the first run's
+   numbers were read. See "Review round".
 
 ## Paper edits
 
@@ -499,10 +613,25 @@ sentence.
 No P2x2 marker was touched: the `pending` lines went from 18 to 14, the four
 removed being the E2 markers.
 
-Build: `/projects/bimc/swong2/setup/build_paper.sh` gives 60 pages (58
-before), no undefined reference or citation, no duplicate label. The
-Discussion starts on page 18 (16 before). One overfull box, 5.5pt, in the
-generated `tables/e2_token_audit.tex` (none before).
+Review-round edits to the same places (see "Review round"):
+
+| # | Where | Region | Change |
+|---|---|---|---|
+| 1 | Abstract | outside | The E2 sentence becomes two: carriers in LaTa (three token types, 11 percent of test tokens, restore all 10 layers); for PhilTa only the ablation supports carriers and it needs 30 token types (a median 33 percent of test tokens); in mT5-base dropping up to 100 token types ranked on training passages restores no layer |
+| 2 | Contribution (3) | outside | The token shares of the two ablations added in the parenthesis |
+| 4 | Sec. 4, "SIF at the collapsed layers" | outside | The appended sentence becomes three: supported for LaTa; for PhilTa through the ablation alone, with the token share; not supported for mT5-base |
+| 5 | Sec. 5, E1 paragraph | James | Follow-up split into short sentences; "passages score on it as on the original" replaced by the Pearson and Spearman figures (range 0.31 to 0.99, mT5-base median 0.45, 4 of 26 layers below 0.5) and the reading that a few extreme passages drive the agreement in mT5-base; the closing sentence says the rank order is largely kept in LaTa and PhilTa and only partly in mT5-base |
+| 6 | Sec. 5, E2 paragraph | James | Orthogonality of the random directions; covariance shares; medians labelled; 96 and 99 percent of the SIF gain; token mass of the ablations; PhilTa's context reading labelled as post hoc; frequent-token share clause; mT5-base quoted at the fixed setting m = 100; long sentences split; two `% E2-RERUN` comments on the control sentences |
+| 7 | Sec. 5, Scope | outside | The E2 sentence becomes four: carriers in LaTa; PhilTa by the ablation alone, with the token share and the failed token-mix rule; mT5-base as tested; the scope sentence |
+| 8 | Discussion | outside | The E2 sentence becomes three, with the same qualifications |
+
+<!-- E2-RERUN: rebuild and update this paragraph in the second pass -->
+Build of the first pass (commit `eb9df04`):
+`/projects/bimc/swong2/setup/build_paper.sh` gave 60 pages (58 before), no
+undefined reference or citation, no duplicate label. The Discussion started
+on page 18 (16 before). One overfull box, 5.5pt, in the generated
+`tables/e2_token_audit.tex` (none before). The PDF has not been rebuilt since
+the review-round edits; it is rebuilt after the rerun.
 
 ## For the first author: sentences not edited
 
@@ -519,7 +648,8 @@ generated `tables/e2_token_audit.tex` (none before).
 3. **Sec. 5 preamble**: "The testable content is that this direction is
    aligned with a few coordinates and has token carriers." Unchanged. E1 and
    E2 now answer both halves: not confined to a few coordinates; token
-   carriers in LaTa and PhilTa, none in mT5-base.
+   carriers in LaTa, in PhilTa by the ablation rule only, none found in
+   mT5-base among the tested sets.
 4. **Introduction, line 116**: "We test whether mean pooling turns these
    coordinates into values that vary from passage to passage and so drown out
    content". Still true as a statement of the test; the outcome could follow.
@@ -532,7 +662,10 @@ generated `tables/e2_token_audit.tex` (none before).
 7. **Related work**: nothing presupposes token carriers. The frequency link of
    Puccetti et al. (2022) fits LaTa's carriers, which are among its most
    frequent token types; no sentence was added.
-8. **Generated table `tab:e2_token_audit`** (James's region, render code): it
+8. <!-- E2-RERUN: drop or update this item once the table is regenerated -->
+   **Generated table `tab:e2_token_audit`** (James's region, render code),
+   as committed before the rerun; the render code of `8413ebc` addresses all
+   three points, and the table is regenerated with the rerun: it
    is 5.5pt wider than the text block; its caption says "the published SIF
    cells", which inside the paper should name Section 4; and its rho column is
    signed although the sign of a component is fixed only by a convention (its
