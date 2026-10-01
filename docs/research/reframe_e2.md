@@ -747,6 +747,24 @@ pass had one of 5.5pt in the generated table, which the smaller column
 separation removed). The Discussion starts on page 19 (16 before E2, 18
 after the first pass), and Limitations is on page 20.
 
+## Merge with main (2026-10-01)
+
+Two pull requests landed on main while E2 ran: P2x2 (#249) and the E1 k sweep
+(#251, zeroing up to 400 coordinates with a random control). Both edit
+paragraphs that E2 edits, so the merge was resolved by hand. No E2 number
+changed. After the merge the paper has no `\pending` marker left, and the PDF
+builds at 63 pages with no undefined reference and no overfull box.
+
+| Place | Resolution |
+|---|---|
+| Abstract | E2's sentences kept; main's P2x2 sentence replaces the P2x2 marker |
+| Sec. 5, E1 paragraph | Main's k-sweep passage comes first and is unchanged. The zeroing follow-up follows it as "a second follow-up, at k = 10 under the variance ranking". Its closing sentence now adds "in line with the 50 to 300 coordinates that zeroing needs in LaTa and PhilTa", and a last sentence says the follow-up was not repeated at larger k. The k-sweep sentence "whether it is the raw direction or another, and why it survives, we did not test" stays, since it is about k = 400 |
+| Sec. 5, E2 paragraph | "E1 shows that zeroing coordinates restores no collapsed layer" becomes "zeroing up to ten coordinates restores no collapsed layer, and that LaTa and PhilTa need 50 to 300" |
+| Sec. 5, Scope | Both kept: E1's qualification with the follow-up, main's k-sweep sentence, the E2 sentences, and main's closing sentence on architecture or objective |
+| Discussion | "token types localize the nuisance where coordinates do not" becomes "a few token types ... where a few coordinates do not", since the k sweep repairs LaTa after 50 to 300 coordinates. E2's length sentence kept; main's P2x2 sentences replace the stale confound sentence |
+
+The line numbers in the "Paper edits" tables above are those before the merge.
+
 ## For the first author: sentences not edited
 
 1. **Sec. 4, "SIF at the collapsed layers"**: the ranges "0.84--0.94" (LaTa),

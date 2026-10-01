@@ -702,7 +702,8 @@ def caption(w: pd.DataFrame, rows: Sequence[Tuple[str, pd.Series]]) -> str:
             r"layers), one component recovers a median 45 percent of the AUROC gain of "
             r"$D{=}10$, and three recover at least 80 percent at every layer "
             r"(Table~\ref{tab:d_ablation}). ")
-    return text + "All statistics are fit on training embeddings only.}"
+    return text + ("All statistics are fit on training embeddings only. "
+                   "Figure~\\ref{fig:e1_k_sweep} extends the zeroing to $k = 400$.}")
 
 
 def write_table(w: pd.DataFrame, path: Path) -> List[str]:

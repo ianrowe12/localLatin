@@ -1,0 +1,13 @@
+model,ranking,n_cells,n_unmatched,max_diff_auroc,max_diff_train_auroc,max_diff_pc1_share,pass
+KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,mean_abs,96,0,0,0,0,True
+KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,variance,96,0,0,0,0,True
+Qwen/Qwen3-Embedding-0.6B,mean_abs,112,0,0,0,0,True
+Qwen/Qwen3-Embedding-0.6B,variance,112,0,0,0,0,True
+bowphs/LaTa,mean_abs,48,0,0,0,0,True
+bowphs/LaTa,variance,48,0,0,0,0,True
+bowphs/PhilTa,mean_abs,48,0,0,0,0,True
+bowphs/PhilTa,variance,48,0,0,0,0,True
+google/mt5-base,mean_abs,48,0,0,0,0,True
+google/mt5-base,variance,48,0,0,0,0,True
+sentence-transformers/LaBSE,mean_abs,48,0,0,0,0,True
+sentence-transformers/LaBSE,variance,48,0,0,0,0,True

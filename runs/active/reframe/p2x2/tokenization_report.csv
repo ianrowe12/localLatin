@@ -1,0 +1,7 @@
+model,model_id,tokenizer_class,n_files,tokens_mean,tokens_median,tokens_max,share_truncated_512,native_max_seq_length,share_above_native,unk_rate,n_unk,lowercases,special_tokens_added,n_passages_nothing_pooled,unk_in_case_probe,tokens_per_word,pooled_share,top_unk_sources,flags
+Sentence-T5,sentence-transformers/sentence-t5-base,T5TokenizerFast,1705,183.876,138,3645,0.0387097,256,0.1906158357771261,0.00752134,2358,False,1,0,0,3.08128,0.888953,'·':1430 'ę':600 'æ':81 '‧':80 '†':48 '˙':38 'Ę':23 '{':16,
+T5-base,google-t5/t5-base,T5TokenizerFast,1705,183.876,138,3645,0.0387097,,,0.00752134,2358,False,1,0,0,3.08128,0.888953,'·':1430 'ę':600 'æ':81 '‧':80 '†':48 '˙':38 'Ę':23 '{':16,
+T5-v1.1-base,google/t5-v1_1-base,T5TokenizerFast,1705,183.876,138,3645,0.0387097,,,0.00752134,2358,False,1,0,0,3.08128,0.888953,'·':1430 'ę':600 'æ':81 '‧':80 '†':48 '˙':38 'Ę':23 '{':16,
+LaBERTa,bowphs/LaBerta,RobertaTokenizerFast,1705,167.644,110,3879,0.0422287,,,0,0,False,2,0,0,2.80928,0.498714,,only 50% of tokens survive the pooling filter
+PhilBERTa,bowphs/PhilBerta,RobertaTokenizerFast,1705,99.8305,77,1963,0.0058651,,,0,0,False,0,2,0,1.6729,0.880801,,adds no special tokens; 2 passages keep no token after the pooling filter and pool to a zero vector
+SPhilBERTa,bowphs/SPhilBerta,RobertaTokenizerFast,1705,99.8305,77,1963,0.0058651,128,0.21818181818181817,0,0,False,0,2,0,1.6729,0.880801,,adds no special tokens; 2 passages keep no token after the pooling filter and pool to a zero vector

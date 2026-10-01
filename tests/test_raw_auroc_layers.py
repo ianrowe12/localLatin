@@ -93,8 +93,11 @@ def test_check_reproduction_flags_mismatch(tmp_path):
 # ----------------------------------------------------------------- real caches (skip)
 def _root(rel: str, probe: str):
     for base in (REPO, Path("/u/irowerojas/localLatin")):
-        if (base / rel / probe).exists():
-            return base / rel
+        try:
+            if (base / rel / probe).exists():
+                return base / rel
+        except OSError:  # an unreadable path (PermissionError on another user's home) is absent
+            continue
     return None
 
 

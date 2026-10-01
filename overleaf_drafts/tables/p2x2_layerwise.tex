@@ -1,0 +1,29 @@
+% generated table
+% python scripts/paper/reframe/p2x2_panel.py --stage render
+\begin{table}[t]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}rcccccc@{}}
+\toprule
+& \multicolumn{3}{c}{LaBERTa} & \multicolumn{3}{c}{PhilBERTa} \\
+\cmidrule(lr){2-4}\cmidrule(lr){5-7}
+Layer & AUROC & PC1 & Rank & AUROC & PC1 & Rank \\
+\midrule
+1 & 0.826 & 0.170 & 87.15 & 0.893 & 0.092 & 134.77 \\
+2 & 0.832 & 0.193 & 75.32 & 0.905 & 0.096 & 109.71 \\
+3 & 0.839 & 0.184 & 78.12 & 0.913 & 0.112 & 97.87 \\
+4 & 0.830 & 0.191 & 74.89 & 0.903 & 0.124 & 98.85 \\
+5 & 0.828 & 0.191 & 72.73 & 0.885 & 0.151 & 95.27 \\
+6 & 0.834 & 0.198 & 68.46 & 0.883 & 0.162 & 97.28 \\
+7 & 0.836 & 0.228 & 61.98 & 0.896 & 0.149 & 97.34 \\
+8 & 0.844 & 0.248 & 58.96 & 0.905 & 0.157 & 94.21 \\
+9 & 0.857 & 0.254 & 57.87 & 0.911 & 0.140 & 92.12 \\
+10 & 0.873 & 0.245 & 61.55 & 0.919 & 0.120 & 89.92 \\
+11 & 0.892 & 0.233 & 65.75 & 0.913 & 0.143 & 82.12 \\
+12 & 0.910 & 0.154 & 85.69 & 0.923 & 0.083 & 105.56 \\
+\bottomrule
+\end{tabular}
+\caption{Per-layer readouts of LaBERTa and PhilBERTa, the encoder-only siblings of LaTa and PhilTa in the matched pairs of Table~\ref{tab:panel_2x2}, on the Latin corpus with no post-hoc correction. AUROC: Task~A test pairwise AUROC of cosine on mean-pooled vectors. PC1: top-PC share, the share of centered variance on the first principal component of the 847 training passages. Rank: entropy effective rank of the same passages. Two facts about the inputs: LaBERTa's tokenizer encodes every space as its own token, so the indentation of the corpus files becomes tokens, which the pooling filter drops from the mean; PhilBERTa's published tokenizer adds no sequence-boundary tokens, so the two whitespace-only files of the corpus pool to zero vectors, and scoring without those two files changes no AUROC by more than 0.0003.}
+\label{tab:p2x2_layerwise}
+\end{table}

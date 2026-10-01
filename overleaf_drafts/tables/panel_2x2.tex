@@ -1,0 +1,22 @@
+% generated table
+% python scripts/paper/reframe/p2x2_panel.py --stage render
+\begin{table}[t]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}llccc@{}}
+\toprule
+Model & Arch. & AUROC$_{\min}$ & PC1$_{\max}$ & Rank$_{\min}$ \\
+\midrule
+\multicolumn{5}{@{}l}{\textit{Latin}} \\
+LaTa & T5 & 0.496 & 0.952 & 1.36 \\
+LaBERTa & Enc. & 0.826 & 0.254 & 57.87 \\
+\midrule
+\multicolumn{5}{@{}l}{\textit{Ancient Greek, Latin, English}} \\
+PhilTa & T5 & 0.538 & 0.858 & 1.81 \\
+PhilBERTa & Enc. & 0.883 & 0.162 & 82.12 \\
+\bottomrule
+\end{tabular}
+\caption{Two matched pairs of raw pre-trained encoders, read on the Latin corpus with no post-hoc correction. Within a pair the models come from the same authors and the same pretraining data, and neither has an embedding objective. They differ in architecture with its pretraining objective, a T5 encoder trained with span corruption against a RoBERTa-style encoder-only model (Enc.) trained with masked language modeling, and in tokenizer. The row above each pair names its pretraining languages. AUROC$_{\min}$: the lowest Task~A test AUROC over the 12 layers of the unmodified mean-pooled vectors. PC1$_{\max}$: the peak top-PC share over layers, the largest share of centered variance on the first principal component of the 847 training passages. Rank$_{\min}$: the lowest effective rank over layers on the same passages.}
+\label{tab:panel_2x2}
+\end{table}
