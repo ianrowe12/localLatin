@@ -36,7 +36,8 @@
 #
 # Time and memory (A40, 8 CPUs; the first full run, jobs 22597913 and 22598253, took
 # 10.5 and 11.2 min before the mass-matched control was added; it adds 50 AUROC cells
-# per model-layer, about 2 min per job). Peak memory is the pass-2 buffer, 110 pooled
+# per model-layer and 50 pooled vectors to pass 2, an estimated 3 min per job, so about
+# 13 and 15 min). Peak memory is the pass-2 buffer, 110 pooled
 # vectors per passage and layer: about 30 GB for Qwen3-0.6B, 24 GB for KaLM-mini,
 # 12 GB for a 12-layer model.
 #
