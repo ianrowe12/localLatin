@@ -7,7 +7,8 @@ Results for James's experiment E2 of the analysis reframe
 `runs/active/reframe/e2/facts_e2_zeroing.md` (zeroing follow-up), both
 generated, or in a CSV beside them; the few numbers read from a CSV and not
 from a facts file are marked "(CSV)". The facts files were read at commit
-`cee4e8c` with a clean working tree.
+`cee4e8c` with a clean working tree, and the token-ablation numbers again at
+`43f4827`, after the rerun that added the mass-matched control.
 
 Short version:
 
@@ -15,12 +16,14 @@ Short version:
   the PC1 score of test passages at the 10 collapsed layers (random directions
   0.18). At layer 6 the comma alone holds 0.962 of PC1's score variance over
   training passages. Mean pooling without three token types (comma, period,
-  `</s>`; 11 percent of the test tokens) restores all 10 layers.
-  <!-- E2-RERUN: the control sentence (random types restore none) is rewritten in the second pass, with the mass-matched control -->
-  The count-matched random types of the first run restore none.
+  `</s>`; 11 percent of the test tokens) restores all 10 layers (median AUROC
+  0.919). A mass-matched random control, which drops 10 percent of the test
+  tokens there, stays at 0.500, and restores 0 of 26 collapsed layers at any
+  setting.
 - **PhilTa: only the ablation rule passes.** The token ablation restores all 9
   collapsed layers, but 8 of them need the top 10 to 30 types, and at m = 30
-  the dropped types are a median 33 percent of the test tokens. The token-mix
+  the dropped types are a median 33 percent of the test tokens (mass-matched
+  control, 32 percent dropped: 0.543 against 0.925). The token-mix
   rule fails at all 9 layers (median EV 0.42), and neither single-factor
   pooling arm rescues any layer: the expectation "SIF weights with special
   tokens kept rescue" is not met. That its leading token types (the same
@@ -51,11 +54,12 @@ Short version:
 | Zeroing follow-up job | 22597130, `cpu-interactive`, 8 min 42 s, exit 0, code at `b84cd36` |
 | Audit jobs | 22597913 (LaTa, PhilTa, mT5-base, LaBSE; 11 min 46 s) and 22598253 (Qwen3-0.6B, KaLM-mini; 13 min 2 s), `gpuA40x4-interactive`, code at `6628352`. Both exited 3, the gate code (CSVs written, gate 2a failed); neither crashed |
 | Smoke job | 22597799, `gpuA40x4-interactive`, 4 min 56 s, exit 0: `LIMIT=64`, LaTa and Qwen3-0.6B, gates skipped, written to `runs/active/reframe/e2/smoke_limit64/` |
+| Rerun with the mass-matched control | 22600488 (LaTa, PhilTa, mT5-base, LaBSE; 12 min 47 s) and 22600797 (Qwen3-0.6B, KaLM-mini; 13 min 51 s), `gpuA40x4-interactive`, after a smoke run 22600177 (`gpuA100x4-interactive`, 4 min 32 s, `LIMIT=64`, exit 0, at `aaf98b1`). The two job logs print HEAD `e8eadf6`, which differs from `aaf98b1` only in the paper source and this document, so the audit code is that of `aaf98b1`. Both exited 3 again, for gate 2a. Results committed in `43f4827`: only `e2_token_ablation.csv`, `facts_e2.md` and the table changed; the pooling, direction, carrier, length and gate CSVs are byte-identical to the first run |
 | SIF diagnostic jobs | 22598639 (11 min 2 s) and 22599010 (13 min 50 s), `gpuA40x4-interactive`; script and logs in `/projects/bimc/swong2/setup/e2_sif_diag/` (outside the repository) |
 | Replication job | 22599178, `gpuA40x4-interactive`, 4 min 52 s, exit 0; `/projects/bimc/swong2/setup/e2_replicate.py`, log `/projects/bimc/swong2/setup/logs/e2_replicate_22599178.out` |
 | Account | `beto-delta-gpu` / `beto-delta-cpu` for every job |
 | Inputs | `runs/active/resubmit/data/phase_resubmit_split.csv`; the six models from the HuggingFace cache (transformers 4.57.6, offline); cached mean-pooled vectors `runs/active/resubmit_bases/phase9_bases/<slug>/hidden_mean_tokempty/` and, for five models, SIF-pooled vectors `hidden_sif_tokempty/` (James's re-extraction; none for KaLM-mini); `phase_resubmit_results.csv` for the published cells |
-| Outputs | `runs/active/reframe/e2/`: `e2_pooling_arms.csv` (500 rows: 5 arms at 100 model-layers), `e2_direction_audit.csv` (8,800 rows), `e2_carriers.csv` (9,000 rows: top 30 token types per PC), `e2_token_ablation.csv` (6,000 rows), `e2_length.csv`, `e2_gate_check.csv`, `facts_e2.md`; `e2_zeroing_followup.csv` (800 rows), `e2_zeroing_gate_check.csv`, `facts_e2_zeroing.md`; `overleaf_drafts/tables/e2_token_audit.tex` |
+| Outputs | `runs/active/reframe/e2/`: `e2_pooling_arms.csv` (500 rows: 5 arms at 100 model-layers), `e2_direction_audit.csv` (8,800 rows), `e2_carriers.csv` (9,000 rows: top 30 token types per PC), `e2_token_ablation.csv` (11,000 rows after the rerun; 6,000 in the first run), `e2_length.csv`, `e2_gate_check.csv`, `facts_e2.md`; `e2_zeroing_followup.csv` (800 rows), `e2_zeroing_gate_check.csv`, `facts_e2_zeroing.md`; `overleaf_drafts/tables/e2_token_audit.tex` |
 | Tests | `tests/test_e2_token_audit.py`, `tests/test_e2_zeroing_followup.py` |
 
 Regenerate the table and the facts files from the committed CSVs with
@@ -103,10 +107,19 @@ r and the Qwen3-0.6B r test left E2 because E1 reports them.
   get joint readouts that do not depend on the basis inside the subspace.
 - **Token ablation.** Token types ranked on training passages by PC1 share
   (`pc1`) and by the mean of the PC1, PC2 and PC3 shares (`pc123`); mean
-  pooling without the top m types, m in {1, 3, 10, 30, 100}. Control of the
-  first run: five draws of random token types matched in training count (see
-  "Review round" for why a second control was added).
-  <!-- E2-RERUN: describe the mass-matched control here in the second pass -->
+  pooling without the top m types, m in {1, 3, 10, 30, 100}. Two random
+  controls, five draws each, reported as the mean over draws. The
+  count-nearest control (first run): for each carrier in rank order, one type
+  drawn among the 10 nearest in training count that are in the top 100 of
+  neither ranking; it matches the number of types, not the token mass. The
+  mass-matched control (added on review, see "Review round"): per ranking and
+  m, token types drawn without replacement from the training types that are
+  not among the m dropped carriers (special tokens are eligible), with
+  probability proportional to training count, until their training count
+  first meets or exceeds the carriers'. For the table, one cell per layer is
+  chosen on the training AUROC of the carrier arm; R3 itself reads the
+  highest test AUROC over the cells, and the "fixed settings" of the facts
+  file (one ranking and one m for every layer) need no pick at all.
 - **Score against frequent-token share.** Spearman of the PC1 score with the
   passage's share of the 100 most frequent tokens (the handoff's second
   readout beside log length; no rule attached).
@@ -376,18 +389,64 @@ passages; facts section 9):
 
 ### R3, token ablation: restores 19 of 26 (LaTa 10 of 10, PhilTa 9 of 9, mT5-base 0 of 7)
 
-<!-- E2-RERUN: the control sentence below and the Control column are from the first run's count-matched control; rewrite both in the second pass with the mass-matched control -->
-The count-matched random control of the first run reaches 0.90 at 0 of 26. It
-is not matched in token mass (see "Review round").
+R3 as frozen reads the highest test AUROC over m and the two rankings. Both
+random controls reach 0.90 at some cell at 0 of 26 collapsed layers (facts
+sections 6 and 11). Carrier arms, median test AUROC over the collapsed layers
+(unchanged by the rerun):
 
-| Model | Ranking | Restored | Smallest m | AUROC m=1 | m=3 | m=10 | m=30 | m=100 | Control |
-|---|---|---|---|---|---|---|---|---|---|
-| LaTa | `pc1` | 2 of 10 | 1 (1 to 1) | 0.735 | 0.696 | 0.686 | 0.665 | 0.650 | 0.50 |
-| LaTa | `pc123` | 10 of 10 | 3 (1 to 3) | 0.724 | 0.919 | 0.921 | 0.926 | 0.924 | 0.50 |
-| PhilTa | `pc1` | 3 of 9 | 10 (3 to 100) | 0.671 | 0.873 | 0.889 | 0.891 | 0.892 | 0.54 |
-| PhilTa | `pc123` | 9 of 9 | 10 (3 to 30) | 0.500 | 0.873 | 0.910 | 0.925 | 0.928 | 0.54 |
-| mT5-base | `pc1` | 0 of 7 | | 0.667 | 0.675 | 0.678 | 0.721 | 0.719 | 0.656 |
-| mT5-base | `pc123` | 0 of 7 | | 0.667 | 0.694 | 0.710 | 0.726 | 0.734 | 0.656 |
+| Model | Ranking | Restored | Smallest m | AUROC m=1 | m=3 | m=10 | m=30 | m=100 |
+|---|---|---|---|---|---|---|---|---|
+| LaTa | `pc1` | 2 of 10 | 1 (1 to 1) | 0.735 | 0.696 | 0.686 | 0.665 | 0.650 |
+| LaTa | `pc123` | 10 of 10 | 3 (1 to 3) | 0.724 | 0.919 | 0.921 | 0.926 | 0.924 |
+| PhilTa | `pc1` | 3 of 9 | 10 (3 to 100) | 0.671 | 0.873 | 0.889 | 0.891 | 0.892 |
+| PhilTa | `pc123` | 9 of 9 | 10 (3 to 30) | 0.500 | 0.873 | 0.910 | 0.925 | 0.928 |
+| mT5-base | `pc1` | 0 of 7 | | 0.667 | 0.675 | 0.678 | 0.721 | 0.719 |
+| mT5-base | `pc123` | 0 of 7 | | 0.667 | 0.694 | 0.710 | 0.726 | 0.734 |
+
+Fixed settings, which need no pick on test (facts section 6, last
+subsection). Each cell: layers restored; median AUROC (min to max); median
+share of test tokens dropped; median training tokens dropped. The paper's
+"restores" statements use these lines.
+
+| Setting | Model | Carriers | Mass-matched control | Count-nearest control |
+|---|---|---|---|---|
+| `pc123`, m = 3 | LaTa | 10 of 10; 0.919 (0.912 to 0.929); 0.113; 7,022 | 0 of 10; 0.500 (0.493 to 0.562); 0.102; 7,461 | 0 of 10; 0.502 (0.495 to 0.563); 0.011; 828 |
+| | PhilTa | 1 of 9; 0.873 (0.847 to 0.904); 0.105; 7,003 | 0 of 9; 0.542 (0.539 to 0.599); 0.098; 7,646 | 0 of 9; 0.542 (0.538 to 0.601); 0.015; 1,140 |
+| | mT5-base | 0 of 7; 0.694 (0.692 to 0.708); 0.078; 6,874 | 0 of 7; 0.658 (0.655 to 0.662); 0.071; 7,343 | 0 of 7; 0.656 (0.654 to 0.659); 0.015; 1,594 |
+| `pc123`, m = 30 | LaTa | 10 of 10; 0.926 (0.921 to 0.933); 0.322; 21,728 | 0 of 10; 0.493 (0.485 to 0.551); 0.301; 21,748 | 0 of 10; 0.501 (0.494 to 0.562); 0.066; 4,959 |
+| | PhilTa | 9 of 9; 0.925 (0.905 to 0.930); 0.327; 24,007 | 0 of 9; 0.543 (0.540 to 0.577); 0.316; 24,012 | 0 of 9; 0.541 (0.537 to 0.598); 0.087; 6,487 |
+| | mT5-base | 0 of 7; 0.726 (0.710 to 0.732); 0.221; 21,076 | 0 of 7; 0.653 (0.650 to 0.655); 0.206; 21,252 | 0 of 7; 0.656 (0.654 to 0.659); 0.077; 7,880 |
+| `pc1`, m = 100 | LaTa | 1 of 10; 0.650 (0.629 to 0.926); 0.305; 20,424 | 0 of 10; 0.515 (0.507 to 0.554); 0.288; 20,442 | 0 of 10; 0.499 (0.493 to 0.560); 0.100; 7,447 |
+| | PhilTa | 3 of 9; 0.892 (0.869 to 0.915); 0.283; 19,958 | 0 of 9; 0.542 (0.540 to 0.590); 0.257; 20,048 | 0 of 9; 0.541 (0.537 to 0.595); 0.105; 7,926 |
+| | mT5-base | 0 of 7; 0.719 (0.712 to 0.723); 0.299; 30,405 | 0 of 7; 0.652 (0.651 to 0.654); 0.312; 30,474 | 0 of 7; 0.655 (0.654 to 0.657); 0.145; 14,513 |
+
+- **Mass-matched control.** It restores 0 of 26 collapsed layers at every
+  fixed setting and at every cell. It matches the carriers' training tokens
+  by construction and drops a slightly smaller share of the test tokens (for
+  example 0.102 against 0.113 at LaTa m = 3), spread over more token types (a
+  median 30.6 types per draw there against 3 carriers; 703 against 30 at
+  PhilTa m = 30). So removing that much random token mass does nothing for a
+  collapsed layer: it is which tokens are dropped that matters.
+- At m = 1 the mass-matched control's median lies slightly above the mean arm
+  (0.565 against 0.541 over the 26 layers under `pc123`; 0.569 against 0.542
+  in PhilTa). Only the m dropped carriers are excluded from its draws, so at
+  m = 1 a draw can contain another leading carrier such as the comma, which
+  may explain the small rise; it stays far below 0.90.
+- **Count-nearest control.** Also 0 of 26, but it drops a small fraction of
+  the carriers' tokens (828 against 7,022 training tokens at LaTa m = 3;
+  6,487 against 24,007 at PhilTa m = 30), so on its own it does not rule out
+  that dropping any large share of tokens helps. The mass-matched control
+  does.
+- **Cell chosen on training AUROC** (the table's "Drop"): test AUROC 0.926
+  (0.921 to 0.933) in LaTa, 0.928 (0.908 to 0.932) in PhilTa, 0.734 (0.724 to
+  0.748) in mT5-base, against a mass-matched control of 0.491, 0.542 and
+  0.652. At the table's rows: LaTa layer 6, 0.922 against 0.483 (`pc123`,
+  m = 100; the highest test cell, 0.925 at m = 30, is not used); PhilTa layer
+  10, 0.917 against 0.540; mT5-base layer 5, 0.724 against 0.656.
+- At the T5 layers that are not collapsed, dropping the carriers raises AUROC
+  slightly while the mass-matched control lowers it (PhilTa layers 1, 2 and
+  12: 0.938 against 0.876 at the train-chosen cell, mean arm 0.911; facts
+  section 10).
 
 - LaTa: the three types dropped at m = 3 under `pc123` are the comma, the
   period and `</s>` at all 10 layers; AUROC 0.912 to 0.929 (CSV). They are
@@ -488,33 +547,54 @@ An independent review of the branch checked the numbers of the paper edits
 and of this document against the facts files and CSVs (it reported no
 mismatch) and asked for changes of two kinds.
 
-**To the experiment (commit `8413ebc`; the audit has to be rerun, and the
-committed CSVs, facts file and table are not regenerated yet).**
-<!-- E2-RERUN: the numbers of the mass-matched control and the regenerated table cells go here and into R3 in the second pass -->
+**To the experiment (code in `8413ebc`, rerun in jobs 22600488 and 22600797,
+results in `43f4827`).**
 
 - The count-nearest control of the token ablation is not matched in token
   mass. The carriers are the most frequent token types, and the control draws
   types of similar training count from outside the top 100 of both rankings,
-  so it drops far fewer tokens than the carrier arm. In the first run, at
-  m = 100 the control drops a median 0.137 of the test tokens against 0.416
-  for the carriers under `pc123`, and 0.105 against 0.299 under `pc1` (facts
-  section 6); the commit message puts it at about a tenth of the carriers'
-  token mass.
+  so it drops far fewer tokens than the carrier arm. Per setting, medians
+  over the collapsed layers (facts section 6), control against carriers:
+
+  | Setting | Model | Training tokens dropped | Share of test tokens dropped |
+  |---|---|---|---|
+  | `pc123`, m = 3 | LaTa | 828 against 7,022 | 0.011 against 0.113 |
+  | `pc123`, m = 3 | PhilTa | 1,140 against 7,003 | 0.015 against 0.105 |
+  | `pc123`, m = 30 | LaTa | 4,959 against 21,728 | 0.066 against 0.322 |
+  | `pc123`, m = 30 | PhilTa | 6,487 against 24,007 | 0.087 against 0.327 |
+  | `pc123`, m = 30 | mT5-base | 7,880 against 21,076 | 0.077 against 0.221 |
+  | `pc1`, m = 100 | LaTa | 7,447 against 20,424 | 0.100 against 0.305 |
+
+  The ratio runs from about an eighth of the carriers' training tokens (LaTa,
+  m = 3) to about a third (m = 100), so no single fraction describes it.
 - A second, mass-matched control was therefore added after the first full
   run: per ranking and m, five seeded draws of token types sampled without
   replacement, with probability proportional to training count, from the
   training types outside the dropped carriers, until they hold at least as
-  many training tokens as the carriers.
-- The table's "Drop" column moves from a pick on test (the highest test AUROC
+  many training tokens as the carriers. At the same settings it drops 7,461
+  training tokens (0.102 of the test tokens) at LaTa m = 3 and 24,012 (0.316)
+  at PhilTa m = 30.
+- Result of the rerun: the mass-matched control restores 0 of 26 collapsed
+  layers at every cell, like the count-nearest control (R3 section above).
+  The conclusion of the first run stands, now against a control that removes
+  as many tokens as the carriers.
+- The table's "Drop" column moved from a pick on test (the highest test AUROC
   over m and the two rankings) to the cell chosen on training AUROC of the
-  carrier arm, and "Rand." becomes the mass-matched control at that cell. The
-  last column becomes |rho|. The caption names the SIF cells of Section 4,
-  the orthogonality of the random directions and the covariance shares.
+  carrier arm, and "Rand." is the mass-matched control at that cell. For LaTa
+  layer 6 this changes Drop from 0.925 to 0.922 and Rand. from 0.494 to
+  0.483; PhilTa layer 10 keeps 0.917 (Rand. 0.538 to 0.540), mT5-base layer 5
+  keeps 0.724 (0.654 to 0.656). The last column is |rho|. The caption names
+  the SIF cells of Section 4, the orthogonality of the random directions and
+  the covariance shares, and the column separation is 2.6pt.
+- Byte-identical to the first run: the pooling, direction, carrier, length
+  and gate CSVs. Changed: `e2_token_ablation.csv` (control rows added; the
+  carrier rows give the same numbers), `facts_e2.md`, the table.
 - Unchanged: the frozen rules R1 to R4, the carrier arms, the two rankings,
-  the pooling arms and the gates. Both changes are post hoc with respect to
-  the first run and are listed as deviation 8.
+  the pooling arms and the gates; gate 2a still fails as recorded. Both
+  changes are post hoc with respect to the first run and are listed as
+  deviation 8.
 
-**To the wording (the commit that adds this section).**
+**To the wording (commit `e8eadf6`, before the rerun).**
 
 - PhilTa was overclaimed outside Sec. 5. By the paper's own rule the token
   mix carries PC1 only if it explains at least half, which fails at 0 of 9
@@ -541,10 +621,11 @@ committed CSVs, facts file and table are not regenerated yet).**
 - Long sentences were split (guidelines, section 4): the E2 paragraph now has
   25 design sentences and 36 findings sentences with the same content plus
   the additions above.
-- The sentences on the ablation's random control, in the paper (two
-  `% E2-RERUN` comments) and here, still describe the first run's
-  count-matched control and are rewritten after the rerun. The tracked PDF
-  was built before this round and is rebuilt after the rerun.
+
+**After the rerun (second pass).** The sentences on the ablation's control in
+the paper and here were rewritten for the mass-matched control, the "restores"
+statements of the E2 paragraph were tied to the fixed settings of the facts
+file, and the PDF was rebuilt (see "Paper edits").
 
 ## Deviations
 
@@ -554,7 +635,7 @@ committed CSVs, facts file and table are not regenerated yet).**
    to E1.
 2. **Additions requested by James before the run.** KaLM-mini; the joint
    subspace readouts for span(PC2, PC3) and span(PC1, PC2, PC3); the matched
-   random controls (20 random directions, frequency-matched random token
+   random controls (20 random directions, count-nearest random token
    types); the extra measures of the zeroing follow-up. The
    `mean_nofreq100` arm and the two-ranking token ablation are part of the
    revised design.
@@ -584,12 +665,18 @@ committed CSVs, facts file and table are not regenerated yet).**
    says so and makes no claim about pretraining.
 7. **Findings length.** The E2 findings took 14 sentences where the brief
    asked for 9 to 13; after the review round split the long ones they take
-   36 short sentences.
+   36 short sentences, and the design text 27.
 8. **Changes after the first full run (review round).** A mass-matched
-   control of the token ablation was added, and the table's "Drop" cell
-   moved from a pick on test to selection on training AUROC. Neither changes
-   a frozen rule or a carrier arm; both were decided after the first run's
-   numbers were read. See "Review round".
+   control of the token ablation was added, because the planned count-nearest
+   control drops far fewer tokens than the carriers (828 against 7,022
+   training tokens at LaTa `pc123` m = 3; 6,487 against 24,007 at PhilTa
+   m = 30). The table's "Drop" cell moved from a pick on test to selection on
+   training AUROC. Neither changes a frozen rule or a carrier arm; both were
+   decided after the first run's numbers were read, and the audit was rerun
+   for them (jobs 22600488 and 22600797). The mass-matched control restores 0
+   of 26 collapsed layers, as the count-nearest control did, so no verdict
+   changed. The paper leads with the mass-matched control and says that it
+   was added on review after a first run. See "Review round".
 
 ## Paper edits
 
@@ -600,14 +687,14 @@ sentence.
 
 | # | Where | Region | Change |
 |---|---|---|---|
-| 1 | Abstract, line 73 | outside | `\pending{E2: one-clause result}` removed; one sentence added: token carriers in LaTa and PhilTa (three token types restore all 10 LaTa layers, at most 30 all 9 PhilTa layers), none in mT5-base |
-| 2 | Contribution (3), line 131 | outside | `\pending{E2: token audit result}` replaced by one sentence with the same result |
+| 1 | Abstract, line 73 | outside | The E2 `\pending` marker ("one-clause result") removed; one sentence added: token carriers in LaTa and PhilTa (three token types restore all 10 LaTa layers, at most 30 all 9 PhilTa layers), none in mT5-base |
+| 2 | Contribution (3), line 131 | outside | The E2 `\pending` marker ("token audit result") replaced by one sentence with the same result |
 | 3 | Sec. 4, "The standardized gap", line 343 | outside | "We do not have an account of this yet, and the token audit ... tests one candidate (E2)" becomes "We do not have an account of this: the token audit ... tests a length account and rejects it (E2)" |
 | 4 | Sec. 4, "SIF at the collapsed layers", after line 352 | outside | One sentence appended with the outcome: the first suggestion is supported (LaTa, PhilTa), the second is not (mT5-base). The two existing sentences and the SIF ranges are unchanged |
 | 5 | Sec. 5, E1 paragraph, line 423 | James | "we did not test whether it is the same direction, or why it still dominates the remainder" replaced by three sentences from the zeroing follow-up, labelled as designed after the E1 results and, for the intervention cells, as post hoc |
-| 6 | Sec. 5, E2 paragraph, lines 433 to 450 | James | Design text rewritten for the revised design (17 sentences, with the frozen thresholds and the expectations); `\pending{E2: ...}` replaced by 14 sentences of findings; `\input{tables/e2_token_audit}` after the paragraph |
+| 6 | Sec. 5, E2 paragraph, lines 433 to 450 | James | Design text rewritten for the revised design (17 sentences, with the frozen thresholds and the expectations); the E2 `\pending` marker replaced by 14 sentences of findings; `\input{tables/e2_token_audit}` after the paragraph |
 | 7 | Sec. 5, Scope, lines 510 and 511 | outside | "For what causes the collapse, our claim therefore reduces to ..." becomes "For the coordinate account, ..."; "leaves one direction dominant (E1)" becomes "leaves the rest of that direction dominant (E1 and its follow-up)"; one sentence added: E2 adds token carriers in LaTa and PhilTa and none in mT5-base, for which the claim stays the geometric description and the repair, and why those token types take such values is outside the scope |
-| 8 | Discussion, line 678 | outside | `\pending{E2: whether specific tokens carry these coordinates}` replaced by one sentence |
+| 8 | Discussion, line 678 | outside | The E2 `\pending` marker ("whether specific tokens carry these coordinates") replaced by one sentence |
 | 9 | Discussion, line 686 | outside | "the token audit (E2) tests a length account" becomes "the token audit rejects a length account (E2)" |
 
 No P2x2 marker was touched: the `pending` lines went from 18 to 14, the four
@@ -621,17 +708,30 @@ Review-round edits to the same places (see "Review round"):
 | 2 | Contribution (3) | outside | The token shares of the two ablations added in the parenthesis |
 | 4 | Sec. 4, "SIF at the collapsed layers" | outside | The appended sentence becomes three: supported for LaTa; for PhilTa through the ablation alone, with the token share; not supported for mT5-base |
 | 5 | Sec. 5, E1 paragraph | James | Follow-up split into short sentences; "passages score on it as on the original" replaced by the Pearson and Spearman figures (range 0.31 to 0.99, mT5-base median 0.45, 4 of 26 layers below 0.5) and the reading that a few extreme passages drive the agreement in mT5-base; the closing sentence says the rank order is largely kept in LaTa and PhilTa and only partly in mT5-base |
-| 6 | Sec. 5, E2 paragraph | James | Orthogonality of the random directions; covariance shares; medians labelled; 96 and 99 percent of the SIF gain; token mass of the ablations; PhilTa's context reading labelled as post hoc; frequent-token share clause; mT5-base quoted at the fixed setting m = 100; long sentences split; two `% E2-RERUN` comments on the control sentences |
+| 6 | Sec. 5, E2 paragraph | James | Orthogonality of the random directions; covariance shares; medians labelled; 96 and 99 percent of the SIF gain; token mass of the ablations; PhilTa's context reading labelled as post hoc; frequent-token share clause; mT5-base quoted at the fixed setting m = 100; long sentences split; the two control sentences marked for the pass after the rerun |
 | 7 | Sec. 5, Scope | outside | The E2 sentence becomes four: carriers in LaTa; PhilTa by the ablation alone, with the token share and the failed token-mix rule; mT5-base as tested; the scope sentence |
 | 8 | Discussion | outside | The E2 sentence becomes three, with the same qualifications |
 
-<!-- E2-RERUN: rebuild and update this paragraph in the second pass -->
-Build of the first pass (commit `eb9df04`):
-`/projects/bimc/swong2/setup/build_paper.sh` gave 60 pages (58 before), no
-undefined reference or citation, no duplicate label. The Discussion started
-on page 18 (16 before). One overfull box, 5.5pt, in the generated
-`tables/e2_token_audit.tex` (none before). The PDF has not been rebuilt since
-the review-round edits; it is rebuilt after the rerun.
+Edits after the rerun (second pass), all in the E2 paragraph (James's
+region):
+
+| # | Sentence | Change |
+|---|---|---|
+| 1 | Design, the ablation's control | "random token types matched in training frequency are the control" becomes three sentences: the rule; the mass-matched control (random other token types holding at least as many training tokens as the dropped ones, five draws); and that it was added on review after a first run whose control matched the number of types and their training counts but dropped far fewer tokens |
+| 2 | LaTa, control result | The ablation sentence now gives the median (0.919) and says that the three token types are the top three of the `pc123` ranking at all 10 layers. "Frequency-matched random types restore none (0.50)" becomes the mass-matched control at that setting (median 0.500, 10 percent of the test tokens dropped) and its count over all cells (0 of 26 at any m under either ranking) |
+| 3 | LaTa, PC1-only ranking | "restores only 2 of the 10 layers" becomes "restores at most 2 of the 10 LaTa layers at any m", a statement per fixed m |
+| 4 | PhilTa, ablation | The statement by smallest restoring m per layer becomes fixed settings under `pc123`: m = 3 restores 1 of 9, m = 10 restores 8, m = 30 all 9 (0.905 to 0.930), with the mass-matched control at m = 30 (0.543, a median 32 percent of the test tokens dropped) |
+
+No sentence quotes the table's "Drop" or "Rand." cells, so the change of
+those columns touches no sentence; the caption describes them. No
+"frequency-matched" wording remains.
+
+Build after the second pass: `/projects/bimc/swong2/setup/build_paper.sh`
+gives 60 pages (58 before E2; 60 after the first pass), no undefined
+reference or citation, no duplicate label, and no overfull box (the first
+pass had one of 5.5pt in the generated table, which the smaller column
+separation removed). The Discussion starts on page 19 (16 before E2, 18
+after the first pass), and Limitations is on page 20.
 
 ## For the first author: sentences not edited
 
@@ -662,19 +762,15 @@ the review-round edits; it is rebuilt after the rerun.
 7. **Related work**: nothing presupposes token carriers. The frequency link of
    Puccetti et al. (2022) fits LaTa's carriers, which are among its most
    frequent token types; no sentence was added.
-8. <!-- E2-RERUN: drop or update this item once the table is regenerated -->
-   **Generated table `tab:e2_token_audit`** (James's region, render code),
-   as committed before the rerun; the render code of `8413ebc` addresses all
-   three points, and the table is regenerated with the rerun: it
-   is 5.5pt wider than the text block; its caption says "the published SIF
-   cells", which inside the paper should name Section 4; and its rho column is
-   signed although the sign of a component is fixed only by a convention (its
-   largest loading is positive), so the sign of rho is not comparable across
-   layers or models.
-9. **Page budget**: the paper grew from 58 to 60 pages (the table and about
-   one column of text). The E2 design text can be cut further once the
-   findings are accepted.
-10. **Untested, for a later look**: LaTa's PC1 score is close to the share of
-    commas in a passage. Whether same-directory witnesses differ in
-    punctuation more than different-directory pairs do, which would bear on
-    the negative raw gap, was not measured.
+8. **Page budget**: the paper grew from 58 to 60 pages, and the Discussion
+   moved from page 16 to page 19 (the table and about three columns of
+   text: the E2 paragraph has 27 design and 36 findings sentences). The
+   design text is the obvious cut once the findings are accepted.
+9. **Untested, for a later look**: LaTa's PC1 score is close to the share of
+   commas in a passage. Whether same-directory witnesses differ in
+   punctuation more than different-directory pairs do, which would bear on
+   the negative raw gap, was not measured.
+
+The three points on the generated table from the first pass (5.5pt overfull
+box, "the published SIF cells" in the caption, a signed rho column) are fixed
+by the regenerated table of `43f4827`.
