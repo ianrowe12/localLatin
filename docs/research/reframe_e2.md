@@ -759,8 +759,8 @@ builds at 63 pages with no undefined reference and no overfull box.
 |---|---|
 | Abstract | E2's sentences kept; main's P2x2 sentence replaces the P2x2 marker |
 | Sec. 5, E1 paragraph | Main's k-sweep passage comes first and is unchanged. The zeroing follow-up follows it as "a second follow-up, at k = 10 under the variance ranking". Its closing sentence now adds "in line with the 50 to 300 coordinates that zeroing needs in LaTa and PhilTa", and a last sentence says the follow-up was not repeated at larger k. The k-sweep sentence "whether it is the raw direction or another, and why it survives, we did not test" stays, since it is about k = 400 |
-| Sec. 5, E2 paragraph | "E1 shows that zeroing coordinates restores no collapsed layer" becomes "zeroing up to ten coordinates restores no collapsed layer". The design rationale does not cite the k sweep, which came after the E2 design was fixed |
-| Sec. 5, Scope | Both kept: E1's qualification with the follow-up, main's k-sweep sentence, the E2 sentences, and main's closing sentence on architecture or objective |
+| Sec. 5, E2 paragraph | "E1 shows that zeroing coordinates restores no collapsed layer" becomes "zeroing up to ten coordinates restores no collapsed layer". The design rationale does not cite the k sweep: issue #252 records it as E1's result at k up to 10, and the E2 worktree was cut from main before the sweep landed. The sweep itself was merged to main on 1 October at 07:48, about two hours before issue #252 was opened, so it did not come after the design; the commit message of `2ae81bc` says "before the k sweep existed", which is wrong on that point |
+| Sec. 5, Scope | Content of both kept: E1's qualification with the follow-up, main's k-sweep sentence, the E2 sentences, and main's closing sentence on architecture or objective. Two of main's sentences were edited in the process: its qualification sentence gained "yet zeroing them leaves the rest of that direction dominant (E1 and its follow-up)", and its k-sweep sentence lost the leading "Yet" |
 | Discussion | "token types localize the nuisance where coordinates do not" becomes "a few token types ... where a few coordinates do not", since the k sweep repairs LaTa after 50 to 300 coordinates. E2's length sentence kept; main's P2x2 sentences replace the stale confound sentence |
 
 The line numbers in the "Paper edits" tables above are those before the merge.
@@ -785,8 +785,10 @@ The line numbers in the "Paper edits" tables above are those before the merge.
 4. **Introduction, line 116**: "We test whether mean pooling turns these
    coordinates into values that vary from passage to passage and so drown out
    content". Still true as a statement of the test; the outcome could follow.
-5. **Sec. 5 Scope, last sentence**: "whether T5 pretraining or the missing
-   embedding objective produces them" (carried over from the E1 list).
+5. **Sec. 5 Scope, last sentence**: carried over from the E1 list as "whether
+   T5 pretraining or the missing embedding objective produces them"; main has
+   since reworded it to "whether the collapse follows the architecture or the
+   missing embedding objective", so this item is closed.
 6. **Appendix "Why whitening is excluded"**: "SIF acts before pooling, so it
    can only attenuate the frequent tokens that feed the dominant direction".
    E2 supports this for LaTa, in part for PhilTa (the end-of-sequence token
