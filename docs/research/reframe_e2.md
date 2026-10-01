@@ -144,7 +144,10 @@ Also in section 0: the top three variance coordinates equal those of
 `e1_top_coordinates.csv` at 100 of 100 model-layers; the pooling expression
 equals the extraction CLI's own function on the first batch of each model;
 two passages have no token under `mean_nospecial` and `sif` (under
-`mean_nospecial` they fall back to the mean vector, under `sif` never).
+`mean_nospecial` they fall back to the mean vector, under `sif` never, as in
+the CLI: the one such test passage is a zero vector with cosine 0 to every
+other, and leaving it out would move LaTa layer 6 from 0.8782 to 0.8779
+according to the replication log).
 
 Zeroing follow-up (`e2_zeroing_gate_check.csv`, its facts section 0): the
 zeroed coordinate sets, the zero-only AUROC and the top-PC share of the zeroed
@@ -532,7 +535,9 @@ generated `tables/e2_token_audit.tex` (none before).
 8. **Generated table `tab:e2_token_audit`** (James's region, render code): it
    is 5.5pt wider than the text block; its caption says "the published SIF
    cells", which inside the paper should name Section 4; and its rho column is
-   signed although the sign of a component is arbitrary.
+   signed although the sign of a component is fixed only by a convention (its
+   largest loading is positive), so the sign of rho is not comparable across
+   layers or models.
 9. **Page budget**: the paper grew from 58 to 60 pages (the table and about
    one column of text). The E2 design text can be cut further once the
    findings are accepted.
