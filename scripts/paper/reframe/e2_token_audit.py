@@ -832,7 +832,8 @@ def pass_one(enc: Encoder, layers: Sequence[int], dirs: Dict[int, Dict],
             w_arm = [torch.as_tensor(lookups[a], device=dev, dtype=torch.float32) for a in ARMS]
             vocab = len(enc.keep_lookup)
             is_special = torch.zeros(vocab, device=dev)
-            is_special[torch.as_tensor(enc.special_ids, device=dev, dtype=torch.long)] = 1.0
+            inside = [i for i in enc.special_ids if 0 <= i < vocab]
+            is_special[torch.as_tensor(inside, device=dev, dtype=torch.long)] = 1.0
             is_frequent = torch.zeros(vocab, device=dev)
             is_frequent[torch.as_tensor(frequent, device=dev, dtype=torch.long)] = 1.0
             mu = [torch.as_tensor(dirs[x]["mu"], device=dev, dtype=torch.float64) for x in layers]
@@ -1496,6 +1497,8 @@ def summarize(arms: pd.DataFrame, audit: pd.DataFrame, abl: pd.DataFrame,
         for grp in GROUPS:
             r[f"mass_{grp}"] = float(x.get(f"mass_{grp}", nan))
         r["unseen_token_frac"] = float(x.get("unseen_token_frac", nan))
+        r["e1_rank_agrees"] = int(aud.get((mid, layer, "coord1", "train"), {}).get(
+            "e1_rank_agrees", -1))
         with np.errstate(divide="ignore", invalid="ignore"):
             r["var_ratio_pc2_pc3"] = float(np.float64(r["tr_var_pc2"]) / r["tr_var_pc3"])
         for split, pre in (("test", ""), ("train", "tr_")):
@@ -1801,6 +1804,12 @@ def facts(w: pd.DataFrame, arms: pd.DataFrame, carriers: pd.DataFrame, length: p
           "`sif_only` CELLS. THE POOLING-CONTROL CONCLUSIONS (R1, SECTIONS 1 AND 3, AND THE "
           "EXPECTATIONS ABOUT `sif_keepspecial` AND `mean_nospecial`) ARE BLOCKED UNTIL IT "
           "PASSES. DO NOT QUOTE THEM.**")
+    checked = w[w["e1_rank_agrees"] >= 0]
+    a(f"- top-{N_COORD} variance coordinates against `e1_top_coordinates.csv`: "
+      + (f"the same at {count(checked['e1_rank_agrees'] == 1)} model-layers" if len(checked)
+         else "not compared (E1 CSV absent, or a limit run)")
+      + (f"; DIFFERENT at {_labels(checked[checked['e1_rank_agrees'] == 0])}"
+         if (checked["e1_rank_agrees"] == 0).any() else ""))
     sc = arms[arms["arm"].isin(["mean", "sif"])].groupby("arm")["cli_pool_max_abs_diff"].max()
     a("- pooling expression against the extraction CLI's own function on the first batch of "
       "each model, max |diff| over models and layers: "
@@ -1856,7 +1865,7 @@ def facts(w: pd.DataFrame, arms: pd.DataFrame, carriers: pd.DataFrame, length: p
             continue
         gain_ok = t["sif_gain"] >= R1_MIN_SIF_GAIN
         a(f"### {label} (n = {len(t)})")
-        a(f"- SIF gain (AUROC_sif - AUROC_mean): {_rng(t['sif_gain'])}; at least "
+        a(f"- SIF gain (AUROC_sif - AUROC_mean): {_rng(t['sif_gain'], '+.3f')}; at least "
           f"{R1_MIN_SIF_GAIN:.2f} at {count(gain_ok)} layers"
           + (f" (below it at {_labels(t[~gain_ok])}: R1 reports \"no SIF gain to recover\" "
              "there)" if (~gain_ok).any() else ""))
@@ -1864,7 +1873,8 @@ def facts(w: pd.DataFrame, arms: pd.DataFrame, carriers: pd.DataFrame, length: p
             st = t[f"r1_{arm}"]
             a(f"- `{arm}`: rescues {count(st == 'rescue')}; does not rescue "
               f"{count(st == 'no_rescue')}; no SIF gain to recover {count(st == 'no_sif_gain')}"
-              f". AUROC {_rng(t[f'auc_{arm}'])}; change against mean {_rng(t[f'r1chg_{arm}'])}"
+              f". AUROC {_rng(t[f'auc_{arm}'])}; change against mean "
+              f"{_rng(t[f'r1chg_{arm}'], '+.3f')}"
               f"; share of the SIF gain where evaluated {_rng(t[f'r1frac_{arm}'], '.2f')}")
         a(f"- special-token share of the pooling weight, median: " + "; ".join(
             f"{arm} {t[f'spmass_{arm}'].median():.3f}" for arm in ARMS))
