@@ -329,6 +329,25 @@ def build_token_table(pid: np.ndarray, tid: np.ndarray, first: np.ndarray, n_pas
                       types=types, type_idx=type_idx.reshape(-1))
 
 
+def group_masses(tok: TokenTable) -> np.ndarray:
+    """Share of each passage's kept tokens in every group, [N, len(GROUPS)]."""
+    counts = np.stack([np.bincount(tok.pid[tok.group == i], minlength=len(tok.n))
+                       for i in range(len(GROUPS))], axis=1)
+    return counts / np.maximum(tok.n, 1)[:, None]
+
+
+def type_table(tok: TokenTable, train_rows: np.ndarray) -> Dict[str, np.ndarray]:
+    """Per token type: its group, its train token count (special tokens included) and
+    the number of train passages that contain it."""
+    tr = train_rows[tok.pid]
+    group = np.zeros(len(tok.types), dtype=np.int64)
+    group[tok.type_idx] = tok.group
+    pairs = np.unique(tok.type_idx[tr] * len(tok.n) + tok.pid[tr])
+    return {"group": group,
+            "train_count": np.bincount(tok.type_idx[tr], minlength=len(tok.types)),
+            "train_passages": np.bincount(pairs // len(tok.n), minlength=len(tok.types))}
+
+
 def _sum_by(index: np.ndarray, values: np.ndarray, size: int) -> np.ndarray:
     """Column-wise np.bincount: sums of ``values`` [n, j] by ``index`` -> [size, j]."""
     return np.stack([np.bincount(index, weights=values[:, k], minlength=size)
@@ -1074,15 +1093,9 @@ def audit_model(model_id: str, enc: Encoder, ctx: Context, bases_root: Path, poo
             pooled[a][:, empty[a]] = pooled[ARMS.index("mean")][:, empty[a]]
 
     # ---- readout 2 and 4 (CPU), and the carrier rankings pass 2 needs
-    masses = np.stack([np.bincount(tok.pid[tok.group == i], minlength=n_passages)
-                       for i in range(len(GROUPS))], axis=1) / np.maximum(tok.n, 1)[:, None]
-    tr_all = tr[tok.pid]
-    pairs = np.unique(tok.type_idx[tr_all] * n_passages + tok.pid[tr_all])
-    type_group = np.zeros(len(tok.types), dtype=np.int64)
-    type_group[tok.type_idx] = tok.group
-    type_info = {"group": type_group,
-                 "train_passages": np.bincount(pairs // n_passages, minlength=len(tok.types))}
-    train_count = np.bincount(tok.type_idx[tr_all], minlength=len(tok.types))
+    masses = group_masses(tok)
+    type_info = type_table(tok, tr)
+    train_count = type_info["train_count"]
     key0 = {"model": model_id}
     audit_rows: List[Dict] = []
     carrier_rows: List[Dict] = []
@@ -1400,6 +1413,753 @@ def cmd_check(args) -> int:
 
 
 # --------------------------------------------------------------------------- #
+# render: one row per model-layer
+# --------------------------------------------------------------------------- #
+
+JOINT = ("pcs2_3", "pcs1_3")
+JOINT_LABEL = {"pcs2_3": "span(PC2, PC3)", "pcs1_3": "span(PC1, PC2, PC3)"}
+READ_DIRS = PC_NAMES + COORD_NAMES + JOINT
+f3 = e1.f3
+
+
+def f2(x) -> str:
+    return "--" if x is None or not np.isfinite(x) else f"{x:.2f}"
+
+
+def published_cells(res: Optional[pd.DataFrame]) -> Dict[str, Dict[Tuple[str, int], float]]:
+    """Published Task A test AUROC per (model, layer): baseline and sif_only."""
+    out: Dict[str, Dict[Tuple[str, int], float]] = {"baseline": {}, "sif_only": {}}
+    if res is None:
+        return out
+    for method, pooling in (("baseline", "mean"), ("sif_only", "sif")):
+        r = res[(res["repr"] == "hidden") & (res["pooling"] == pooling)
+                & (res["method"] == method)]
+        out[method] = {(m, int(x)): float(v) for m, x, v in zip(r["model"], r["layer"],
+                                                                r["aucroc"])}
+    return out
+
+
+def summarize(arms: pd.DataFrame, audit: pd.DataFrame, abl: pd.DataFrame,
+              length: pd.DataFrame, res: Optional[pd.DataFrame] = None) -> pd.DataFrame:
+    """One row per model-layer with every cell the table and the facts file read, plus
+    the frozen rules applied to them. Test split unless a column starts with ``tr_``.
+
+    ``base`` is the published baseline AUROC (the model's own mean arm when the published
+    CSV is not given); collapsed = a T5 layer with base below COLLAPSE_AUROC.
+    """
+    pub = published_cells(res)
+    nan = float("nan")
+    aud = {(r["model"], int(r["layer"]), r["direction"], r["split"]): r
+           for r in audit.to_dict("records")}
+    rnd = audit[audit["kind"].isin(["random", "random_subspace"])]
+    rnd = {k: g for k, g in rnd.groupby(["model", "layer", "split", "dim"], sort=False)}
+    ablg = {k: g for k, g in abl.groupby(["model", "layer"], sort=False)}
+    ln = {(r["model"], r["split"]): r for r in length.to_dict("records")}
+    rows = []
+    for (mid, layer), g in arms.groupby(["model", "layer"], sort=False):
+        layer = int(layer)
+        g = g.set_index("arm")
+        r: Dict = {"model": mid, "m": DISP.get(mid, mid), "layer": layer}
+        for arm in ARMS:
+            x = g.loc[arm] if arm in g.index else {}
+            r[f"auc_{arm}"] = float(x.get("aucroc", nan))
+            r[f"trauc_{arm}"] = float(x.get("train_aucroc", nan))
+            r[f"pc1_{arm}"] = float(x.get("pc1_share_train", nan))
+            r[f"erank_{arm}"] = float(x.get("eff_rank_train", nan))
+            r[f"fb_{arm}"] = int(x.get("n_fallback", 0))
+            r[f"empty_{arm}"] = int(x.get("n_no_token", 0))
+            r[f"spmass_{arm}"] = float(x.get("special_mass", nan))
+        r["base_published"] = int((mid, layer) in pub["baseline"])
+        r["base"] = pub["baseline"].get((mid, layer), r["auc_mean"])
+        r["sif_gain"] = r["auc_sif"] - r["auc_mean"]
+        for arm in R1_ARMS:
+            r[f"r1_{arm}"], r[f"r1frac_{arm}"], r[f"r1chg_{arm}"] = r1_rescue(
+                r[f"auc_{arm}"], r["auc_mean"], r["auc_sif"])
+        for d in READ_DIRS:
+            for split, pre in (("test", ""), ("train", "tr_")):
+                x = aud.get((mid, layer, d, split), {})
+                r[f"{pre}ev_{d}"] = float(x.get("ev_tokenmix", nan))
+                r[f"{pre}r2_{d}"] = float(x.get("r2_tokenmix", nan))
+                r[f"{pre}eveq_{d}"] = float(x.get("ev_tokenmix_eqw", nan))
+                for grp in GROUPS:
+                    r[f"{pre}sh_{grp}_{d}"] = float(x.get(f"share_{grp}", nan))
+                    r[f"{pre}sheq_{grp}_{d}"] = float(x.get(f"share_{grp}_eqw", nan))
+                r[f"{pre}first_{d}"] = float(x.get("share_first", nan))
+                r[f"{pre}rho_{d}"] = float(x.get("rho_logn", nan))
+                r[f"{pre}rhof_{d}"] = float(x.get("rho_freqmass", nan))
+                r[f"{pre}var_{d}"] = float(x.get("var_s", nan))
+                r[f"{pre}varshare_{d}"] = float(x.get("var_share", nan))
+        x = aud.get((mid, layer, "pc1", "test"), {})
+        for grp in GROUPS:
+            r[f"mass_{grp}"] = float(x.get(f"mass_{grp}", nan))
+        r["unseen_token_frac"] = float(x.get("unseen_token_frac", nan))
+        with np.errstate(divide="ignore", invalid="ignore"):
+            r["var_ratio_pc2_pc3"] = float(np.float64(r["tr_var_pc2"]) / r["tr_var_pc3"])
+        for split, pre in (("test", ""), ("train", "tr_")):
+            for dim, tag in ((1, "rand"), (2, "rand2"), (3, "rand3")):
+                t = rnd.get((mid, layer, split, dim))
+                ev = t["ev_tokenmix"] if t is not None else pd.Series(dtype=float)
+                r[f"{pre}{tag}_ev_mean"] = float(ev.mean()) if len(ev) else nan
+                r[f"{pre}{tag}_ev_min"] = float(ev.min()) if len(ev) else nan
+                r[f"{pre}{tag}_ev_max"] = float(ev.max()) if len(ev) else nan
+                r[f"{pre}{tag}_eveq_mean"] = (float(t["ev_tokenmix_eqw"].mean())
+                                              if t is not None and dim > 1 else nan)
+                for grp in GROUPS:
+                    r[f"{pre}{tag}_sh_{grp}"] = (float(t[f"share_{grp}"].mean())
+                                                 if t is not None else nan)
+                if dim == 1:
+                    r[f"{pre}rand_absrho_mean"] = (float(t["rho_logn"].abs().mean())
+                                                   if t is not None else nan)
+        shares = [r[f"sh_{grp}_pc1"] for grp in GROUPS]
+        r["top_group"] = GROUPS[int(np.argmax(shares))] if np.all(np.isfinite(shares)) else ""
+        # token ablation
+        t = ablg.get((mid, layer))
+        best = (nan, "", -1, nan)
+        ctl_restores = False
+        for ranking in RANKINGS:
+            by_m: Dict[int, float] = {}
+            for m in ABL_MS:
+                c = k = None
+                if t is not None:
+                    sel = t[(t["ranking"] == ranking) & (t["m"] == m)]
+                    c, k = sel[sel["kind"] == "carrier"], sel[sel["kind"] == "control"]
+                auc = float(c["aucroc"].iloc[0]) if c is not None and len(c) else nan
+                by_m[m] = auc
+                tag = f"{ranking}_m{m}"
+                r[f"abl_{tag}"] = auc
+                r[f"abltr_{tag}"] = (float(c["train_aucroc"].iloc[0])
+                                     if c is not None and len(c) else nan)
+                r[f"dm_{tag}"] = (float(c["dropped_mass_test"].iloc[0])
+                                  if c is not None and len(c) else nan)
+                has = k is not None and len(k) > 0
+                r[f"ctl_{tag}_mean"] = float(k["aucroc"].mean()) if has else nan
+                r[f"ctl_{tag}_min"] = float(k["aucroc"].min()) if has else nan
+                r[f"ctl_{tag}_max"] = float(k["aucroc"].max()) if has else nan
+                r[f"cdm_{tag}"] = float(k["dropped_mass_test"].mean()) if has else nan
+                if m <= R3_MAX_M and np.isfinite(auc) and not auc <= best[0]:
+                    best = (auc, ranking, m, r[f"ctl_{tag}_mean"])
+                if m <= R3_MAX_M and has and r[f"ctl_{tag}_mean"] >= R3_AUROC:
+                    ctl_restores = True
+            m_ok = r3_restoring_m(by_m)
+            r[f"r3m_{ranking}"] = -1 if m_ok is None else m_ok
+        r["best_abl"], r["best_abl_ranking"], r["best_abl_m"], r["best_ctl"] = best
+        r["r3"] = bool(any(r[f"r3m_{ranking}"] > 0 for ranking in RANKINGS))
+        r["ctl_r3"] = ctl_restores
+        r["r2"] = r2_token_mix(r["ev_pc1"])
+        x = ln.get((mid, "test"), {})
+        r["len_same"] = float(x.get("mean_dlog_same", nan))
+        r["len_diff"] = float(x.get("mean_dlog_diff", nan))
+        r["r4"] = r4_length(r["rho_pc1"], r["len_same"], r["len_diff"])
+        rows.append(r)
+    w = pd.DataFrame(rows)
+    w["is_t5"] = w["m"].isin(T5)
+    w["collapsed"] = w["is_t5"] & (w["base"] < COLLAPSE_AUROC)
+    return w
+
+
+def worst_layer(w: pd.DataFrame, name: str) -> Optional[pd.Series]:
+    """The model's row at its lowest baseline test AUROC (first layer on ties)."""
+    s = w[w["m"] == name].sort_values("layer")
+    return None if s.empty else s.loc[s["base"].idxmin()]
+
+
+# --------------------------------------------------------------------------- #
+# render: table
+# --------------------------------------------------------------------------- #
+
+CAPTION = (
+    r"\caption{Token audit at each model's worst baseline layer (L). Pooling: Task~A test "
+    r"AUROC of mean pooling (Mean); mean pooling without special tokens (No spec.); SIF "
+    r"frequency weights with special tokens kept (SIF+spec.); SIF as published, which also "
+    r"drops special tokens (SIF); and mean pooling without the 100 most frequent training "
+    r"tokens (No freq.). Token ablation: the highest AUROC after dropping the $m$ token "
+    r"types that contribute most to the top principal components, over $m$ from 1 to 100 "
+    r"and two rankings (Drop), and the mean AUROC of five random sets of as many token "
+    r"types with matched training frequency (Rand.). Token-mix EV: the share of the variance "
+    r"of the first principal component's score across test passages that is explained by "
+    r"which token types a passage contains, with one mean per token type fit on training "
+    r"tokens (PC1), next to the mean of the same quantity over 20 random directions "
+    r"(Rand.). Share by token group: the part of that variance contributed by special "
+    r"tokens, by the 100 most frequent tokens and by all other tokens; the three sum to "
+    r"one. $\rho$: Spearman correlation between the PC1 score and the log token count of "
+    r"test passages. Components, token frequencies and token rankings are fit on training "
+    r"passages only.}")
+
+
+def write_table(w: pd.DataFrame, path: Path) -> List[str]:
+    """Write tab:e2_token_audit. Returns the display names of omitted models."""
+    rows = [(name, worst_layer(w, name)) for name in ORDER]
+    omitted = [name for name, x in rows if x is None]
+    lines = [asw.HEADER, r"\begin{table*}[t]", r"\centering", r"\footnotesize",
+             r"\setlength{\tabcolsep}{3pt}", r"\begin{tabular}{@{}lcccccccccccccc@{}}",
+             r"\toprule",
+             r" & & \multicolumn{5}{c}{AUROC by pooling} & \multicolumn{2}{c}{Token ablation} "
+             r"& \multicolumn{2}{c}{Token-mix EV} & \multicolumn{3}{c}{Share by token group} "
+             r"& \\",
+             r"\cmidrule(lr){3-7}\cmidrule(lr){8-9}\cmidrule(lr){10-11}\cmidrule(lr){12-14}",
+             r"Model & L & Mean & No spec. & SIF+spec. & SIF & No freq. & Drop & Rand. & PC1 "
+             r"& Rand. & Spec. & Freq. & Other & $\rho$ \\",
+             r"\midrule"]
+    for name, x in rows:
+        if x is None:
+            continue
+        cells = ([f3(x[f"auc_{arm}"]) for arm in ARMS]
+                 + [f3(x["best_abl"]), f3(x["best_ctl"]), f2(x["ev_pc1"]), f2(x["rand_ev_mean"])]
+                 + [f2(x[f"sh_{grp}_pc1"]) for grp in GROUPS] + [f2(x["rho_pc1"])])
+        lines.append(f"{name} & {int(x['layer'])} & " + " & ".join(cells) + r" \\")
+    lines += [r"\bottomrule", r"\end{tabular}", CAPTION, r"\label{tab:e2_token_audit}",
+              r"\end{table*}"]
+    path.write_text("\n".join(lines) + "\n")
+    return omitted
+
+
+# --------------------------------------------------------------------------- #
+# render: facts
+# --------------------------------------------------------------------------- #
+
+def _rng(s: pd.Series, fmt: str = ".3f") -> str:
+    """median (min to max) of the finite values."""
+    s = pd.Series(s, dtype=float).dropna()
+    if s.empty:
+        return "n/a"
+    return f"{format(s.median(), fmt)} ({format(s.min(), fmt)} to {format(s.max(), fmt)})"
+
+
+def _layers(t: pd.DataFrame) -> str:
+    return ", ".join(str(int(v)) for v in sorted(t["layer"])) or "none"
+
+
+def _labels(t: pd.DataFrame) -> str:
+    return ", ".join(f"{m} {int(x)}" for m, x in zip(t["m"], t["layer"])) or "none"
+
+
+def _md(head: Sequence[str], body: Sequence[Sequence[str]]) -> List[str]:
+    return (["| " + " | ".join(head) + " |", "|" + "---|" * len(head)]
+            + ["| " + " | ".join(r) + " |" for r in body])
+
+
+def carrier_lines(carriers: pd.DataFrame, mid: str, layer: int, top: int = 10) -> List[str]:
+    """The top carrier token types of PC1 to PC3 at one model-layer."""
+    out: List[str] = []
+    c = carriers[(carriers["model"] == mid) & (carriers["layer"] == layer)]
+    for d in PC_NAMES:
+        t = c[c["direction"] == d].sort_values("rank").head(top)
+        if t.empty:
+            out.append(f"  - {d.upper()}: no rows")
+            continue
+        out.append(f"  - {d.upper()}, top {len(t)} by train share (token `piece` \"decoded\" "
+                   "[group], train count, passages, mean c, mean |c|, share):")
+        for x in t.itertuples():
+            out.append(f"    - {int(x.rank)}. `{x.token}` \"{x.decoded}\" [{x.group}], "
+                       f"{int(x.train_count)}, {int(x.train_passages)}, {x.mean_c:+.4g}, "
+                       f"{x.mean_abs_c:.4g}, {x.share:+.3f}")
+        full = c[c["direction"] == d]
+        out.append(f"    - sum of the {len(full)} listed shares {full['share'].sum():+.3f}; by "
+                   "group: " + ", ".join(
+                       f"{grp} {full.loc[full['group'] == grp, 'share'].sum():+.3f} "
+                       f"({int((full['group'] == grp).sum())} types)" for grp in GROUPS))
+    return out
+
+
+def facts(w: pd.DataFrame, arms: pd.DataFrame, carriers: pd.DataFrame, length: pd.DataFrame,
+          gates: Optional[pd.DataFrame], path: Path, omitted: Sequence[str] = ()) -> None:
+    L: List[str] = []
+    a = L.append
+    present = [m for m in ORDER if (w["m"] == m).any()]
+    coll = w[w["collapsed"]]
+    n_coll = len(coll)
+    limit = int(arms["limit"].max()) if "limit" in arms.columns and len(arms) else 0
+    verdicts: List[Tuple[str, str]] = []
+
+    def count(mask) -> str:
+        return f"{int(np.sum(mask))}/{len(mask)}"
+
+    a("# E2 token audit: facts (generated)")
+    a("")
+    a("Generated by `scripts/paper/reframe/e2_token_audit.py render` from "
+      f"`{ARMS_NAME}`, `{AUDIT_NAME}`, `{CARRIER_NAME}`, `{ABL_NAME}` and `{LENGTH_NAME}` in "
+      "this directory and the published baseline cells. Every number below is a cell of one "
+      "of those CSVs, or a count, difference, ratio, median, minimum or maximum of such "
+      "cells. AUROC is Task A test AUROC unless marked train; token-audit numbers are on "
+      "test passages unless marked train.")
+    if limit:
+        a("")
+        a(f"**SMOKE RUN (--limit {limit}): the first {limit} train and {limit} test passages "
+          "only. Nothing below is a result; the AUROC gates are skipped.**")
+    a("")
+    a("## Frozen decision rules")
+    a("Fixed after E1 and before any E2 number was read (constants at the top of the script):")
+    a(f"- collapsed = published baseline test AUROC < {COLLAPSE_AUROC:.2f} at a T5 layer.")
+    a(f"- R1 rescue: an arm rescues a collapsed layer if (AUROC_arm - AUROC_mean) / "
+      f"(AUROC_sif - AUROC_mean) >= {R1_RESCUE_FRAC:.2f}, evaluated only where AUROC_sif - "
+      f"AUROC_mean >= {R1_MIN_SIF_GAIN:.2f}; elsewhere \"no SIF gain to recover\" and the "
+      "raw change.")
+    a(f"- R2: the token mix carries the direction at a layer if test EV for PC1 >= {R2_EV}.")
+    a(f"- R3: token ablation restores a collapsed layer if test AUROC >= {R3_AUROC:.2f} for "
+      f"some m <= {R3_MAX_M} (either ranking).")
+    a(f"- R4: the length account holds if |Spearman(s_PC1, log n)| >= {R4_RHO} on test and "
+      "mean |delta log n| is larger for same-directory than for different-directory pairs.")
+    a("- Expectations recorded before the run: in LaTa and PhilTa frequent tokens carry the "
+      "direction (the `frequent` group has the largest share; `sif_keepspecial` rescues, "
+      "`mean_nospecial` does not); in mT5-base no arm rescues and tokens SIF keeps (`other`) "
+      "carry it.")
+    a("- The subspace readouts (span(PC2, PC3), span(PC1, PC2, PC3)) were added to the "
+      "design before the run and carry no rule.")
+    a("")
+    a("## Definitions")
+    a(f"- Forward pass: each model loaded and tokenized as its extraction CLI does "
+      f"(max_length {MAX_LENGTH}, batch size {BATCH_SIZE}, `{TOKEN_FILTER}` keep lookup, "
+      "batches in the cache's row order); one forward with all hidden states. Passages and "
+      "the train/test split come from the split CSV; cached vectors are aligned by filename.")
+    a("- Kept tokens: the tokens mean pooling averages (attention mask times the keep "
+      "lookup; special tokens such as `</s>` are kept). n_p = number of kept tokens.")
+    a(f"- Directions, fit on the cached TRAIN vectors: mu = train mean; PC1 to PC3 = "
+      "EmbeddingCleaner's components (the ones ABTT removes), sign fixed so that the "
+      f"largest loading is positive; coord1 to coord3 = the {N_COORD} coordinates of largest "
+      f"train variance (E1's ranking); {N_RANDOM} random unit directions (seed "
+      f"{RANDOM_SEED}, per model-layer), orthogonal to the top {ORTHO_PCS} PCs and to each "
+      "other.")
+    a("- c_t = (h_t - mu) . w for token t; the passage score s_p = w . (pooled_p - mu) is "
+      "the mean of c_t over the passage's kept tokens (gate 3).")
+    a("- Token-mix EV: per-token-type means of c_t fit on TRAIN tokens (a type unseen in "
+      "train gets the mean over all train tokens); s_hat_p = mean of its tokens' type means; "
+      "EV = 1 - Var(s - s_hat) / Var(s) over the passages of a split. The train value is in "
+      "sample. r2 = squared Pearson correlation of s and s_hat.")
+    a(f"- Token groups: `special` = id in tokenizer.all_special_ids; `frequent` = the "
+      f"{N_FREQUENT} token types of largest train probability (token_probabilities, which "
+      "never counts special tokens); `other` = the rest. share_g = Cov(s_g, s) / Var(s) "
+      "with s_g the part of s contributed by group g; the three shares sum to 1 (gate 4) "
+      "and a share can be negative or exceed 1. `first` = the same share for the first "
+      "kept token of each passage (overlaps the groups). Mass = mean share of a passage's "
+      "kept tokens in the group.")
+    a("- Subspaces: for span(PC2, PC3) and span(PC1, PC2, PC3) the score is a vector and "
+      "variances become traces of covariance matrices: EV = 1 - tr Cov(s - s_hat) / "
+      "tr Cov(s), share_g = tr Cov(s_g, s) / tr Cov(s). These do not change under a "
+      "rotation of the basis inside the subspace, so they are defined where PC2 and PC3 "
+      "are not individually identifiable (train variance ratio near 1). `variance-weighted` "
+      "is that definition; `equal-weight` first whitens the score with its train covariance "
+      "(in the PC basis: divides each component by its train SD), so PC1 does not swamp "
+      "PC2 and PC3. Random controls: 10 disjoint pairs and 6 disjoint triples of the random "
+      "directions.")
+    a(f"- Carriers: per token type, share = Cov(s_type, s) / Var(s) on train; the top "
+      f"{TOP_CARRIERS} per PC are in `{CARRIER_NAME}`. mean c = mean contribution of the "
+      "type's train tokens (sign relative to the fixed sign of the PC), mean |c| its mean "
+      "magnitude, train count includes special tokens.")
+    a("- Pooling arms (all use the CLIs' expression sum w_t h_t / max(sum w_t, 1)): `mean` "
+      "= the cache; `mean_nospecial` = special tokens dropped; `sif_keepspecial` = SIF "
+      "weights a / (a + p) on token types with a train probability and weight 1 on special "
+      "tokens (they have no train probability; this is full SIF with only the zero weight "
+      "on special tokens removed, so a special token weighs more than a frequent token "
+      "there: see the special-token weight mass per arm in section 3); `sif` = the CLI's "
+      f"SIF; `mean_nofreq100` = the {N_FREQUENT} frequent token types dropped, special "
+      "tokens kept. A passage left with no token falls back to its `mean` vector (counted; "
+      "never for `sif`).")
+    a(f"- Token ablation: token types ranked on train by PC1 share (`pc1`) and by the mean "
+      f"of the PC1, PC2, PC3 shares (`pc123`); mean pooling with the top m types dropped, m "
+      f"in {list(ABL_MS)}. Control: for each carrier in rank order, one type drawn among the "
+      f"{MATCH_WINDOW} nearest in train count that are in the top {max(ABL_MS)} of neither "
+      f"ranking, without replacement; {CONTROL_DRAWS} draws; the control for m is the first "
+      "m of a draw. Carrier arms have the full metric block; controls have Task A AUROC "
+      "(unless the run used --control_metrics full).")
+    a("- Length: n_p under each model's tokenizer (truncated at 512); |delta log n| over "
+      "the same- and different-directory pairs Task A scores.")
+    a("- Worst layer = first argmin of the published baseline test AUROC.")
+    a("")
+
+    a("## 0. Coverage and gates")
+    a("- model-layers: " + ", ".join(f"{m} {int((w['m'] == m).sum())}" for m in present)
+      + f" (total {len(w)}); passages: train {int(arms['n_train'].max())}, test "
+      f"{int(arms['n_test'].max())}")
+    a(f"- collapsed layers (baseline AUROC < {COLLAPSE_AUROC:.2f}): {n_coll}: " + (", ".join(
+        f"{m} {int((coll['m'] == m).sum())} ({_layers(coll[coll['m'] == m])})"
+        for m in T5 if (coll["m"] == m).any()) or "none"))
+    if not w["base_published"].all():
+        a(f"- published baseline cell missing at {int((w['base_published'] == 0).sum())} "
+          "model-layers: the mean arm's own AUROC defines collapsed and worst there")
+    if omitted:
+        a("- ABSENT from the CSVs, so omitted from the table and from every count below: "
+          + ", ".join(omitted))
+    gate2_failed = False
+    if gates is None or gates.empty:
+        a("- gates: not evaluated")
+    else:
+        for g in gates.itertuples():
+            a("- " + gate_line(g))
+        bad = gates[(gates["gated"] == 1) & ~gates["ok"].astype(bool)]
+        gate2_failed = bool(bad["gate"].str.startswith("2").any())
+        if limit:
+            a("- limit run: the AUROC gates (1a, 2a) are skipped and the others not enforced.")
+        elif len(bad):
+            a("- A gate FAILED. Read the cells it names before quoting numbers that depend "
+              "on them.")
+    if gate2_failed:
+        a("")
+        a("**GATE 2 FAILED: THE RE-DERIVED `sif` ARM DOES NOT REPRODUCE THE PUBLISHED "
+          "`sif_only` CELLS. THE POOLING-CONTROL CONCLUSIONS (R1, SECTIONS 1 AND 3, AND THE "
+          "EXPECTATIONS ABOUT `sif_keepspecial` AND `mean_nospecial`) ARE BLOCKED UNTIL IT "
+          "PASSES. DO NOT QUOTE THEM.**")
+    sc = arms[arms["arm"].isin(["mean", "sif"])].groupby("arm")["cli_pool_max_abs_diff"].max()
+    a("- pooling expression against the extraction CLI's own function on the first batch of "
+      "each model, max |diff| over models and layers: "
+      + ", ".join(f"{arm} {sc[arm]:.2e}" for arm in ("mean", "sif") if arm in sc.index))
+    fb = arms.groupby("arm")[["n_no_token", "n_fallback"]].max()
+    a("- passages with no token under an arm (max over model-layers), and how many fell back "
+      "to the mean vector: " + ", ".join(
+          f"{arm} {int(fb.loc[arm, 'n_no_token'])} / {int(fb.loc[arm, 'n_fallback'])}"
+          for arm in ARMS if arm in fb.index))
+    a("")
+
+    a("## 1. Table rows: each model at its worst baseline layer")
+    for name in present:
+        x = worst_layer(w, name)
+        a(f"- {name} L{int(x['layer'])} (published baseline {f3(x['base'])}):")
+        a("  - AUROC by pooling arm: " + "; ".join(
+            f"{arm} {f3(x[f'auc_{arm}'])}" for arm in ARMS)
+          + "; R1: " + "; ".join(
+              f"{arm} {x[f'r1_{arm}']}"
+              + (f" ({100 * x[f'r1frac_{arm}']:.0f}% of the SIF gain)"
+                 if np.isfinite(x[f"r1frac_{arm}"]) else f" (change {x[f'r1chg_{arm}']:+.3f})")
+              for arm in R1_ARMS))
+        a("  - top-PC share of the train vectors by arm: " + "; ".join(
+            f"{arm} {f3(x[f'pc1_{arm}'])}" for arm in ARMS))
+        a(f"  - token ablation: best AUROC {f3(x['best_abl'])} (ranking "
+          f"{x['best_abl_ranking']}, m={int(x['best_abl_m'])}); matched random control at "
+          f"that ranking and m {f3(x['best_ctl'])}")
+        a(f"  - token-mix EV: PC1 {f3(x['ev_pc1'])} (train {f3(x['tr_ev_pc1'])}), PC2 "
+          f"{f3(x['ev_pc2'])}, PC3 {f3(x['ev_pc3'])}; random directions mean "
+          f"{f3(x['rand_ev_mean'])} ({f3(x['rand_ev_min'])} to {f3(x['rand_ev_max'])})")
+        a("  - PC1 share by group: " + ", ".join(
+            f"{grp} {x[f'sh_{grp}_pc1']:+.3f}" for grp in GROUPS)
+          + f"; first token {x['first_pc1']:+.3f}; token mass: " + ", ".join(
+              f"{grp} {f3(x[f'mass_{grp}'])}" for grp in GROUPS))
+        a(f"  - Spearman of the PC1 score with log n {x['rho_pc1']:+.3f}, with the "
+          f"frequent-token mass {x['rhof_pc1']:+.3f}")
+    a("")
+
+    # ---------------------------------------------------------------- R1
+    a("## 2. Collapsed layers at a glance")
+    if n_coll:
+        a(f"- AUROC, median (min to max) over the {n_coll} collapsed layers: " + "; ".join(
+            f"{arm} {_rng(coll[f'auc_{arm}'])}" for arm in ARMS))
+        a(f"- top-PC share of the train vectors: " + "; ".join(
+            f"{arm} {_rng(coll[f'pc1_{arm}'])}" for arm in ARMS))
+    a("")
+    a("## 3. R1: pooling control")
+    if gate2_failed:
+        a("**BLOCKED: gate 2 failed (see section 0). The lines below are not to be quoted.**")
+    for label, t in [("all collapsed layers", coll)] + [
+            (m, coll[coll["m"] == m]) for m in T5 if (coll["m"] == m).any()]:
+        if t.empty:
+            continue
+        gain_ok = t["sif_gain"] >= R1_MIN_SIF_GAIN
+        a(f"### {label} (n = {len(t)})")
+        a(f"- SIF gain (AUROC_sif - AUROC_mean): {_rng(t['sif_gain'])}; at least "
+          f"{R1_MIN_SIF_GAIN:.2f} at {count(gain_ok)} layers"
+          + (f" (below it at {_labels(t[~gain_ok])}: R1 reports \"no SIF gain to recover\" "
+             "there)" if (~gain_ok).any() else ""))
+        for arm in R1_ARMS:
+            st = t[f"r1_{arm}"]
+            a(f"- `{arm}`: rescues {count(st == 'rescue')}; does not rescue "
+              f"{count(st == 'no_rescue')}; no SIF gain to recover {count(st == 'no_sif_gain')}"
+              f". AUROC {_rng(t[f'auc_{arm}'])}; change against mean {_rng(t[f'r1chg_{arm}'])}"
+              f"; share of the SIF gain where evaluated {_rng(t[f'r1frac_{arm}'], '.2f')}")
+        a(f"- special-token share of the pooling weight, median: " + "; ".join(
+            f"{arm} {t[f'spmass_{arm}'].median():.3f}" for arm in ARMS))
+    a("")
+
+    # ---------------------------------------------------------------- R2
+    a("## 4. R2: does the token mix carry the direction?")
+    if n_coll:
+        v = f"{int(coll['r2'].sum())}/{n_coll}"
+        a(f"- **R2 holds at {v} collapsed layers** (test EV for PC1 >= {R2_EV}); per model: "
+          + ", ".join(f"{m} {count(coll[coll['m'] == m]['r2'])}" for m in T5
+                      if (coll["m"] == m).any()))
+        verdicts.append((f"R2 token mix carries PC1 (test EV >= {R2_EV}) at collapsed layers", v))
+    for label, t in [("all collapsed layers", coll)] + [
+            (m, coll[coll["m"] == m]) for m in T5 if (coll["m"] == m).any()]:
+        if t.empty:
+            continue
+        a(f"### {label} (n = {len(t)}): median (min to max)")
+        for d in PC_NAMES:
+            a(f"- {d.upper()}: test EV {_rng(t[f'ev_{d}'])}, r2 {_rng(t[f'r2_{d}'])}; train EV "
+              f"{_rng(t[f'tr_ev_{d}'])}; share of the train variance "
+              f"{_rng(t[f'tr_varshare_{d}'])}")
+        a(f"- random directions, mean over {N_RANDOM}: test EV {_rng(t['rand_ev_mean'])}; "
+          f"lowest {_rng(t['rand_ev_min'])}, highest {_rng(t['rand_ev_max'])}; train EV "
+          f"{_rng(t['tr_rand_ev_mean'])}")
+        for d in JOINT:
+            tag = "rand2" if d == "pcs2_3" else "rand3"
+            a(f"- {JOINT_LABEL[d]}: test EV variance-weighted {_rng(t[f'ev_{d}'])}, "
+              f"equal-weight {_rng(t[f'eveq_{d}'])}; train {_rng(t[f'tr_ev_{d}'])} and "
+              f"{_rng(t[f'tr_eveq_{d}'])}; random {2 if tag == 'rand2' else 3}-D subspaces, "
+              f"mean: variance-weighted {_rng(t[f'{tag}_ev_mean'])}, equal-weight "
+              f"{_rng(t[f'{tag}_eveq_mean'])}")
+        a(f"- train variance ratio var(PC2) / var(PC3): {_rng(t['var_ratio_pc2_pc3'], '.2f')}"
+          f"; below 1.5 at {count(t['var_ratio_pc2_pc3'] < 1.5)} layers (there PC2 and PC3 "
+          "are close to interchangeable and only the subspace readouts are stable)")
+        a("- secondary, top-variance coordinates: test EV " + "; ".join(
+            f"{d} {_rng(t[f'ev_{d}'])}" for d in COORD_NAMES))
+    a("")
+
+    # ---------------------------------------------------------------- shares
+    a("## 5. Which token group carries the score variance?")
+    for label, t in [("all collapsed layers", coll)] + [
+            (m, coll[coll["m"] == m]) for m in T5 if (coll["m"] == m).any()]:
+        if t.empty:
+            continue
+        a(f"### {label} (n = {len(t)}): median (min to max)")
+        for d in PC_NAMES:
+            a(f"- {d.upper()} share, test: " + "; ".join(
+                f"{grp} {_rng(t[f'sh_{grp}_{d}'], '+.3f')}" for grp in GROUPS)
+              + f"; first token {_rng(t[f'first_{d}'], '+.3f')}")
+        a("- PC1 share, train: " + "; ".join(
+            f"{grp} {_rng(t[f'tr_sh_{grp}_pc1'], '+.3f')}" for grp in GROUPS))
+        a("- largest PC1 group (test): " + ", ".join(
+            f"{grp} at {count(t['top_group'] == grp)}" for grp in GROUPS))
+        for d in JOINT:
+            a(f"- {JOINT_LABEL[d]} share, test, variance-weighted: " + "; ".join(
+                f"{grp} {_rng(t[f'sh_{grp}_{d}'], '+.3f')}" for grp in GROUPS)
+              + "; equal-weight: " + "; ".join(
+                  f"{grp} {_rng(t[f'sheq_{grp}_{d}'], '+.3f')}" for grp in GROUPS))
+        a("- random directions, mean share: " + "; ".join(
+            f"{grp} {_rng(t[f'rand_sh_{grp}'], '+.3f')}" for grp in GROUPS))
+        a("- token mass: " + "; ".join(f"{grp} {_rng(t[f'mass_{grp}'])}" for grp in GROUPS)
+          + f"; test tokens of a type unseen in train {_rng(t['unseen_token_frac'])}")
+        a(f"- Spearman of the PC1 score with the frequent-token mass: "
+          f"{_rng(t['rhof_pc1'], '+.3f')}")
+    a("")
+
+    # ---------------------------------------------------------------- R3
+    a("## 6. R3: token ablation")
+    if n_coll:
+        v = f"{int(coll['r3'].sum())}/{n_coll}"
+        a(f"- **R3 holds at {v} collapsed layers** (test AUROC >= {R3_AUROC:.2f} for some "
+          f"m <= {R3_MAX_M}, either ranking); per model: "
+          + ", ".join(f"{m} {count(coll[coll['m'] == m]['r3'])}" for m in T5
+                      if (coll["m"] == m).any())
+          + f"; the matched random control (mean of {CONTROL_DRAWS} draws) reaches "
+          f"{R3_AUROC:.2f} at {count(coll['ctl_r3'])}")
+        verdicts.append((f"R3 token ablation restores collapsed layers (AUROC >= "
+                         f"{R3_AUROC:.2f}, m <= {R3_MAX_M})", v))
+    for label, t in [("all collapsed layers", coll)] + [
+            (m, coll[coll["m"] == m]) for m in T5 if (coll["m"] == m).any()]:
+        if t.empty:
+            continue
+        a(f"### {label} (n = {len(t)})")
+        a(f"- best AUROC over rankings and m: {_rng(t['best_abl'])}; matched control at the "
+          f"same ranking and m: {_rng(t['best_ctl'])}; mean arm {_rng(t['auc_mean'])}")
+        for ranking in RANKINGS:
+            ok = t[f"r3m_{ranking}"] > 0
+            a(f"- ranking by {RANK_LABEL[ranking]}: restored at {count(ok)}"
+              + (f" (smallest m: {_rng(t.loc[ok, f'r3m_{ranking}'], '.0f')})" if ok.any() else "")
+              + "; AUROC by m, carriers / control mean: " + "; ".join(
+                  f"m={m} {t[f'abl_{ranking}_m{m}'].median():.3f} / "
+                  f"{t[f'ctl_{ranking}_m{m}_mean'].median():.3f}" for m in ABL_MS)
+              + f"; share of test tokens dropped at m={ABL_MS[-1]}: carriers "
+              f"{t[f'dm_{ranking}_m{ABL_MS[-1]}'].median():.3f}, control "
+              f"{t[f'cdm_{ranking}_m{ABL_MS[-1]}'].median():.3f} (medians)")
+    a("")
+
+    # ---------------------------------------------------------------- R4
+    a("## 7. R4: passage length")
+    for name in present:
+        t = length[length["model"] == {v: k for k, v in DISP.items()}.get(name, name)]
+        for x in t.itertuples():
+            a(f"- {name}, {x.split}: n_p mean {x.mean_n:.1f}, median {x.median_n:.0f}; "
+              f"truncated at {MAX_LENGTH} {int(x.n_truncated)}, no token {int(x.n_zero_token)}"
+              f" of {int(x.n_passages)}; mean |delta log n| same-directory "
+              f"{x.mean_dlog_same:.4f} ({int(x.n_same_pairs)} pairs), different-directory "
+              f"{x.mean_dlog_diff:.4f} ({int(x.n_diff_pairs)} pairs); medians "
+              f"{x.median_dlog_same:.4f} and {x.median_dlog_diff:.4f}; AUROC of "
+              f"-|delta log n| {x.auroc_neg_dlog:.4f}")
+    if n_coll:
+        v = f"{int(coll['r4'].sum())}/{n_coll}"
+        a(f"- **R4 holds at {v} collapsed layers**; |Spearman(s_PC1, log n)| >= {R4_RHO} at "
+          f"{count(coll['rho_pc1'].abs() >= R4_RHO)}; same-directory pairs differ more in log "
+          f"length than different-directory pairs at {count(coll['len_same'] > coll['len_diff'])}"
+          " (a per-model fact)")
+        verdicts.append(("R4 length account at collapsed layers", v))
+        for m in T5:
+            t = coll[coll["m"] == m]
+            if len(t):
+                a(f"  - {m}: R4 at {count(t['r4'])}; Spearman of the PC1 score with log n "
+                  f"{_rng(t['rho_pc1'], '+.3f')} (train {_rng(t['tr_rho_pc1'], '+.3f')}); PC2 "
+                  f"{_rng(t['rho_pc2'], '+.3f')}, PC3 {_rng(t['rho_pc3'], '+.3f')}; random "
+                  f"directions, mean |rho| {_rng(t['rand_absrho_mean'])}")
+    a("")
+
+    # ---------------------------------------------------------------- expectations
+    a("## 8. Expectations recorded before the run")
+    for m in ("LaTa", "PhilTa"):
+        t = coll[coll["m"] == m]
+        if t.empty:
+            continue
+        k = int((t["top_group"] == "frequent").sum())
+        v = f"{'MET' if k == len(t) else 'NOT MET'} ({k}/{len(t)})"
+        a(f"- {m}: `frequent` has the largest PC1 share: **{v}**")
+        verdicts.append((f"{m}: frequent tokens have the largest PC1 share at collapsed layers",
+                         v))
+        k = int((t["r1_sif_keepspecial"] == "rescue").sum())
+        v = f"{'MET' if k == len(t) else 'NOT MET'} ({k}/{len(t)})"
+        a(f"- {m}: `sif_keepspecial` rescues: **{v}**")
+        verdicts.append((f"{m}: sif_keepspecial rescues collapsed layers (R1)", v))
+        k = int((t["r1_mean_nospecial"] == "no_rescue").sum())
+        ng = int((t["r1_mean_nospecial"] == "no_sif_gain").sum())
+        v = f"{'MET' if k == len(t) else 'NOT MET'} ({k}/{len(t)} not rescued"
+        v += f"; {ng} with no SIF gain to recover)" if ng else ")"
+        a(f"- {m}: `mean_nospecial` does not rescue: **{v}**")
+        verdicts.append((f"{m}: mean_nospecial does not rescue collapsed layers (R1)", v))
+    t = coll[coll["m"] == "mT5-base"]
+    if len(t):
+        evaluable = t["sif_gain"] >= R1_MIN_SIF_GAIN
+        rescued = np.zeros(len(t), dtype=bool)
+        for arm in R1_ARMS:
+            rescued |= (t[f"r1_{arm}"] == "rescue").to_numpy()
+        if not evaluable.any():
+            v = (f"NOT EVALUABLE BY R1 (SIF gain below {R1_MIN_SIF_GAIN:.2f} at all {len(t)} "
+                 "layers, so there is no SIF gain to recover)")
+        else:
+            k = int((~rescued & evaluable.to_numpy()).sum())
+            v = (f"{'MET' if k == int(evaluable.sum()) else 'NOT MET'} ({k}/"
+                 f"{int(evaluable.sum())} evaluable layers with no rescuing arm; "
+                 f"{int((~evaluable).sum())} layers with no SIF gain to recover)")
+        a(f"- mT5-base: no arm rescues: **{v}**. Raw changes against mean pooling, median (min "
+          "to max): " + "; ".join(f"{arm} {_rng(t[f'r1chg_{arm}'], '+.3f')}" for arm in R1_ARMS)
+          + f"; sif {_rng(t['sif_gain'], '+.3f')}")
+        verdicts.append(("mT5-base: no arm rescues collapsed layers (R1)", v))
+        k = int((t["top_group"] == "other").sum())
+        v = f"{'MET' if k == len(t) else 'NOT MET'} ({k}/{len(t)})"
+        a(f"- mT5-base: tokens SIF keeps (`other`) have the largest PC1 share: **{v}**")
+        verdicts.append(("mT5-base: `other` tokens have the largest PC1 share at collapsed "
+                         "layers", v))
+    a("")
+
+    # ---------------------------------------------------------------- carriers
+    a("## 9. Carrier tokens at the worst layer of each T5 model")
+    id_of = {v: k for k, v in DISP.items()}
+    for name in [m for m in T5 if m in present]:
+        x = worst_layer(w, name)
+        a(f"- {name} L{int(x['layer'])}: PC1 share by group " + ", ".join(
+            f"{grp} {x[f'sh_{grp}_pc1']:+.3f}" for grp in GROUPS)
+          + f"; token-mix EV {f3(x['ev_pc1'])}")
+        L.extend(carrier_lines(carriers, id_of.get(name, name), int(x["layer"])))
+    a("")
+
+    # ---------------------------------------------------------------- healthy contrast
+    a("## 10. Contrast: embedding-trained models and T5 layers that are not collapsed")
+    groups = [(m, w[w["m"] == m]) for m in NON_T5 if m in present]
+    groups += [(f"{m}, not collapsed", w[(w["m"] == m) & ~w["collapsed"]]) for m in T5
+               if m in present]
+    for label, t in groups:
+        if t.empty:
+            continue
+        a(f"- {label} ({len(t)} layers; layers {_layers(t)}), median (min to max):")
+        a("  - AUROC: " + "; ".join(f"{arm} {_rng(t[f'auc_{arm}'])}" for arm in ARMS))
+        a(f"  - token-mix EV: PC1 {_rng(t['ev_pc1'])} (R2 at {count(t['r2'])}); random "
+          f"directions, mean {_rng(t['rand_ev_mean'])}; {JOINT_LABEL['pcs1_3']} "
+          f"variance-weighted {_rng(t['ev_pcs1_3'])}, equal-weight {_rng(t['eveq_pcs1_3'])}")
+        a("  - PC1 share: " + "; ".join(
+            f"{grp} {_rng(t[f'sh_{grp}_pc1'], '+.3f')}" for grp in GROUPS)
+          + f"; first token {_rng(t['first_pc1'], '+.3f')}; PC1 share of the train variance "
+          f"{_rng(t['tr_varshare_pc1'])}")
+        a(f"  - Spearman of the PC1 score with log n {_rng(t['rho_pc1'], '+.3f')}; token "
+          f"ablation, best AUROC {_rng(t['best_abl'])} against control {_rng(t['best_ctl'])}")
+    a("")
+
+    a("## 11. Verdicts in one place")
+    if gate2_failed:
+        a("- GATE 2 FAILED: the R1 lines and the pooling expectations below are blocked.")
+    for claim, v in verdicts:
+        a(f"- {claim}: {v}")
+    a("")
+
+    # ---------------------------------------------------------------- per layer
+    a("## 12. All layers")
+    a("\\* marks a collapsed layer. R1 cells: share of the SIF gain recovered, or `ng` and "
+      "the raw change where SIF gains less than "
+      f"{R1_MIN_SIF_GAIN:.2f}.")
+    for name in present:
+        t = w[w["m"] == name].sort_values("layer")
+
+        def lab(x) -> str:
+            return f"{int(x['layer'])}{'*' if x['collapsed'] else ''}"
+
+        def r1cell(x, arm) -> str:
+            if np.isfinite(x[f"r1frac_{arm}"]):
+                return f"{x[f'r1frac_{arm}']:.2f}"
+            return f"ng {x[f'r1chg_{arm}']:+.3f}"
+
+        a(f"### {name}: AUROC by pooling arm, and R1")
+        L.extend(_md(["L", "published", *ARMS, *(f"R1 {arm}" for arm in R1_ARMS)],
+                     [[lab(x), f3(x["base"]) if x["base_published"] else "--",
+                       *(f3(x[f"auc_{arm}"]) for arm in ARMS),
+                       *(r1cell(x, arm) for arm in R1_ARMS)] for _, x in t.iterrows()]))
+        a("")
+        a(f"### {name}: token audit of PC1 (test)")
+        L.extend(_md(["L", "EV", "r2", "EV train", "EV random mean (min to max)",
+                      *(f"share {grp}" for grp in GROUPS), "share first", "rho log n",
+                      "rho freq mass", "R2", "R4"],
+                     [[lab(x), f3(x["ev_pc1"]), f3(x["r2_pc1"]), f3(x["tr_ev_pc1"]),
+                       f"{f3(x['rand_ev_mean'])} ({f3(x['rand_ev_min'])} to "
+                       f"{f3(x['rand_ev_max'])})",
+                       *(f"{x[f'sh_{grp}_pc1']:+.3f}" for grp in GROUPS),
+                       f"{x['first_pc1']:+.3f}", f"{x['rho_pc1']:+.3f}", f"{x['rhof_pc1']:+.3f}",
+                       "yes" if x["r2"] else "no", "yes" if x["r4"] else "no"]
+                      for _, x in t.iterrows()]))
+        a("")
+        a(f"### {name}: PC2, PC3 and the subspaces (test)")
+        L.extend(_md(["L", "var PC1", "var PC2", "var PC3", "var PC2 / var PC3", "EV PC2",
+                      "EV PC3", "EV span(PC2,3)", "eq-weight", "EV span(PC1-3)", "eq-weight",
+                      "EV random 2-D", "EV random 3-D",
+                      *(f"span(PC2,3) {grp}" for grp in GROUPS),
+                      *(f"span(PC1-3) eq-weight {grp}" for grp in GROUPS)],
+                     [[lab(x), *(f"{x[f'tr_var_{d}']:.4g}" for d in PC_NAMES),
+                       f2(x["var_ratio_pc2_pc3"]), f3(x["ev_pc2"]), f3(x["ev_pc3"]),
+                       f3(x["ev_pcs2_3"]), f3(x["eveq_pcs2_3"]), f3(x["ev_pcs1_3"]),
+                       f3(x["eveq_pcs1_3"]), f3(x["rand2_ev_mean"]), f3(x["rand3_ev_mean"]),
+                       *(f"{x[f'sh_{grp}_pcs2_3']:+.3f}" for grp in GROUPS),
+                       *(f"{x[f'sheq_{grp}_pcs1_3']:+.3f}" for grp in GROUPS)]
+                      for _, x in t.iterrows()]))
+        a("")
+        for ranking in RANKINGS:
+            a(f"### {name}: token ablation, ranking by {RANK_LABEL[ranking]} (carriers / "
+              "control mean)")
+            L.extend(_md(["L", "mean", *(f"m={m}" for m in ABL_MS), "R3 smallest m"],
+                         [[lab(x), f3(x["auc_mean"]),
+                           *(f"{f3(x[f'abl_{ranking}_m{m}'])} / "
+                             f"{f3(x[f'ctl_{ranking}_m{m}_mean'])}" for m in ABL_MS),
+                           str(int(x[f"r3m_{ranking}"])) if x[f"r3m_{ranking}"] > 0 else "none"]
+                          for _, x in t.iterrows()]))
+            a("")
+    path.write_text("\n".join(L) + "\n")
+
+
+def cmd_render(args) -> int:
+    arms = read_csv(args.out_dir / ARMS_NAME)
+    audit = read_csv(args.out_dir / AUDIT_NAME)
+    carriers = read_csv(args.out_dir / CARRIER_NAME)
+    abl = read_csv(args.out_dir / ABL_NAME)
+    length = read_csv(args.out_dir / LENGTH_NAME)
+    res = pd.read_csv(args.results_csv) if Path(args.results_csv).exists() else None
+    w = summarize(arms, audit, abl, length, res)
+    args.tab_dir.mkdir(parents=True, exist_ok=True)
+    omitted = write_table(w, args.tab_dir / TABLE_NAME)
+    for name in omitted:
+        print(f"omitting {name}: no rows in {args.out_dir / ARMS_NAME}")
+    print(f"wrote {args.tab_dir / TABLE_NAME} ({len(ORDER) - len(omitted)} model rows)")
+    for name in ORDER:
+        x = worst_layer(w, name)
+        if x is not None:
+            print(f"  worst baseline layer {name}: {int(x['layer'])} (AUROC {x['base']:.3f})")
+    if args.facts_md is not None:
+        gates = gates_for(arms, audit, args)
+        args.facts_md.parent.mkdir(parents=True, exist_ok=True)
+        facts(w, arms, carriers, length, gates, args.facts_md, omitted=omitted)
+        print(f"wrote {args.facts_md}")
+    return 0
+
+
+# --------------------------------------------------------------------------- #
 # main
 # --------------------------------------------------------------------------- #
 
@@ -1436,13 +2196,24 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     p = sub.add_parser("check", help="gates on existing CSVs")
     refs(p)
     p.add_argument("--no_write", action="store_true", help=f"do not rewrite {GATE_NAME}")
+    p = sub.add_parser("render", help="paper table and facts file")
+    refs(p)
+    p.add_argument("--tab_dir", type=Path, default=TAB_DIR)
+    p.add_argument("--facts_md", type=Path, default=None)
+    p.add_argument("--no_facts", action="store_true")
     args = ap.parse_args(argv)
     if args.out_dir is None:
         limit = getattr(args, "limit", 0)
         args.out_dir = OUT_DIR / f"smoke_limit{limit}" if limit else OUT_DIR
     if args.cmd == "audit":
         return cmd_audit(args)
-    return cmd_check(args)
+    if args.cmd == "check":
+        return cmd_check(args)
+    if args.facts_md is None and not args.no_facts:
+        args.facts_md = args.out_dir / FACTS_NAME
+    if args.no_facts:
+        args.facts_md = None
+    return cmd_render(args)
 
 
 if __name__ == "__main__":
