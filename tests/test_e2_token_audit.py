@@ -570,6 +570,715 @@ def test_limit_rows_takes_the_first_of_each_split():
     np.testing.assert_array_equal(e2.limit_rows(split, 50), np.arange(6))
 
 
+# --------------------------------------------------------------------------- #
+# fabricated result CSVs (numpy only): gates and render
+# --------------------------------------------------------------------------- #
+
+MT5 = "google/mt5-base"
+# Task A test AUROC per arm, in the order of e2.ARMS. LaTa 2 and 3 and mT5-base 5 are
+# collapsed; at LaTa 3 and mT5-base 5 SIF gains less than 0.05.
+FIX_AUC = {(LATA, 1): (0.93, 0.93, 0.94, 0.95, 0.94),
+           (LATA, 2): (0.50, 0.51, 0.86, 0.88, 0.80),
+           (LATA, 3): (0.66, 0.67, 0.67, 0.68, 0.69),
+           (MT5, 5): (0.654, 0.655, 0.66, 0.672, 0.70),
+           (LABSE, 1): (0.81, 0.80, 0.82, 0.82, 0.83)}
+# carrier-drop AUROC by m for the pc1 ranking; pc123 is 0.02 lower; controls stay near mean
+FIX_ABL = {(LATA, 2): (0.52, 0.60, 0.85, 0.93, 0.95), (LATA, 3): (0.66, 0.67, 0.70, 0.75, 0.80)}
+
+
+def _np_layer(mid, layer, seed, nuisance):
+    """One fake model-layer through layer_audit: random token states in which the
+    frequent tokens carry a planted direction of size ``nuisance``."""
+    tok, train, test, rng = _tokens(n_tr=40, n_te=30, vocab=60, seed=seed)
+    d = 40
+    h = rng.normal(size=(60, d))[tok.tid] + 0.5 * rng.normal(size=(len(tok.pid), d))
+    h[:, 0] += nuisance * (tok.group == 1)
+    h = h.astype(np.float32).astype(np.float64)
+    pooled = e2.passage_scores(h, tok)
+    cached = pooled.astype(np.float32)
+    dirs = e2.fit_directions(cached[train], seed=(e2.RANDOM_SEED, 0, layer))
+    audit, carriers, share = e2.layer_audit(
+        {"model": mid, "layer": layer}, (h - dirs["mu"]) @ dirs["W"].T, tok, dirs, train, test,
+        e2.group_masses(tok), (pooled - dirs["mu"]) @ dirs["W"].T, cached,
+        lambda i: (f"▁t{i}", f" t{i}" if i != EOS else "</s>"), e2.type_table(tok, train))
+    return audit, carriers, share, tok, train, test
+
+
+def _fixture(limit=0):
+    """The five result frames of three fake models, and the matching published cells."""
+    arms, audit, carriers, abl, length, res = [], [], [], [], [], []
+    block = list(asw.KEEP) + ["pc1_share_train", "pc10_share_train", "eff_rank_train"]
+    for i, ((mid, layer), aucs) in enumerate(FIX_AUC.items()):
+        a, c, _, tok, train, test = _np_layer(mid, layer, seed=i,
+                                              nuisance=30.0 if aucs[0] < 0.7 else 0.0)
+        audit += a
+        carriers += c
+        for arm, auc in zip(e2.ARMS, aucs):
+            ref = arm in ("mean", "sif")
+            arms.append({"model": mid, "layer": layer, "arm": arm,
+                         **{k: 0.5 for k in block}, "aucroc": auc, "train_aucroc": auc + 0.01,
+                         "pc1_share_train": 0.9 if arm == "mean" and auc < 0.7 else 0.2,
+                         "n_no_token": 0, "n_fallback": 0, "special_mass": 0.05,
+                         "frequent_mass": 0.4,
+                         "vec_max_abs_diff": 1e-5 if ref else np.nan,
+                         "vec_max_rel_diff": 1e-7 if ref else np.nan,
+                         "cli_pool_max_abs_diff": 0.0 if ref else np.nan,
+                         "n_train": 40, "n_test": 30, "limit": limit})
+        res.append({"model": mid, "repr": "hidden", "pooling": "mean", "layer": layer,
+                    "method": "baseline", "aucroc": aucs[0]})
+        res.append({"model": mid, "repr": "hidden", "pooling": "sif", "layer": layer,
+                    "method": "sif_only", "aucroc": aucs[3]})
+        res.append({"model": mid, "repr": "hidden", "pooling": "mean", "layer": layer,
+                    "method": "abtt_fixed", "aucroc": 0.123})
+        by_m = FIX_ABL.get((mid, layer), (aucs[0],) * 5)
+        for ri, ranking in enumerate(e2.RANKINGS):
+            for kind, draws in (("carrier", [-1]), ("control", range(e2.CONTROL_DRAWS))):
+                for draw in draws:
+                    for m, auc in zip(e2.ABL_MS, by_m):
+                        val = auc - 0.02 * ri if kind == "carrier" else aucs[0] + 0.001 * draw
+                        abl.append({"model": mid, "layer": layer, "ranking": ranking,
+                                    "kind": kind, "draw": draw, "m": m, "n_types": m,
+                                    "types": ";".join(str(3 + j) for j in range(m)),
+                                    **{k: np.nan for k in block}, "aucroc": val,
+                                    "train_aucroc": val, "n_fallback": 0,
+                                    "dropped_mass_train": 0.01 * m ** 0.5,
+                                    "dropped_mass_test": 0.01 * m ** 0.5,
+                                    "train_count_dropped": 10 * m})
+        if layer == min(x for m_, x in FIX_AUC if m_ == mid):
+            ids = np.random.default_rng(i).integers(0, 9, size=len(tok.n)).astype(str)
+            for split, rows in (("train", train), ("test", test)):
+                n = tok.n[rows]
+                length.append({"model": mid, "split": split, "n_passages": int(rows.sum()),
+                               "n_zero_token": 0, "n_truncated": 0, "mean_n": float(n.mean()),
+                               "median_n": float(np.median(n)),
+                               **e2.length_stats(n, upper_triangle_labels(ids[rows]))})
+    frames = {e2.ARMS_NAME: pd.DataFrame(arms), e2.AUDIT_NAME: pd.DataFrame(audit),
+              e2.CARRIER_NAME: pd.DataFrame(carriers), e2.ABL_NAME: pd.DataFrame(abl),
+              e2.LENGTH_NAME: pd.DataFrame(length)}
+    return frames, pd.DataFrame(res)
+
+
+FIX_MODELS = [LATA, MT5, LABSE]
+
+
+def _gt(frames, res, **kwargs):
+    kwargs.setdefault("expected", FIX_MODELS)
+    return e2.gate_table(frames[e2.ARMS_NAME], frames[e2.AUDIT_NAME], res, **kwargs)
+
+
+def _failing(g):
+    return sorted((row.model, row.gate.split(" ")[0]) for row in g.itertuples()
+                  if row.gated and not row.ok)
+
+
+def _set(df, where, column, value):
+    out = df.copy()
+    assert where(out).sum() >= 1
+    out.loc[where(out), column] = value
+    return out
+
+
+def test_layer_audit_rows_identity_shares_and_carriers():
+    audit, carriers, share, tok, train, test = _np_layer(LATA, 4, seed=3, nuisance=30.0)
+    a = pd.DataFrame(audit)
+    n_dir = len(e2.DIRECTIONS) + len(e2.SUBSPACES)
+    assert len(a) == 2 * n_dir and list(a.direction[:2]) == ["pc1", "pc1"]
+    assert list(a.split[:2]) == ["train", "test"]
+    single, joint = a[a.dim == 1], a[a.dim > 1]
+    assert set(joint.direction) == {s[0] for s in e2.SUBSPACES}
+    assert set(joint.kind) == {"pc_subspace", "random_subspace"}
+    # gates 3 and 4 hold on exact arithmetic
+    assert single.identity_max_rel_diff.max() < 1e-12
+    assert single.cache_score_max_abs_diff.max() < 1e-4  # float32 cache against float64
+    assert a.share_sum_err.abs().max() < 1e-10 and joint.share_sum_err_eqw.abs().max() < 1e-10
+    assert joint.identity_max_rel_diff.isna().all() and joint.rho_logn.isna().all()
+    assert single.ev_tokenmix_eqw.isna().all() and joint.ev_tokenmix_eqw.notna().all()
+    pc1 = a[(a.direction == "pc1") & (a.split == "test")].iloc[0]
+    # the planted direction is carried by the frequent tokens, and the token mix explains it
+    assert pc1.share_frequent > 0.8 and pc1.ev_tokenmix > 0.8
+    assert pc1.rho_freqmass > 0.8
+    assert pc1.mass_special + pc1.mass_frequent + pc1.mass_other == pytest.approx(1.0)
+    assert pc1.var_share > 0.25
+    rand = a[(a.kind == "random") & (a.split == "test")]
+    assert len(rand) == e2.N_RANDOM and rand.var_share.max() < 0.1
+    # PC variances decrease; the joint variance is the sum of its members'
+    var = {d: a[(a.direction == d) & (a.split == "train")].var_s.iloc[0] for d in e2.PC_NAMES}
+    assert var["pc1"] > var["pc2"] > var["pc3"]
+    j = a[(a.direction == "pcs2_3") & (a.split == "train")].iloc[0]
+    assert j.var_s == pytest.approx(var["pc2"] + var["pc3"], rel=1e-12) and j.dim == 2
+    # the train score variance on PC1 is the top eigenvalue of the cached train vectors
+    c = pd.DataFrame(carriers)
+    assert len(c) == e2.N_PC * e2.TOP_CARRIERS and list(c["rank"][:3]) == [1, 2, 3]
+    top = c[(c.direction == "pc1")]
+    assert (top.share.diff().dropna() <= 1e-15).all()  # sorted by share
+    assert set(top.group[:3]) == {"frequent"} and set(top.token_id[:3]) == {3, 4, 5}
+    assert top.token.iloc[0].startswith("▁t") and top.decoded.iloc[0].startswith(" t")
+    assert (top.train_passages <= top.train_count).all()
+    assert share.shape == (e2.N_PC, len(tok.types))
+    np.testing.assert_allclose(share.sum(axis=1), 1.0, atol=1e-10)
+
+
+def test_gates_pass_on_matching_references_and_fail_on_drift():
+    frames, res = _fixture()
+    g = _gt(frames, res)
+    assert len(g) == 6 * len(FIX_MODELS) and e2.gates_passed(g) and g.ok.all()
+    assert list(g.gate.str.split(" ").str[0][:6]) == ["1a", "1b", "2a", "2b", "3", "4"]
+    assert list(g[g.gate.str.startswith("2b")].gated) == [0, 0, 0]
+    assert (g[g.gate.str.startswith(("1a", "2a"))].max_diff == 0).all()
+    assert list(g[g.gate.str.startswith("1a")].n_cells) == [3, 1, 1]
+
+    drift = _set(res, lambda r: (r.model == LATA) & (r.layer == 2) & (r.method == "baseline"),
+                 "aucroc", 0.50 + 5e-6)
+    g = _gt(frames, drift)
+    assert _failing(g) == [(LATA, "1a")] and not e2.gates_passed(g)
+    assert g[~g.ok].iloc[0].cells_over_tolerance.startswith("L2 5.00e-06")
+    assert e2.gates_passed(_gt(frames, drift, tol_auroc=1e-5))
+    drift = _set(res, lambda r: (r.model == MT5) & (r.method == "sif_only"), "aucroc", 0.7)
+    assert _failing(_gt(frames, drift)) == [(MT5, "2a")]
+
+    # a published layer that was not computed, and a missing published cell
+    extra = pd.concat([res, res[(res.model == LATA) & (res.layer == 2)].assign(layer=9)])
+    assert _failing(_gt(frames, extra)) == [(LATA, "1a"), (LATA, "2a")]
+    assert e2.gates_passed(_gt(frames, extra, complete=False))
+    fewer = res[~((res.model == LABSE) & (res.method == "sif_only"))]
+    g = _gt(frames, fewer)
+    assert _failing(g) == [(LABSE, "2a")] and g[~g.ok].iloc[0].n_missing_reference == 1
+    # no published cells at all: the AUROC gates fail, the others still pass
+    assert _failing(_gt(frames, None)) == sorted((m, t) for m in FIX_MODELS for t in ("1a", "2a"))
+    # a limit run has no AUROC gates
+    g = _gt(frames, None, auroc_gates=False)
+    assert len(g) == 4 * len(FIX_MODELS) and e2.gates_passed(g)
+
+
+def test_vector_identity_and_share_gates():
+    frames, res = _fixture()
+    arms, audit = frames[e2.ARMS_NAME], frames[e2.AUDIT_NAME]
+
+    def table(arms_=arms, audit_=audit):
+        return e2.gate_table(arms_, audit_, res, expected=FIX_MODELS)
+
+    # 1b: the re-derived mean vectors must be the cache
+    bad = _set(arms, lambda a: (a.model == LATA) & (a.layer == 3) & (a.arm == "mean"),
+               "vec_max_rel_diff", 0.02)
+    g = table(bad)
+    assert _failing(g) == [(LATA, "1b")] and "max abs diff" in g[~g.ok].iloc[0].note
+    # 2b: the sif vectors are reported and never fail; an absent cache is said so
+    bad = _set(arms, lambda a: (a.model == LATA) & (a.layer == 3) & (a.arm == "sif"),
+               "vec_max_rel_diff", 0.02)
+    g = table(bad)
+    row = g[(g.model == LATA) & g.gate.str.startswith("2b")].iloc[0]
+    assert e2.gates_passed(g) and row.n_over_tolerance == 1 and row.gated == 0
+    assert "reference 1e-03; 1 over" in e2.gate_line(row) and "PASS" not in e2.gate_line(row)
+    none = _set(arms, lambda a: (a.model == LABSE) & (a.arm == "sif"),
+                ["vec_max_rel_diff", "vec_max_abs_diff"], np.nan)
+    g = table(none)
+    row = g[(g.model == LABSE) & g.gate.str.startswith("2b")].iloc[0]
+    assert e2.gates_passed(g) and row.n_cells == 0 and "no hidden_sif_tokempty cache" in row.note
+    # 3: the score identity, per direction and split; a NaN fails
+    for value in (1e-6, np.nan):
+        bad = _set(audit, lambda a: (a.model == MT5) & (a.direction == "rand07")
+                   & (a.split == "test"), "identity_max_rel_diff", value)
+        g = table(audit_=bad)
+        assert _failing(g) == [(MT5, "3")]
+        assert g[~g.ok].iloc[0].cells_over_tolerance.startswith("L5 rand07 test")
+    # 4: shares sum to 1, also the equal-weight shares of the subspaces
+    bad = _set(audit, lambda a: (a.model == LATA) & (a.layer == 1) & (a.direction == "pc2")
+               & (a.split == "train"), "share_sum_err", -1e-5)
+    assert _failing(table(audit_=bad)) == [(LATA, "4")]
+    bad = _set(audit, lambda a: (a.model == LATA) & (a.layer == 1) & (a.direction == "pcs1_3")
+               & (a.split == "train"), "share_sum_err_eqw", 1e-5)
+    g = table(audit_=bad)
+    assert _failing(g) == [(LATA, "4")] and "equal-weight" in g[~g.ok].iloc[0].cells_over_tolerance
+    # a NaN AUROC of ours fails its gate
+    bad = _set(arms, lambda a: (a.model == LABSE) & (a.arm == "sif"), "aucroc", np.nan)
+    g = table(bad)
+    assert _failing(g) == [(LABSE, "2a")] and np.isnan(g[~g.ok].iloc[0].max_diff)
+
+
+def test_an_expected_model_without_rows_fails_the_gates():
+    frames, res = _fixture()
+    g = e2.gate_table(frames[e2.ARMS_NAME], frames[e2.AUDIT_NAME], res)
+    missing = g[g.gate.str.startswith("0")]
+    assert sorted(missing.model) == sorted(m for m in e2.ALL_MODEL_IDS if m not in FIX_MODELS)
+    assert not e2.gates_passed(g) and "no rows: FAIL" in e2.gate_line(missing.iloc[0])
+    assert e2.gates_passed(e2.gate_table(frames[e2.ARMS_NAME], frames[e2.AUDIT_NAME], res,
+                                         expected=None))
+
+
+def _write(frames, res, tmp_path, name="e2"):
+    out = tmp_path / name
+    out.mkdir()
+    for fname, frame in frames.items():
+        e2.merge_write(out / fname, frame)
+    res.to_csv(tmp_path / f"{name}_res.csv", index=False)
+    return out, ["--out_dir", str(out), "--results_csv", str(tmp_path / f"{name}_res.csv")]
+
+
+def test_check_cli_requires_every_model_and_is_idempotent(tmp_path, capsys):
+    out, base = _write(*_fixture(), tmp_path)
+    assert e2.main(["check", *base]) == e2.GATE_EXIT  # three panel models have no rows
+    said = capsys.readouterr().out
+    assert "KaLM-mini: no rows: FAIL" in said and "GATES FAILED" in said
+    assert e2.main(["check", *base, "--allow_missing"]) == 0
+    assert e2.main(["check", *base, "--models", "LaTa,mT5-base,LaBSE"]) == 0
+    first = (out / e2.GATE_NAME).read_bytes()
+    assert e2.main(["check", *base, "--models", "LaTa,mT5-base,LaBSE"]) == 0
+    assert (out / e2.GATE_NAME).read_bytes() == first
+    assert pd.read_csv(out / e2.GATE_NAME).ok.all()
+    capsys.readouterr()
+    # a limit run reports its gates and never fails on them
+    frames, res = _fixture(limit=10)
+    out, base = _write(frames, res.assign(aucroc=0.0), tmp_path, "smoke")
+    assert e2.main(["check", *base]) == 0
+    said = capsys.readouterr().out
+    assert "limit run" in said and "1a" not in said and "gate 3" in said
+
+
+def test_summarize_applies_the_frozen_rules_to_the_cells():
+    frames, res = _fixture()
+    args = [frames[k] for k in (e2.ARMS_NAME, e2.AUDIT_NAME, e2.ABL_NAME, e2.LENGTH_NAME)]
+    w = e2.summarize(*args, res).set_index(["m", "layer"])
+    assert list(w.index[w.collapsed]) == [("LaTa", 2), ("LaTa", 3), ("mT5-base", 5)]
+    x = w.loc[("LaTa", 2)]
+    assert x.r1_sif_keepspecial == "rescue" and x.r1_mean_nospecial == "no_rescue"
+    assert x.r1_mean_nofreq100 == "no_rescue"
+    assert x.r1frac_mean_nofreq100 == pytest.approx(0.30 / 0.38)
+    assert x.r3m_pc1 == 30 and x.r3m_pc123 == 30 and x.r3  # 0.93 and 0.91 at m = 30
+    assert (x.best_abl, x.best_abl_ranking, x.best_abl_m) == (0.95, "pc1", 100)
+    assert x.best_ctl == pytest.approx(0.502) and not x.ctl_r3
+    assert x.ctl_pc1_m100_min == pytest.approx(0.50) and x.ctl_pc1_m100_max == pytest.approx(0.504)
+    y = w.loc[("LaTa", 3)]
+    assert y.r1_sif_keepspecial == "no_sif_gain" and np.isnan(y.r1frac_sif_keepspecial)
+    assert y.r1chg_mean_nofreq100 == pytest.approx(0.03) and y.r3m_pc1 == -1 and not y.r3
+    assert w.loc[("mT5-base", 5)].r1_mean_nofreq100 == "no_sif_gain"
+    # the audit cells and the rules on them
+    audit = frames[e2.AUDIT_NAME]
+    cell = audit[(audit.model == LATA) & (audit.layer == 2) & (audit.direction == "pc1")
+                 & (audit.split == "test")].iloc[0]
+    assert x.ev_pc1 == cell.ev_tokenmix and x.r2 == e2.r2_token_mix(cell.ev_tokenmix) and x.r2
+    assert x.sh_frequent_pc1 == cell.share_frequent and x.top_group == "frequent"
+    rand = audit[(audit.model == LATA) & (audit.layer == 2) & (audit.kind == "random")
+                 & (audit.split == "test")]
+    assert x.rand_ev_mean == pytest.approx(rand.ev_tokenmix.mean())
+    assert x.rand_ev_max == rand.ev_tokenmix.max()
+    pairs = audit[(audit.model == LATA) & (audit.layer == 2) & (audit.dim == 2)
+                  & (audit.kind == "random_subspace") & (audit.split == "test")]
+    assert len(pairs) == 10 and x.rand2_ev_mean == pytest.approx(pairs.ev_tokenmix.mean())
+    joint = audit[(audit.model == LATA) & (audit.layer == 2) & (audit.direction == "pcs2_3")
+                  & (audit.split == "test")].iloc[0]
+    assert x.ev_pcs2_3 == joint.ev_tokenmix and x.eveq_pcs2_3 == joint.ev_tokenmix_eqw
+    assert x.sheq_other_pcs2_3 == joint.share_other_eqw
+    var = {d: audit[(audit.model == LATA) & (audit.layer == 2) & (audit.direction == d)
+                    & (audit.split == "train")].var_s.iloc[0] for d in ("pc2", "pc3")}
+    assert x.var_ratio_pc2_pc3 == pytest.approx(var["pc2"] / var["pc3"]) and x.var_ratio_pc2_pc3 >= 1
+    ln = frames[e2.LENGTH_NAME]
+    t = ln[(ln.model == LATA) & (ln.split == "test")].iloc[0]
+    assert x.len_same == t.mean_dlog_same
+    assert x.r4 == e2.r4_length(cell.rho_logn, t.mean_dlog_same, t.mean_dlog_diff)
+    # collapsed is read from the published baseline, not from the re-derived mean arm
+    pub = _set(res, lambda r: (r.model == LATA) & (r.layer == 1) & (r.method == "baseline"),
+               "aucroc", 0.69)
+    assert e2.summarize(*args, pub).set_index(["m", "layer"]).loc[("LaTa", 1)].collapsed
+    own = e2.summarize(*args, None).set_index(["m", "layer"])
+    assert not own.loc[("LaTa", 1)].collapsed and own.loc[("LaTa", 2)].collapsed
+    assert not own.base_published.any() and e2.worst_layer(w.reset_index(), "LaTa").layer == 2
+
+
+def test_table_renders_from_the_fixture_and_omits_absent_models(tmp_path):
+    frames, res = _fixture()
+    w = e2.summarize(*[frames[k] for k in (e2.ARMS_NAME, e2.AUDIT_NAME, e2.ABL_NAME,
+                                           e2.LENGTH_NAME)], res)
+    out = tmp_path / "t.tex"
+    assert e2.write_table(w, out) == ["PhilTa", "Qwen3-0.6B", "KaLM-mini"]
+    tex = out.read_text()
+    assert tex.startswith(asw.HEADER + "\n") and r"\label{tab:e2_token_audit}" in tex
+    assert r"\begin{table*}" in tex and r"\end{table*}" in tex
+    assert chr(0x2014) not in tex and "---" not in tex and "PhilTa" not in tex
+    rows = [ln for ln in tex.splitlines() if ln.startswith(("LaTa &", "mT5-base &", "LaBSE &"))]
+    assert len(rows) == 3 and all(r.count("&") == 14 for r in rows)
+    header = next(ln for ln in tex.splitlines() if ln.startswith("Model &"))
+    assert header.count("&") == 14
+    cells = [c.strip() for c in rows[0].rstrip("\\ ").split("&")]
+    x = w[(w.m == "LaTa") & (w.layer == 2)].iloc[0]
+    assert cells[1] == "2"  # the worst baseline layer
+    assert cells[2:7] == ["0.500", "0.510", "0.860", "0.880", "0.800"]
+    assert cells[7:9] == ["0.950", "0.502"]
+    assert cells[9:] == [f"{x.ev_pc1:.2f}", f"{x.rand_ev_mean:.2f}", f"{x.sh_special_pc1:.2f}",
+                         f"{x.sh_frequent_pc1:.2f}", f"{x.sh_other_pc1:.2f}", f"{x.rho_pc1:.2f}"]
+    cap = next(ln for ln in tex.splitlines() if ln.startswith(r"\caption{"))
+    assert cap.endswith("}") and "--" not in cap and chr(0x2014) not in cap
+    for phrase in ("worst baseline layer", "special tokens", "100 most frequent",
+                   "five random sets", "20 random directions", "training passages only"):
+        assert phrase in cap
+
+
+def test_render_cli_writes_table_and_facts_from_the_csvs_alone(tmp_path, capsys):
+    out, base = _write(*_fixture(), tmp_path)
+    tab = tmp_path / "tables"
+    argv = ["render", *base, "--tab_dir", str(tab), "--models", "LaTa,mT5-base,LaBSE"]
+    assert e2.main(argv) == 0
+    said = capsys.readouterr().out
+    assert "omitting PhilTa" in said and "worst baseline layer LaTa: 2" in said
+    facts = (out / e2.FACTS_NAME).read_text()
+    table = (tab / e2.TABLE_NAME).read_text()
+    assert chr(0x2014) not in facts
+    for section in ("## Frozen decision rules", "## Definitions", "## 0. Coverage and gates",
+                    "## 3. R1: pooling control", "## 4. R2:", "## 5. Which token group",
+                    "## 6. R3: token ablation", "## 7. R4: passage length",
+                    "## 8. Expectations", "## 9. Carrier tokens", "## 10. Contrast",
+                    "## 11. Verdicts in one place", "## 12. All layers"):
+        assert section in facts, section
+    assert "collapsed layers (baseline AUROC < 0.70): 3: LaTa 2 (2, 3), mT5-base 1 (5)" in facts
+    assert "ABSENT from the CSVs" in facts and "SMOKE RUN" not in facts
+    assert "gate 1a mean arm AUROC vs published baseline, LaTa: 3 cells" in facts
+    assert "GATE 2 FAILED" not in facts and "A gate FAILED" not in facts
+    # R1 per arm over the three collapsed layers, and LaTa alone
+    r1 = facts.split("## 3. R1: pooling control")[1].split("## 4.")[0]
+    assert ("- `sif_keepspecial`: rescues 1/3; does not rescue 0/3; no SIF gain to recover 2/3"
+            in r1)
+    assert "- `mean_nospecial`: rescues 0/2; does not rescue 1/2; no SIF gain to recover 1/2" in r1
+    assert "below it at LaTa 3, mT5-base 5" in r1
+    # verdict lines: counts over collapsed layers, the expectations, the vacuous mT5 case
+    verdicts = facts.split("## 11. Verdicts in one place")[1].split("## 12.")[0]
+    assert "R3 token ablation restores collapsed layers (AUROC >= 0.90, m <= 100): 1/3" in verdicts
+    assert "LaTa: sif_keepspecial rescues collapsed layers (R1): NOT MET (1/2)" in verdicts
+    assert ("LaTa: mean_nospecial does not rescue collapsed layers (R1): NOT MET (1/2 not "
+            "rescued; 1 with no SIF gain to recover)") in verdicts
+    assert ("mT5-base: no arm rescues collapsed layers (R1): NOT EVALUABLE BY R1 (SIF gain "
+            "below 0.05 at all 1 layers") in verdicts
+    assert "R2 token mix carries PC1 (test EV >= 0.5) at collapsed layers: 3/3" in verdicts
+    assert "LaTa: frequent tokens have the largest PC1 share at collapsed layers: MET (2/2)" in verdicts
+    # the subspace readouts sit next to the per-PC numbers and carry no verdict
+    r2 = facts.split("## 4. R2:")[1].split("## 5.")[0]
+    assert "span(PC2, PC3): test EV variance-weighted" in r2 and "equal-weight" in r2
+    assert "train variance ratio var(PC2) / var(PC3)" in r2 and "random 3-D subspaces" in r2
+    assert "span" not in verdicts
+    # carriers of the worst T5 layers, with decoded strings
+    car = facts.split("## 9. Carrier tokens")[1].split("## 10.")[0]
+    assert "- LaTa L2:" in car and "- mT5-base L5:" in car and "LaBSE" not in car
+    assert '`▁t3` " t3" [frequent]' in car
+    assert "### LaBSE: token audit of PC1 (test)" in facts and "| 2* |" in facts
+    # deterministic, and rendered from the CSVs alone
+    assert e2.main(argv) == 0
+    assert (out / e2.FACTS_NAME).read_text() == facts
+    assert (tab / e2.TABLE_NAME).read_text() == table
+    capsys.readouterr()
+
+
+def test_facts_block_the_pooling_conclusions_when_gate_2_fails(tmp_path, capsys):
+    frames, res = _fixture()
+    res = _set(res, lambda r: (r.model == LATA) & (r.layer == 2) & (r.method == "sif_only"),
+               "aucroc", 0.70)
+    out, base = _write(frames, res, tmp_path)
+    assert e2.main(["render", *base, "--tab_dir", str(tmp_path / "t"), "--allow_missing"]) == 0
+    facts = (out / e2.FACTS_NAME).read_text()
+    assert "**GATE 2 FAILED:" in facts and "ARE BLOCKED" in facts
+    assert "**BLOCKED: gate 2 failed" in facts.split("## 3. R1")[1].split("## 4.")[0]
+    assert "- GATE 2 FAILED" in facts.split("## 11. Verdicts")[1]
+    # a smoke run says so at the top and skips the AUROC gates
+    out, base = _write(*_fixture(limit=10), tmp_path, "smoke")
+    assert e2.main(["render", *base, "--tab_dir", str(tmp_path / "t2"), "--allow_missing"]) == 0
+    facts = (out / e2.FACTS_NAME).read_text()
+    assert "**SMOKE RUN (--limit 10)" in facts.split("## Frozen")[0]
+    assert "gate 1a" not in facts and "GATE 2 FAILED" not in facts
+    capsys.readouterr()
+
+
+# --------------------------------------------------------------------------- #
+# the whole audit on a fake encoder and a fake cache (torch, tiny tensors)
+# --------------------------------------------------------------------------- #
+
+def _fake_world(tmp_path, n_tr=36, n_te=32, vocab=300, d=40, n_layers=2, seed=0):
+    """A split CSV, a fake LaTa cache in a different row order, and an Encoder whose hidden
+    states are fixed toy tensors. At layer 2 frequent tokens and the EOS carry two large
+    directions, so that layer is "collapsed"."""
+    torch = pytest.importorskip("torch")
+    rng = np.random.default_rng(seed)
+    n = n_tr + n_te
+    folders = rng.integers(0, 14, size=n)
+    zipf = 1.0 / np.arange(1, vocab - 2)
+    topic = rng.dirichlet(np.full(vocab - 3, 0.05), size=14)
+    emb = rng.normal(size=(n_layers + 1, vocab, d))
+    ids, states = [], []
+    for p in range(n):
+        size = int(rng.integers(4, 26))
+        t = rng.choice(np.arange(3, vocab), size=size,
+                       p=0.5 * zipf / zipf.sum() + 0.5 * topic[folders[p]])
+        t[rng.random(size) < 0.05] = 2  # a token the filter drops
+        if p == 0:
+            t[:] = 2  # nothing but the EOS is kept in this passage
+        t[-1] = EOS
+        h = emb[:, t, :] + 0.3 * rng.normal(size=(n_layers + 1, size, d))
+        h[2, :, 0] += 25.0 * (t < 12)
+        h[2, :, 1] += 40.0 * (t == EOS)
+        ids.append(t)
+        states.append(h.astype(np.float32))
+    keep = np.ones(vocab, dtype=np.float32)
+    keep[2] = 0.0
+    special = [0, EOS]
+    split = np.array(["train"] * n_tr + ["test"] * n_te)[rng.permutation(n)]
+    names = [f"f{i:03d}.txt" for i in range(n)]
+    test_counts = pd.Series(folders[split == "test"]).value_counts()
+    frame = pd.DataFrame({
+        "filename": names, "folder_id": [f"d{f}" for f in folders], "split": split,
+        "has_test_partner": [bool(s == "test" and test_counts[f] > 1)
+                             for s, f in zip(split, folders)],
+        "path": [f"data/x/{nm}" for nm in names]})
+    frame.to_csv(tmp_path / "split.csv", index=False)
+
+    def probs(rows):
+        t = np.concatenate([ids[p] for p in rows])
+        t = t[(keep[t] > 0) & ~np.isin(t, special)]
+        types, counts = np.unique(t, return_counts=True)
+        return {int(a): float(b) / len(t) for a, b in zip(types, counts)}
+
+    token_probs = probs(np.flatnonzero(split == "train"))
+    look = e2.arm_weight_lookups(vocab, token_probs, special, keep)
+    order = rng.permutation(n)
+    for sub, arm, suffix in ((e2.MEAN_SUBDIR, "mean", ""), (e2.SIF_SUBDIR, "sif", "_sif")):
+        run = tmp_path / "bases" / "phase9_bases" / asw.slug(LATA) / sub
+        run.mkdir(parents=True)
+        pd.DataFrame({"path": [f"data/x/{names[i]}" for i in order]}).to_csv(run / "meta.csv",
+                                                                           index=False)
+        for layer in range(1, n_layers + 1):
+            vec = []
+            for p in order:
+                w = look[arm][ids[p]].astype(np.float32)
+                vec.append((states[p][layer] * w[:, None]).sum(axis=0) / max(w.sum(), 1.0))
+            np.save(run / f"hidden_layer{layer}_embeddings{suffix}.npy",
+                    np.array(vec, dtype=np.float32))
+
+    def batches(rows_in_order=order):
+        for start in range(0, len(rows_in_order), e2.BATCH_SIZE):
+            rows = rows_in_order[start:start + e2.BATCH_SIZE]
+            width = max(len(ids[p]) for p in rows)
+            tok = np.zeros((len(rows), width), dtype=np.int64)
+            att = np.zeros((len(rows), width), dtype=np.int64)
+            hid = np.full((n_layers + 1, len(rows), width, d), 99.0, dtype=np.float32)
+            for b, p in enumerate(rows):
+                tok[b, :len(ids[p])] = ids[p]
+                att[b, :len(ids[p])] = 1
+                hid[:, b, :len(ids[p])] = states[p]
+            yield rows, torch.tensor(tok), torch.tensor(att), tuple(torch.tensor(x) for x in hid)
+
+    def encoder(ctx=None, reference_pool=None):
+        """The encoder for a run; a --limit run sees its passages only, as open_encoder."""
+        if ctx is None or not ctx.limit:
+            return e2.Encoder(batches=batches, keep_lookup=keep, special_ids=special,
+                              token_probs=token_probs,
+                              describe=lambda i: (f"▁t{i}", f" t{i}"),
+                              reference_pool=reference_pool)
+        local = {int(g): i for i, g in enumerate(ctx.sel)}
+        sub_order = [p for p in order if p in local]
+
+        def limited():
+            for rows, tok, att, hid in batches(np.array(sub_order)):
+                yield np.array([local[int(p)] for p in rows]), tok, att, hid
+
+        return e2.Encoder(batches=limited, keep_lookup=keep, special_ids=special,
+                          token_probs=probs(ctx.sel[ctx.tr]),
+                          describe=lambda i: (f"▁t{i}", f" t{i}"))
+
+    return {"split_csv": tmp_path / "split.csv", "bases": tmp_path / "bases", "ids": ids,
+            "states": states, "split": split, "folders": folders, "keep": keep,
+            "encoder": encoder, "frame": frame}
+
+
+def _numpy_pool(world, layer, drop=()):
+    """Mean pooling of the fake states over kept tokens, minus dropped types, in numpy."""
+    out = []
+    for t, h in zip(world["ids"], world["states"]):
+        kept = world["keep"][t] > 0
+        use = kept & ~np.isin(t, list(drop))
+        if not use.any():
+            use = kept
+        out.append(h[layer][use].astype(np.float64).mean(axis=0))
+    return np.array(out)
+
+
+def _auroc(world, vectors, split="test"):
+    """Task A AUROC of numpy-pooled vectors, to compare with the audit's cells. The audit
+    pools in float32 on torch, so a near-tied pair of cosines may rank the other way."""
+    rows = world["split"] == split
+    return asw.pair_auroc(vectors[rows].astype(np.float32),
+                          upper_triangle_labels(world["folders"][rows]))
+
+
+def test_audit_of_a_fake_encoder_reproduces_numpy_pooling(tmp_path):
+    world = _fake_world(tmp_path)
+    pytest.importorskip("transformers")
+    import extract_hidden_cli
+
+    ctx = e2.build_context(world["split_csv"], tmp_path / "out", 0)
+    saved = dict(asw._CTX)
+    try:
+        asw._init(str(ctx.split_path))
+        frames = e2.audit_model(LATA, world["encoder"](reference_pool=extract_hidden_cli.pool_hidden),
+                                ctx, world["bases"])
+    finally:
+        asw._CTX.clear()
+        asw._CTX.update(saved)
+    arms, audit = frames[e2.ARMS_NAME], frames[e2.AUDIT_NAME]
+    carriers, abl, length = frames[e2.CARRIER_NAME], frames[e2.ABL_NAME], frames[e2.LENGTH_NAME]
+    assert len(arms) == 2 * len(e2.ARMS) and list(arms.arm[:5]) == list(e2.ARMS)
+    assert len(audit) == 2 * 2 * (len(e2.DIRECTIONS) + len(e2.SUBSPACES))
+    assert len(carriers) == 2 * e2.N_PC * e2.TOP_CARRIERS
+    assert len(abl) == 2 * len(e2.RANKINGS) * len(e2.ABL_MS) * (1 + e2.CONTROL_DRAWS)
+    assert list(length.split) == ["train", "test"] and (arms.limit == 0).all()
+    # the two reference arms are the CLI's pooling and the cache
+    ref = arms[arms.arm.isin(["mean", "sif"])]
+    assert (ref.cli_pool_max_abs_diff == 0).all()
+    assert ref.vec_max_rel_diff.max() < 1e-5 and arms[arms.arm == "mean_nospecial"].vec_max_rel_diff.isna().all()
+    for layer in (1, 2):
+        a = arms[arms.layer == layer].set_index("arm")
+        assert a.loc["mean", "aucroc"] == pytest.approx(
+            _auroc(world, _numpy_pool(world, layer)), abs=5e-4)
+        assert a.loc["mean", "train_aucroc"] == pytest.approx(
+            _auroc(world, _numpy_pool(world, layer), "train"), abs=5e-4)
+        assert a.loc["mean_nospecial", "aucroc"] == pytest.approx(
+            _auroc(world, _numpy_pool(world, layer, drop=[EOS])), abs=5e-4)
+    a = arms[arms.layer == 2].set_index("arm")
+    # passage 0 keeps only its EOS: empty without special tokens, so it falls back to mean
+    assert a.loc["mean_nospecial", "n_no_token"] == 1 and a.loc["mean_nospecial", "n_fallback"] == 1
+    assert a.loc["sif", "n_no_token"] == 1 and a.loc["sif", "n_fallback"] == 0
+    assert a.loc["mean", "n_no_token"] == 0 and a.loc["sif_keepspecial", "n_no_token"] == 0
+    assert a.loc["sif", "special_mass"] == 0 and a.loc["mean_nospecial", "special_mass"] == 0
+    assert a.loc["sif_keepspecial", "special_mass"] > a.loc["mean", "special_mass"] > 0
+    assert a.loc["mean_nofreq100", "frequent_mass"] == 0 < a.loc["mean", "frequent_mass"]
+    assert set(asw.KEEP) <= set(arms.columns) and arms.eff_rank_train.notna().all()
+    # gates 3 and 4 on the real forward path
+    single = audit[audit.dim == 1]
+    assert single.identity_max_rel_diff.max() < e2.GATE_TOL_IDENTITY
+    assert audit.share_sum_err.abs().max() < e2.GATE_TOL_SHARE_SUM
+    assert single.cache_score_max_abs_diff.max() < 1e-3
+    # layer 2: the planted frequent-token direction is PC1 or PC2, and its carriers are
+    # the frequent token ids (3..11); the token mix explains it
+    top = carriers[(carriers.layer == 2) & (carriers["rank"] <= 3)
+                   & carriers.direction.isin(["pc1", "pc2"])]
+    assert (top.token_id < 12).mean() > 0.6
+    pc = audit[(audit.layer == 2) & audit.direction.isin(["pc1", "pc2"]) & (audit.split == "test")]
+    assert pc.ev_tokenmix.max() > 0.6
+    n = np.array([int((world["keep"][t] > 0).sum()) for t in world["ids"]])
+    assert length.set_index("split").loc["test", "mean_n"] == pytest.approx(
+        n[world["split"] == "test"].mean())
+    # token ablation: the m = 1 arm of the pc1 ranking drops the top PC1 carrier
+    for layer in (1, 2):
+        first = carriers[(carriers.layer == layer) & (carriers.direction == "pc1")
+                         & (carriers["rank"] == 1)].token_id.iloc[0]
+        t = abl[(abl.layer == layer) & (abl.ranking == "pc1") & (abl.kind == "carrier")]
+        assert list(t.m) == list(e2.ABL_MS) and t.types.iloc[0] == str(first)
+        assert t.aucroc.iloc[0] == pytest.approx(
+            _auroc(world, _numpy_pool(world, layer, drop=[first])), abs=5e-4)
+        ten = [int(v) for v in t.types.iloc[2].split(";")]
+        assert len(ten) == 10 and ten[0] == first
+        assert t.aucroc.iloc[2] == pytest.approx(
+            _auroc(world, _numpy_pool(world, layer, drop=ten)), abs=5e-4)
+        assert t.dropped_mass_test.is_monotonic_increasing and t.eff_rank_train.notna().all()
+        ctl = abl[(abl.layer == layer) & (abl.ranking == "pc1") & (abl.kind == "control")]
+        assert sorted(ctl.draw.unique()) == list(range(e2.CONTROL_DRAWS))
+        assert ctl.aucroc.notna().all() and ctl.eff_rank_train.isna().all()  # AUROC only
+        used = {int(v) for s in ctl.types for v in s.split(";") if v}
+        both = abl[(abl.layer == layer) & (abl.kind == "carrier") & (abl.m == 100)]
+        assert not used & {int(v) for s in both.types for v in s.split(";")}
+        c1 = ctl[(ctl.draw == 0) & (ctl.m == 1)].iloc[0]
+        assert c1.aucroc == pytest.approx(
+            _auroc(world, _numpy_pool(world, layer, drop=[int(c1.types)])), abs=5e-4)
+
+
+def test_audit_cli_is_deterministic_merges_by_model_and_gates(tmp_path, monkeypatch, capsys):
+    world = _fake_world(tmp_path)
+    monkeypatch.setattr(e2, "open_encoder", lambda mid, ctx, bases: world["encoder"](ctx))
+    out = tmp_path / "e2"
+    run = ["audit", "--models", "LaTa", "--bases_root", str(world["bases"]), "--split_csv",
+           str(world["split_csv"]), "--out_dir", str(out), "--workers", "1",
+           "--e1_coords_csv", str(tmp_path / "none.csv")]
+    names = (e2.ARMS_NAME, e2.AUDIT_NAME, e2.CARRIER_NAME, e2.ABL_NAME, e2.LENGTH_NAME)
+    saved = dict(asw._CTX)
+    try:
+        assert e2.main(run + ["--results_csv", str(tmp_path / "none.csv")]) == 0
+        first = {n: (out / n).read_bytes() for n in names}
+        # another model's rows, and published cells that match what was just written
+        other = {n: e2.read_csv(out / n).assign(model=LABSE) for n in names}
+        for n in names:
+            e2.merge_write(out / n, other[n])
+        mixed = {n: (out / n).read_bytes() for n in names}
+        arms = e2.read_csv(out / e2.ARMS_NAME)
+        res = pd.concat([pd.DataFrame({
+            "model": t.model, "repr": "hidden", "pooling": pooling, "layer": t.layer,
+            "method": method, "aucroc": t.aucroc})
+            for arm, pooling, method in (("mean", "mean", "baseline"), ("sif", "sif", "sif_only"))
+            for t in [arms[arms.arm == arm]]])
+        res.to_csv(tmp_path / "res.csv", index=False)
+        refs = ["--results_csv", str(tmp_path / "res.csv")]
+        # the rerun replaces LaTa's rows with identical ones and keeps LaBSE's
+        assert e2.main(run + refs + ["--check"]) == 0
+        assert {n: (out / n).read_bytes() for n in names} == mixed
+        assert mixed[e2.ARMS_NAME].startswith(first[e2.ARMS_NAME])
+        gates = (out / e2.GATE_NAME).read_bytes()
+        assert e2.main(["check", "--out_dir", str(out), "--models", "LaTa", *refs]) == 0
+        assert (out / e2.GATE_NAME).read_bytes() == gates
+        g = pd.read_csv(out / e2.GATE_NAME)
+        assert len(g) == 12 and g.ok.all() and (g[g.gate.str[1] == "a"].max_diff == 0).all()
+        # a published cell that disagrees: exit 3, CSVs still written
+        res.assign(aucroc=res.aucroc + 1e-4).to_csv(tmp_path / "bad.csv", index=False)
+        assert e2.main(run + ["--results_csv", str(tmp_path / "bad.csv"), "--check"]) == e2.GATE_EXIT
+        assert "GATES FAILED" in capsys.readouterr().out
+        assert (out / e2.ARMS_NAME).read_bytes() == mixed[e2.ARMS_NAME]
+        assert e2.main(["render", "--out_dir", str(out), "--tab_dir", str(tmp_path / "tab"),
+                        "--models", "LaTa,LaBSE", *refs]) == 0
+        assert "## 12. All layers" in (out / e2.FACTS_NAME).read_text()
+        # a smoke run goes to its own directory and never fails on gates
+        smoke = tmp_path / "smoke"
+        limit = ["audit", "--models", "LaTa", "--bases_root", str(world["bases"]),
+                 "--split_csv", str(world["split_csv"]), "--out_dir", str(smoke), "--workers",
+                 "1", "--limit", "14", "--results_csv", str(tmp_path / "bad.csv"), "--check"]
+        assert e2.main(limit) == 0
+        said = capsys.readouterr().out
+        assert "14 train, 14 test" in said and "limit run" in said
+        small = e2.read_csv(smoke / e2.ARMS_NAME)
+        assert (small.limit == 14).all() and (small.n_train == 14).all()
+        assert small[small.arm == "mean"].vec_max_rel_diff.max() < 1e-5
+        assert (smoke / "split_limit14.csv").exists()
+        assert (out / e2.ARMS_NAME).read_bytes() == mixed[e2.ARMS_NAME]  # untouched
+    finally:
+        asw._CTX.clear()
+        asw._CTX.update(saved)
+
+
+def test_default_output_directory_separates_smoke_runs(tmp_path, monkeypatch):
+    seen = {}
+    monkeypatch.setattr(e2, "cmd_audit", lambda args: seen.setdefault("out", args.out_dir) and 0)
+    e2.main(["audit", "--limit", "32"])
+    assert seen.pop("out") == e2.OUT_DIR / "smoke_limit32"
+    e2.main(["audit"])
+    assert seen.pop("out") == e2.OUT_DIR
+    e2.main(["audit", "--limit", "32", "--out_dir", str(tmp_path)])
+    assert seen.pop("out") == tmp_path
+
+
+def test_missing_cache_is_an_error_before_any_model_loads(tmp_path, monkeypatch):
+    monkeypatch.setattr(e2, "open_encoder", lambda *a: pytest.fail("a model was loaded"))
+    with pytest.raises(SystemExit) as err:
+        e2.main(["audit", "--models", "LaTa", "--bases_root", str(tmp_path), "--out_dir",
+                 str(tmp_path / "o")])
+    assert "no cached vectors for LaTa" in str(err.value)
+    with pytest.raises(SystemExit):
+        e2.main(["audit", "--models", "nope", "--out_dir", str(tmp_path / "o")])
+
+
+def test_forward_order_follows_the_cache_manifest(tmp_path, capsys):
+    sp = pd.DataFrame({"filename": ["a.txt", "b.txt", "c.txt"]})
+    np.testing.assert_array_equal(e2.forward_order(tmp_path, sp), [0, 1, 2])  # no manifest
+    assert "WARNING" in capsys.readouterr().out
+    pd.DataFrame({"path": ["x/c.txt", "x/z.txt", "x/a.txt", "x/b.txt"]}).to_csv(
+        tmp_path / "meta.csv", index=False)
+    np.testing.assert_array_equal(e2.forward_order(tmp_path, sp), [2, 0, 1])
+    # a limit run: the cache order, restricted to the selected passages
+    np.testing.assert_array_equal(e2.forward_order(tmp_path, sp.iloc[[0, 2]].reset_index()), [1, 0])
+    with pytest.raises(SystemExit):
+        e2.forward_order(tmp_path, pd.DataFrame({"filename": ["a.txt", "q.txt"]}))
+
+
 def test_module_imports_without_torch():
     code = ("import sys; sys.path.insert(0, r'%s'); import e2_token_audit; "
             "assert 'torch' not in sys.modules and 'transformers' not in sys.modules"

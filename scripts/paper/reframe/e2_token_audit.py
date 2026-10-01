@@ -222,6 +222,9 @@ def random_directions(d: int, basis: np.ndarray, n: int = N_RANDOM,
                       seed: Sequence[int] = (RANDOM_SEED,)) -> np.ndarray:
     """``n`` seeded random unit directions [n, d], orthogonal to the rows of ``basis``
     and to each other (QR of a Gaussian matrix after projecting the basis out)."""
+    if d - len(basis) < n:
+        raise ValueError(f"{n} orthonormal directions do not fit in {d} dimensions next to "
+                         f"{len(basis)} excluded ones")
     g = np.random.default_rng(list(seed)).standard_normal((n, d))
     if len(basis):
         q, _ = np.linalg.qr(np.asarray(basis, dtype=np.float64).T)
