@@ -70,7 +70,8 @@ The repair matches, but does not exceed, a character n-gram reference.
 Contrastive fine-tuning of LaTa improves its last layer but not its collapsed middle layers.
 At the collapsed layers one direction holds most of the variance, but removing it alone restores only part of the ranking; removing two to five restores nearly all of it.
 We test whether a few massive, passage-varying residual coordinates cause the collapse.
-Zeroing up to ten of them restores none of the 26 collapsed layers to AUROC 0.90 or above, while per-coordinate standardization restores 9 \pending{E2: one-clause result}.
+Zeroing up to ten of them restores none of the 26 collapsed layers to AUROC 0.90 or above, while per-coordinate standardization restores 9.
+A token audit finds token carriers in LaTa and PhilTa, where mean pooling without three token types restores all 10 collapsed LaTa layers and without at most 30 all 9 PhilTa layers, and none in mT5-base.
 We also test whether T5 pretraining or the missing embedding objective produces the collapse \pending{P2x2: one-sentence result}.
 We release the frozen testbed and split, the evaluation code, and lexical reference scores.
 \end{abstract}
@@ -128,7 +129,7 @@ Section~\ref{sec:repair} shows that this gain holds without any threshold and do
 This paper makes four contributions.
 (1)~We give the first per-layer retrieval profile of T5 encoder states in isolation that we know of: in our panel, T5 encoders collapse to or near chance at mid-depth. A $2 \times 2$ control crosses T5 pretraining with an embedding objective \pending{P2x2: raw encoder-only and embedding-trained T5 cells}.
 (2)~We compare anisotropy statistics with retrieval layer by layer. Top-PC share and effective rank separate collapsed from healthy layers, whereas mean pairwise cosine is lower at collapsed layers than at healthy ones. A train-only projection restores every layer, which shows that the signal was present in the layer but masked.
-(3)~We give a falsifiable test of the massive-coordinate account for mean-pooled passage retrieval (coordinate ablation, token audit, subspace split, and a $D$ ablation), and find that the nuisance spans two to five directions, which rank below the retained directions in every pre-trained model. The account's main prediction fails: zeroing up to ten top coordinates restores none of the 26 collapsed layers to AUROC 0.90 or above, while per-coordinate standardization restores 9 and a three-component projection all 26 \pending{E2: token audit result}.
+(3)~We give a falsifiable test of the massive-coordinate account for mean-pooled passage retrieval (coordinate ablation, token audit, subspace split, and a $D$ ablation), and find that the nuisance spans two to five directions, which rank below the retained directions in every pre-trained model. The account's main prediction fails: zeroing up to ten top coordinates restores none of the 26 collapsed layers to AUROC 0.90 or above, while per-coordinate standardization restores 9 and a three-component projection all 26. The token audit finds that mean pooling without at most 30 token types restores every collapsed layer of LaTa and PhilTa (three types suffice in LaTa), and finds no such token set in mT5-base.
 (4)~We release the frozen testbed and split, the evaluation code, and lexical reference scores (Section~\ref{sec:testbed}).
 
 \input{related_work}
@@ -340,7 +341,7 @@ The resolution is partial.
 At mT5-base layer~4 the standardized gap is the lowest of the model (0.19), yet AUROC is 0.80.
 LaTa adds an anomaly that the standardized gap does not explain.
 Its raw gap is negative at layers 3--11, between $-0.05$ and $-0.07$, so same-directory pairs score slightly below different-directory pairs on average.
-We do not have an account of this yet, and the token audit of Section~\ref{sec:localizing} tests one candidate (E2).
+We do not have an account of this: the token audit of Section~\ref{sec:localizing} tests a length account and rejects it (E2).
 
 \paragraph{SIF at the collapsed layers.}
 SIF offers a first hint about what feeds the dominant direction.
@@ -350,6 +351,7 @@ It moves mT5-base only from 0.65--0.66 to 0.67--0.69.
 ABTT reaches 0.96--0.98 at the same layers in all three.
 This pattern suggests that tokens SIF down-weights or drops carry the dominant direction in LaTa and PhilTa, and that tokens it keeps carry it in mT5-base.
 Because SIF differs from mean pooling in two ways, the token audit of Section~\ref{sec:localizing} separates them (E2).
+It supports the first suggestion and not the second: mean pooling without the comma, the period and the end-of-sequence token restores every collapsed layer of LaTa, and without at most 30 token types every collapsed layer of PhilTa, while no token group accounts for the direction in mT5-base.
 
 \paragraph{Two regimes.}
 The panel therefore shows two regimes.
@@ -420,7 +422,10 @@ Centering alone restores none (AUROC change $-0.044$ to $+0.022$); ABTT restores
 By the rule above, 9 layers fall under ``a few coordinates, but more than five'' and 17 under ``only a projection repairs'', but the gloss of the second branch, an axis spread over many coordinates of similar variance, does not fit the data.
 A descriptive measure, added after we saw these results and carrying no prediction, shows a concentrated direction: at the collapsed layers the ten highest-variance coordinates hold a median 89 percent of the training variance (61 to 99.6 percent) and a median 92 percent of the first principal component's squared loading (76 to 99.7 percent), and 90 percent of that loading sits on 4 to 22 coordinates.
 Yet after those ten are zeroed, one direction still holds 0.324 to 0.995 of the remaining variance (at least 0.6 at 24 of the 26 layers), and AUROC stays below 0.80.
-Most of the dominant direction's loading thus sits on about ten coordinates, yet zeroing them leaves one direction dominant; we did not test whether it is the same direction, or why it still dominates the remainder.
+Most of the dominant direction's loading thus sits on about ten coordinates, yet zeroing them leaves one direction dominant.
+A follow-up, designed after we saw the E1 results, shows that it is what remains of the same direction: the new top direction is the part of the first component outside those ten coordinates (median cosine 0.999 with that remainder), it holds a median 0.72 of the remaining variance although zeroing leaves only 0.7 percent of the variance along the original first axis, and passages score on it as on the original (median absolute Pearson correlation 0.99 on test passages, Spearman 0.87).
+The surviving second and third components, of whose squared loading the ten coordinates hold a median 0.50 and 0.18, are not why zeroing fails: removing them while keeping the first restores 0 of the 26 layers, and zeroing followed by removal of one, two or three components fit on the zeroed vectors restores 9, 21 and 26, against 1, 13 and 26 without zeroing (cells added post hoc, with no prediction).
+The passage variable behind the first component is thus also written on the coordinates outside the top ten.
 LaBSE and Qwen3-0.6B behave as predicted, and so does KaLM-mini, which we added to this experiment after the predictions were written and hold to the same bound: at their train-selected layers the largest absolute AUROC change over the eight zeroings is 0.004 for LaBSE, 0.007 for Qwen3-0.6B and 0.002 for KaLM-mini, and at their weakest layers zeroing recovers $-18$ to 18 percent of the $D=10$ gain, against 36 to 80 percent for centering alone.
 The prediction for $r$ fails as stated: the three largest-magnitude coordinates all have $r \geq 1$ at 18 of the 26 collapsed layers (10 of 10 in LaTa, 7 of 7 in mT5-base, 1 of 9 in PhilTa).
 In PhilTa one of the three lies between 0.81 and 0.96 at layers 5 to 10 while the other two exceed 1, and the lowest values at layers 3 and 4 are 0.21 and 0.61.
@@ -431,23 +436,38 @@ As predicted, the three largest-magnitude coordinates have $r < 1$ at mT5-base l
 
 \paragraph{Token audit (E2).}
 The account names a carrier: some tokens hold the massive values.
-For each collapsed T5 layer we record which tokens carry the top coordinates, their sign and magnitude, and the ratio $r$ of the pooled coordinates.
-We also relate each passage's score on the top component to its log length and to its share of the 100 most frequent tokens.
-SIF sharpens the test.
-It rescues LaTa and PhilTa but not mT5-base (Section~\ref{sec:geometry}), and it differs from mean pooling in two ways: it down-weights frequent tokens, and it drops special tokens such as the end-of-sequence token.
-A control separates the two: mean pooling with special tokens dropped and no frequency weighting.
-If that control alone rescues LaTa and PhilTa, the end-of-sequence token carries their coordinates; if only full SIF does, frequent tokens do.
-For mT5-base the evidence points away from the end-of-sequence token.
-If that token carried its coordinates, SIF would delete it and rescue mT5-base.
-Since SIF does not, mT5-base's carriers must be tokens that SIF keeps.
-If frequent tokens carried the coordinates in all three models, the SIF split would need another explanation, and the frequency link would weaken.
-The same audit on Qwen3-0.6B tests the refined hypothesis.
-Massive coordinates there should shift all passages together ($r < 1$).
-If they instead vary across passages as much as in the T5s, the refinement is false.
-The audit also addresses LaTa's negative raw gap: same-directory pairs at its middle layers score slightly lower than different-directory pairs.
-If the top component tracks passage length, and same-directory witnesses differ in length more than different-directory pairs do, this gap follows.
-Comparing the absolute difference in log length between the two kinds of pair checks the second condition directly.
-We find \pending{E2: carrier tokens per model and layer (the ratio $r$ of the pooled coordinates is reported under E1); AUROC of mean pooling without special tokens; correlation of the top-component score with log length and frequent-token share; expected: frequent tokens carry the coordinates in LaTa and PhilTa, and tokens that SIF keeps carry them in mT5-base}.
+We revised this test after E1 and before reading any E2 number.
+E1 shows that zeroing coordinates restores no collapsed layer while removing three principal components restores all 26, so the audit targets the directions that projection removes, the first three principal components of the training vectors, and not only the coordinates.
+The ratio $r$ and its test on Qwen3-0.6B left the audit, because E1 reports them.
+The audit runs at every layer of the six models, with the three embedding-trained models as the healthy contrast, and has four parts: a pooling control, the token audit proper, a token ablation, and a length check.
+SIF rescues LaTa and PhilTa but not mT5-base (Section~\ref{sec:geometry}), and it differs from mean pooling in two ways: it down-weights frequent tokens, and it drops special tokens such as the end-of-sequence token.
+Three pooling arms separate the two: mean pooling without special tokens; SIF's frequency weights with special tokens kept at weight one, which about doubles their share of the pooling weight (a median 0.040 at the collapsed layers, against 0.020 under mean pooling); and mean pooling without the 100 most frequent training tokens.
+An arm rescues a collapsed layer if it recovers at least 80 percent of SIF's AUROC gain over mean pooling, judged only where that gain is at least 0.05.
+For the audit, a passage's score on a component is the mean of its tokens' contributions, so we fit one mean contribution per token type on training tokens and measure how much of the variance of the test passages' scores this token mix explains.
+The token mix carries the first component if it explains at least half.
+We split the same variance into the shares of special tokens, of the 100 most frequent tokens and of all other tokens, list the token types with the largest shares, and repeat each quantity on 20 random directions as a matched control and on the joint span of the components.
+For the ablation, we rank token types on training passages by their share of the first component's score variance, or by the mean of their shares on the first three components, and mean-pool without the top $m$ types, $m \in \{1,3,10,30,100\}$.
+The ablation restores a layer if AUROC reaches 0.90 for some $m$; random token types matched in training frequency are the control.
+The length check addresses LaTa's negative raw gap (Section~\ref{sec:geometry}): the length account holds if the first component's score correlates with log token count at $|\rho| \ge 0.5$ and same-directory pairs differ more in log length than different-directory pairs.
+We expected frequent tokens to hold the largest share in LaTa and PhilTa, so that the frequency weights alone rescue them and dropping special tokens does not.
+For mT5-base we expected no arm to rescue it and the tokens SIF keeps, taken as those outside the 100 most frequent, to hold the largest share: if the end-of-sequence token carried the direction, SIF would delete that token and rescue the model.
+Table~\ref{tab:e2_token_audit} gives the audit for each model at its worst baseline layer.
+We find token carriers in LaTa: the frequency weights alone rescue all 10 collapsed layers (median AUROC 0.861, 96 percent of the SIF gain), as does dropping the 100 most frequent tokens (0.901), and dropping special tokens alone rescues none (0.498).
+The token mix explains a median 0.985 of the first component's test score variance, against 0.18 for random directions, and at layer 6 the comma alone holds 0.962 of that component's score variance over training passages, the period 0.916 of the second component's, and the comma 0.897 of the third's.
+Mean pooling without three token types, the comma, the period and the end-of-sequence token, restores all 10 layers (AUROC 0.912 to 0.929); frequency-matched random types restore none (0.50), and the ranking by the first component alone restores only 2.
+In PhilTa the same three token types lead at layer 10, and frequent tokens hold the largest share of the first component at 8 of the 9 collapsed layers (median 0.740, against 0.235 for special tokens), not at all 9 as expected: at layer 3 special tokens lead (0.515 against 0.455).
+Neither single-factor arm rescues any of the 9 layers (frequency weights 0.653, special tokens dropped 0.500), so our expectation for the frequency weights is not met, and given how that arm weights special tokens we conclude only that neither change alone suffices.
+The ablation restores all 9 PhilTa layers, but dropping the top three types leaves AUROC at 0.847 to 0.904, and 8 of the 9 layers need the top 10 to 30 types (median 0.925 at $m = 30$).
+PhilTa's token mix explains only 0.42 of the first component's score, below one half at all 9 layers, and the values of its leading token types depend on context: at layer 10 the end-of-sequence token has a mean contribution of $-1.1 \times 10^{5}$ against a mean magnitude of $1.6 \times 10^{5}$, so its sign changes across passages and one mean per token type cannot predict it.
+In mT5-base the account fails: the token mix explains 0.066 to 0.067 of the first component's score, below the random-direction mean at 6 of the 7 collapsed layers; the group shares (0.53 frequent, 0.47 other) stay close to the groups' shares of tokens (0.48 and 0.50); the largest single-type share is 0.08, although some rare types make very large contributions per token; top-PC share stays at 1.000 under every arm; and the ablation restores none of the 7 layers (best AUROC 0.724 to 0.748).
+SIF gains less than 0.05 there, so the rescue rule cannot be evaluated (raw AUROC changes of $0.000$, $+0.027$ and $+0.057$ for the three arms), and the expectation that the tokens SIF keeps hold the largest share is not met at any layer.
+The length account fails at all 26 collapsed layers: the first component's score correlates with log length at $|\rho| < 0.5$ everywhere, and same-directory pairs differ less in log length than different-directory pairs (mean absolute difference 0.32 against 0.78 on LaTa's test pairs), so LaTa's negative gap is not a length effect and stays unexplained.
+The healthy contrast shows that a token mix that explains a component does not by itself mark a collapse: at Qwen3-0.6B layer 1 it explains 0.99 of the first component's score, with the first token contributing 0.69, yet that component holds 0.10 of the variance and AUROC is 0.858; random directions also reach 0.71 there and 0.73 at LaBSE layer 1, so the statistic must be read against its control.
+One reproduction check failed: our SIF arm, recomputed with training-only token frequencies, equals the SIF pooling of our extraction code exactly but differs from the SIF cells reported in Section~\ref{sec:geometry} by up to 0.015 AUROC (LaTa; 0.007 for PhilTa, 0.001 for mT5-base).
+We had planned to withhold the pooling-control conclusions in that case; after reading the results we report them under both references instead, and all 78 rescue verdicts (26 layers, three arms) are the same with the Section~\ref{sec:geometry} cells as the reference.
+With E1, these results place LaTa's nuisance, and with the qualifications above PhilTa's, on a few token types and not on a few coordinates: in LaTa dropping three token types restores every collapsed layer, as removing three components does, while the direction they feed extends beyond its ten top coordinates.
+
+\input{tables/e2_token_audit}
 
 \paragraph{Subspace split (E3).}
 Our account says that the top $D$ directions ABTT removes hold nuisance in pre-trained spaces.
@@ -507,8 +527,9 @@ Under any of these, the paper's claim reduces to the geometric description of Se
 E1 decides the first two.
 The first occurs at 17 of the 26 collapsed layers; at the other 9, standardization repairs and zeroing $k \le 5$ does not.
 The second does not occur: the three largest-magnitude coordinates of Qwen3-0.6B have $r \le 0.20$ at every layer.
-For what causes the collapse, our claim therefore reduces to the geometric description and the repair.
-One qualification applies to the first outcome: the dominant direction is not evenly distributed, since about ten coordinates hold most of its loading, yet zeroing them leaves one direction dominant (E1).
+For the coordinate account, our claim therefore reduces to the geometric description and the repair.
+One qualification applies to the first outcome: the dominant direction is not evenly distributed, since about ten coordinates hold most of its loading, yet zeroing them leaves the rest of that direction dominant (E1 and its follow-up).
+E2 adds token carriers in LaTa and PhilTa, where mean pooling without at most 30 token types restores every collapsed layer, and finds none in mT5-base, for which the claim stays the geometric description and the repair; why those token types take such values is outside our scope.
 Section~\ref{sec:objective} turns from the coordinates to a second question: whether T5 pretraining or the missing embedding objective produces them.
 
 \section{Objective or Architecture?}
@@ -675,7 +696,7 @@ Top-PC share separates these layers from healthy ones; mean pairwise cosine does
 In the pre-trained models the removed directions rank below the retained ones, and at the selected layers below the next ten as well; in the fine-tuned models they rank above the next ten, a reversal for LaTa (E3).
 Massive coordinates do not explain the subspace in the way we predicted (E1).
 Zeroing up to ten of them repairs none of the 26 collapsed layers, although the ten highest-variance coordinates hold a median 92 percent of the dominant direction's squared loading; per-coordinate standardization repairs 9.
-\pending{E2: whether specific tokens carry these coordinates}.
+Token types localize the nuisance where coordinates do not, in two of the three models (E2): in LaTa the comma alone carries 0.96 of the dominant direction's score variance over training passages at layer 6 and mean pooling without three token types restores all 10 collapsed layers, PhilTa has the same leading carriers with context-dependent values, and in mT5-base neither the token mix nor a token ablation accounts for the direction.
 Qwen3-0.6B and KaLM-mini are decoders of the kind in which massive activations are reported \citep{sun2024massive}, yet they never collapse, and their three largest-magnitude coordinates have $r < 1$ at every layer (E1).
 At mT5-base layer 1, three massive coordinates carry 0.86 of the mean pairwise cosine, yet the layer still ranks at AUROC 0.82; their $r$ is 0.05 to 0.12, so they shift all passages together.
 A projection fit on training vectors removes these few directions and restores ranking at every depth.
@@ -683,7 +704,7 @@ Choosing among healthy layers still needs a train-only task signal.
 
 Several observations remain open.
 In LaTa's middle layers the raw cosine gap is negative ($-0.05$ to $-0.07$), so same-directory pairs score slightly below different-directory pairs on average, while AUROC stays at chance.
-Section~\ref{sec:geometry} shows that the standardized gap does not account for it, and the token audit (E2) tests a length account.
+Section~\ref{sec:geometry} shows that the standardized gap does not account for it, and the token audit rejects a length account (E2).
 Architecture and training objective are confounded in the models we have run, so the T5 attribution stays provisional until the controlled panel of Section~\ref{sec:objective} lands.
 % CONDITIONAL: cite mikkelsen2026 as contrast if the 2x2 panel supports a T5-specific account
 
