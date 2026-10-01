@@ -466,7 +466,7 @@ We repeat each quantity on 20 random directions, drawn orthogonal to the top ten
 For the ablation, we rank token types on training passages by their share of the first component's score variance, or by the mean of their shares on the first three components, and mean-pool without the top $m$ types, $m \in \{1,3,10,30,100\}$.
 The ablation restores a layer if AUROC reaches 0.90 for some $m$.
 Its control is mass-matched: it drops random other token types that hold at least as many training tokens as the dropped ones, in five draws.
-We added this control on review after a first run, whose control matched the number of dropped types and their training counts but dropped far fewer tokens.
+We added this control on review after a first run, whose control drew as many token types as were dropped, each of the nearest eligible training count, but dropped far fewer tokens.
 The length check addresses LaTa's negative raw gap (Section~\ref{sec:geometry}): the length account holds if the first component's score correlates with log token count at $|\rho| \ge 0.5$ and same-directory pairs differ more in log length than different-directory pairs.
 We expected frequent tokens to hold the largest share in LaTa and PhilTa, so that the frequency weights alone rescue them and dropping special tokens does not.
 For mT5-base we expected no arm to rescue it and the tokens SIF keeps, taken as those outside the 100 most frequent, to hold the largest share: if the end-of-sequence token carried the direction, SIF would delete that token and rescue the model.

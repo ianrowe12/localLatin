@@ -717,7 +717,7 @@ region):
 
 | # | Sentence | Change |
 |---|---|---|
-| 1 | Design, the ablation's control | "random token types matched in training frequency are the control" becomes three sentences: the rule; the mass-matched control (random other token types holding at least as many training tokens as the dropped ones, five draws); and that it was added on review after a first run whose control matched the number of types and their training counts but dropped far fewer tokens |
+| 1 | Design, the ablation's control | "random token types matched in training frequency are the control" becomes three sentences: the rule; the mass-matched control (random other token types holding at least as many training tokens as the dropped ones, five draws); and that it was added on review after a first run whose control drew as many token types as were dropped, each of the nearest eligible training count, but dropped far fewer tokens |
 | 2 | LaTa, control result | The ablation sentence now gives the median (0.919) and says that the three token types are the top three of the `pc123` ranking at all 10 layers. "Frequency-matched random types restore none (0.50)" becomes the mass-matched control at that setting (median 0.500, 10 percent of the test tokens dropped) and its count over all cells (0 of 26 at any m under either ranking) |
 | 3 | LaTa, PC1-only ranking | "restores only 2 of the 10 layers" becomes "restores at most 2 of the 10 LaTa layers at any m", a statement per fixed m |
 | 4 | PhilTa, ablation | The statement by smallest restoring m per layer becomes fixed settings under `pc123`: m = 3 restores 1 of 9, m = 10 restores 8, m = 30 all 9 (0.905 to 0.930), with the mass-matched control at m = 30 (0.543, a median 32 percent of the test tokens dropped) |
