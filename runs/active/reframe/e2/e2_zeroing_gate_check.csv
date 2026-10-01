@@ -1,0 +1,25 @@
+gate,model,n_cells,n_missing_reference,n_reference_rows_absent,max_abs_diff,tolerance,n_over_tolerance,cells_over_tolerance,ok
+1 zeroed coordinate sets vs E1,bowphs/LaTa,96,0,0,,,0,,True
+2 zero-only AUROC vs E1,bowphs/LaTa,96,0,0,0,1e-06,0,,True
+3 top-PC share of the zeroed train vectors vs E1,bowphs/LaTa,96,0,0,0,1e-06,0,,True
+"4 base and ABTT D=1,2,3,10 AUROC on the raw vectors vs H1",bowphs/LaTa,60,0,0,1.646e-07,1e-06,0,,True
+1 zeroed coordinate sets vs E1,bowphs/PhilTa,96,0,0,,,0,,True
+2 zero-only AUROC vs E1,bowphs/PhilTa,96,0,0,0,1e-06,0,,True
+3 top-PC share of the zeroed train vectors vs E1,bowphs/PhilTa,96,0,0,0,1e-06,0,,True
+"4 base and ABTT D=1,2,3,10 AUROC on the raw vectors vs H1",bowphs/PhilTa,60,0,0,1.303e-07,1e-06,0,,True
+1 zeroed coordinate sets vs E1,google/mt5-base,96,0,0,,,0,,True
+2 zero-only AUROC vs E1,google/mt5-base,96,0,0,0,1e-06,0,,True
+3 top-PC share of the zeroed train vectors vs E1,google/mt5-base,96,0,0,0,1e-06,0,,True
+"4 base and ABTT D=1,2,3,10 AUROC on the raw vectors vs H1",google/mt5-base,60,0,0,5.371e-07,1e-06,0,,True
+1 zeroed coordinate sets vs E1,sentence-transformers/LaBSE,96,0,0,,,0,,True
+2 zero-only AUROC vs E1,sentence-transformers/LaBSE,96,0,0,0,1e-06,0,,True
+3 top-PC share of the zeroed train vectors vs E1,sentence-transformers/LaBSE,96,0,0,0,1e-06,0,,True
+"4 base and ABTT D=1,2,3,10 AUROC on the raw vectors vs H1",sentence-transformers/LaBSE,60,0,0,8.68e-08,1e-06,0,,True
+1 zeroed coordinate sets vs E1,Qwen/Qwen3-Embedding-0.6B,224,0,0,,,0,,True
+2 zero-only AUROC vs E1,Qwen/Qwen3-Embedding-0.6B,224,0,0,0,1e-06,0,,True
+3 top-PC share of the zeroed train vectors vs E1,Qwen/Qwen3-Embedding-0.6B,224,0,0,0,1e-06,0,,True
+"4 base and ABTT D=1,2,3,10 AUROC on the raw vectors vs H1",Qwen/Qwen3-Embedding-0.6B,140,0,0,2.172e-07,1e-06,0,,True
+1 zeroed coordinate sets vs E1,KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,192,0,0,,,0,,True
+2 zero-only AUROC vs E1,KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,192,0,0,0,1e-06,0,,True
+3 top-PC share of the zeroed train vectors vs E1,KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,192,0,0,0,1e-06,0,,True
+"4 base and ABTT D=1,2,3,10 AUROC on the raw vectors vs H1",KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,120,0,0,9.83e-08,1e-06,0,,True
