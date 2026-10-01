@@ -416,7 +416,10 @@ def test_ablation_arms_are_nested_seeded_and_exclude_every_carrier():
     share = rng.normal(size=(3, n_types))
     count = rng.integers(0, 500, size=n_types)
     arms = e2.ablation_arms(share, count, seed=(e2.RANDOM_SEED, 2, 7))
-    assert len(arms) == len(e2.RANKINGS) * (len(e2.ABL_MS) * (1 + e2.CONTROL_DRAWS))
+    assert len(arms) == len(e2.RANKINGS) * (len(e2.ABL_MS) * (1 + 2 * e2.CONTROL_DRAWS))
+    mass = [a for a in arms if a["kind"] == "control_mass"]
+    assert len(mass) == len(e2.RANKINGS) * len(e2.ABL_MS) * e2.CONTROL_DRAWS
+    arms_all, arms = arms, [a for a in arms if a["kind"] != "control_mass"]
     carriers = {r: next(a["types"] for a in arms if a["ranking"] == r and a["kind"] == "carrier"
                         and a["m"] == 100) for r in e2.RANKINGS}
     seen = np.flatnonzero(count > 0)
@@ -439,11 +442,68 @@ def test_ablation_arms_are_nested_seeded_and_exclude_every_carrier():
     # matched in train frequency: the control's counts track the carriers'
     ctl = next(a["types"] for a in arms if a["kind"] == "control" and a["m"] == 100)
     assert np.abs(count[ctl] - count[carriers["pc1"]]).mean() < 25
+    # the mass-matched control: per (ranking, m, draw), disjoint from the m carriers it is
+    # matched to, and holding at least their train tokens
+    for a in mass:
+        dropped = carriers[a["ranking"]][:a["m"]]
+        assert a["carrier_count"] == count[dropped].sum()
+        assert not set(a["types"]) & set(dropped) and len(set(a["types"])) == len(a["types"])
+        assert count[a["types"]].sum() >= a["carrier_count"]
+        assert count[a["types"][:-1]].sum() < a["carrier_count"]
+    assert all(a["carrier_count"] == count[carriers[a["ranking"]][:a["m"]]].sum()
+               for a in arms)
+    by_cell = {}
+    for a in mass:
+        by_cell.setdefault((a["ranking"], a["m"]), []).append(tuple(a["types"]))
+    assert all(len(set(v)) == e2.CONTROL_DRAWS for v in by_cell.values())
+    # unlike the count-nearest control it may use carriers ranked below m
+    assert any(set(a["types"]) & every_carrier for a in mass if a["m"] == 1)
     again = e2.ablation_arms(share, count, seed=(e2.RANDOM_SEED, 2, 7))
-    for a, b in zip(arms, again):
+    for a, b in zip(arms_all, again):
         np.testing.assert_array_equal(a["types"], b["types"])
     other = e2.ablation_arms(share, count, seed=(e2.RANDOM_SEED, 2, 8))
     assert any(not np.array_equal(a["types"], b["types"]) for a, b in zip(arms, other))
+    assert any(not np.array_equal(a["types"], b["types"])
+               for a, b in zip(mass, [x for x in other if x["kind"] == "control_mass"]))
+
+
+def test_mass_matched_sampler():
+    count = np.array([0, 900, 500, 300, 200, 100, 50, 20, 10, 5, 1, 0])
+    carriers = [1, 3]  # 1,200 train tokens
+    seen = set()
+    for seed in range(200):
+        picks = e2.mass_matched_random(count, carriers, np.random.default_rng(seed))
+        assert not set(picks) & {0, 11, 1, 3}  # never a dropped carrier or an unseen type
+        assert len(set(picks)) == len(picks)
+        total = count[picks].sum()
+        # the eligible types hold 886 < 1,200 tokens: every one of them is dropped
+        assert sorted(picks) == [2, 4, 5, 6, 7, 8, 9, 10] and total == 886
+        seen.add(tuple(picks))
+    assert len(seen) > 20  # the order of the draws varies
+    carriers = [4]  # 200 train tokens
+    sizes, firsts = [], []
+    for seed in range(400):
+        picks = e2.mass_matched_random(count, carriers, np.random.default_rng(seed))
+        total = int(count[picks].sum())
+        assert 4 not in picks and total >= 200
+        # stops at the first type that reaches the target: the overshoot is less than that
+        # last type's count, and no shorter prefix reaches the target
+        assert total - 200 < count[picks[-1]] and count[picks[:-1]].sum() < 200
+        sizes.append(len(picks))
+        firsts.append(int(picks[0]))
+    assert min(sizes) == 1 and max(sizes) > 1
+    # draws are proportional to train count: type 1 (900 of 1,886 eligible tokens) leads
+    share = np.mean(np.array(firsts) == 1)
+    assert 0.40 < share < 0.56
+    assert np.mean(np.array(firsts) == 10) < 0.02
+    # same generator state, same draw; a special token is a type like any other
+    a = e2.mass_matched_random(count, carriers, np.random.default_rng(3))
+    b = e2.mass_matched_random(count, carriers, np.random.default_rng(3))
+    np.testing.assert_array_equal(a, b)
+    # degenerate inputs: no carriers, or nothing else to draw
+    assert len(e2.mass_matched_random(count, [], np.random.default_rng(0))) == 0
+    assert len(e2.mass_matched_random(np.array([5, 0]), [0], np.random.default_rng(0))) == 0
+    np.testing.assert_array_equal(count, [0, 900, 500, 300, 200, 100, 50, 20, 10, 5, 1, 0])
 
 
 # --------------------------------------------------------------------------- #
@@ -632,18 +692,29 @@ def _fixture(limit=0):
                     "method": "abtt_fixed", "aucroc": 0.123})
         by_m = FIX_ABL.get((mid, layer), (aucs[0],) * 5)
         for ri, ranking in enumerate(e2.RANKINGS):
-            for kind, draws in (("carrier", [-1]), ("control", range(e2.CONTROL_DRAWS))):
+            # carriers: train AUROC equals test AUROC except at m = 100, where it is 0.1
+            # lower, so the cell chosen on train differs from the best cell on test.
+            # count-nearest control: near the mean arm, a tenth of the carriers' tokens.
+            # mass-matched control: 0.01 above it, the carriers' tokens and a few more.
+            for kind, draws in (("carrier", [-1]), ("control", range(e2.CONTROL_DRAWS)),
+                                ("control_mass", range(e2.CONTROL_DRAWS))):
                 for draw in draws:
                     for m, auc in zip(e2.ABL_MS, by_m):
-                        val = auc - 0.02 * ri if kind == "carrier" else aucs[0] + 0.001 * draw
+                        val = {"carrier": auc - 0.02 * ri, "control": aucs[0] + 0.001 * draw,
+                               "control_mass": aucs[0] + 0.01 + 0.001 * draw}[kind]
+                        scale = {"carrier": 1.0, "control": 0.1, "control_mass": 1.05}[kind]
                         abl.append({"model": mid, "layer": layer, "ranking": ranking,
-                                    "kind": kind, "draw": draw, "m": m, "n_types": m,
+                                    "kind": kind, "draw": draw, "m": m,
+                                    "n_types": 2 * m if kind == "control_mass" else m,
                                     "types": ";".join(str(3 + j) for j in range(m)),
                                     **{k: np.nan for k in block}, "aucroc": val,
-                                    "train_aucroc": val, "n_fallback": 0,
-                                    "dropped_mass_train": 0.01 * m ** 0.5,
-                                    "dropped_mass_test": 0.01 * m ** 0.5,
-                                    "train_count_dropped": 10 * m})
+                                    "train_aucroc": val - (0.1 if kind == "carrier"
+                                                           and m == 100 else 0.0),
+                                    "n_fallback": 0,
+                                    "dropped_mass_train": scale * 0.01 * m ** 0.5,
+                                    "dropped_mass_test": scale * 0.01 * m ** 0.5,
+                                    "train_count_dropped": int(scale * 100 * m),
+                                    "carrier_train_count": 100 * m})
         if layer == min(x for m_, x in FIX_AUC if m_ == mid):
             ids = np.random.default_rng(i).integers(0, 9, size=len(tok.n)).astype(str)
             for split, rows in (("train", train), ("test", test)):
@@ -846,7 +917,29 @@ def test_summarize_applies_the_frozen_rules_to_the_cells():
     assert x.r3m_pc1 == 30 and x.r3m_pc123 == 30 and x.r3  # 0.93 and 0.91 at m = 30
     assert (x.best_abl, x.best_abl_ranking, x.best_abl_m) == (0.95, "pc1", 100)
     assert x.best_ctl == pytest.approx(0.502) and not x.ctl_r3
+    # the two controls at that cell, and the cell chosen on TRAIN AUROC of the carrier arm
+    assert x.best_mctl == pytest.approx(0.512) and not x.mctl_r3
+    assert (x.sel_abl, x.sel_abl_ranking, x.sel_abl_m) == (0.93, "pc1", 30)
+    assert x.sel_abl_train == 0.93 and x.abltr_pc1_m100 == pytest.approx(0.85)
+    assert x.sel_ctl == pytest.approx(0.502) and x.sel_mctl == pytest.approx(0.512)
+    assert (x.tc_pc123_m3, x.ctc_pc123_m3, x.mtc_pc123_m3) == (300, 30, 315)
+    assert x.mnt_pc123_m3 == 6 and x.mdm_pc1_m100 == pytest.approx(0.105)
+    assert x.cdm_pc1_m100 == pytest.approx(0.01) and x.dm_pc1_m100 == pytest.approx(0.1)
+    assert x.mctl_pc123_m30_min == pytest.approx(0.51) and x.mctl_pc123_m30_max == pytest.approx(0.514)
     assert x.ctl_pc1_m100_min == pytest.approx(0.50) and x.ctl_pc1_m100_max == pytest.approx(0.504)
+    # a mass-matched control that reaches 0.90 is flagged, like the count-nearest one
+    lifted = frames[e2.ABL_NAME].copy()
+    lifted.loc[(lifted.kind == "control_mass") & (lifted.model == LATA) & (lifted.layer == 2)
+               & (lifted.ranking == "pc123") & (lifted.m == 10), "aucroc"] = 0.91
+    w2 = e2.summarize(args[0], args[1], lifted, args[3], res).set_index(["m", "layer"])
+    assert w2.loc[("LaTa", 2)].mctl_r3 and not w2.loc[("LaTa", 2)].ctl_r3
+    assert not w2.loc[("LaTa", 3)].mctl_r3
+    # CSVs from before the mass-matched control still summarize: its cells are missing
+    old = frames[e2.ABL_NAME][frames[e2.ABL_NAME].kind != "control_mass"].drop(
+        columns="carrier_train_count")
+    w3 = e2.summarize(args[0], args[1], old, args[3], res).set_index(["m", "layer"])
+    assert np.isnan(w3.loc[("LaTa", 2)].sel_mctl) and w3.loc[("LaTa", 2)].sel_abl == 0.93
+    assert not w3.mctl_r3.any()
     y = w.loc[("LaTa", 3)]
     assert y.r1_sif_keepspecial == "no_sif_gain" and np.isnan(y.r1frac_sif_keepspecial)
     assert y.r1chg_mean_nofreq100 == pytest.approx(0.03) and y.r3m_pc1 == -1 and not y.r3
@@ -903,17 +996,32 @@ def test_table_renders_from_the_fixture_and_omits_absent_models(tmp_path):
     x = w[(w.m == "LaTa") & (w.layer == 2)].iloc[0]
     assert cells[1] == "2"  # the worst baseline layer
     assert cells[2:7] == ["0.500", "0.510", "0.860", "0.880", "0.800"]
-    assert cells[7:9] == ["0.950", "0.502"]
+    # Drop is the cell chosen on train AUROC (0.930 at m = 30), not the best on test
+    # (0.950 at m = 100); Rand. is the mass-matched control at that cell
+    assert cells[7:9] == ["0.930", "0.512"]
     assert cells[9:] == [f"{x.ev_pc1:.2f}", f"{x.rand_ev_mean:.2f}", f"{x.sh_special_pc1:.2f}",
-                         f"{x.sh_frequent_pc1:.2f}", f"{x.sh_other_pc1:.2f}", f"{x.rho_pc1:.2f}"]
+                         f"{x.sh_frequent_pc1:.2f}", f"{x.sh_other_pc1:.2f}",
+                         f"{abs(x.rho_pc1):.2f}"]
+    assert header.rstrip("\\ ").endswith(r"$|\rho|$") and r"\tabcolsep}{2.6pt}" in tex
+    flipped = w.copy()
+    flipped.loc[(flipped.m == "LaTa") & (flipped.layer == 2), "rho_pc1"] = -0.384
+    e2.write_table(flipped, out, gates)
+    row = next(ln for ln in out.read_text().splitlines() if ln.startswith("LaTa &"))
+    assert row.rstrip("\\ ").endswith("& 0.38")  # |rho|: the sign of a PC is a convention
+    e2.write_table(w, out, gates)
     cap = next(ln for ln in tex.splitlines() if ln.startswith(r"\caption{"))
     assert cap.endswith("}") and "--" not in cap and chr(0x2014) not in cap
     for phrase in ("worst baseline layer", "special tokens", "100 most frequent",
                    "five random sets", "20 random directions", "training passages only",
                    "recomputed in this experiment's forward pass with training-only token "
-                   "frequencies (SIF; it reproduces the published SIF cells)"):
+                   "frequencies (SIF; it reproduces the SIF cells of "
+                   r"Section~\ref{sec:geometry})",
+                   "chosen by training AUROC", "hold at least as many training tokens",
+                   "orthogonal to the top ten principal components",
+                   "the three sum to one, but a single share can fall below zero or exceed one",
+                   r"$|\rho|$: absolute Spearman correlation"):
         assert phrase in cap
-    assert "as published" not in cap
+    assert "as published" not in cap and "published" not in cap and "highest" not in cap
     # a negative cell has a math minus sign; the LaBSE shares of -0.01 are the fixture's
     labse = [c.strip() for c in rows[2].rstrip("\\ ").split("&")]
     y = w[w.m == "LaBSE"].iloc[0]
@@ -925,12 +1033,12 @@ def test_table_renders_from_the_fixture_and_omits_absent_models(tmp_path):
     worse = _set(worse, lambda r: (r.model == MT5) & (r.method == "sif_only"), "aucroc", 0.670)
     e2.write_table(w, out, _gt(frames, worse))
     cap = next(ln for ln in out.read_text().splitlines() if ln.startswith(r"\caption{"))
-    assert ("(SIF; its AUROC differs from the published SIF cells by up to 0.015 over all "
-            "models and layers)") in cap and "reproduces" not in cap
+    assert ("(SIF; its AUROC differs from the SIF cells of Section~\\ref{sec:geometry} by up "
+            "to 0.015 over all models and layers)") in cap and "reproduces" not in cap
     assert e2.sif_reference_gap(_gt(frames, worse)) == pytest.approx(0.0150072, abs=1e-9)
     # without gates (no published cells) the caption makes no claim about them
     e2.write_table(w, out)
-    assert "published SIF cells" not in out.read_text()
+    assert "sec:geometry" not in out.read_text()
     assert np.isnan(e2.sif_reference_gap(None))
 
 
@@ -1110,6 +1218,67 @@ def test_facts_report_r1_under_both_references_when_gate_2a_fails(tmp_path, caps
     capsys.readouterr()
 
 
+def test_facts_report_both_controls_and_fixed_settings(tmp_path, capsys):
+    frames, res = _fixture()
+    facts, _ = _render(frames, res, tmp_path, "ctl")
+    assert "matched random control" not in facts  # every control is named
+    head = facts.split("## Frozen decision rules")[0]
+    assert ("Added after the first full run, on review, because the count-nearest control was "
+            "not mass-matched") in head and "R3 and the carrier arms are unchanged." in head
+    assert "Mass-matched control (`control_mass`)" in facts.split("## 0.")[0]
+    sec1 = facts.split("## 1. Table rows")[1].split("## 2.")[0]
+    assert ("  - token ablation at the cell chosen on train AUROC (ranking pc1, m=30): test "
+            "AUROC 0.930; count-nearest control 0.502; mass-matched control 0.512. Highest test "
+            "AUROC over all cells (a pick on test): 0.950 (ranking pc1, m=100; count-nearest "
+            "control 0.502, mass-matched control 0.512)") in sec1
+    sec6 = facts.split("## 6. R3: token ablation")[1].split("## 7.")[0]
+    assert ("**R3 holds at 1/3 collapsed layers** (test AUROC >= 0.90 for some m <= 100, either "
+            "ranking); per model: LaTa 1/2, mT5-base 0/1; the count-nearest control reaches "
+            "0.90 at some cell at 0/3, the mass-matched control at 0/3") in sec6
+    lata = sec6.split("### LaTa (n = 2)")[1].split("### mT5-base")[0]
+    assert ("- cell chosen on train AUROC of the carrier arm: test AUROC 0.840 (0.750 to 0.930); "
+            "count-nearest control 0.582 (0.502 to 0.662); mass-matched control 0.592 (0.512 to "
+            "0.672)") in lata
+    assert "  - train tokens dropped: m=1 100 / 10 / 105; m=3 300 / 30 / 315;" in lata
+    assert "  - share of test tokens dropped: m=1 0.010 / 0.001 / 0.011;" in lata
+    assert "  - token types in a mass-matched draw: m=1 2.0; m=3 6.0;" in lata
+    fixed = sec6.split("### Fixed settings (no pick on test)")[1]
+    assert [ln for ln in fixed.splitlines() if ln.startswith("- ranking")] == [
+        "- ranking `pc123`, m = 3:", "- ranking `pc123`, m = 30:",
+        "- ranking `pc1`, m = 100, the comparator that drops more token mass under the "
+        "PC1-only ranking:"]
+    cell = fixed.split("- ranking `pc123`, m = 30:")[1].split("- ranking `pc1`")[0]
+    assert ("  - LaTa (n = 2): carriers restored at 1/2; AUROC min / median / max 0.730 / 0.820 "
+            "/ 0.910; share of test tokens dropped 0.055 (0.055 to 0.055); train tokens dropped "
+            "3000 (3000 to 3000)\n"
+            "    - count-nearest control: restored at 0/2; AUROC min / median / max 0.502 / "
+            "0.582 / 0.662; share of test tokens dropped 0.005 (0.005 to 0.005); train tokens "
+            "dropped 300 (300 to 300)\n"
+            "    - mass-matched control: restored at 0/2; AUROC min / median / max 0.512 / "
+            "0.592 / 0.672; share of test tokens dropped 0.058 (0.058 to 0.058); train tokens "
+            "dropped 3150 (3150 to 3150)\n") in cell
+    verdicts = facts.split("## 11. Verdicts in one place")[1].split("## 12.")[0]
+    for name in ("count-nearest control", "mass-matched control"):
+        assert (f"- the {name} of the token ablation reaches AUROC >= 0.90 at some cell "
+                "(collapsed layers): 0/3") in verdicts
+    tables = facts.split("## 12. All layers")[1]
+    assert ("### LaTa: token ablation, ranking by PC1 share (test AUROC: carriers / "
+            "count-nearest control / mass-matched control)") in tables
+    assert "| 2* | 0.500 | 0.520 / 0.502 / 0.512 |" in tables
+    assert ("### LaTa: tokens dropped, ranking by PC1 share (train tokens, then the share of "
+            "test tokens in parentheses: carriers / count-nearest control / mass-matched "
+            "control)") in tables
+    assert "| 2* | 100 / 10 / 105 (0.010 / 0.001 / 0.011) |" in tables
+    # CSVs written before the mass-matched control still render; its cells are missing
+    old = dict(frames)
+    old[e2.ABL_NAME] = frames[e2.ABL_NAME][frames[e2.ABL_NAME].kind != "control_mass"].drop(
+        columns="carrier_train_count")
+    facts, table = _render(old, res, tmp_path, "old")
+    assert "count-nearest control 0.502; mass-matched control --." in facts
+    assert "m=1 100 / 10 / n/a" in facts and "| 0.930 | -- |" in table.replace("&", "|")
+    capsys.readouterr()
+
+
 def test_facts_are_loud_when_the_two_references_disagree(tmp_path, capsys):
     frames, res = _fixture()
     far = _set(res, lambda r: (r.model == LATA) & (r.layer == 2) & (r.method == "sif_only"),
@@ -1142,12 +1311,12 @@ def test_facts_without_a_gate_2_failure_and_smoke_runs(tmp_path, capsys):
     sub = facts.split("### R1 under the published SIF reference")[1].split("## 4.")[0]
     assert "- verdicts that differ between the two references: 0 of 9" in sub
     assert "largest absolute change of the recovered share of the SIF gain: 0.000" in sub
-    assert "it reproduces the published SIF cells" in table
+    assert r"it reproduces the SIF cells of Section~\ref{sec:geometry}" in table
     # a smoke run says so at the top and skips the AUROC gates
     facts, table = _render(*_fixture(limit=10), tmp_path, "smoke")
     assert "**SMOKE RUN (--limit 10)" in facts.split("## Frozen")[0]
     assert "gate 1a" not in facts and "Deviation (gate 2a)" not in facts
-    assert "published SIF cells" not in table
+    assert "sec:geometry" not in table and "published" not in table
     capsys.readouterr()
 
 
@@ -1290,7 +1459,7 @@ def test_audit_of_a_fake_encoder_reproduces_numpy_pooling(tmp_path):
     assert len(arms) == 2 * len(e2.ARMS) and list(arms.arm[:5]) == list(e2.ARMS)
     assert len(audit) == 2 * 2 * (len(e2.DIRECTIONS) + len(e2.SUBSPACES))
     assert len(carriers) == 2 * e2.N_PC * e2.TOP_CARRIERS
-    assert len(abl) == 2 * len(e2.RANKINGS) * len(e2.ABL_MS) * (1 + e2.CONTROL_DRAWS)
+    assert len(abl) == 2 * len(e2.RANKINGS) * len(e2.ABL_MS) * (1 + 2 * e2.CONTROL_DRAWS)
     assert list(length.split) == ["train", "test"] and (arms.limit == 0).all()
     # the two reference arms are the CLI's pooling and the cache
     ref = arms[arms.arm.isin(["mean", "sif"])]
@@ -1350,6 +1519,25 @@ def test_audit_of_a_fake_encoder_reproduces_numpy_pooling(tmp_path):
         c1 = ctl[(ctl.draw == 0) & (ctl.m == 1)].iloc[0]
         assert c1.aucroc == pytest.approx(
             _auroc(world, _numpy_pool(world, layer, drop=[int(c1.types)])), abs=5e-4)
+        # the mass-matched control: other types that hold at least the carriers' train
+        # tokens, where the count-nearest control holds fewer
+        car = abl[(abl.layer == layer) & (abl.ranking == "pc1") & (abl.kind == "carrier")]
+        mass = abl[(abl.layer == layer) & (abl.ranking == "pc1") & (abl.kind == "control_mass")]
+        assert len(mass) == len(e2.ABL_MS) * e2.CONTROL_DRAWS
+        assert mass.aucroc.notna().all() and mass.eff_rank_train.isna().all()
+        target = dict(zip(car.m, car.train_count_dropped))
+        assert (car.carrier_train_count == car.train_count_dropped).all()
+        assert list(mass.carrier_train_count) == [target[m] for m in mass.m]
+        assert list(ctl.carrier_train_count) == [target[m] for m in ctl.m]
+        feasible = mass[mass.m <= 10]
+        assert (feasible.train_count_dropped >= feasible.carrier_train_count).all()
+        assert ctl[ctl.m == 10].train_count_dropped.mean() < target[10]
+        m1 = mass[(mass.m == 3) & (mass.draw == 0)].iloc[0]
+        ids = [int(v) for v in m1.types.split(";")]
+        assert len(ids) == m1.n_types and not set(ids) & {int(v) for v in car.types.iloc[1].split(";")}
+        assert m1.aucroc == pytest.approx(
+            _auroc(world, _numpy_pool(world, layer, drop=ids)), abs=5e-4)
+        assert (mass[mass.n_types > e2.TYPES_LISTED].types == "").all()
 
 
 def test_audit_cli_is_deterministic_merges_by_model_and_gates(tmp_path, monkeypatch, capsys):
@@ -1444,6 +1632,55 @@ def test_forward_order_follows_the_cache_manifest(tmp_path, capsys):
     np.testing.assert_array_equal(e2.forward_order(tmp_path, sp.iloc[[0, 2]].reset_index()), [1, 0])
     with pytest.raises(SystemExit):
         e2.forward_order(tmp_path, pd.DataFrame({"filename": ["a.txt", "q.txt"]}))
+
+
+# --------------------------------------------------------------------------- #
+# committed results (skipped when the result CSVs are not checked out)
+# --------------------------------------------------------------------------- #
+
+E2_DIR = REPO_ROOT / "runs" / "active" / "reframe" / "e2"
+E2_CSVS = (e2.ARMS_NAME, e2.AUDIT_NAME, e2.CARRIER_NAME, e2.ABL_NAME, e2.LENGTH_NAME)
+needs_results = pytest.mark.skipif(
+    not all((E2_DIR / n).exists() for n in E2_CSVS) or not (REPO_ROOT / e2.RES_CSV).exists(),
+    reason="runs/active/reframe/e2 or the published results CSV not checked out")
+
+
+def _schema_is_current() -> bool:
+    """False while the committed ablation CSV predates the mass-matched control."""
+    return "control_mass" in set(e2.read_csv(E2_DIR / e2.ABL_NAME)["kind"])
+
+
+@needs_results
+def test_committed_gate_file_regenerates_byte_identically(tmp_path):
+    committed = E2_DIR / e2.GATE_NAME
+    if not committed.exists():
+        pytest.skip("gate CSV not committed")
+    g = e2.gate_table(e2.read_csv(E2_DIR / e2.ARMS_NAME), e2.read_csv(E2_DIR / e2.AUDIT_NAME),
+                      pd.read_csv(REPO_ROOT / e2.RES_CSV))
+    e2.write_gates(g, tmp_path / "gates.csv")
+    assert (tmp_path / "gates.csv").read_bytes() == committed.read_bytes()
+    # gates 1, 3 and 4 hold for every model; gate 2a is the known open one
+    gated = g[g.gated == 1]
+    assert gated[~gated.gate.str.startswith("2a")].ok.all()
+
+
+@needs_results
+def test_committed_facts_and_table_regenerate_byte_identically(tmp_path, capsys):
+    """render on the committed CSVs reproduces the committed facts file and table."""
+    facts = E2_DIR / e2.FACTS_NAME
+    table = REPO_ROOT / e2.TAB_DIR / e2.TABLE_NAME
+    if not (facts.exists() and table.exists()):
+        pytest.skip("facts file or table not committed")
+    if not _schema_is_current():
+        pytest.skip("the committed ablation CSV predates the mass-matched control: rerun "
+                    "the audit and commit its CSVs, facts and table")
+    rc = e2.main(["render", "--out_dir", str(E2_DIR), "--tab_dir", str(tmp_path),
+                  "--facts_md", str(tmp_path / "facts.md"),
+                  "--results_csv", str(REPO_ROOT / e2.RES_CSV)])
+    capsys.readouterr()
+    assert rc == 0
+    assert (tmp_path / "facts.md").read_text() == facts.read_text()
+    assert (tmp_path / e2.TABLE_NAME).read_text() == table.read_text()
 
 
 def test_module_imports_without_torch():

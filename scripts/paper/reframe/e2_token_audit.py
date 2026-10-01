@@ -31,8 +31,10 @@ accounts: special tokens, frequent tokens, passage length.
                               covariances, which do not depend on the basis chosen inside
                               the subspace, and for random 2-D and 3-D subspaces;
             3. token ablation pooling with the top m carrier types dropped, m in
-                              {1,3,10,30,100}, two rankings, against random types matched
-                              in train frequency (5 draws);
+                              {1,3,10,30,100}, two rankings, against two random controls
+                              (5 draws each): the count-nearest control (as many types,
+                              nearest in train count) and the mass-matched control (other
+                              types holding at least as many train tokens);
             4. length check   |delta log n| of same- and different-directory pairs.
           Writes small CSVs only; token states and embeddings are never written.
   check   the gates on existing CSVs (no caches, no torch).
@@ -85,11 +87,23 @@ and says loudly if a verdict differs between the two. ``check`` still exits 3. T
 caption no longer calls the SIF column the published SIF, and its cells print a math
 minus sign and no negative zero.
 
+Added after the first full run, on review, because the count-nearest control was not
+mass-matched: the mass-matched control (``control_mass`` rows of the ablation CSV). The
+carriers are the most frequent token types, so the types nearest to them in train count
+hold far fewer tokens (LaTa, pc123 ranking, m = 3: 7,022 train tokens against 728 in the
+first full run). The new control draws token types with probability
+proportional to train count, from the train types outside the dropped carriers, until
+they hold at least as many train tokens. R3 and the carrier arms are unchanged. The
+table's Drop cell is chosen on train AUROC (it was the highest test AUROC) and its Rand.
+cell is the mass-matched control.
+
 Outputs (small CSVs, force-added; a rerun of some models replaces only their rows):
   runs/active/reframe/e2/e2_pooling_arms.csv      one row per (model, layer, arm)
   runs/active/reframe/e2/e2_direction_audit.csv   (model, layer, direction, split)
   runs/active/reframe/e2/e2_carriers.csv          top 30 token types per PC
-  runs/active/reframe/e2/e2_token_ablation.csv    (model, layer, ranking, kind, draw, m)
+  runs/active/reframe/e2/e2_token_ablation.csv    (model, layer, ranking, kind, draw, m);
+                                                  kind = carrier, control (count-nearest)
+                                                  or control_mass (mass-matched)
   runs/active/reframe/e2/e2_length.csv            (model, split)
   runs/active/reframe/e2/e2_gate_check.csv
   runs/active/reframe/e2/facts_e2.md              (render)
@@ -199,7 +213,12 @@ ABL_MS = (1, 3, 10, 30, 100)
 RANKINGS = ("pc1", "pc123")
 RANK_LABEL = {"pc1": "PC1 share", "pc123": "mean of the PC1, PC2, PC3 shares"}
 CONTROL_DRAWS = 5
-MATCH_WINDOW = 10  # a matched random type is drawn among this many nearest in train count
+MATCH_WINDOW = 10  # a count-nearest control type is drawn among this many nearest in train count
+MASS_STREAM = 1_000_003  # seed entry that keeps the mass-matched control's draws separate
+TYPES_LISTED = 100  # a mass-matched control row lists its token ids only up to this many
+# Kinds of token-ablation rows: the carriers, and two random controls.
+CONTROL_KINDS = ("control", "control_mass")
+CONTROL_LABEL = {"control": "count-nearest control", "control_mass": "mass-matched control"}
 
 # Decision rules, frozen before any E2 number was read. Do not tune.
 COLLAPSE_AUROC = asw.COLLAPSE_AUROC  # collapsed = published baseline test AUROC below 0.70
@@ -476,7 +495,8 @@ def rank_types(score: np.ndarray, train_count: np.ndarray) -> np.ndarray:
 def matched_random(train_count: np.ndarray, carriers: Sequence[int],
                    excluded: Iterable[int], rng: np.random.Generator,
                    window: int = MATCH_WINDOW) -> np.ndarray:
-    """One draw of frequency-matched random token types, one per carrier, in carrier order.
+    """One draw of the count-nearest control: one random token type per carrier, in carrier
+    order, of about the same train count.
 
     For each carrier in turn, the candidates are the ``window`` eligible types nearest to
     it in train count (absolute difference; ties: lower index) that this draw has not used
@@ -504,29 +524,69 @@ def matched_random(train_count: np.ndarray, carriers: Sequence[int],
     return np.array(picks, dtype=np.int64)
 
 
+def mass_matched_random(train_count: np.ndarray, carriers: Sequence[int],
+                        rng: np.random.Generator) -> np.ndarray:
+    """One draw of the mass-matched control for one set of dropped carriers.
+
+    Token types are drawn without replacement from the train types that are not among
+    ``carriers`` (special tokens are eligible like any other type), each draw with
+    probability proportional to train count, and added until their cumulative train count
+    first meets or exceeds the carriers'. The control therefore drops at least as many
+    train tokens as the carriers do, and more by less than the count of the last type
+    added. Returns the type indices in draw order; all eligible types when together they
+    hold fewer train tokens than the carriers.
+    """
+    count = np.asarray(train_count, dtype=np.int64)
+    carriers = np.asarray(carriers, dtype=np.int64)
+    eligible = count > 0
+    eligible[carriers] = False
+    index = np.flatnonzero(eligible)
+    target = int(count[carriers].sum())
+    if not len(index) or target <= 0:
+        return np.array([], dtype=np.int64)
+    # Successive draws proportional to count are the ascending order of Exp(1) / count.
+    order = index[np.argsort(rng.exponential(size=len(index)) / count[index], kind="stable")]
+    reached = int(np.searchsorted(np.cumsum(count[order]), target))  # first cumsum >= target
+    return order[:reached + 1]
+
+
 def ablation_arms(type_share: np.ndarray, train_count: np.ndarray,
                   seed: Sequence[int] = (RANDOM_SEED,)) -> List[Dict]:
     """The token-ablation arms of one model-layer, as sets of token-type indices.
 
     ``type_share`` [N_PC, n_types] holds each type's train share of the PC1, PC2 and PC3
-    score variance. Two rankings (RANKINGS); per ranking the top m carriers for m in
-    ABL_MS, then CONTROL_DRAWS matched random draws, each read at the same m. A control
-    type is in the top max(ABL_MS) of neither ranking.
+    score variance. Two rankings (RANKINGS); per ranking:
+      carrier       the top m types, m in ABL_MS;
+      control       the count-nearest control: CONTROL_DRAWS draws of matched_random, each
+                    read at the same m; a control type is in the top max(ABL_MS) of
+                    neither ranking;
+      control_mass  the mass-matched control: for every m, CONTROL_DRAWS draws of
+                    mass_matched_random against the top m carriers of this ranking, seeded
+                    per (ranking, m, draw).
+    Every arm carries ``carrier_count``, the train tokens of the carriers it is matched to.
     """
     score = {"pc1": type_share[0], "pc123": type_share[:N_PC].mean(axis=0)}
     top = {r: rank_types(score[r], train_count)[:max(ABL_MS)] for r in RANKINGS}
     excluded = sorted({int(i) for r in RANKINGS for i in top[r]})
     arms: List[Dict] = []
+
+    def add(ranking: str, kind: str, draw: int, m: int, types: np.ndarray) -> None:
+        arms.append({"ranking": ranking, "kind": kind, "draw": draw, "m": m, "types": types,
+                     "carrier_count": int(train_count[top[ranking][:m]].sum())})
+
     for ri, ranking in enumerate(RANKINGS):
         for m in ABL_MS:
-            arms.append({"ranking": ranking, "kind": "carrier", "draw": -1, "m": m,
-                         "types": top[ranking][:m]})
+            add(ranking, "carrier", -1, m, top[ranking][:m])
         for draw in range(CONTROL_DRAWS):
             rng = np.random.default_rng([*seed, ri, draw])
             picks = matched_random(train_count, top[ranking], excluded, rng)
             for m in ABL_MS:
-                arms.append({"ranking": ranking, "kind": "control", "draw": draw, "m": m,
-                             "types": picks[:m]})
+                add(ranking, "control", draw, m, picks[:m])
+        for m in ABL_MS:
+            for draw in range(CONTROL_DRAWS):
+                rng = np.random.default_rng([*seed, MASS_STREAM, ri, m, draw])
+                add(ranking, "control_mass", draw, m,
+                    mass_matched_random(train_count, top[ranking][:m], rng))
     return arms
 
 
@@ -1116,6 +1176,13 @@ def audit_model(model_id: str, enc: Encoder, ctx: Context, bases_root: Path, poo
     audit_rows: List[Dict] = []
     carrier_rows: List[Dict] = []
     arms_by_layer: List[List[Dict]] = []
+    seen_tokens: Dict[int, Tuple[str, str]] = {}
+
+    def describe(token_id: int) -> Tuple[str, str]:  # a carrier recurs across layers
+        if token_id not in seen_tokens:
+            seen_tokens[token_id] = enc.describe(token_id)
+        return seen_tokens[token_id]
+
     for li, x in enumerate(layers):
         contrib = np.concatenate(p1["contrib"][li])
         p1["contrib"][li] = None
@@ -1127,7 +1194,7 @@ def audit_model(model_id: str, enc: Encoder, ctx: Context, bases_root: Path, poo
                 agrees = int(list(ref["coord"].astype(int))[:N_COORD]
                              == dirs[x]["coords"][N_PC:N_PC + N_COORD])
         a, c, share = layer_audit({**key0, "layer": int(x)}, contrib, tok, dirs[x], tr, te,
-                                  masses, p1["s_pool"][li], cached[x], enc.describe,
+                                  masses, p1["s_pool"][li], cached[x], describe,
                                   type_info, agrees)
         audit_rows += a
         carrier_rows += c
@@ -1196,15 +1263,20 @@ def audit_model(model_id: str, enc: Encoder, ctx: Context, bases_root: Path, poo
             m = metrics[("abl", li, j)]
             kept = p2["kept_n"][li, j]
             dropped = 1.0 - kept[has] / tok.n[has]
+            # a mass-matched draw can hold thousands of types: its ids are listed only
+            # when few (the draw is reproducible from its seed)
+            listed = arm["kind"] != "control_mass" or len(arm["types"]) <= TYPES_LISTED
             abl_rows.append({
                 **key0, "layer": int(x), "ranking": arm["ranking"], "kind": arm["kind"],
                 "draw": arm["draw"], "m": arm["m"], "n_types": int(len(arm["types"])),
-                "types": ";".join(str(int(t)) for t in tok.types[arm["types"]]),
+                "types": (";".join(str(int(t)) for t in tok.types[arm["types"]])
+                          if listed else ""),
                 **{c: m.get(c, np.nan) for c in block},
                 "n_fallback": int(((kept == 0) & has).sum()),
                 "dropped_mass_train": float(dropped[tr[has]].mean()),
                 "dropped_mass_test": float(dropped[te[has]].mean()),
-                "train_count_dropped": int(train_count[arm["types"]].sum())})
+                "train_count_dropped": int(train_count[arm["types"]].sum()),
+                "carrier_train_count": int(arm["carrier_count"])})
     print(f"  {name}: done in {time.time() - t0:.0f}s", flush=True)
     return {ARMS_NAME: pd.DataFrame(arm_rows), AUDIT_NAME: pd.DataFrame(audit_rows),
             CARRIER_NAME: pd.DataFrame(carrier_rows), ABL_NAME: pd.DataFrame(abl_rows),
@@ -1433,6 +1505,12 @@ def cmd_check(args) -> int:
 # --------------------------------------------------------------------------- #
 
 JOINT = ("pcs2_3", "pcs1_3")
+# Token-ablation cells read at one fixed (ranking, m) for every layer, so that nothing is
+# picked on test: two sizes of the pc123 ranking, and the largest drop of the pc1 ranking
+# as the comparator that removes more token mass.
+FIXED_CELLS = (("pc123", 3, ""), ("pc123", 30, ""),
+               ("pc1", 100, ", the comparator that drops more token mass under the PC1-only "
+                            "ranking"))
 JOINT_LABEL = {"pcs2_3": "span(PC2, PC3)", "pcs1_3": "span(PC1, PC2, PC3)"}
 READ_DIRS = PC_NAMES + COORD_NAMES + JOINT
 f3 = e1.f3
@@ -1538,38 +1616,61 @@ def summarize(arms: pd.DataFrame, audit: pd.DataFrame, abl: pd.DataFrame,
         shares = [r[f"sh_{grp}_pc1"] for grp in GROUPS]
         r["top_group"] = GROUPS[int(np.argmax(shares))] if np.all(np.isfinite(shares)) else ""
         # token ablation
+        # Per (ranking, m): the carriers' cells (abl_, abltr_ train AUROC, dm_ share of
+        # test tokens dropped, tc_ train tokens dropped) and, for the count-nearest control
+        # (ctl_, cdm_, ctc_) and the mass-matched control (mctl_, mdm_, mtc_, mnt_ number
+        # of types), the mean over draws. sel_ = the cell chosen on TRAIN AUROC of the
+        # carrier arm; best_ = the highest TEST AUROC (a pick on test, as R3 allows).
         t = ablg.get((mid, layer))
-        best = (nan, "", -1, nan)
-        ctl_restores = False
+        best = (nan, "", -1)
+        chosen = (nan, "", -1)
+        restores = {kind: False for kind in CONTROL_KINDS}
         for ranking in RANKINGS:
             by_m: Dict[int, float] = {}
             for m in ABL_MS:
-                c = k = None
-                if t is not None:
-                    sel = t[(t["ranking"] == ranking) & (t["m"] == m)]
-                    c, k = sel[sel["kind"] == "carrier"], sel[sel["kind"] == "control"]
-                auc = float(c["aucroc"].iloc[0]) if c is not None and len(c) else nan
-                by_m[m] = auc
                 tag = f"{ranking}_m{m}"
+                sel = (t[(t["ranking"] == ranking) & (t["m"] == m)] if t is not None
+                       else pd.DataFrame({"kind": []}))
+                c = sel[sel["kind"] == "carrier"]
+
+                def cell(frame: pd.DataFrame, column: str, how: str = "mean") -> float:
+                    if not len(frame) or column not in frame.columns:
+                        return nan
+                    return float(getattr(frame[column].astype(float), how)())
+
+                auc = cell(c, "aucroc")
+                by_m[m] = auc
                 r[f"abl_{tag}"] = auc
-                r[f"abltr_{tag}"] = (float(c["train_aucroc"].iloc[0])
-                                     if c is not None and len(c) else nan)
-                r[f"dm_{tag}"] = (float(c["dropped_mass_test"].iloc[0])
-                                  if c is not None and len(c) else nan)
-                has = k is not None and len(k) > 0
-                r[f"ctl_{tag}_mean"] = float(k["aucroc"].mean()) if has else nan
-                r[f"ctl_{tag}_min"] = float(k["aucroc"].min()) if has else nan
-                r[f"ctl_{tag}_max"] = float(k["aucroc"].max()) if has else nan
-                r[f"cdm_{tag}"] = float(k["dropped_mass_test"].mean()) if has else nan
+                r[f"abltr_{tag}"] = cell(c, "train_aucroc")
+                r[f"dm_{tag}"] = cell(c, "dropped_mass_test")
+                r[f"tc_{tag}"] = cell(c, "train_count_dropped")
+                for kind, pre, dm, tc in (("control", "ctl", "cdm", "ctc"),
+                                          ("control_mass", "mctl", "mdm", "mtc")):
+                    k = sel[sel["kind"] == kind]
+                    for how in ("mean", "min", "max"):
+                        r[f"{pre}_{tag}_{how}"] = cell(k, "aucroc", how)
+                    r[f"{dm}_{tag}"] = cell(k, "dropped_mass_test")
+                    r[f"{tc}_{tag}"] = cell(k, "train_count_dropped")
+                    if m <= R3_MAX_M and r[f"{pre}_{tag}_mean"] >= R3_AUROC:
+                        restores[kind] = True
+                r[f"mnt_{tag}"] = cell(sel[sel["kind"] == "control_mass"], "n_types")
                 if m <= R3_MAX_M and np.isfinite(auc) and not auc <= best[0]:
-                    best = (auc, ranking, m, r[f"ctl_{tag}_mean"])
-                if m <= R3_MAX_M and has and r[f"ctl_{tag}_mean"] >= R3_AUROC:
-                    ctl_restores = True
+                    best = (auc, ranking, m)
+                if (m <= R3_MAX_M and np.isfinite(r[f"abltr_{tag}"])
+                        and not r[f"abltr_{tag}"] <= chosen[0]):
+                    chosen = (r[f"abltr_{tag}"], ranking, m)
             m_ok = r3_restoring_m(by_m)
             r[f"r3m_{ranking}"] = -1 if m_ok is None else m_ok
-        r["best_abl"], r["best_abl_ranking"], r["best_abl_m"], r["best_ctl"] = best
+        for name, (_, ranking, m) in (("best", best), ("sel", chosen)):
+            tag = f"{ranking}_m{m}"
+            r[f"{name}_abl"] = r.get(f"abl_{tag}", nan)
+            r[f"{name}_abl_ranking"], r[f"{name}_abl_m"] = ranking, m
+            r[f"{name}_ctl"] = r.get(f"ctl_{tag}_mean", nan)
+            r[f"{name}_mctl"] = r.get(f"mctl_{tag}_mean", nan)
+        r["sel_abl_train"] = chosen[0]
         r["r3"] = bool(any(r[f"r3m_{ranking}"] > 0 for ranking in RANKINGS))
-        r["ctl_r3"] = ctl_restores
+        r["ctl_r3"] = restores["control"]
+        r["mctl_r3"] = restores["control_mass"]
         r["r2"] = r2_token_mix(r["ev_pc1"])
         x = ln.get((mid, "test"), {})
         r["len_same"] = float(x.get("mean_dlog_same", nan))
@@ -1640,35 +1741,40 @@ def sif_reference_gap(gates: Optional[pd.DataFrame]) -> float:
 
 
 def caption(gates: Optional[pd.DataFrame] = None) -> str:
-    """Caption of tab:e2_token_audit. What it says about the published SIF cells is read
-    from gate 2a: the largest difference over all models and layers, to three decimals."""
+    """Caption of tab:e2_token_audit. What it says about the SIF cells reported earlier
+    in the paper (the published ``sif_only`` cells) is read from gate 2a: the largest
+    difference over all models and layers, to three decimals."""
     gap = sif_reference_gap(gates)
+    earlier = r"the SIF cells of Section~\ref{sec:geometry}"
     if not np.isfinite(gap):
         published = ""
     elif gap <= GATE_TOL_AUROC:
-        published = "; it reproduces the published SIF cells"
+        published = f"; it reproduces {earlier}"
     else:
-        published = (f"; its AUROC differs from the published SIF cells by up to {gap:.3f} "
-                     "over all models and layers")
+        published = (f"; its AUROC differs from {earlier} by up to {gap:.3f} over all models "
+                     "and layers")
     return (
         r"\caption{Token audit at each model's worst baseline layer (L). Pooling: Task~A test "
         r"AUROC of mean pooling (Mean); mean pooling without special tokens (No spec.); SIF "
         r"frequency weights with special tokens kept (SIF+spec.); SIF pooling, which also "
         r"drops special tokens, recomputed in this experiment's forward pass with "
         r"training-only token frequencies (SIF" + published + r"); and mean pooling without "
-        r"the 100 most frequent training tokens (No freq.). Token ablation: the highest "
-        r"AUROC after dropping the $m$ token "
-        r"types that contribute most to the top principal components, over $m$ from 1 to 100 "
-        r"and two rankings (Drop), and the mean AUROC of five random sets of as many token "
-        r"types with matched training frequency (Rand.). Token-mix EV: the share of the variance "
+        r"the 100 most frequent training tokens (No freq.). Token ablation: test AUROC of "
+        r"mean pooling after dropping the $m$ token types that contribute most to the top "
+        r"principal components (Drop), where $m$ between 1 and 100 and one of two rankings "
+        r"are chosen by training AUROC, and the mean test AUROC of five random sets of other "
+        r"token types that hold at least as many training tokens as the dropped types "
+        r"(Rand.). Token-mix EV: the share of the variance "
         r"of the first principal component's score across test passages that is explained by "
         r"which token types a passage contains, with one mean per token type fit on training "
         r"tokens (PC1), next to the mean of the same quantity over 20 random directions "
-        r"(Rand.). Share by token group: the part of that variance contributed by special "
-        r"tokens, by the 100 most frequent tokens and by all other tokens; the three sum to "
-        r"one. $\rho$: Spearman correlation between the PC1 score and the log token count of "
-        r"test passages. Components, token frequencies and token rankings are fit on training "
-        r"passages only.}")
+        r"orthogonal to the top ten principal components (Rand.). Share by token group: the "
+        r"covariance share of that variance contributed by special tokens, by the 100 most "
+        r"frequent tokens and by all other tokens; the three sum to one, but a single share "
+        r"can fall below zero or exceed one. $|\rho|$: absolute Spearman correlation between "
+        r"the PC1 score and the log token count of test passages (the sign of a principal "
+        r"component is a convention). Components, token frequencies and token rankings are "
+        r"fit on training passages only.}")
 
 
 def write_table(w: pd.DataFrame, path: Path, gates: Optional[pd.DataFrame] = None
@@ -1677,23 +1783,25 @@ def write_table(w: pd.DataFrame, path: Path, gates: Optional[pd.DataFrame] = Non
     rows = [(name, worst_layer(w, name)) for name in ORDER]
     omitted = [name for name, x in rows if x is None]
     lines = [asw.HEADER, r"\begin{table*}[t]", r"\centering", r"\footnotesize",
-             r"\setlength{\tabcolsep}{3pt}", r"\begin{tabular}{@{}lcccccccccccccc@{}}",
+             # 2.6pt, not the 3pt of the E1 table: at 3pt a row with negative cells overflowed
+             # \textwidth by 5.5pt; at 2.6pt three negative shares in one row still fit.
+             r"\setlength{\tabcolsep}{2.6pt}", r"\begin{tabular}{@{}lcccccccccccccc@{}}",
              r"\toprule",
              r" & & \multicolumn{5}{c}{AUROC by pooling} & \multicolumn{2}{c}{Token ablation} "
              r"& \multicolumn{2}{c}{Token-mix EV} & \multicolumn{3}{c}{Share by token group} "
              r"& \\",
              r"\cmidrule(lr){3-7}\cmidrule(lr){8-9}\cmidrule(lr){10-11}\cmidrule(lr){12-14}",
              r"Model & L & Mean & No spec. & SIF+spec. & SIF & No freq. & Drop & Rand. & PC1 "
-             r"& Rand. & Spec. & Freq. & Other & $\rho$ \\",
+             r"& Rand. & Spec. & Freq. & Other & $|\rho|$ \\",
              r"\midrule"]
     for name, x in rows:
         if x is None:
             continue
         cells = ([tex_num(x[f"auc_{arm}"], 3) for arm in ARMS]
-                 + [tex_num(x[c], 3) for c in ("best_abl", "best_ctl")]
+                 + [tex_num(x[c], 3) for c in ("sel_abl", "sel_mctl")]
                  + [tex_num(x[c], 2) for c in ("ev_pc1", "rand_ev_mean")]
                  + [tex_num(x[f"sh_{grp}_pc1"], 2) for grp in GROUPS]
-                 + [tex_num(x["rho_pc1"], 2)])
+                 + [tex_num(abs(x["rho_pc1"]), 2)])
         lines.append(f"{name} & {int(x['layer'])} & " + " & ".join(cells) + r" \\")
     lines += [r"\bottomrule", r"\end{tabular}", caption(gates), r"\label{tab:e2_token_audit}",
               r"\end{table*}"]
@@ -1825,6 +1933,13 @@ def facts(w: pd.DataFrame, arms: pd.DataFrame, carriers: pd.DataFrame, length: p
       + "The gate, its tolerance, the decision rules and every audit number are unchanged. "
       "The table caption was corrected with it: it no longer calls the SIF column the "
       "published SIF.")
+    a("")
+    a("Added after the first full run, on review, because the count-nearest control was not "
+      "mass-matched: a second random control for the token ablation, the mass-matched "
+      "control (`control_mass`, section 6). R3 and the carrier arms are unchanged. With it "
+      "the table changed: its Drop column is the cell chosen on train AUROC and no longer "
+      "the highest test AUROC, its Rand. column beside it is the mass-matched control, and "
+      "its last column prints |rho|.")
     if limit:
         a("")
         a(f"**SMOKE RUN (--limit {limit}): the first {limit} train and {limit} test passages "
@@ -1899,11 +2014,20 @@ def facts(w: pd.DataFrame, arms: pd.DataFrame, carriers: pd.DataFrame, length: p
       "never for `sif`).")
     a(f"- Token ablation: token types ranked on train by PC1 share (`pc1`) and by the mean "
       f"of the PC1, PC2, PC3 shares (`pc123`); mean pooling with the top m types dropped, m "
-      f"in {list(ABL_MS)}. Control: for each carrier in rank order, one type drawn among the "
-      f"{MATCH_WINDOW} nearest in train count that are in the top {max(ABL_MS)} of neither "
-      f"ranking, without replacement; {CONTROL_DRAWS} draws; the control for m is the first "
-      "m of a draw. Carrier arms have the full metric block; controls have Task A AUROC "
-      "(unless the run used --control_metrics full).")
+      f"in {list(ABL_MS)}. Two random controls, {CONTROL_DRAWS} draws each, reported as the "
+      "mean over draws. Count-nearest control (`control`): for each carrier in rank order, "
+      f"one type drawn among the {MATCH_WINDOW} nearest in train count that are in the top "
+      f"{max(ABL_MS)} of neither ranking, without replacement; the control for m is the "
+      "first m of a draw. It matches the number of types, not the token mass: where the "
+      "carriers are the most frequent types, their nearest non-carriers hold fewer tokens. "
+      "Mass-matched control (`control_mass`): for each (ranking, m), token types drawn "
+      "without replacement from the train types that are not among the m dropped carriers "
+      "(special tokens are eligible), with probability proportional to train count, until "
+      "their cumulative train count first meets or exceeds the carriers'. Carrier arms have "
+      "the full metric block; controls have Task A AUROC (unless the run used "
+      "--control_metrics full). The cell chosen on train AUROC is the (ranking, m) with the "
+      "highest TRAIN AUROC of the carrier arm (on ties the first in the order pc1, pc123 "
+      "and ascending m); R3 itself reads the highest test AUROC over the cells.")
     a("- Length: n_p under each model's tokenizer (truncated at 512); |delta log n| over "
       "the same- and different-directory pairs Task A scores.")
     a("- Worst layer = first argmin of the published baseline test AUROC.")
@@ -1965,9 +2089,13 @@ def facts(w: pd.DataFrame, arms: pd.DataFrame, carriers: pd.DataFrame, length: p
               for arm in R1_ARMS))
         a("  - top-PC share of the train vectors by arm: " + "; ".join(
             f"{arm} {f3(x[f'pc1_{arm}'])}" for arm in ARMS))
-        a(f"  - token ablation: best AUROC {f3(x['best_abl'])} (ranking "
-          f"{x['best_abl_ranking']}, m={int(x['best_abl_m'])}); matched random control at "
-          f"that ranking and m {f3(x['best_ctl'])}")
+        a(f"  - token ablation at the cell chosen on train AUROC (ranking "
+          f"{x['sel_abl_ranking']}, m={int(x['sel_abl_m'])}): test AUROC {f3(x['sel_abl'])}; "
+          f"count-nearest control {f3(x['sel_ctl'])}; mass-matched control "
+          f"{f3(x['sel_mctl'])}. Highest test AUROC over all cells (a pick on test): "
+          f"{f3(x['best_abl'])} (ranking {x['best_abl_ranking']}, m={int(x['best_abl_m'])}; "
+          f"count-nearest control {f3(x['best_ctl'])}, mass-matched control "
+          f"{f3(x['best_mctl'])})")
         a(f"  - token-mix EV: PC1 {f3(x['ev_pc1'])} (train {f3(x['tr_ev_pc1'])}), PC2 "
           f"{f3(x['ev_pc2'])}, PC3 {f3(x['ev_pc3'])}; random directions mean "
           f"{f3(x['rand_ev_mean'])} ({f3(x['rand_ev_min'])} to {f3(x['rand_ev_max'])})")
@@ -2122,33 +2250,88 @@ def facts(w: pd.DataFrame, arms: pd.DataFrame, carriers: pd.DataFrame, length: p
 
     # ---------------------------------------------------------------- R3
     a("## 6. R3: token ablation")
+    a(f"Two random controls, each the mean of {CONTROL_DRAWS} draws per (ranking, m) cell. "
+      "The count-nearest control drops as many token types as the carriers, drawn among the "
+      "types nearest in train count. The mass-matched control drops random other types that "
+      "hold at least as many train tokens as the carriers; it was added after the first full "
+      "run, on review, because the count-nearest control was not mass-matched. R3 and the "
+      "carrier arms are unchanged.")
+    groups6 = [("all collapsed layers", coll)] + [
+        (m, coll[coll["m"] == m]) for m in T5 if (coll["m"] == m).any()]
     if n_coll:
         v = f"{int(coll['r3'].sum())}/{n_coll}"
         a(f"- **R3 holds at {v} collapsed layers** (test AUROC >= {R3_AUROC:.2f} for some "
           f"m <= {R3_MAX_M}, either ranking); per model: "
           + ", ".join(f"{m} {count(coll[coll['m'] == m]['r3'])}" for m in T5
                       if (coll["m"] == m).any())
-          + f"; the matched random control (mean of {CONTROL_DRAWS} draws) reaches "
-          f"{R3_AUROC:.2f} at {count(coll['ctl_r3'])}")
+          + f"; the count-nearest control reaches {R3_AUROC:.2f} at some cell at "
+          f"{count(coll['ctl_r3'])}, the mass-matched control at {count(coll['mctl_r3'])}")
         verdicts.append((f"R3 token ablation restores collapsed layers (AUROC >= "
                          f"{R3_AUROC:.2f}, m <= {R3_MAX_M})", v))
-    for label, t in [("all collapsed layers", coll)] + [
-            (m, coll[coll["m"] == m]) for m in T5 if (coll["m"] == m).any()]:
+        for kind, col in (("control", "ctl_r3"), ("control_mass", "mctl_r3")):
+            verdicts.append((f"the {CONTROL_LABEL[kind]} of the token ablation reaches AUROC "
+                             f">= {R3_AUROC:.2f} at some cell (collapsed layers)",
+                             count(coll[col])))
+
+    def med(t: pd.DataFrame, column: str, fmt: str = ".3f") -> str:
+        v = t[column].dropna()
+        return format(v.median(), fmt) if len(v) else "n/a"
+
+    def spread(v: pd.Series) -> str:
+        v = v.dropna()
+        if v.empty:
+            return "-- / -- / --"
+        return f"{f3(v.min())} / {f3(v.median())} / {f3(v.max())}"
+
+    for label, t in groups6:
         if t.empty:
             continue
         a(f"### {label} (n = {len(t)})")
-        a(f"- best AUROC over rankings and m: {_rng(t['best_abl'])}; matched control at the "
-          f"same ranking and m: {_rng(t['best_ctl'])}; mean arm {_rng(t['auc_mean'])}")
+        a(f"- cell chosen on train AUROC of the carrier arm: test AUROC {_rng(t['sel_abl'])}; "
+          f"count-nearest control {_rng(t['sel_ctl'])}; mass-matched control "
+          f"{_rng(t['sel_mctl'])}; mean arm {_rng(t['auc_mean'])}")
+        a(f"- highest test AUROC over rankings and m (a pick on test): {_rng(t['best_abl'])}; "
+          f"count-nearest control at that cell {_rng(t['best_ctl'])}; mass-matched control "
+          f"{_rng(t['best_mctl'])}")
         for ranking in RANKINGS:
             ok = t[f"r3m_{ranking}"] > 0
             a(f"- ranking by {RANK_LABEL[ranking]}: restored at {count(ok)}"
               + (f" (smallest m: {_rng(t.loc[ok, f'r3m_{ranking}'], '.0f')})" if ok.any() else "")
-              + "; AUROC by m, carriers / control mean: " + "; ".join(
-                  f"m={m} {t[f'abl_{ranking}_m{m}'].median():.3f} / "
-                  f"{t[f'ctl_{ranking}_m{m}_mean'].median():.3f}" for m in ABL_MS)
-              + f"; share of test tokens dropped at m={ABL_MS[-1]}: carriers "
-              f"{t[f'dm_{ranking}_m{ABL_MS[-1]}'].median():.3f}, control "
-              f"{t[f'cdm_{ranking}_m{ABL_MS[-1]}'].median():.3f} (medians)")
+              + ". Medians by m, in the order carriers / count-nearest control / mass-matched "
+              "control:")
+            a("  - test AUROC: " + "; ".join(
+                f"m={m} {med(t, f'abl_{ranking}_m{m}')} / {med(t, f'ctl_{ranking}_m{m}_mean')} / "
+                f"{med(t, f'mctl_{ranking}_m{m}_mean')}" for m in ABL_MS))
+            a("  - train tokens dropped: " + "; ".join(
+                f"m={m} {med(t, f'tc_{ranking}_m{m}', '.0f')} / "
+                f"{med(t, f'ctc_{ranking}_m{m}', '.0f')} / {med(t, f'mtc_{ranking}_m{m}', '.0f')}"
+                for m in ABL_MS))
+            a("  - share of test tokens dropped: " + "; ".join(
+                f"m={m} {med(t, f'dm_{ranking}_m{m}')} / {med(t, f'cdm_{ranking}_m{m}')} / "
+                f"{med(t, f'mdm_{ranking}_m{m}')}" for m in ABL_MS))
+            a("  - token types in a mass-matched draw: " + "; ".join(
+                f"m={m} {med(t, f'mnt_{ranking}_m{m}', '.1f')}" for m in ABL_MS))
+    a("### Fixed settings (no pick on test)")
+    a("One ranking and one m for every layer, so nothing is chosen on test passages. Restored "
+      f"= test AUROC >= {R3_AUROC:.2f} at that cell. The controls are the means over draws at "
+      "the same cell.")
+    for ranking, m, note in FIXED_CELLS:
+        tag = f"{ranking}_m{m}"
+        a(f"- ranking `{ranking}`, m = {m}{note}:")
+        for label, t in groups6:
+            if t.empty:
+                continue
+            auc = t[f"abl_{tag}"]
+            a(f"  - {label} (n = {len(t)}): carriers restored at {count(auc >= R3_AUROC)}; "
+              f"AUROC min / median / max {spread(auc)}; share of test tokens dropped "
+              f"{_rng(t[f'dm_{tag}'])}; train tokens dropped {_rng(t[f'tc_{tag}'], '.0f')}")
+            for kind, pre, dm, tc in (("control", "ctl", "cdm", "ctc"),
+                                      ("control_mass", "mctl", "mdm", "mtc")):
+                c = t[f"{pre}_{tag}_mean"]
+                a(f"    - {CONTROL_LABEL[kind]}: restored at {count(c >= R3_AUROC)}; AUROC "
+                  f"min / median / max {spread(c)}; share of test tokens dropped "
+                  f"{_rng(t[f'{dm}_{tag}'])}; train tokens dropped "
+                  f"{_rng(t[f'{tc}_{tag}'], '.0f')}")
     a("")
 
     # ---------------------------------------------------------------- R4
@@ -2269,7 +2452,9 @@ def facts(w: pd.DataFrame, arms: pd.DataFrame, carriers: pd.DataFrame, length: p
           + f"; first token {_rng(t['first_pc1'], '+.3f')}; PC1 share of the train variance "
           f"{_rng(t['tr_varshare_pc1'])}")
         a(f"  - Spearman of the PC1 score with log n {_rng(t['rho_pc1'], '+.3f')}; token "
-          f"ablation, best AUROC {_rng(t['best_abl'])} against control {_rng(t['best_ctl'])}")
+          f"ablation at the cell chosen on train AUROC: test AUROC {_rng(t['sel_abl'])}, "
+          f"count-nearest control {_rng(t['sel_ctl'])}, mass-matched control "
+          f"{_rng(t['sel_mctl'])}")
     a("")
 
     a("## 11. Verdicts in one place")
@@ -2330,14 +2515,29 @@ def facts(w: pd.DataFrame, arms: pd.DataFrame, carriers: pd.DataFrame, length: p
                       for _, x in t.iterrows()]))
         a("")
         for ranking in RANKINGS:
-            a(f"### {name}: token ablation, ranking by {RANK_LABEL[ranking]} (carriers / "
-              "control mean)")
+            a(f"### {name}: token ablation, ranking by {RANK_LABEL[ranking]} (test AUROC: "
+              "carriers / count-nearest control / mass-matched control)")
             L.extend(_md(["L", "mean", *(f"m={m}" for m in ABL_MS), "R3 smallest m"],
                          [[lab(x), f3(x["auc_mean"]),
                            *(f"{f3(x[f'abl_{ranking}_m{m}'])} / "
-                             f"{f3(x[f'ctl_{ranking}_m{m}_mean'])}" for m in ABL_MS),
+                             f"{f3(x[f'ctl_{ranking}_m{m}_mean'])} / "
+                             f"{f3(x[f'mctl_{ranking}_m{m}_mean'])}" for m in ABL_MS),
                            str(int(x[f"r3m_{ranking}"])) if x[f"r3m_{ranking}"] > 0 else "none"]
                           for _, x in t.iterrows()]))
+            a("")
+
+            def n0(v) -> str:
+                return f"{v:.0f}" if np.isfinite(v) else "--"
+
+            a(f"### {name}: tokens dropped, ranking by {RANK_LABEL[ranking]} (train tokens, "
+              "then the share of test tokens in parentheses: carriers / count-nearest control "
+              "/ mass-matched control)")
+            L.extend(_md(["L", *(f"m={m}" for m in ABL_MS)],
+                         [[lab(x), *(
+                             f"{n0(x[f'tc_{ranking}_m{m}'])} / {n0(x[f'ctc_{ranking}_m{m}'])} / "
+                             f"{n0(x[f'mtc_{ranking}_m{m}'])} ({f3(x[f'dm_{ranking}_m{m}'])} / "
+                             f"{f3(x[f'cdm_{ranking}_m{m}'])} / {f3(x[f'mdm_{ranking}_m{m}'])})"
+                             for m in ABL_MS)] for _, x in t.iterrows()]))
             a("")
     path.write_text("\n".join(L) + "\n")
 
@@ -2397,7 +2597,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     p.add_argument("--limit", type=int, default=0,
                    help="smoke run on the first N train and N test passages; gates skipped")
     p.add_argument("--control_metrics", choices=("auroc", "full"), default="auroc",
-                   help="matched random controls: Task A AUROC alone (default) or the full "
+                   help="the two random controls: Task A AUROC alone (default) or the full "
                         "metric block and geometry (about 4 times the CPU time)")
     p.add_argument("--check", action="store_true",
                    help="run the gates after writing; exit 3 if one fails")
