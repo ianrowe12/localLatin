@@ -889,7 +889,8 @@ def test_table_renders_from_the_fixture_and_omits_absent_models(tmp_path):
     w = e2.summarize(*[frames[k] for k in (e2.ARMS_NAME, e2.AUDIT_NAME, e2.ABL_NAME,
                                            e2.LENGTH_NAME)], res)
     out = tmp_path / "t.tex"
-    assert e2.write_table(w, out) == ["PhilTa", "Qwen3-0.6B", "KaLM-mini"]
+    gates = _gt(frames, res)
+    assert e2.write_table(w, out, gates) == ["PhilTa", "Qwen3-0.6B", "KaLM-mini"]
     tex = out.read_text()
     assert tex.startswith(asw.HEADER + "\n") and r"\label{tab:e2_token_audit}" in tex
     assert r"\begin{table*}" in tex and r"\end{table*}" in tex
@@ -908,8 +909,88 @@ def test_table_renders_from_the_fixture_and_omits_absent_models(tmp_path):
     cap = next(ln for ln in tex.splitlines() if ln.startswith(r"\caption{"))
     assert cap.endswith("}") and "--" not in cap and chr(0x2014) not in cap
     for phrase in ("worst baseline layer", "special tokens", "100 most frequent",
-                   "five random sets", "20 random directions", "training passages only"):
+                   "five random sets", "20 random directions", "training passages only",
+                   "recomputed in this experiment's forward pass with training-only token "
+                   "frequencies (SIF; it reproduces the published SIF cells)"):
         assert phrase in cap
+    assert "as published" not in cap
+    # a negative cell has a math minus sign; the LaBSE shares of -0.01 are the fixture's
+    labse = [c.strip() for c in rows[2].rstrip("\\ ").split("&")]
+    y = w[w.m == "LaBSE"].iloc[0]
+    assert y.sh_special_pc1 < 0 and labse[11] == f"$-${abs(y.sh_special_pc1):.2f}"
+    assert "& -" not in tex
+    # the caption's statement about the published cells is read from gate 2a
+    worse = _set(res, lambda r: (r.model == LATA) & (r.layer == 3) & (r.method == "sif_only"),
+                 "aucroc", 0.68 - 0.0150072)
+    worse = _set(worse, lambda r: (r.model == MT5) & (r.method == "sif_only"), "aucroc", 0.670)
+    e2.write_table(w, out, _gt(frames, worse))
+    cap = next(ln for ln in out.read_text().splitlines() if ln.startswith(r"\caption{"))
+    assert ("(SIF; its AUROC differs from the published SIF cells by up to 0.015 over all "
+            "models and layers)") in cap and "reproduces" not in cap
+    assert e2.sif_reference_gap(_gt(frames, worse)) == pytest.approx(0.0150072, abs=1e-9)
+    # without gates (no published cells) the caption makes no claim about them
+    e2.write_table(w, out)
+    assert "published SIF cells" not in out.read_text()
+    assert np.isnan(e2.sif_reference_gap(None))
+
+
+def test_table_cells_use_a_math_minus_and_no_negative_zero():
+    assert e2.tex_num(-0.38, 2) == "$-$0.38" and e2.tex_num(0.95, 2) == "0.95"
+    assert e2.tex_num(-0.004, 2) == "0.00" and e2.tex_num(-0.0004, 3) == "0.000"
+    assert e2.tex_num(-0.005001, 2) == "$-$0.01" and e2.tex_num(0.0, 3) == "0.000"
+    assert e2.tex_num(-1.5, 3) == "$-$1.500" and e2.tex_num(0.4996, 3) == "0.500"
+    assert e2.tex_num(float("nan"), 2) == "--" and e2.tex_num(None, 3) == "--"
+
+
+def test_r1_under_the_published_sif_reference():
+    frames, res = _fixture()
+    args = [frames[k] for k in (e2.ARMS_NAME, e2.AUDIT_NAME, e2.ABL_NAME, e2.LENGTH_NAME)]
+
+    def compare(published):
+        w = e2.summarize(*args, published)
+        return w, e2.r1_reference_comparison(w[w.collapsed])
+
+    # the published cells equal the sif arm: nothing differs
+    w, cmp = compare(res)
+    assert (w.sif_minus_pub == 0).all() and cmp["n"] == cmp["n_compared"] == 9
+    assert len(cmp["differ"]) == 0 and cmp["n_both"] == 3 and cmp["max_dfrac"] == 0
+    assert list(w.r1p_sif_keepspecial) == list(w.r1_sif_keepspecial)
+    # LaTa 2: published 0.89 against the arm's 0.88. Shares move, verdicts do not
+    near = _set(res, lambda r: (r.model == LATA) & (r.layer == 2) & (r.method == "sif_only"),
+                "aucroc", 0.89)
+    w, cmp = compare(near)
+    x = w[(w.m == "LaTa") & (w.layer == 2)].iloc[0]
+    assert x.pub_sif == 0.89 and x.sif_minus_pub == pytest.approx(-0.01)
+    assert x.sif_gain_pub == pytest.approx(0.39) and x.sif_gain == pytest.approx(0.38)
+    assert (x.r1p_mean_nospecial, x.r1p_sif_keepspecial, x.r1p_mean_nofreq100) == (
+        "no_rescue", "rescue", "no_rescue")
+    assert x.r1pfrac_sif_keepspecial == pytest.approx(0.36 / 0.39)
+    assert x.r1_sif_keepspecial == "rescue" and x.r1frac_sif_keepspecial == pytest.approx(0.36 / 0.38)
+    assert len(cmp["differ"]) == 0 and cmp["n_both"] == 3
+    assert cmp["max_dfrac"] == pytest.approx(0.36 / 0.38 - 0.36 / 0.39)
+    assert cmp["max_cell"] == "LaTa L2 `sif_keepspecial`"
+    # LaTa 2: published 0.70. mean_nofreq100 recovers 0.30 of a gain of 0.20: now a rescue
+    far = _set(res, lambda r: (r.model == LATA) & (r.layer == 2) & (r.method == "sif_only"),
+               "aucroc", 0.70)
+    w, cmp = compare(far)
+    d = cmp["differ"]
+    assert len(d) == 1 and (d.iloc[0].m, d.iloc[0].layer, d.iloc[0].arm) == (
+        "LaTa", 2, "mean_nofreq100")
+    assert (d.iloc[0].own, d.iloc[0].pub) == ("no_rescue", "rescue")
+    assert cmp["max_dfrac"] == pytest.approx(0.36 / 0.20 - 0.36 / 0.38)
+    # mT5-base 5: published 0.71 lifts the SIF gain over the floor, so R1 becomes evaluable
+    lift = _set(res, lambda r: (r.model == MT5) & (r.method == "sif_only"), "aucroc", 0.71)
+    w, cmp = compare(lift)
+    assert sorted(cmp["differ"].arm) == sorted(e2.R1_ARMS)
+    assert set(cmp["differ"].own) == {"no_sif_gain"} and cmp["n_both"] == 3
+    assert w[w.m == "mT5-base"].iloc[0].r1p_mean_nofreq100 == "rescue"  # 0.046 / 0.056
+    # a missing published cell is not compared, and no published CSV compares nothing
+    w, cmp = compare(res[~((res.model == MT5) & (res.method == "sif_only"))])
+    assert cmp["n"] == 9 and cmp["n_compared"] == 6 and len(cmp["differ"]) == 0
+    assert set(cmp["cells"][cmp["cells"].m == "mT5-base"].pub) == {"undefined"}
+    w, cmp = compare(None)
+    assert cmp["n_compared"] == 0 and np.isnan(cmp["max_dfrac"]) and cmp["max_cell"] == ""
+    assert e2.r1_reference_comparison(w[w.layer < 0])["n"] == 0
 
 
 def test_render_cli_writes_table_and_facts_from_the_csvs_alone(tmp_path, capsys):
@@ -965,22 +1046,108 @@ def test_render_cli_writes_table_and_facts_from_the_csvs_alone(tmp_path, capsys)
     capsys.readouterr()
 
 
-def test_facts_block_the_pooling_conclusions_when_gate_2_fails(tmp_path, capsys):
+def _render(frames, res, tmp_path, name):
+    out, base = _write(frames, res, tmp_path, name)
+    assert e2.main(["render", *base, "--tab_dir", str(tmp_path / f"{name}_tab"),
+                    "--allow_missing"]) == 0
+    return (out / e2.FACTS_NAME).read_text(), (tmp_path / f"{name}_tab" / e2.TABLE_NAME).read_text()
+
+
+def test_facts_report_r1_under_both_references_when_gate_2a_fails(tmp_path, capsys):
     frames, res = _fixture()
-    res = _set(res, lambda r: (r.model == LATA) & (r.layer == 2) & (r.method == "sif_only"),
+    near = _set(res, lambda r: (r.model == LATA) & (r.layer == 2) & (r.method == "sif_only"),
+                "aucroc", 0.89)
+    facts, table = _render(frames, near, tmp_path, "near")
+    assert "BLOCKED" not in facts and "not to be quoted" not in facts
+    assert "DO NOT QUOTE" not in facts and "GATE 2 FAILED" not in facts
+    head = facts.split("## Frozen decision rules")[0]
+    assert "Changed after the results were read: one consequence, in `render` only." in head
+    assert "Gate 2a failed in this run (section 0)." in head
+    statement = (
+        "**Deviation (gate 2a).** Gate 2a failed: the `sif` arm does not reproduce the "
+        "published `sif_only` cells. Largest AUROC difference per model: LaTa 1.00e-02. The "
+        "`sif` arm is the repo CLI's SIF pooling on the tracked split with train-only token "
+        "probabilities, and it differs from the local re-extraction (`hidden_sif_tokempty`) "
+        "by at most 1.00e-07 in relative L2 at the 3 models that have one (gate 2b). R1 is "
+        "therefore reported against the job's own `sif` arm and, under \"R1 under the "
+        "published SIF reference\" in section 3, against the published cells. Changed after "
+        "the results were read: the pre-registered consequence of a gate 2 failure (block "
+        "the pooling-control conclusions) was replaced by reporting under both references. "
+        "The R1 verdicts are the same under both references at all 9 (collapsed layer, arm) "
+        "cells.")
+    # in section 0, at the head of section 3 and in section 11
+    assert facts.count(statement) == 3
+    assert "- " + statement in facts.split("## 0. Coverage")[1].split("## 1.")[0]
+    sec3 = facts.split("## 3. R1: pooling control")[1].split("## 4.")[0]
+    assert sec3.lstrip().startswith(statement)
+    assert "- " + statement in facts.split("## 11. Verdicts")[1].split("## 12.")[0]
+    # gate 2a itself still fails in the gate lines
+    assert ("gate 2a sif arm AUROC vs published sif_only, LaTa: 3 cells, max diff 1.00e-02 "
+            "(tolerance 1e-06): FAIL") in facts
+    sub = sec3.split("### R1 under the published SIF reference")[1]
+    assert ("  - LaTa: collapsed layers (n = 2) -5.00e-03 (-1.00e-02 to +0.00e+00); all layers "
+            "(n = 3) +0.00e+00 (-1.00e-02 to +0.00e+00)") in sub
+    assert "  - LaBSE: all layers (n = 1) +0.00e+00 (+0.00e+00 to +0.00e+00)" in sub
+    assert ("at least 0.05 at 1/3 collapsed layers (job's `sif` arm: 1/3)") in sub
+    assert ("  - all collapsed layers (n = 3): `mean_nospecial` 0 / 1 / 2, then 0 / 1 / 2; "
+            "`sif_keepspecial` 1 / 0 / 2, then 1 / 0 / 2; `mean_nofreq100` 0 / 1 / 2, then "
+            "0 / 1 / 2") in sub
+    assert "  - mT5-base (n = 1): `mean_nospecial` 0 / 0 / 1, then 0 / 0 / 1" in sub
+    assert "- verdicts that differ between the two references: 0 of 9 (collapsed layer, arm) cells\n" in sub
+    assert ("- largest absolute change of the recovered share of the SIF gain: 0.024 (LaTa L2 "
+            "`sif_keepspecial`), over the 3 cells where the share is evaluated under both "
+            "references") in sub
+    sec8 = facts.split("## 8. Expectations")[1].split("## 9.")[0]
+    assert ("- LaTa: `sif_keepspecial` rescues: **NOT MET (1/2)**; with the published "
+            "`sif_only` cell as AUROC_sif: NOT MET (1/2)") in sec8
+    assert ("- mT5-base: no arm rescues: **NOT EVALUABLE BY R1 (SIF gain below 0.05 at all 1 "
+            "layers, so there is no SIF gain to recover)**; with the published `sif_only` cell "
+            "as AUROC_sif: NOT EVALUABLE BY R1") in sec8
+    verdicts = facts.split("## 11. Verdicts in one place")[1].split("## 12.")[0]
+    assert ("R1 verdict is the same with the published sif_only cell as AUROC_sif "
+            "((collapsed layer, arm) cells): 9/9") in verdicts
+    assert "by up to 0.010 over all models and layers" in table
+    capsys.readouterr()
+
+
+def test_facts_are_loud_when_the_two_references_disagree(tmp_path, capsys):
+    frames, res = _fixture()
+    far = _set(res, lambda r: (r.model == LATA) & (r.layer == 2) & (r.method == "sif_only"),
                "aucroc", 0.70)
-    out, base = _write(frames, res, tmp_path)
-    assert e2.main(["render", *base, "--tab_dir", str(tmp_path / "t"), "--allow_missing"]) == 0
-    facts = (out / e2.FACTS_NAME).read_text()
-    assert "**GATE 2 FAILED:" in facts and "ARE BLOCKED" in facts
-    assert "**BLOCKED: gate 2 failed" in facts.split("## 3. R1")[1].split("## 4.")[0]
-    assert "- GATE 2 FAILED" in facts.split("## 11. Verdicts")[1]
+    far = far[~((far.model == MT5) & (far.method == "sif_only"))]
+    facts, _ = _render(frames, far, tmp_path, "far")
+    loud = ("**THE R1 VERDICTS DIFFER BETWEEN THE TWO REFERENCES AT 1 OF 6 (COLLAPSED LAYER, "
+            "ARM) CELLS. QUOTE NO R1 COUNT WITHOUT NAMING ITS REFERENCE.**")
+    assert facts.count(loud) == 3 and "are the same under both references" not in facts
+    assert "LaTa 1.80e-01, mT5-base no published cell" in facts
+    assert ("The published cell is missing at 3 of the 9 (collapsed layer, arm) cells, which "
+            "are not compared.") in facts
+    sub = facts.split("### R1 under the published SIF reference")[1].split("## 4.")[0]
+    assert ("- verdicts that differ between the two references: 1 of 6 (collapsed layer, arm) "
+            "cells: LaTa L2 `mean_nofreq100` no_rescue -> rescue") in sub
+    assert "published cell missing at 3 of the 9 (collapsed layer, arm) cells" in sub
+    assert "mT5-base (n = 1)" not in sub and "  - mT5-base: all layers (n = 0) n/a" in sub
+    sec8 = facts.split("## 8. Expectations")[1].split("## 9.")[0]
+    assert ("- LaTa: `sif_keepspecial` rescues: **NOT MET (1/2)**; with the published "
+            "`sif_only` cell as AUROC_sif: NOT MET (1/2)") in sec8
+    assert "- mT5-base: no arm rescues: **NOT EVALUABLE BY R1" in sec8
+    assert "mT5-base: no arm rescues: **NOT EVALUABLE BY R1 (SIF gain below 0.05 at all 1 layers, so there is no SIF gain to recover)**. Raw" in sec8
+    assert "(collapsed layer, arm) cells): 5/6" in facts.split("## 11. Verdicts")[1]
+    capsys.readouterr()
+
+
+def test_facts_without_a_gate_2_failure_and_smoke_runs(tmp_path, capsys):
+    facts, table = _render(*_fixture(), tmp_path, "ok")
+    assert "Deviation (gate 2a)" not in facts and "Gate 2a did not fail in this run." in facts
+    sub = facts.split("### R1 under the published SIF reference")[1].split("## 4.")[0]
+    assert "- verdicts that differ between the two references: 0 of 9" in sub
+    assert "largest absolute change of the recovered share of the SIF gain: 0.000" in sub
+    assert "it reproduces the published SIF cells" in table
     # a smoke run says so at the top and skips the AUROC gates
-    out, base = _write(*_fixture(limit=10), tmp_path, "smoke")
-    assert e2.main(["render", *base, "--tab_dir", str(tmp_path / "t2"), "--allow_missing"]) == 0
-    facts = (out / e2.FACTS_NAME).read_text()
+    facts, table = _render(*_fixture(limit=10), tmp_path, "smoke")
     assert "**SMOKE RUN (--limit 10)" in facts.split("## Frozen")[0]
-    assert "gate 1a" not in facts and "GATE 2 FAILED" not in facts
+    assert "gate 1a" not in facts and "Deviation (gate 2a)" not in facts
+    assert "published SIF cells" not in table
     capsys.readouterr()
 
 

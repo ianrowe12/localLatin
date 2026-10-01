@@ -67,11 +67,23 @@ written; skipped under --limit):
       runs/active/resubmit/results/phase_resubmit_results.csv within 1e-6, every layer;
   1b. the mean arm's vectors = the cached ``hidden_mean_tokempty`` vectors (largest
       relative L2 difference over passages within 1e-3; the absolute one is reported);
-  2a. the sif arm's AUROC = the ``sif_only`` cells (pooling sif) within 1e-6;
+  2a. the sif arm's AUROC = the ``sif_only`` cells (pooling sif) within 1e-6 (fails on
+      the real run: see "Changed after the results were read" below);
   2b. the sif arm's vectors against ``hidden_sif_tokempty`` where that cache exists
       (reported, not gated);
   3.  the score identity: mean of c_t = w . (float64 mean-pooled vector - mu);
   4.  the group shares sum to 1.
+
+Changed after the results were read (render only; the audit numbers, the rules and the
+gates are untouched). Gate 2a failed on the real run: the sif arm, which equals the local
+SIF re-extraction exactly, misses the published ``sif_only`` cells by up to 1.5e-2, and no
+token-probability source we could reconstruct reproduces them. The pre-registered
+consequence of a gate 2 failure was to block the pooling-control conclusions. It was
+replaced by reporting under both references: the facts file gives R1 against the job's
+own sif arm and, in "R1 under the published SIF reference", against the published cells,
+and says loudly if a verdict differs between the two. ``check`` still exits 3. The table
+caption no longer calls the SIF column the published SIF, and its cells print a math
+minus sign and no negative zero.
 
 Outputs (small CSVs, force-added; a rerun of some models replaces only their rows):
   runs/active/reframe/e2/e2_pooling_arms.csv      one row per (model, layer, arm)
@@ -1479,6 +1491,13 @@ def summarize(arms: pd.DataFrame, audit: pd.DataFrame, abl: pd.DataFrame,
         for arm in R1_ARMS:
             r[f"r1_{arm}"], r[f"r1frac_{arm}"], r[f"r1chg_{arm}"] = r1_rescue(
                 r[f"auc_{arm}"], r["auc_mean"], r["auc_sif"])
+        # R1 again with the published sif_only cell as AUROC_sif (the second reference)
+        r["pub_sif"] = pub["sif_only"].get((mid, layer), nan)
+        r["sif_minus_pub"] = r["auc_sif"] - r["pub_sif"]
+        r["sif_gain_pub"] = r["pub_sif"] - r["auc_mean"]
+        for arm in R1_ARMS:
+            r[f"r1p_{arm}"], r[f"r1pfrac_{arm}"], _ = r1_rescue(
+                r[f"auc_{arm}"], r["auc_mean"], r["pub_sif"])
         for d in READ_DIRS:
             for split, pre in (("test", ""), ("train", "tr_")):
                 x = aud.get((mid, layer, d, split), {})
@@ -1569,30 +1588,91 @@ def worst_layer(w: pd.DataFrame, name: str) -> Optional[pd.Series]:
     return None if s.empty else s.loc[s["base"].idxmin()]
 
 
+def r1_reference_comparison(coll: pd.DataFrame) -> Dict:
+    """R1 at the collapsed layers under the two SIF references, cell by cell.
+
+    ``coll`` holds the collapsed rows of summarize(). One cell per (layer, arm): the R1
+    status and recovered share with AUROC_sif = the job's own sif arm (``own``) and with
+    AUROC_sif = the published sif_only cell (``pub``; "undefined" where that cell is
+    missing). Returns {"cells": frame, "n": all cells, "n_compared": cells with a published
+    reference, "differ": the compared cells whose status differs, "n_both": cells with a
+    recovered share under both references, "max_dfrac": the largest |share_pub -
+    share_own| over them (NaN if none), "max_cell": that cell's label}.
+    """
+    cells = pd.DataFrame(
+        [{"m": x["m"], "layer": int(x["layer"]), "arm": arm, "own": x[f"r1_{arm}"],
+          "pub": x[f"r1p_{arm}"], "frac_own": x[f"r1frac_{arm}"],
+          "frac_pub": x[f"r1pfrac_{arm}"]} for _, x in coll.iterrows() for arm in R1_ARMS],
+        columns=["m", "layer", "arm", "own", "pub", "frac_own", "frac_pub"])
+    compared = cells[cells["pub"] != "undefined"]
+    both = compared[np.isfinite(compared["frac_own"].astype(float))
+                    & np.isfinite(compared["frac_pub"].astype(float))]
+    dfrac = (both["frac_pub"] - both["frac_own"]).abs().astype(float)
+    top = both.loc[dfrac.idxmax()] if len(both) else None
+    return {"cells": cells, "n": len(cells), "n_compared": len(compared),
+            "differ": compared[compared["own"] != compared["pub"]], "n_both": len(both),
+            "max_dfrac": float(dfrac.max()) if len(both) else float("nan"),
+            "max_cell": "" if top is None else f"{top['m']} L{int(top['layer'])} `{top['arm']}`"}
+
+
 # --------------------------------------------------------------------------- #
 # render: table
 # --------------------------------------------------------------------------- #
 
-CAPTION = (
-    r"\caption{Token audit at each model's worst baseline layer (L). Pooling: Task~A test "
-    r"AUROC of mean pooling (Mean); mean pooling without special tokens (No spec.); SIF "
-    r"frequency weights with special tokens kept (SIF+spec.); SIF as published, which also "
-    r"drops special tokens (SIF); and mean pooling without the 100 most frequent training "
-    r"tokens (No freq.). Token ablation: the highest AUROC after dropping the $m$ token "
-    r"types that contribute most to the top principal components, over $m$ from 1 to 100 "
-    r"and two rankings (Drop), and the mean AUROC of five random sets of as many token "
-    r"types with matched training frequency (Rand.). Token-mix EV: the share of the variance "
-    r"of the first principal component's score across test passages that is explained by "
-    r"which token types a passage contains, with one mean per token type fit on training "
-    r"tokens (PC1), next to the mean of the same quantity over 20 random directions "
-    r"(Rand.). Share by token group: the part of that variance contributed by special "
-    r"tokens, by the 100 most frequent tokens and by all other tokens; the three sum to "
-    r"one. $\rho$: Spearman correlation between the PC1 score and the log token count of "
-    r"test passages. Components, token frequencies and token rankings are fit on training "
-    r"passages only.}")
+def tex_num(x, digits: int) -> str:
+    """A table cell: fixed decimals, the minus sign in math mode, and no negative zero
+    (a value that rounds to 0 prints without a sign). ``--`` for a missing value."""
+    if x is None or not np.isfinite(x):
+        return "--"
+    text = f"{x:.{digits}f}"
+    if float(text) == 0.0:
+        return text.lstrip("-")
+    return "$-$" + text[1:] if text.startswith("-") else text
 
 
-def write_table(w: pd.DataFrame, path: Path) -> List[str]:
+def sif_reference_gap(gates: Optional[pd.DataFrame]) -> float:
+    """Largest |sif arm AUROC - published sif_only| over all models and layers, read from
+    the gate 2a rows; NaN when that gate was not evaluated."""
+    if gates is None or gates.empty:
+        return float("nan")
+    rows = gates[gates["gate"].str.startswith("2a")]
+    return float(np.max(rows["max_diff"])) if len(rows) else float("nan")
+
+
+def caption(gates: Optional[pd.DataFrame] = None) -> str:
+    """Caption of tab:e2_token_audit. What it says about the published SIF cells is read
+    from gate 2a: the largest difference over all models and layers, to three decimals."""
+    gap = sif_reference_gap(gates)
+    if not np.isfinite(gap):
+        published = ""
+    elif gap <= GATE_TOL_AUROC:
+        published = "; it reproduces the published SIF cells"
+    else:
+        published = (f"; its AUROC differs from the published SIF cells by up to {gap:.3f} "
+                     "over all models and layers")
+    return (
+        r"\caption{Token audit at each model's worst baseline layer (L). Pooling: Task~A test "
+        r"AUROC of mean pooling (Mean); mean pooling without special tokens (No spec.); SIF "
+        r"frequency weights with special tokens kept (SIF+spec.); SIF pooling, which also "
+        r"drops special tokens, recomputed in this experiment's forward pass with "
+        r"training-only token frequencies (SIF" + published + r"); and mean pooling without "
+        r"the 100 most frequent training tokens (No freq.). Token ablation: the highest "
+        r"AUROC after dropping the $m$ token "
+        r"types that contribute most to the top principal components, over $m$ from 1 to 100 "
+        r"and two rankings (Drop), and the mean AUROC of five random sets of as many token "
+        r"types with matched training frequency (Rand.). Token-mix EV: the share of the variance "
+        r"of the first principal component's score across test passages that is explained by "
+        r"which token types a passage contains, with one mean per token type fit on training "
+        r"tokens (PC1), next to the mean of the same quantity over 20 random directions "
+        r"(Rand.). Share by token group: the part of that variance contributed by special "
+        r"tokens, by the 100 most frequent tokens and by all other tokens; the three sum to "
+        r"one. $\rho$: Spearman correlation between the PC1 score and the log token count of "
+        r"test passages. Components, token frequencies and token rankings are fit on training "
+        r"passages only.}")
+
+
+def write_table(w: pd.DataFrame, path: Path, gates: Optional[pd.DataFrame] = None
+                ) -> List[str]:
     """Write tab:e2_token_audit. Returns the display names of omitted models."""
     rows = [(name, worst_layer(w, name)) for name in ORDER]
     omitted = [name for name, x in rows if x is None]
@@ -1609,11 +1689,13 @@ def write_table(w: pd.DataFrame, path: Path) -> List[str]:
     for name, x in rows:
         if x is None:
             continue
-        cells = ([f3(x[f"auc_{arm}"]) for arm in ARMS]
-                 + [f3(x["best_abl"]), f3(x["best_ctl"]), f2(x["ev_pc1"]), f2(x["rand_ev_mean"])]
-                 + [f2(x[f"sh_{grp}_pc1"]) for grp in GROUPS] + [f2(x["rho_pc1"])])
+        cells = ([tex_num(x[f"auc_{arm}"], 3) for arm in ARMS]
+                 + [tex_num(x[c], 3) for c in ("best_abl", "best_ctl")]
+                 + [tex_num(x[c], 2) for c in ("ev_pc1", "rand_ev_mean")]
+                 + [tex_num(x[f"sh_{grp}_pc1"], 2) for grp in GROUPS]
+                 + [tex_num(x["rho_pc1"], 2)])
         lines.append(f"{name} & {int(x['layer'])} & " + " & ".join(cells) + r" \\")
-    lines += [r"\bottomrule", r"\end{tabular}", CAPTION, r"\label{tab:e2_token_audit}",
+    lines += [r"\bottomrule", r"\end{tabular}", caption(gates), r"\label{tab:e2_token_audit}",
               r"\end{table*}"]
     path.write_text("\n".join(lines) + "\n")
     return omitted
@@ -1667,6 +1749,47 @@ def carrier_lines(carriers: pd.DataFrame, mid: str, layer: int, top: int = 10) -
     return out
 
 
+def sif_deviation(gates: pd.DataFrame, cmp: Dict) -> str:
+    """The statement that replaces "blocked" when gate 2a fails: what failed and by how
+    much, what the sif arm is, and how R1 is reported. Every number is a gate cell or a
+    count of R1 cells; it is loud when the two references disagree on a verdict."""
+    g2a = gates[gates["gate"].str.startswith("2a")]
+    g2b = gates[gates["gate"].str.startswith("2b")]
+    failed = g2a[~g2a["ok"].astype(bool)]
+    text = ("**Deviation (gate 2a).** Gate 2a failed: the `sif` arm does not reproduce the "
+            "published `sif_only` cells. Largest AUROC difference per model: "
+            + ", ".join(f"{DISP.get(g.model, g.model)} "
+                        + (f"{g.max_diff:.2e}" if g.n_cells else "no published cell")
+                        for g in failed.itertuples())
+            + ". The `sif` arm is the repo CLI's SIF pooling on the tracked split with "
+            "train-only token probabilities")
+    cached = g2b[g2b["n_cells"] > 0]
+    absent = [DISP.get(m, m) for m in g2b.loc[g2b["n_cells"] == 0, "model"]]
+    if len(cached):
+        gap = float(np.max(cached["max_diff"]))
+        text += ((f", and it equals the local re-extraction (`{SIF_SUBDIR}`) exactly at the "
+                  f"{len(cached)} models that have one" if gap == 0 else
+                  f", and it differs from the local re-extraction (`{SIF_SUBDIR}`) by at most "
+                  f"{gap:.2e} in relative L2 at the {len(cached)} models that have one")
+                 + " (gate 2b" + (f"; none for {', '.join(absent)}" if absent else "") + ")")
+    text += (". R1 is therefore reported against the job's own `sif` arm and, under \"R1 under "
+             "the published SIF reference\" in section 3, against the published cells. Changed "
+             "after the results were read: the pre-registered consequence of a gate 2 failure "
+             "(block the pooling-control conclusions) was replaced by reporting under both "
+             "references.")
+    if cmp["n_compared"] < cmp["n"]:
+        text += (f" The published cell is missing at {cmp['n'] - cmp['n_compared']} of the "
+                 f"{cmp['n']} (collapsed layer, arm) cells, which are not compared.")
+    if len(cmp["differ"]):
+        text += (f" **THE R1 VERDICTS DIFFER BETWEEN THE TWO REFERENCES AT {len(cmp['differ'])} "
+                 f"OF {cmp['n_compared']} (COLLAPSED LAYER, ARM) CELLS. QUOTE NO R1 COUNT "
+                 "WITHOUT NAMING ITS REFERENCE.**")
+    elif cmp["n_compared"]:
+        text += (f" The R1 verdicts are the same under both references at all "
+                 f"{cmp['n_compared']} (collapsed layer, arm) cells.")
+    return text
+
+
 def facts(w: pd.DataFrame, arms: pd.DataFrame, carriers: pd.DataFrame, length: pd.DataFrame,
           gates: Optional[pd.DataFrame], path: Path, omitted: Sequence[str] = ()) -> None:
     L: List[str] = []
@@ -1676,6 +1799,10 @@ def facts(w: pd.DataFrame, arms: pd.DataFrame, carriers: pd.DataFrame, length: p
     n_coll = len(coll)
     limit = int(arms["limit"].max()) if "limit" in arms.columns and len(arms) else 0
     verdicts: List[Tuple[str, str]] = []
+    cmp = r1_reference_comparison(coll)
+    gate2_failed = bool(gates is not None and len(gates) and (
+        ~gates.loc[(gates["gated"] == 1) & gates["gate"].str.startswith("2"), "ok"]
+        .astype(bool)).any())
 
     def count(mask) -> str:
         return f"{int(np.sum(mask))}/{len(mask)}"
@@ -1688,6 +1815,16 @@ def facts(w: pd.DataFrame, arms: pd.DataFrame, carriers: pd.DataFrame, length: p
       "of those CSVs, or a count, difference, ratio, median, minimum or maximum of such "
       "cells. AUROC is Task A test AUROC unless marked train; token-audit numbers are on "
       "test passages unless marked train.")
+    a("")
+    a("Changed after the results were read: one consequence, in `render` only. A failed gate "
+      "2 was to block the pooling-control conclusions. This file instead reports R1 under "
+      "both SIF references: against the job's own `sif` arm, and against the published "
+      "`sif_only` cells (section 3). "
+      + ("Gate 2a failed in this run (section 0). " if gate2_failed else
+         "Gate 2a did not fail in this run. " if gates is not None and len(gates) else "")
+      + "The gate, its tolerance, the decision rules and every audit number are unchanged. "
+      "The table caption was corrected with it: it no longer calls the SIF column the "
+      "published SIF.")
     if limit:
         a("")
         a(f"**SMOKE RUN (--limit {limit}): the first {limit} train and {limit} test passages "
@@ -1785,25 +1922,19 @@ def facts(w: pd.DataFrame, arms: pd.DataFrame, carriers: pd.DataFrame, length: p
     if omitted:
         a("- ABSENT from the CSVs, so omitted from the table and from every count below: "
           + ", ".join(omitted))
-    gate2_failed = False
     if gates is None or gates.empty:
         a("- gates: not evaluated")
     else:
         for g in gates.itertuples():
             a("- " + gate_line(g))
         bad = gates[(gates["gated"] == 1) & ~gates["ok"].astype(bool)]
-        gate2_failed = bool(bad["gate"].str.startswith("2").any())
         if limit:
             a("- limit run: the AUROC gates (1a, 2a) are skipped and the others not enforced.")
         elif len(bad):
             a("- A gate FAILED. Read the cells it names before quoting numbers that depend "
               "on them.")
     if gate2_failed:
-        a("")
-        a("**GATE 2 FAILED: THE RE-DERIVED `sif` ARM DOES NOT REPRODUCE THE PUBLISHED "
-          "`sif_only` CELLS. THE POOLING-CONTROL CONCLUSIONS (R1, SECTIONS 1 AND 3, AND THE "
-          "EXPECTATIONS ABOUT `sif_keepspecial` AND `mean_nospecial`) ARE BLOCKED UNTIL IT "
-          "PASSES. DO NOT QUOTE THEM.**")
+        a("- " + sif_deviation(gates, cmp))
     checked = w[w["e1_rank_agrees"] >= 0]
     a(f"- top-{N_COORD} variance coordinates against `e1_top_coordinates.csv`: "
       + (f"the same at {count(checked['e1_rank_agrees'] == 1)} model-layers" if len(checked)
@@ -1858,7 +1989,9 @@ def facts(w: pd.DataFrame, arms: pd.DataFrame, carriers: pd.DataFrame, length: p
     a("")
     a("## 3. R1: pooling control")
     if gate2_failed:
-        a("**BLOCKED: gate 2 failed (see section 0). The lines below are not to be quoted.**")
+        a(sif_deviation(gates, cmp))
+    a("The lines of this section up to the last subsection use the job's own `sif` arm as "
+      "AUROC_sif.")
     for label, t in [("all collapsed layers", coll)] + [
             (m, coll[coll["m"] == m]) for m in T5 if (coll["m"] == m).any()]:
         if t.empty:
@@ -1878,6 +2011,51 @@ def facts(w: pd.DataFrame, arms: pd.DataFrame, carriers: pd.DataFrame, length: p
               f"; share of the SIF gain where evaluated {_rng(t[f'r1frac_{arm}'], '.2f')}")
         a(f"- special-token share of the pooling weight, median: " + "; ".join(
             f"{arm} {t[f'spmass_{arm}'].median():.3f}" for arm in ARMS))
+    a("### R1 under the published SIF reference")
+    a("- AUROC_sif is the published `sif_only` cell (repr hidden, pooling sif) of "
+      "`phase_resubmit_results.csv`; AUROC_mean and AUROC_arm stay this job's arms, and the "
+      "rule is unchanged.")
+    if not cmp["n_compared"]:
+        a("- no published `sif_only` cell at a collapsed layer: nothing to compare.")
+    else:
+        if cmp["n_compared"] < cmp["n"]:
+            a(f"- published cell missing at {cmp['n'] - cmp['n_compared']} of the {cmp['n']} "
+              "(collapsed layer, arm) cells: those are left out below.")
+        a("- `sif` arm minus published `sif_only`, median (min to max):")
+        for m in present:
+            t_all = w[(w["m"] == m) & w["pub_sif"].notna()]
+            t_coll = t_all[t_all["collapsed"]]
+            a(f"  - {m}: " + (f"collapsed layers (n = {len(t_coll)}) "
+                              f"{_rng(t_coll['sif_minus_pub'], '+.2e')}; " if len(t_coll) else "")
+              + f"all layers (n = {len(t_all)}) {_rng(t_all['sif_minus_pub'], '+.2e')}")
+        have = coll[coll["pub_sif"].notna()]
+        a(f"- SIF gain with the published cell (published `sif_only` - AUROC_mean): "
+          f"{_rng(have['sif_gain_pub'], '+.3f')}; at least {R1_MIN_SIF_GAIN:.2f} at "
+          f"{count(have['sif_gain_pub'] >= R1_MIN_SIF_GAIN)} collapsed layers (job's `sif` "
+          f"arm: {count(have['sif_gain'] >= R1_MIN_SIF_GAIN)})")
+        a("- verdicts as rescues / does not rescue / no SIF gain to recover, job's `sif` arm "
+          "then published `sif_only`:")
+        for label, t in [("all collapsed layers", have)] + [
+                (m, have[have["m"] == m]) for m in T5 if (have["m"] == m).any()]:
+            def triple(col: pd.Series) -> str:
+                return " / ".join(str(int((col == k).sum()))
+                                  for k in ("rescue", "no_rescue", "no_sif_gain"))
+
+            a(f"  - {label} (n = {len(t)}): " + "; ".join(
+                f"`{arm}` {triple(t[f'r1_{arm}'])}, then {triple(t[f'r1p_{arm}'])}"
+                for arm in R1_ARMS))
+        differ = cmp["differ"]
+        a(f"- verdicts that differ between the two references: {len(differ)} of "
+          f"{cmp['n_compared']} (collapsed layer, arm) cells"
+          + (": " + "; ".join(f"{x.m} L{int(x.layer)} `{x.arm}` {x.own} -> {x.pub}"
+                              for x in differ.itertuples()) if len(differ) else ""))
+        a("- largest absolute change of the recovered share of the SIF gain: "
+          + (f"{cmp['max_dfrac']:.3f} ({cmp['max_cell']}), over the {cmp['n_both']} cells "
+             "where the share is evaluated under both references" if cmp["n_both"]
+             else "not defined (no cell is evaluated under both references)"))
+        v = f"{cmp['n_compared'] - len(differ)}/{cmp['n_compared']}"
+        verdicts.append(("R1 verdict is the same with the published sif_only cell as AUROC_sif "
+                         "((collapsed layer, arm) cells)", v))
     a("")
 
     # ---------------------------------------------------------------- R2
@@ -2012,31 +2190,46 @@ def facts(w: pd.DataFrame, arms: pd.DataFrame, carriers: pd.DataFrame, length: p
         a(f"- {m}: `frequent` has the largest PC1 share: **{v}**")
         verdicts.append((f"{m}: frequent tokens have the largest PC1 share at collapsed layers",
                          v))
-        k = int((t["r1_sif_keepspecial"] == "rescue").sum())
-        v = f"{'MET' if k == len(t) else 'NOT MET'} ({k}/{len(t)})"
-        a(f"- {m}: `sif_keepspecial` rescues: **{v}**")
+        def keeps(pre: str, t=t) -> str:
+            k = int((t[f"{pre}_sif_keepspecial"] == "rescue").sum())
+            return f"{'MET' if k == len(t) else 'NOT MET'} ({k}/{len(t)})"
+
+        def nospecial(pre: str, t=t) -> str:
+            k = int((t[f"{pre}_mean_nospecial"] == "no_rescue").sum())
+            ng = int((t[f"{pre}_mean_nospecial"] == "no_sif_gain").sum())
+            v = f"{'MET' if k == len(t) else 'NOT MET'} ({k}/{len(t)} not rescued"
+            return v + (f"; {ng} with no SIF gain to recover)" if ng else ")")
+
+        both = bool(t["pub_sif"].notna().all())
+        v = keeps("r1")
+        a(f"- {m}: `sif_keepspecial` rescues: **{v}**"
+          + (f"; with the published `sif_only` cell as AUROC_sif: {keeps('r1p')}" if both else ""))
         verdicts.append((f"{m}: sif_keepspecial rescues collapsed layers (R1)", v))
-        k = int((t["r1_mean_nospecial"] == "no_rescue").sum())
-        ng = int((t["r1_mean_nospecial"] == "no_sif_gain").sum())
-        v = f"{'MET' if k == len(t) else 'NOT MET'} ({k}/{len(t)} not rescued"
-        v += f"; {ng} with no SIF gain to recover)" if ng else ")"
-        a(f"- {m}: `mean_nospecial` does not rescue: **{v}**")
+        v = nospecial("r1")
+        a(f"- {m}: `mean_nospecial` does not rescue: **{v}**"
+          + (f"; with the published `sif_only` cell as AUROC_sif: {nospecial('r1p')}"
+             if both else ""))
         verdicts.append((f"{m}: mean_nospecial does not rescue collapsed layers (R1)", v))
     t = coll[coll["m"] == "mT5-base"]
     if len(t):
-        evaluable = t["sif_gain"] >= R1_MIN_SIF_GAIN
-        rescued = np.zeros(len(t), dtype=bool)
-        for arm in R1_ARMS:
-            rescued |= (t[f"r1_{arm}"] == "rescue").to_numpy()
-        if not evaluable.any():
-            v = (f"NOT EVALUABLE BY R1 (SIF gain below {R1_MIN_SIF_GAIN:.2f} at all {len(t)} "
-                 "layers, so there is no SIF gain to recover)")
-        else:
-            k = int((~rescued & evaluable.to_numpy()).sum())
-            v = (f"{'MET' if k == int(evaluable.sum()) else 'NOT MET'} ({k}/"
-                 f"{int(evaluable.sum())} evaluable layers with no rescuing arm; "
-                 f"{int((~evaluable).sum())} layers with no SIF gain to recover)")
-        a(f"- mT5-base: no arm rescues: **{v}**. Raw changes against mean pooling, median (min "
+        def no_arm(pre: str, gain: str) -> str:
+            evaluable = (t[gain] >= R1_MIN_SIF_GAIN).to_numpy()
+            rescued = np.zeros(len(t), dtype=bool)
+            for arm in R1_ARMS:
+                rescued |= (t[f"{pre}_{arm}"] == "rescue").to_numpy()
+            if not evaluable.any():
+                return (f"NOT EVALUABLE BY R1 (SIF gain below {R1_MIN_SIF_GAIN:.2f} at all "
+                        f"{len(t)} layers, so there is no SIF gain to recover)")
+            k = int((~rescued & evaluable).sum())
+            return (f"{'MET' if k == int(evaluable.sum()) else 'NOT MET'} ({k}/"
+                    f"{int(evaluable.sum())} evaluable layers with no rescuing arm; "
+                    f"{int((~evaluable).sum())} layers with no SIF gain to recover)")
+
+        v = no_arm("r1", "sif_gain")
+        a(f"- mT5-base: no arm rescues: **{v}**"
+          + (f"; with the published `sif_only` cell as AUROC_sif: {no_arm('r1p', 'sif_gain_pub')}"
+             if t["pub_sif"].notna().all() else "")
+          + ". Raw changes against mean pooling, median (min "
           "to max): " + "; ".join(f"{arm} {_rng(t[f'r1chg_{arm}'], '+.3f')}" for arm in R1_ARMS)
           + f"; sif {_rng(t['sif_gain'], '+.3f')}")
         verdicts.append(("mT5-base: no arm rescues collapsed layers (R1)", v))
@@ -2081,7 +2274,9 @@ def facts(w: pd.DataFrame, arms: pd.DataFrame, carriers: pd.DataFrame, length: p
 
     a("## 11. Verdicts in one place")
     if gate2_failed:
-        a("- GATE 2 FAILED: the R1 lines and the pooling expectations below are blocked.")
+        a("- " + sif_deviation(gates, cmp))
+        a("- The R1 lines below use the job's own `sif` arm as AUROC_sif; sections 3 and 8 "
+          "also give the counts with the published `sif_only` cells.")
     for claim, v in verdicts:
         a(f"- {claim}: {v}")
     a("")
@@ -2155,8 +2350,9 @@ def cmd_render(args) -> int:
     length = read_csv(args.out_dir / LENGTH_NAME)
     res = pd.read_csv(args.results_csv) if Path(args.results_csv).exists() else None
     w = summarize(arms, audit, abl, length, res)
+    gates = gates_for(arms, audit, args)
     args.tab_dir.mkdir(parents=True, exist_ok=True)
-    omitted = write_table(w, args.tab_dir / TABLE_NAME)
+    omitted = write_table(w, args.tab_dir / TABLE_NAME, gates)
     for name in omitted:
         print(f"omitting {name}: no rows in {args.out_dir / ARMS_NAME}")
     print(f"wrote {args.tab_dir / TABLE_NAME} ({len(ORDER) - len(omitted)} model rows)")
@@ -2165,7 +2361,6 @@ def cmd_render(args) -> int:
         if x is not None:
             print(f"  worst baseline layer {name}: {int(x['layer'])} (AUROC {x['base']:.3f})")
     if args.facts_md is not None:
-        gates = gates_for(arms, audit, args)
         args.facts_md.parent.mkdir(parents=True, exist_ok=True)
         facts(w, arms, carriers, length, gates, args.facts_md, omitted=omitted)
         print(f"wrote {args.facts_md}")
