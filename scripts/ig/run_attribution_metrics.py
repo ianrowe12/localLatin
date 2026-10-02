@@ -34,14 +34,14 @@ Outputs:
   runs/active/ig_examples/attribution_metrics/<slug>/<example_tag>.json   per pair
   runs/active/ig_examples/attribution_metrics/summary.csv                 wide per (model, method, variant)
   runs/active/ig_examples/attribution_metrics/summary_sweep_long.csv      long sweep summary
-  overleaf_drafts/tables/attribution_metrics.tex                          headline table
+  docs/analyses/attribution_artifacts/tables/attribution_metrics.tex                          headline table
 
 Usage:
   python scripts/ig/run_attribution_metrics.py \\
       --examples_csv runs/active/ig_examples/phase12f_examples.csv \\
       --artifacts_root runs/active/ig_examples/artifacts \\
       --out_root runs/active/ig_examples/attribution_metrics \\
-      --tex_out overleaf_drafts/tables/attribution_metrics.tex
+      --tex_out docs/analyses/attribution_artifacts/tables/attribution_metrics.tex
 """
 from __future__ import annotations
 
@@ -1209,7 +1209,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--out_root",
                    default=str(REPO_ROOT / "runs/active/ig_examples/attribution_metrics"))
     p.add_argument("--tex_out",
-                   default=str(REPO_ROOT / "overleaf_drafts/tables/attribution_metrics.tex"))
+                   default=str(REPO_ROOT / "docs/analyses/attribution_artifacts/tables/attribution_metrics.tex"))
     p.add_argument("--models", nargs="*", default=None,
                    help="Restrict to these model_name strings (default: auto-detect from CSV).")
     p.add_argument("--methods", nargs="*", default=None,

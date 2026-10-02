@@ -190,7 +190,7 @@ def test_summarize_minimum_maximum_and_ties():
     df = pd.DataFrame({
         "model": ["A"] * 4, "model_id": ["o/a"] * 4, "cell": ["T5, raw"] * 4,
         "emb_objective": ["none"] * 4, "source": ["p2x2"] * 4, "layer": [1, 2, 3, 4],
-        "aucroc": [0.9, 0.5, 0.5, 0.95], "n_train": [10] * 4, "pc1": [0.2, 0.7, 0.7, 0.6],
+        "aucroc": [0.9, 0.5, 0.5, 0.95], "n_train": [10] * 4, "pc1": [0.2, 0.8, 0.8, 0.76],
         "erank": [50.0, 1.5, 1.2, 1.2], "pc10": [0.9] * 4, "mean_cos": [0.5] * 4,
         "n_zero_rows": [0, 2, 2, 0], "aucroc_nozero": [0.9, 0.5004, 0.5, 0.95]})
     x = p2.summarize(df).iloc[0]
@@ -198,7 +198,7 @@ def test_summarize_minimum_maximum_and_ties():
     assert (x.auroc_min, x.auroc_min_layer) == (0.5, 2)       # first layer on ties
     assert (x.auroc_max, x.auroc_max_layer) == (0.95, 4)
     assert (x.auroc_first, x.auroc_last) == (0.9, 0.95)
-    assert (x.pc1_max, x.pc1_max_layer, x.erank_at_pc1_max) == (0.7, 2, 1.5)
+    assert (x.pc1_max, x.pc1_max_layer, x.erank_at_pc1_max) == (0.8, 2, 1.5)
     assert (x.erank_min, x.erank_min_layer) == (1.2, 3)
     assert (x.n_high_pc1, x.high_pc1_layers) == (3, "2--4")   # threshold is inclusive
     assert (x.n_low_auroc, x.low_auroc_layers) == (2, "2--3")

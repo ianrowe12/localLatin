@@ -1,4 +1,4 @@
-"""The appendix artefacts select layers on the train split, like the headline tables (#184).
+"""The appendix artefacts select layers on the training split, like the headline tables (#184).
 
 Before #184 the nine per-layer tables bolded the test argmax (LaTa layer 1 in
 ``tab:taskB_routing_main`` while Table 3 reports layer 8), the last-token
@@ -142,7 +142,7 @@ def test_bold_row_is_the_headline_selected_layer(
     assert audit["train_selected"].sum() == len(MODELS)
     tex = out.read_text()
     assert bplt.HEADLINE_LABEL[task] in tex
-    assert "chosen on the train split" in tex
+    assert "chosen on the training split" in tex
 
 
 def _mseed_frame() -> pd.DataFrame:

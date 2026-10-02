@@ -1,0 +1,32 @@
+% generated table
+% python scripts/paper/reframe/spine_tables.py
+\begin{table*}[t]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{2.5pt}
+\begin{tabular}{@{}lllllrccccll@{}}
+\toprule
+& & & \multicolumn{3}{c}{Checkpoint} & \multicolumn{4}{c}{Over layers} & \multicolumn{2}{c}{Layers} \\
+\cmidrule(lr){4-6}\cmidrule(lr){7-10}\cmidrule(lr){11-12}
+Model & Type & Emb.\ obj. & Feed-forward & $d_\mathrm{ff}$ & Tied & AUROC$_{\min}$ & PC1$_{\max}$ & Rank$_{\min}$ & Mean cos. & Coll. & PC1$\ge$0.76 \\
+\midrule
+\multicolumn{12}{@{}l}{\emph{Main text}} \\
+LaTa & T5 & none & gated GELU & 2048 & no & 0.496 (6) & 0.952 (4) & 1.36 (8) & 0.22--0.58 & 2--11 & 2--11 \\
+PhilTa & T5 & none & gated GELU & 2048 & no & 0.538 (10) & 0.858 (6) & 1.81 (6) & 0.51--0.71 & 3--11 & 3--11 \\
+mT5-base & T5 & none & gated GELU & 2048 & no & 0.654 (5) & 1.000 (5) & 1.00 (5) & 0.33--0.95 & 5--11 & 4--11 \\
+T5-v1.1-base & T5 & none & gated GELU & 2048 & no & 0.489 (2) & 0.975 (9) & 1.14 (9) & 0.87--0.96 & 2--11 & 2--11 \\
+T5-base & T5 & none & ReLU & 3072 & yes & 0.816 (11) & 0.545 (8) & 14.85 (8) & 0.90--0.95 & none & none \\
+LaBERTa & Enc. & none & GELU & 3072 & yes & 0.826 (1) & 0.254 (9) & 57.87 (9) & 0.70--0.91 & none & none \\
+PhilBERTa & Enc. & none & GELU & 3072 & yes & 0.883 (6) & 0.162 (6) & 82.12 (11) & 0.84--0.96 & none & none \\
+LaBSE & Enc. & contrastive & GELU & 3072 & n/a & 0.806 (1) & 0.524 (8) & 16.19 (8) & 0.73--0.93 & none & none \\
+Qwen3-0.6B & Dec. & contrastive & gated SiLU & 3072 & yes & 0.858 (1) & 0.183 (16) & 71.60 (16) & 0.84--0.97 & none & none \\
+KaLM-mini & Dec. & contrastive & gated SiLU & 4864 & yes & 0.861 (5) & 0.419 (5) & 23.83 (5) & 0.59--0.93 & none & none \\
+\midrule
+\multicolumn{12}{@{}l}{\emph{Appendix only}} \\
+Sentence-T5 & T5 & contrastive & ReLU & 3072 & n/a & 0.800 (11) & 0.943 (6) & 1.56 (6) & 0.72--0.98 & none & 2--9 \\
+SPhilBERTa & Enc. & distillation & GELU & 3072 & n/a & 0.892 (1) & 0.127 (11) & 64.67 (11) & 0.61--0.95 & none & none \\
+\bottomrule
+\end{tabular}
+\caption{All twelve models, read on the Latin corpus as mean-pooled hidden states with no post-hoc correction. Type: the encoder of a T5 encoder-decoder (T5), an encoder-only model (Enc.), or a decoder (Dec.). Emb.\ obj.: the embedding objective trained after pretraining, if any. Checkpoint: the feed-forward activation and inner width $d_\mathrm{ff}$, and whether input and output embeddings are tied, as the checkpoint's configuration file states them (T5-base, LaBERTa and PhilBERTa leave tying at the library default, tied; n/a: the checkpoint has no output head). Over layers: the lowest test ranking AUROC, the peak top-PC share and the lowest entropy effective rank, each with its layer, and the range of mean pairwise cosine; top-PC share, effective rank and mean cosine are computed on the training embeddings. Layers: the collapsed layers (Coll.), with AUROC below 0.70, and those with top-PC share of at least 0.76. Every one of the 36 collapsed layers (26 in the panel, 10 in T5-v1.1-base) has a top-PC share of at least 0.76, but a high share also occurs without collapse (mT5-base layer 4, Sentence-T5). Checkpoints: LaTa, \texttt{bowphs/\allowbreak{}LaTa}; PhilTa, \texttt{bowphs/\allowbreak{}PhilTa}; mT5-base, \texttt{google/\allowbreak{}mt5-\allowbreak{}base}; T5-v1.1-base, \texttt{google/\allowbreak{}t5-\allowbreak{}v1\_1-\allowbreak{}base}; T5-base, \texttt{google-\allowbreak{}t5/\allowbreak{}t5-\allowbreak{}base}; LaBERTa, \texttt{bowphs/\allowbreak{}LaBerta}; PhilBERTa, \texttt{bowphs/\allowbreak{}PhilBerta}; LaBSE, \texttt{sentence-\allowbreak{}transformers/\allowbreak{}LaBSE}; Qwen3-0.6B, \texttt{Qwen/\allowbreak{}Qwen3-\allowbreak{}Embedding-\allowbreak{}0.6B}; KaLM-mini, \texttt{KaLM-\allowbreak{}Embedding/\allowbreak{}KaLM-\allowbreak{}embedding-\allowbreak{}multilingual-\allowbreak{}mini-\allowbreak{}instruct-\allowbreak{}v2.5}; Sentence-T5, \texttt{sentence-\allowbreak{}transformers/\allowbreak{}sentence-\allowbreak{}t5-\allowbreak{}base}; SPhilBERTa, \texttt{bowphs/\allowbreak{}SPhilBerta}.}
+\label{tab:all_models}
+\end{table*}

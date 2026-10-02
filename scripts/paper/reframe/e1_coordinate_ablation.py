@@ -676,8 +676,8 @@ def _span(values: Sequence[float]) -> str:
 def caption(w: pd.DataFrame, rows: Sequence[Tuple[str, pd.Series]]) -> str:
     """Caption of tab:e1_coordinate_ablation; its counts and ranges are read from the data."""
     text = (
-        r"\caption{Coordinate ablation at each model's worst baseline layer (L). Top block: "
-        r"Task~A test AUROC for the unmodified mean-pooled vectors (Base); after zeroing the "
+        r"\caption{Coordinate ablation at each model's lowest-AUROC baseline layer (L). Top block: "
+        r"test ranking AUROC for the unmodified mean-pooled vectors (Base); after zeroing the "
         r"$k$ residual coordinates with the largest mean absolute training value, or with the "
         r"largest variance across training passages; after per-coordinate standardization "
         r"with training statistics (Std.); after centering alone ($D{=}0$); and after ABTT "
@@ -723,7 +723,7 @@ def write_table(w: pd.DataFrame, path: Path) -> List[str]:
              r"Model & L & Base & 1 & 3 & 5 & 10 & 1 & 3 & 5 & 10 & Std. & $D{=}0$ & "
              r"ABTT$_{D=1}$ & ABTT$_{D=3}$ \\",
              r"\midrule"]
-    for i, (title, prefix) in enumerate((("Task~A test AUROC", "auc"),
+    for i, (title, prefix) in enumerate((("Test ranking AUROC", "auc"),
                                          ("Top-PC share of the training vectors", "pc1"))):
         if i:
             lines.append(r"\midrule")

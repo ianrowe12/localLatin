@@ -19,7 +19,7 @@ reads. The layers printed are read from each run's examples CSV, not assumed.
 
 Output:
 
-    overleaf_drafts/tables/attribution_metrics_aniso.tex
+    docs/analyses/attribution_artifacts/tables/attribution_metrics_aniso.tex
 
 The table carries a ``% source run:`` stamp naming the anisotropic run and a
 ``% reference run:`` line naming the run of record it is compared with. Like
@@ -67,7 +67,7 @@ DEFAULT_ANISO_SUMMARY = (
     REPO_ROOT / "runs/active" / ANISO_RUN / "attribution_metrics_draws20" / "summary_v2.csv"
 )
 DEFAULT_REFERENCE_SUMMARY = DEFAULT_SUMMARY_CSV
-DEFAULT_TABLE_OUT = REPO_ROOT / "overleaf_drafts/tables/attribution_metrics_aniso.tex"
+DEFAULT_TABLE_OUT = REPO_ROOT / "docs/analyses/attribution_artifacts/tables/attribution_metrics_aniso.tex"
 
 REFERENCE_PREFIX = "% reference run: "
 TIE_SE = 2.0

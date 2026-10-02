@@ -1,0 +1,29 @@
+% generated table
+% python scripts/paper/reframe/spine_tables.py
+\begin{table}[t]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{2.5pt}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.27\columnwidth}>{\raggedright\arraybackslash}p{0.17\columnwidth}>{\raggedright\arraybackslash}p{0.385\columnwidth}l@{}}
+\toprule
+Test & Expected & Outcome & Result \\
+\midrule
+\multicolumn{4}{@{}l}{\emph{Coordinates}} \\
+Zero top $k$ coordinates & $k{\le}5$ restores$^\dagger$ & 0/26 restored at $k{\le}10$, either ranking; best 0.794 & \textbf{failed} \\
+Zero random ones & no change & $\le$0.0004 at 10; 0/26 restored up to 400 & held \\
+\addlinespace
+\multicolumn{4}{@{}l}{\emph{Principal directions}} \\
+Center only & little gain$^\dagger$ & median 0.503 (raw 0.541); 0/26 restored & held \\
+Remove PC1 only & $\ge$80\% of gain$^\dagger$ & median 45\%; $\ge$80\% at 1/26 & \textbf{failed} \\
+Remove the top 3 PCs & -- & 26/26 $\ge$0.91 (lowest 0.914); mT5-base 0.934, 0.978 at 10 & -- \\
+Rank on the 10 removed PCs & below retained$^\dagger$ & 0.489 vs.\ 0.977; below at 26/26 & held \\
+\addlinespace
+\multicolumn{4}{@{}l}{\emph{Tokens}} \\
+LaTa: drop top types & restores$^\dagger$ & comma, period, \texttt{</s>} (11\% of tokens): 10/10, median 0.919; mass-matched random types 0.500 & held \\
+mT5-base: drop $\le$100 types & restores$^\dagger$ & 0/7; best 0.748 & \textbf{failed} \\
+PC1 score vs.\ log length & $|\rho|{\ge}0.5^\dagger$ & 0/26; largest $|\rho|$ 0.44 & \textbf{failed} \\
+\bottomrule
+\end{tabular}
+\caption{Localization tests at the 26 collapsed layers (AUROC below 0.70) of LaTa, PhilTa and mT5-base, unless a row names one model. Outcomes are test ranking AUROC or medians over layers; ``restores'' means AUROC $\ge$ 0.90. Every intervention is fit on training embeddings only. Coordinates are ranked by variance or mean $|x|$. PC: principal component of the centered training embeddings; PC1: the first. Gain: that of removing ten PCs; top types: those that feed the top PCs. $^\dagger$: written down before the run, as our expectation or as the decision rule of a rival account (passage length); the other rows are a control and an observation added afterwards.}
+\label{tab:predictions}
+\end{table}

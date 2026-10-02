@@ -118,7 +118,7 @@ def test_caption_quotes_the_runs_own_pair_count(tmp_path):
     facts, pair_data, _ = build_facts({"selected_epoch": 3, "epochs_run": 5})
     tex = render(tmp_path, facts)
     assert (f"on {len(pair_data.train_pairs)} of the {pair_data.n_all_train_pairs} "
-            "positive train pairs") in tex
+            "positive training pairs") in tex
     # The literal the caption used to hardcode must not survive a different run.
     assert "565" not in tex
 
@@ -140,7 +140,7 @@ def test_mid_run_epoch_is_not_called_terminal(tmp_path):
 def test_epoch_zero_says_training_bought_nothing(tmp_path):
     facts, _, _ = build_facts({"selected_epoch": 0, "epochs_run": 8})
     tex = render(tmp_path, facts)
-    assert "kept the pre-trained encoder (epoch 0)" in tex
+    assert "kept the pretrained encoder (epoch 0)" in tex
     assert "PRE-TRAINED encoder" in unwrapped(tex)
 
 
@@ -239,8 +239,9 @@ def test_each_model_keeps_its_own_epoch_and_sweep_claims(tmp_path):
     tex = two_sections(tmp_path)
     assert "The selected checkpoint for LaTa is epoch 7, the terminal epoch" in tex
     assert "The selected checkpoint for Qwen3-0.6B is epoch 4 of 8 run" in tex
-    assert "ABTT rows for LaTa sweep $D$ per layer on train and select $D=10$ everywhere" in tex
-    assert "ABTT rows for Qwen3-0.6B sweep $D$ per layer on train over the grid" in tex
+    assert ("ABTT rows for LaTa sweep $D$ per layer on the training split and select "
+            "$D=10$ everywhere") in tex
+    assert "ABTT rows for Qwen3-0.6B sweep $D$ per layer on the training split over the grid" in tex
     # Both models are named in the lead sentence, and neither owns the table.
     assert "reference ceiling on LaTa and Qwen3-0.6B" in tex
     assert "The fine-tuned encoders are trained contrastively" in tex
@@ -259,7 +260,7 @@ def test_shared_pair_count_is_stated_once_and_dropped_when_runs_disagree(tmp_pat
     """Both ceilings use one split and one seed, so the count is theirs jointly."""
     tex = two_sections(tmp_path)
     facts, _, _ = build_facts({"selected_epoch": 7, "epochs_run": 7})
-    assert f"on {facts.n_fit_pairs} of the {facts.n_all_train_pairs} positive train pairs" in tex
+    assert f"on {facts.n_fit_pairs} of the {facts.n_all_train_pairs} positive training pairs" in tex
 
     disagreeing = ceiling.CeilingFacts.from_dict(
         {**{k: v for k, v in vars(facts).items() if k != "display_name"},
@@ -330,7 +331,7 @@ def test_three_model_caption_names_and_separates_every_model(tmp_path):
     assert "The selected checkpoint for LaTa is epoch 7, the terminal epoch" in tex
     assert "The selected checkpoint for Qwen3-0.6B is epoch 4 of 8 run" in tex
     assert "The selected checkpoint for KaLM-mini is epoch 2 of 6 run" in tex
-    assert "ABTT rows for KaLM-mini sweep $D$ per layer on train over the grid" in tex
+    assert "ABTT rows for KaLM-mini sweep $D$ per layer on the training split over the grid" in tex
     notes = unwrapped(tex)
     assert "KaLM-mini: Epoch 2 of 6 run was selected" in notes
     assert tex.count("Notes for whoever moves these rows into the paper") == 1
@@ -434,9 +435,12 @@ def test_five_seed_values_are_printed_cells_not_comments(tmp_path):
     assert r"\begin{tabular}{lccccc}" in tex
     row = next(l for l in tex.splitlines() if l.startswith("LaTa (fine-tuned) + ABTT &"))
     assert row.endswith(r"& 87.7 $\pm$ 0.8 \\")
-    row = next(l for l in tex.splitlines() if l.startswith("LaTa (pre-trained) &"))
+    # The CSV's "(pre-trained)" rows print as "(zero-shot)" (consistency review C18).
+    row = next(l for l in tex.splitlines() if l.startswith("LaTa (zero-shot) &"))
     assert row.endswith(r"& 73.1 $\pm$ 1.0 \\")
-    assert "over five random reassignments of query and reference files" in tex
+    assert ("over five reseedings of the query and reference files, with the training/test "
+            "split fixed") in tex
+    assert "(pre-trained)" not in tex
 
 
 def test_no_five_seed_column_without_every_sections_run(tmp_path):
@@ -446,7 +450,7 @@ def test_no_five_seed_column_without_every_sections_run(tmp_path):
         ceiling.CeilingSection("Qwen3-0.6B", _four_row_comparison("Qwen3-0.6B"), None, None),
     ])
     assert r"\begin{tabular}{lcccc}" in tex
-    assert "5 seeds" not in tex
+    assert "5 reseedings" not in tex
 
 
 def test_takeaway_gives_each_model_its_own_five_seed_verdict(tmp_path):
@@ -457,9 +461,10 @@ def test_takeaway_gives_each_model_its_own_five_seed_verdict(tmp_path):
                                _mseed("Qwen/Qwen3-Embedding-0.6B", 0.923)),
     ])
     assert (
-        "Fine-tuning raises Task A AUROC for every model, and ABTT on top of it "
-        "lowers AUROC again in point estimate; on five-seed routing, the fine-tuned encoder with ABTT "
-        "is level with its pre-trained ABTT row for LaTa and above it for Qwen3-0.6B."
+        "Fine-tuning raises ranking AUROC for every model, and ABTT on top of it "
+        "lowers AUROC again in point estimate; on routing over the five reseedings, the "
+        "fine-tuned encoder with ABTT is level with its zero-shot ABTT row for LaTa and above "
+        "it for Qwen3-0.6B."
     ) in tex
 
 
@@ -468,7 +473,7 @@ def test_takeaway_drops_the_abtt_clause_when_abtt_helps_a_fine_tuned_row(tmp_pat
         ceiling.CeilingSection("LaTa", _four_row_comparison("LaTa", ft_abtt_auc=0.99),
                                None, None),
     ])
-    assert "Fine-tuning raises Task A AUROC for the model." in tex
+    assert "Fine-tuning raises ranking AUROC for the model." in tex
     assert "lowers AUROC again" not in tex
 
 

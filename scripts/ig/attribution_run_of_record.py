@@ -1,7 +1,9 @@
 """The attribution run the paper's tables are built from, and the stamp that pins them to it.
 
-Every attribution table in ``overleaf_drafts/tables/`` is generated from one
-``summary_v2.csv``. Which run that summary comes from used to be a default
+Every attribution table in ``docs/analyses/attribution_artifacts/tables/`` is
+generated from one ``summary_v2.csv``. (These tables and figures used to live in
+``overleaf_drafts/``; token attribution left the paper on 2 October 2026, so the
+generators now write to the docs folder and never re-create paper files.) Which run that summary comes from used to be a default
 buried in each generator, and after the benchmark v1 re-sample (issue #187) the
 defaults still named the earlier run 3 sample while the committed tables came
 from v1 (issue #201). A bare regeneration then silently rewrote the paper's

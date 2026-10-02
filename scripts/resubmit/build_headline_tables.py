@@ -427,15 +427,23 @@ def _finetune_layers(finetune: pd.DataFrame, label: str, layer_col: str) -> List
     return [str(int(base[layer_col])), "--", str(int(abtt[layer_col])), "--"]
 
 
+# Column-group row of tab:selected_layers (a constant, so a caption-only re-render can
+# splice it into the committed table when the run CSVs are absent).
+SELECTED_LAYERS_BANNER = (
+    r"& \multicolumn{4}{c}{\textbf{Ranking layer}} "
+    r"& \multicolumn{4}{c}{\textbf{Routing layer}} \\"
+)
+
+
 def selected_layers_caption() -> str:
     return (
-        "Train-selected layer behind every cell of Tables~\\ref{tab:taskA_headline} "
-        "and~\\ref{tab:taskB_headline}. For each model and post-processing setting, "
-        "the Task A layer has the highest training-set AUROC and the Task B layer "
-        "the highest training-set directory accuracy at rank 1; the test scores in "
+        "Train-selected layer behind every headline cell (Tables~\\ref{tab:headline} "
+        "and~\\ref{tab:headline_ci}). For each model and post-processing setting, "
+        "the ranking layer has the highest training-set AUROC and the routing layer "
+        "the highest training-set DirAcc@1; the test scores in "
         "those tables are read at these layers, so no layer is chosen on test. "
         "Layer 1 is the first transformer block. The fine-tuned rows below the rule "
-        "have no SIF setting. Table~\\ref{tab:finetune_ceiling} reads its pre-trained "
+        "have no SIF setting. Table~\\ref{tab:finetune_ceiling} reads its zero-shot "
         "rows at the Base and ABTT layers above the rule and its fine-tuned rows at "
         "the layers below it."
     )
@@ -460,8 +468,7 @@ def render_selected_layers_table(
         r"\setlength{\tabcolsep}{5pt}",
         r"\begin{tabular}{lrrrrrrrr}",
         r"\toprule",
-        r"& \multicolumn{4}{c}{\textbf{Task A layer}} "
-        r"& \multicolumn{4}{c}{\textbf{Task B layer}} \\",
+        SELECTED_LAYERS_BANNER,
         r"\cmidrule(lr){2-5}\cmidrule(lr){6-9}",
         r"\textbf{Model} & "
         + " & ".join(label for _, label in METHODS)

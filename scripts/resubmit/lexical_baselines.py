@@ -446,6 +446,10 @@ def _fmt(value: float, digits: int = 3) -> str:
     return f"{value:.{digits}f}"
 
 
+_SEED_WORD = {2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven",
+              8: "eight", 9: "nine", 10: "ten"}
+
+
 def render_latex_table(results: pd.DataFrame, mseed: Optional[pd.DataFrame]) -> str:
     """Render the lexical rows in the headline tables' metric columns."""
     lines = [
@@ -455,9 +459,9 @@ def render_latex_table(results: pd.DataFrame, mseed: Optional[pd.DataFrame]) -> 
         r"\setlength{\tabcolsep}{4pt}",
         r"\begin{tabular}{lrrrr}",
         r"\toprule",
-        r"& \multicolumn{2}{c}{\textbf{Task A}} & \multicolumn{2}{c}{\textbf{Task B}} \\",
+        r"& \multicolumn{2}{c}{\textbf{Ranking}} & \multicolumn{2}{c}{\textbf{Routing}} \\",
         r"\cmidrule(lr){2-3}\cmidrule(lr){4-5}",
-        r"\textbf{Baseline} & AUROC & Gap & Assign. & Dir@1 \\",
+        r"\textbf{System} & AUROC & Gap & Assign. & DirAcc@1 \\",
         r"\midrule",
     ]
     for _, row in results.iterrows():
@@ -471,28 +475,28 @@ def render_latex_table(results: pd.DataFrame, mseed: Optional[pd.DataFrame]) -> 
 
     best = results.loc[results["dir_acc_at_1"].idxmax()]
     caption = (
-        "Lexical baselines on the same 50/50 split, the same held-out test set and "
+        "Lexical reference systems on the same 50/50 split, the same held-out test set and "
         "the same evaluation code as the embedding models, so the numbers are "
-        "directly comparable to the headline Task A and Task B tables. Task A is "
+        "directly comparable to the headline ranking and routing tables. Ranking is "
         "measured over the test $n \\times n$ score matrix: AUROC treats "
         "same-directory test pairs as positives, and Gap is the mean same-directory "
-        "minus the mean different-directory score. Task B is reported in percent: "
+        "minus the mean different-directory score. Routing is reported in percent: "
         "Assign.\\ is the existing-versus-new decision against a threshold $\\tau$ "
-        "fitted on train, and Dir@1 additionally requires the correct directory. "
+        "fitted on the training split, and DirAcc@1 additionally requires the correct directory. "
         f"{LATEX_LABELS.get(best['model'], best['model'])} is the strongest of the "
-        f"three at {_fmt(100 * best['dir_acc_at_1'], 1)} percent Dir@1, which puts "
+        f"three at {_fmt(100 * best['dir_acc_at_1'], 1)} percent DirAcc@1, which puts "
         "plain surface-form overlap within reach of the best embedding "
         "configurations on this corpus of hand-copied witnesses. BM25 separates "
         "pairs well but routes poorly: a raw BM25 score grows with query length, so "
         "each file's maximum score tracks document length as much as relatedness, "
-        "and the train-fitted $\\tau$ transfers badly. BM25 uses $k_1=1.5$, "
+        "and the $\\tau$ fitted on the training split transfers badly. BM25 uses $k_1=1.5$, "
         "$b=0.75$ with document frequencies, vocabulary and average document length "
-        "taken from train files only; the character TF-IDF vectoriser is likewise "
-        "fitted on train only, and normalised Levenshtein has nothing to fit. Every "
-        "score matrix is min-max rescaled using the train block; the map is monotone, so "
+        "taken from training files only; the character TF-IDF vectorizer is likewise "
+        "fitted on training files only, and normalized Levenshtein has nothing to fit. Every "
+        "score matrix is min-max rescaled using the training block; the map is monotone, so "
         "AUROC is unchanged, while the threshold $\\tau$ is fitted on a fixed grid "
         "afterwards, which matters for BM25 (unrescaled, $\\tau$ pins at the grid "
-        "ceiling) and is the identity for char TF-IDF, whose train scores already span "
+        "ceiling) and is the identity for char TF-IDF, whose training scores already span "
         "[0, 1]."
     )
     if mseed is not None and len(mseed):
@@ -509,9 +513,10 @@ def render_latex_table(results: pd.DataFrame, mseed: Optional[pd.DataFrame]) -> 
             )
         n_seeds = int(mseed["n_seeds"].max())
         caption += (
-            f" Under the {n_seeds}-seed query-versus-reference Task B protocol, in "
-            "which only the query/reference partition of the test half is redrawn, "
-            "directory accuracy at rank 1 is " + "; ".join(parts) + "."
+            f" Under {_SEED_WORD.get(n_seeds, str(n_seeds))} reseedings of the query and "
+            "reference files, in which only the query/reference partition of the test half "
+            "is redrawn and the training/test split stays fixed, DirAcc@1 is "
+            + "; ".join(parts) + "."
         )
 
     lines += [

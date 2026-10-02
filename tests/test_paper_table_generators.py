@@ -658,7 +658,8 @@ def test_shuffle_control_table_reproduces_the_committed_one(tmp_path: Path):
     out = tmp_path / "attribution_shuffle_control.tex"
     bmaa.render_shuffle_control_table(summary, out,
                                       source_run=aror.run_name(aror.DEFAULT_SUMMARY_CSV))
-    assert out.read_bytes() == (TABLES_DIR / "attribution_shuffle_control.tex").read_bytes()
+    assert out.read_bytes() == (
+        ATTRIBUTION_TABLES_DIR / "attribution_shuffle_control.tex").read_bytes()
 
 
 def test_caption_omits_ties_only_on_an_explicit_opt_out():
@@ -741,6 +742,10 @@ def test_load_main_rows_rejects_a_summary_missing_the_new_columns():
 # material is absent (CI) rather than fail.
 
 TABLES_DIR = REPO_ROOT / "overleaf_drafts" / "tables"
+# Token attribution left the paper (2 October 2026): its generators now write,
+# and its committed tables and figure live, outside overleaf_drafts/.
+ATTRIBUTION_ARTIFACTS_DIR = REPO_ROOT / "docs" / "analyses" / "attribution_artifacts"
+ATTRIBUTION_TABLES_DIR = ATTRIBUTION_ARTIFACTS_DIR / "tables"
 
 
 def test_generator_defaults_resolve_under_the_run_of_record(monkeypatch):
@@ -757,8 +762,8 @@ def test_generator_defaults_resolve_under_the_run_of_record(monkeypatch):
         assert aror.RUN_OF_RECORD in Path(raw).parts, raw
         assert aror.METRICS_DIR_OF_RECORD in Path(raw).parts, raw
         assert "run3" not in raw
-    assert Path(args.main_tex_out).parent == TABLES_DIR
-    assert Path(args.supplemental_tex_out).parent == TABLES_DIR
+    assert Path(args.main_tex_out).parent == ATTRIBUTION_TABLES_DIR
+    assert Path(args.supplemental_tex_out).parent == ATTRIBUTION_TABLES_DIR
 
 
 def test_stamped_table_refuses_a_different_run(tmp_path: Path):
@@ -799,7 +804,8 @@ def test_bare_packager_run_reproduces_the_committed_sweep_tables(tmp_path: Path,
     pasa.main()
     for name, out in (("attribution_metrics_sweep_main_methods.tex", "main.tex"),
                       ("attribution_metrics_sweep_supplemental_methods.tex", "supp.tex")):
-        assert (tmp_path / out).read_bytes() == (TABLES_DIR / name).read_bytes(), name
+        assert (tmp_path / out).read_bytes() == (
+            ATTRIBUTION_TABLES_DIR / name).read_bytes(), name
     assert (tmp_path / "long.csv").read_bytes() == (
         aror.ATTRIBUTION_METRICS_DIR / "summary_v2_sweep_long_appendix.csv").read_bytes()
 
@@ -833,9 +839,10 @@ def test_bare_generator_run_reproduces_the_committed_main_tables(tmp_path: Path,
     for name, out in (("attribution_metrics_main.tex", "main.tex"),
                       ("attribution_metrics_secondary.tex", "secondary.tex"),
                       ("attribution_shuffle_control.tex", "shuffle.tex")):
-        assert (tmp_path / out).read_bytes() == (TABLES_DIR / name).read_bytes(), name
+        assert (tmp_path / out).read_bytes() == (
+            ATTRIBUTION_TABLES_DIR / name).read_bytes(), name
     assert (tmp_path / "fig_attribution_rho_loo_main.tex").read_bytes() == (
-        REPO_ROOT / "overleaf_drafts/figures/fig_attribution_rho_loo_main.tex").read_bytes()
+        ATTRIBUTION_ARTIFACTS_DIR / "figures/fig_attribution_rho_loo_main.tex").read_bytes()
 
 
 # --- the selected-layers appendix table (#219) -----------------------------
@@ -902,7 +909,7 @@ def test_selected_layers_table_lists_every_headline_layer():
     assert r"\label{tab:selected_layers}" in tex
     assert r"\textsubscript" not in tex
     caption = tex[tex.index(r"\caption{"):]
-    for ref in ("tab:taskA_headline", "tab:taskB_headline", "tab:finetune_ceiling"):
+    for ref in ("tab:headline}", "tab:headline_ci}", "tab:finetune_ceiling"):
         assert ref in caption, ref
     assert tex.splitlines()[0] == "% generated table"
 

@@ -467,8 +467,8 @@ def write_layerwise_table(df: pd.DataFrame, path: Path) -> bool:
         lines.append(f"{layer} & " + " & ".join(cells) + r" \\")
     lines += [r"\bottomrule", r"\end{tabular}",
               r"\caption{Per-layer readouts of LaBERTa and PhilBERTa, the encoder-only siblings "
-              r"of LaTa and PhilTa in the matched pairs of Table~\ref{tab:panel_2x2}, on the Latin "
-              r"corpus with no post-hoc correction. AUROC: Task~A test pairwise AUROC of cosine "
+              r"of LaTa and PhilTa in the matched pairs of Table~\ref{tab:models}, on the Latin "
+              r"corpus with no post-hoc correction. AUROC: test ranking AUROC of cosine "
               r"on mean-pooled vectors. PC1: top-PC share, the share of centered variance on the "
               r"first principal component of the " + n + r" training passages. Rank: entropy "
               r"effective rank of the same passages. Two facts about the inputs: LaBERTa's "

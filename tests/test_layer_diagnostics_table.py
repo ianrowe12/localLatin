@@ -13,7 +13,6 @@ sys.path.insert(0, str(REPO_ROOT / "scripts" / "paper" / "reframe"))
 import layer_diagnostics_table as ldt  # noqa: E402
 
 GEOM = REPO_ROOT / "runs/active/resubmit/layer_diagnostics/geometry_per_layer.csv"
-RULES = REPO_ROOT / "runs/active/resubmit/layer_diagnostics/layer_rule_candidates.csv"
 TABLE = REPO_ROOT / "overleaf_drafts/tables/layer_diagnostics_main.tex"
 
 
@@ -33,18 +32,24 @@ def _geom_rows():
 
 
 def test_peak_is_the_test_split_argmax_and_rows_follow_it():
-    rules = pd.DataFrame({"model": [m for m, _ in ldt.MODELS],
-                          "recommended_operational_layer": [7, 1, 1]})
-    tex = ldt.render(_geom_rows(), rules)
-    assert r"LaTa & 7 & 5 & 0.900 & 0.045 & 2.00$\rightarrow$150.00 \\" in tex
+    tex = ldt.render(_geom_rows())
+    assert r"LaTa & 5 & 0.900 & 0.045 & 2.00$\rightarrow$150.00 \\" in tex
     assert "where LaTa peaks at layer 4 instead of 5" in tex
     assert tex.splitlines()[0] == "% generated table"
     assert r"\label{tab:layer_diagnostics_main}" in tex
 
 
+def test_table_carries_no_attribution_layer():
+    """Token attribution left the paper; the table must not point at it."""
+    tex = ldt.render(_geom_rows())
+    assert "attribution" not in tex.lower()
+    assert "Operational" not in tex
+    assert "app:attribution" not in tex
+
+
 def test_committed_table_is_the_generator_output():
-    for path in (GEOM, RULES, TABLE):
+    for path in (GEOM, TABLE):
         if not path.exists():
             pytest.skip(f"{path} not checked out")
-    tex = ldt.render(pd.read_csv(GEOM), pd.read_csv(RULES))
+    tex = ldt.render(pd.read_csv(GEOM))
     assert tex == TABLE.read_text()

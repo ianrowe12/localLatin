@@ -322,10 +322,10 @@ def parse_args() -> argparse.Namespace:
         ATTRIBUTION_METRICS_DIR / "appendix_sweep_v2_completeness.json"
     ))
     p.add_argument("--main_tex_out", default=str(
-        REPO_ROOT / "overleaf_drafts/tables/attribution_metrics_sweep_main_methods.tex"
+        REPO_ROOT / "docs/analyses/attribution_artifacts/tables/attribution_metrics_sweep_main_methods.tex"
     ))
     p.add_argument("--supplemental_tex_out", default=str(
-        REPO_ROOT / "overleaf_drafts/tables/attribution_metrics_sweep_supplemental_methods.tex"
+        REPO_ROOT / "docs/analyses/attribution_artifacts/tables/attribution_metrics_sweep_supplemental_methods.tex"
     ))
     p.add_argument("--sufficiency_fractions", default="0.10,0.25,0.50")
     p.add_argument("--compactness_thresholds", default="0.70,0.80,0.90,0.95")

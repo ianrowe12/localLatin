@@ -68,7 +68,7 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument("--max_tokens", type=int, default=18,
                    help="Query and candidate positions shown per side.")
-    p.add_argument("--out_dir", default="overleaf_drafts/figures")
+    p.add_argument("--out_dir", default="docs/analyses/attribution_artifacts/figures")
     p.add_argument("--pair_stem", default="fig_pair_matrix_philta")
     p.add_argument("--attention_stem", default="fig_attention_philta")
     return p.parse_args()

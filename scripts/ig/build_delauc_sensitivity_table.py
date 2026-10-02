@@ -15,7 +15,7 @@ Usage:
     python scripts/ig/build_delauc_sensitivity_table.py \\
         --configs_csv runs/active/ig_examples_200pos_v1/attribution_metrics/sensitivity/configs.csv \\
         --cells_csv   runs/active/ig_examples_200pos_v1/attribution_metrics/sensitivity/cells.csv \\
-        --out overleaf_drafts/tables/attribution_delauc_sensitivity.tex
+        --out docs/analyses/attribution_artifacts/tables/attribution_delauc_sensitivity.tex
 """
 from __future__ import annotations
 
@@ -168,7 +168,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     root = "runs/active/ig_examples_200pos_v1/attribution_metrics/sensitivity"
     p.add_argument("--configs_csv", default=f"{root}/configs.csv")
     p.add_argument("--cells_csv", default=f"{root}/cells.csv")
-    p.add_argument("--out", default="overleaf_drafts/tables/attribution_delauc_sensitivity.tex")
+    p.add_argument("--out", default="docs/analyses/attribution_artifacts/tables/attribution_delauc_sensitivity.tex")
     return p.parse_args(argv)
 
 

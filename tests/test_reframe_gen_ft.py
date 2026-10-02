@@ -90,7 +90,7 @@ def _geo_fixture() -> pd.DataFrame:
         for ti, (text, _) in enumerate(gfg.TEXTS):
             for layer in range(1, 13):
                 mid = 3 <= layer <= 10
-                pc1 = (0.9 - 0.02 * layer if mid else 0.3) - 0.1 * ti
+                pc1 = (0.95 - 0.01 * layer if mid else 0.3) - 0.05 * ti  # mid layers >= 0.80
                 for subset, n in [("train", 847), ("all", 1705)]:
                     rows.append(dict(model=disp, text=text, layer=layer, subset=subset, n=n,
                                      pc1=round(pc1, 4), erank=round(1.5 / pc1, 4), pc10=0.99,
@@ -196,7 +196,7 @@ def test_rematch_summary_flags_changes():
     rem = geo[geo.subset == "train"].copy()
     rem["subset"], rem["n"] = "rematch_train", 700
     rem["tokenizer"] = rem.model.map(gfg.LEN_KEY)
-    rem.loc[(rem.model == "PhilTa") & (rem.text == "english") & (rem.layer == 10), "pc1"] = 0.55
+    rem.loc[(rem.model == "PhilTa") & (rem.text == "english") & (rem.layer == 10), "pc1"] = 0.75
     rs = gfg.rematch_summary(geo, rem).set_index(["model", "text"])
     assert rs.loc[("mT5-base", "Latin"), "max_dpc1"] == 0.0
     assert rs.loc[("mT5-base", "Latin"), "same_high_layers"]

@@ -49,20 +49,20 @@ DEFAULT_SELECT_ON = "train_dir_acc_at_1"
 DEFAULT_SELECT_METHOD = "abtt_optimal"
 
 CAPTION = (
-    "Mean versus last-token pooling under ABTT with $D$ tuned per layer on the train "
-    "split, for the five paper models whose last-token embeddings were extracted "
+    "Mean versus last-token pooling under ABTT with $D$ tuned per layer on the training "
+    "split, for the five models whose last-token embeddings were extracted "
     "(mT5-base was not part of this run). For each model and pooling the layer is the "
-    "one with the highest training-set directory accuracy at rank~1, the rule behind the "
-    "ABTT cells of Table~\\ref{tab:taskB_headline} (their layers are listed in "
+    "one with the highest training-set DirAcc@1, the rule behind the "
+    "routing cells of Table~\\ref{tab:headline} (their layers are listed in "
     "Table~\\ref{tab:selected_layers}); $D$ is the number of principal "
-    "components removed at that layer. The three score columns are test-set Task~B "
-    "assignment accuracy, Task~B directory accuracy at rank~1, and Task~A cosine gap at "
+    "components removed at that layer. The three score columns are test-set routing "
+    "assignment accuracy, routing DirAcc@1, and ranking cosine gap at "
     "that layer."
 )
 LABEL = "tab:lasttok_comparison"
 COLUMN_FORMAT = "llrrccc"
 HEADER = (
-    "Model & Pooling & Layer & $D$ & Assignment acc. & Dir.\\ acc.\\ @1 & Cosine gap \\\\"
+    "Model & Pooling & Layer & $D$ & Assignment acc. & DirAcc@1 & Cosine gap \\\\"
 )
 DISPLAY_COLS = ["Model", "Pool", "Layer", "D", "Assign Acc", "Acc@1", "Gap"]
 

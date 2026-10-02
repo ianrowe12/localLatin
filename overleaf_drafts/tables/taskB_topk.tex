@@ -5,7 +5,7 @@
 \setlength{\tabcolsep}{6pt}
 \begin{tabular}{lrrrrr}
 \toprule
-\textbf{Model} & \textbf{Top-1} & \textbf{Top-2} & \textbf{Top-3} & \textbf{Top-4} & \textbf{Top-5} \\
+\textbf{Model} & \textbf{DirAcc@1} & \textbf{DirAcc@2} & \textbf{DirAcc@3} & \textbf{DirAcc@4} & \textbf{DirAcc@5} \\
 \midrule
 LaTa       & 88.9 $\pm$ 0.5 & 96.1 $\pm$ 0.5 & 97.4 $\pm$ 0.6 & 97.9 $\pm$ 0.3 & 98.2 $\pm$ 0.2 \\
 PhilTa     & 89.8 $\pm$ 0.8 & 95.8 $\pm$ 0.6 & 97.4 $\pm$ 0.3 & 97.7 $\pm$ 0.3 & 97.8 $\pm$ 0.4 \\
@@ -15,6 +15,6 @@ Qwen3-0.6B & 89.3 $\pm$ 0.7 & 95.7 $\pm$ 0.4 & 97.1 $\pm$ 0.3 & 97.5 $\pm$ 0.4 &
 KaLM-mini  & 89.3 $\pm$ 0.5 & 95.1 $\pm$ 0.4 & 96.6 $\pm$ 0.7 & 97.2 $\pm$ 0.7 & 97.6 $\pm$ 0.5 \\
 \bottomrule
 \end{tabular}
-\caption{Cumulative top-$K$ accuracy for Task B under SIF+ABTT, as mean $\pm$ standard deviation over five query/reference reseedings at a fixed split. For each model the reported layer is chosen on the train split: the layer with the highest training-set directory accuracy at rank~1 for SIF+ABTT in the single-seed run, the layer behind the SIF+ABTT cell of Table~\ref{tab:taskB_headline}, listed in Table~\ref{tab:selected_layers}. $D$ is tuned per layer on the train split. This is not always the layer with the highest five-seed mean. Each row is the bold row of Table~\ref{tab:taskB_ranking_appendix_mseed}. Each cell is the percentage of test queries whose labelled directory appears within the top $K$ options. Per-layer top-$k$ rankings: Appendix Tables~\ref{tab:taskB_ranking_main}, \ref{tab:taskB_ranking_appendix}, and~\ref{tab:taskB_ranking_appendix_mseed}.}
+\caption{Routing shortlist accuracy under SIF+ABTT: DirAcc@$K$, as mean $\pm$ standard deviation over five reseedings of the query and reference files, with the training/test split fixed. For each model the reported layer is chosen on the training split: the layer with the highest training-set DirAcc@1 for SIF+ABTT in the single-seed run, the layer behind the SIF+ABTT cell of Table~\ref{tab:headline_ci}, listed in Table~\ref{tab:selected_layers}. $D$ is tuned per layer on the training split. This is not always the layer with the highest mean over the five reseedings. Each row is the bold row of Table~\ref{tab:taskB_ranking_appendix_mseed}. Each cell is the percentage of test queries whose labeled directory appears within the top $K$ options. Per-layer shortlist accuracy: Tables~\ref{tab:taskB_ranking_main}, \ref{tab:taskB_ranking_appendix}, and~\ref{tab:taskB_ranking_appendix_mseed}.}
 \label{tab:taskb}
 \end{table*}
