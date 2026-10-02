@@ -23,7 +23,7 @@ import attribution_run_of_record as aror  # noqa: E402
 import build_aniso_attribution_table as bat  # noqa: E402
 import build_main_attribution_artifacts as bmaa  # noqa: E402
 
-TABLE = REPO_ROOT / "overleaf_drafts" / "tables" / "attribution_metrics_aniso.tex"
+TABLE = REPO_ROOT / "docs/analyses/attribution_artifacts/tables/attribution_metrics_aniso.tex"
 
 OPERATIONAL = {"bowphs/LaTa": 7, "bowphs/PhilTa": 1, "google/mt5-base": 1}
 ANISOTROPIC = {"bowphs/LaTa": 8, "bowphs/PhilTa": 6, "google/mt5-base": 5}

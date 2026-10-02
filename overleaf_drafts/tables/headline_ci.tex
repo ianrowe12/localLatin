@@ -5,7 +5,7 @@
 \setlength{\tabcolsep}{3pt}
 \begin{tabular}{llllll}
 \toprule
-& & \multicolumn{2}{c}{\textbf{Task A}} & \multicolumn{2}{c}{\textbf{Task B}} \\
+& & \multicolumn{2}{c}{\textbf{Ranking}} & \multicolumn{2}{c}{\textbf{Routing}} \\
 \cmidrule(lr){3-4}\cmidrule(lr){5-6}
 \textbf{Model} & \textbf{Setting} & AUROC & Cosine gap & Assignment acc. & DirAcc@1 \\
 \midrule
@@ -47,10 +47,10 @@ KaLM-mini (fine-tuned) & Base & 0.997 [0.993, 0.999] & 0.636 [0.605, 0.666] & 92
  & ABTT & 0.994 [0.988, 0.998] & 0.651 [0.612, 0.687] & 93.4 [91.2, 95.4] & 92.5 [90.3, 94.7] \\
 \midrule
 BM25 (word) & -- & 0.974 [0.956, 0.987] & 0.243 [0.222, 0.266] & 62.5 [58.2, 66.6] & 56.3 [52.0, 60.5] \\
-TF-IDF char 3--5 & -- & 0.987 [0.976, 0.996] & 0.555 [0.519, 0.591] & 91.8 [89.7, 93.8] & 89.9 [87.3, 92.3] \\
+Char.\ n-grams & -- & 0.987 [0.976, 0.996] & 0.555 [0.519, 0.591] & 91.8 [89.7, 93.8] & 89.9 [87.3, 92.3] \\
 Levenshtein & -- & 0.952 [0.927, 0.975] & 0.362 [0.332, 0.393] & 87.8 [85.0, 90.4] & 86.2 [83.2, 89.2] \\
 \bottomrule
 \end{tabular}
-\caption{Every headline cell of Tables~\ref{tab:taskA_headline} and~\ref{tab:taskB_headline} with its 95\% percentile intervals from a directory-level bootstrap ($B=10{,}000$ resamples of the 514 test directories with replacement, seed 233). A replicate keeps every file and pair of a drawn directory; a directory drawn twice counts twice, and pairs between its two copies are not formed. The threshold $\tau$, the ABTT components and $D$, the SIF weights and the layer stay fit on the fixed training split; only the test evaluation is resampled, so the intervals cover test-set sampling and not the choice of split. Each cell is read at its train-selected layer (Table~\ref{tab:selected_layers}); Task B in percent. The lexical rows are the reference systems of Table~\ref{tab:lexical_baselines}.}
+\caption{Every headline cell, those of Table~\ref{tab:headline} and the SIF and SIF+ABTT cells, with its 95\% percentile intervals from a directory-level bootstrap ($B=10{,}000$ resamples of the 514 test directories with replacement, seed 233). A replicate keeps every file and pair of a drawn directory; a directory drawn twice counts twice, and pairs between its two copies are not formed. The threshold $\tau$, the ABTT components and $D$, the SIF weights and the layer stay fit on the fixed training split; only the test evaluation is resampled, so the intervals cover test-set sampling and not the choice of split. Each cell is read at its train-selected layer (Table~\ref{tab:selected_layers}); routing in percent. The lexical rows are the lexical reference systems of Table~\ref{tab:lexical_baselines}; Char.\ n-grams is TF-IDF over character 3--5-grams.}
 \label{tab:headline_ci}
 \end{table*}

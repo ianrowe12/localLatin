@@ -4,7 +4,7 @@
 \setlength{\tabcolsep}{6pt}
 \begin{tabular}{llrrccc}
 \toprule
-Model & Pooling & Layer & $D$ & Assignment acc. & Dir.\ acc.\ @1 & Cosine gap \\
+Model & Pooling & Layer & $D$ & Assignment acc. & DirAcc@1 & Cosine gap \\
 \midrule
 LaTa & Mean & 8 & 10 & 0.885 & 0.861 & 0.558 \\
  & Last token & 7 & 10 & 0.664 & 0.466 & 0.308 \\
@@ -22,6 +22,6 @@ KaLM-mini & Mean & 3 & 10 & 0.917 & 0.894 & 0.552 \\
  & Last token & 24 & 10 & 0.875 & 0.847 & 0.483 \\
 \bottomrule
 \end{tabular}
-\caption{Mean versus last-token pooling under ABTT with $D$ tuned per layer on the train split, for the five paper models whose last-token embeddings were extracted (mT5-base was not part of this run). For each model and pooling the layer is the one with the highest training-set directory accuracy at rank~1, the rule behind the ABTT cells of Table~\ref{tab:taskB_headline} (their layers are listed in Table~\ref{tab:selected_layers}); $D$ is the number of principal components removed at that layer. The three score columns are test-set Task~B assignment accuracy, Task~B directory accuracy at rank~1, and Task~A cosine gap at that layer.}
+\caption{Mean versus last-token pooling under ABTT with $D$ tuned per layer on the training split, for the five models whose last-token embeddings were extracted (mT5-base was not part of this run). For each model and pooling the layer is the one with the highest training-set DirAcc@1, the rule behind the routing cells of Table~\ref{tab:headline} (their layers are listed in Table~\ref{tab:selected_layers}); $D$ is the number of principal components removed at that layer. The three score columns are test-set routing assignment accuracy, routing DirAcc@1, and ranking cosine gap at that layer.}
 \label{tab:lasttok_comparison}
 \end{table*}

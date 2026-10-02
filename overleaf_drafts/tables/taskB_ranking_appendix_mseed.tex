@@ -2,18 +2,18 @@
 \small
 \setlength{\tabcolsep}{4pt}
 \begin{longtable}{llcccccc}
-\caption{Per-layer Task~B top-$k$ ranking accuracy across all six models, averaged over $M=5$ query/reference reseedings of the train/test split (mean $\pm$ std). \texttt{sif\_abtt\_optimal} applies SIF weighting plus ABTT with $D$ tuned per layer on the train split. This table covers SIF+ABTT; five-seed ABTT-only values for LaTa, Qwen3-0.6B and KaLM-mini, at their train-selected layers, are in Table~\ref{tab:finetune_ceiling} (Appendix~\ref{app:reference_systems}). Overall assignment accuracy coincides with Acc@1 in the mseed pipeline, so we report the existing/new decomposition instead. Rows in bold mark the layer reported per model, the row printed in Table~\ref{tab:taskb}. For each model the reported layer is chosen on the train split: the layer with the highest training-set directory accuracy at rank~1 for SIF+ABTT in the single-seed run, the layer behind the SIF+ABTT cell of Table~\ref{tab:taskB_headline}, listed in Table~\ref{tab:selected_layers}. $D$ is tuned per layer on the train split. This is not always the layer with the highest five-seed mean.}
+\caption{Per-layer routing DirAcc@1, overall and for existing and new witnesses, across all six models, averaged over five reseedings of the query and reference files, with the training/test split fixed (mean $\pm$ std). \texttt{sif\_abtt\_optimal} applies SIF weighting plus ABTT with $D$ tuned per layer on the training split. This table covers SIF+ABTT; five-reseeding ABTT-only values for LaTa, Qwen3-0.6B and KaLM-mini, at their train-selected layers, are in Table~\ref{tab:finetune_ceiling} (Appendix~\ref{app:reference_systems}). Overall assignment accuracy coincides with DirAcc@1 under the five reseedings, so we report the existing/new decomposition instead. Rows in bold mark the layer reported per model, the row printed in Table~\ref{tab:taskb}. For each model the reported layer is chosen on the training split: the layer with the highest training-set DirAcc@1 for SIF+ABTT in the single-seed run, the layer behind the SIF+ABTT cell of Table~\ref{tab:headline_ci}, listed in Table~\ref{tab:selected_layers}. $D$ is tuned per layer on the training split. This is not always the layer with the highest mean over the five reseedings.}
 \label{tab:taskB_ranking_appendix_mseed} \\
 \toprule
-\multicolumn{2}{c}{} & \multicolumn{6}{c}{\textbf{Task B: Top-K Ranking (appendix, 5-seed mean $\pm$ std, SIF+ABTT)}} \\
+\multicolumn{2}{c}{} & \multicolumn{6}{c}{\textbf{Routing: DirAcc@1 (five reseedings, mean $\pm$ std, SIF+ABTT)}} \\
 \cmidrule(lr){3-8}
-\textbf{Model} & \textbf{Layer} & \makecell{Acc@1\\(base)} & \makecell{Acc@1\\(SIF+ABTT)} & \makecell{Existing\\(base)} & \makecell{Existing\\(SIF+ABTT)} & \makecell{New\\(base)} & \makecell{New\\(SIF+ABTT)} \\
+\textbf{Model} & \textbf{Layer} & \makecell{DirAcc@1\\(base)} & \makecell{DirAcc@1\\(SIF+ABTT)} & \makecell{Existing\\(base)} & \makecell{Existing\\(SIF+ABTT)} & \makecell{New\\(base)} & \makecell{New\\(SIF+ABTT)} \\
 \midrule
 \endfirsthead
 \toprule
-\multicolumn{2}{c}{} & \multicolumn{6}{c}{\textbf{Task B: Top-K Ranking (appendix, 5-seed mean $\pm$ std, SIF+ABTT)}} \\
+\multicolumn{2}{c}{} & \multicolumn{6}{c}{\textbf{Routing: DirAcc@1 (five reseedings, mean $\pm$ std, SIF+ABTT)}} \\
 \cmidrule(lr){3-8}
-\textbf{Model} & \textbf{Layer} & \makecell{Acc@1\\(base)} & \makecell{Acc@1\\(SIF+ABTT)} & \makecell{Existing\\(base)} & \makecell{Existing\\(SIF+ABTT)} & \makecell{New\\(base)} & \makecell{New\\(SIF+ABTT)} \\
+\textbf{Model} & \textbf{Layer} & \makecell{DirAcc@1\\(base)} & \makecell{DirAcc@1\\(SIF+ABTT)} & \makecell{Existing\\(base)} & \makecell{Existing\\(SIF+ABTT)} & \makecell{New\\(base)} & \makecell{New\\(SIF+ABTT)} \\
 \midrule
 \endhead
 \midrule

@@ -16,10 +16,10 @@ or from the 5-draw pass kept beside this one.
 
 Outputs:
 
-    overleaf_drafts/tables/attribution_metrics_main.tex
-    overleaf_drafts/tables/attribution_metrics_secondary.tex
-    overleaf_drafts/tables/attribution_shuffle_control.tex
-    overleaf_drafts/figures/fig_attribution_rho_loo_main.{pdf,png,tex}
+    docs/analyses/attribution_artifacts/tables/attribution_metrics_main.tex
+    docs/analyses/attribution_artifacts/tables/attribution_metrics_secondary.tex
+    docs/analyses/attribution_artifacts/tables/attribution_shuffle_control.tex
+    docs/analyses/attribution_artifacts/figures/fig_attribution_rho_loo_main.{pdf,png,tex}
 
 Selection (issue #120, from ``docs/research/attribution_metrics_decision.md``
 part B). The main table carries two columns and nothing else: ``rho_LOO``,
@@ -76,14 +76,14 @@ from attribution_run_of_record import (  # noqa: E402
 )
 
 DEFAULT_SUMMARY = DEFAULT_SUMMARY_CSV
-DEFAULT_TABLE_OUT = REPO_ROOT / "overleaf_drafts/tables/attribution_metrics_main.tex"
+DEFAULT_TABLE_OUT = REPO_ROOT / "docs/analyses/attribution_artifacts/tables/attribution_metrics_main.tex"
 DEFAULT_SECONDARY_OUT = (
-    REPO_ROOT / "overleaf_drafts/tables/attribution_metrics_secondary.tex"
+    REPO_ROOT / "docs/analyses/attribution_artifacts/tables/attribution_metrics_secondary.tex"
 )
 DEFAULT_SHUFFLE_OUT = (
-    REPO_ROOT / "overleaf_drafts/tables/attribution_shuffle_control.tex"
+    REPO_ROOT / "docs/analyses/attribution_artifacts/tables/attribution_shuffle_control.tex"
 )
-DEFAULT_FIG_OUT = REPO_ROOT / "overleaf_drafts/figures/fig_attribution_rho_loo_main"
+DEFAULT_FIG_OUT = REPO_ROOT / "docs/analyses/attribution_artifacts/figures/fig_attribution_rho_loo_main"
 
 MODELS = (
     ("bowphs/LaTa", "LaTa"),

@@ -148,12 +148,13 @@ PAPER_MODEL_ORDER = [
 ]
 
 TASKB_TOPK_CAPTION = (
-    "Cumulative top-$K$ accuracy for Task B under SIF+ABTT, as mean $\\pm$ standard "
-    "deviation over five query/reference reseedings at a fixed split. "
+    "Routing shortlist accuracy under SIF+ABTT: DirAcc@$K$, as mean $\\pm$ standard "
+    "deviation over five reseedings of the query and reference files, with the "
+    "training/test split fixed. "
     + SELECTION_RULE_CAPTION
     + " Each row is the bold row of Table~\\ref{tab:taskB_ranking_appendix_mseed}. "
-    "Each cell is the percentage of test queries whose labelled directory appears "
-    "within the top $K$ options. Per-layer top-$k$ rankings: Appendix "
+    "Each cell is the percentage of test queries whose labeled directory appears "
+    "within the top $K$ options. Per-layer shortlist accuracy: "
     "Tables~\\ref{tab:taskB_ranking_main}, \\ref{tab:taskB_ranking_appendix}, "
     "and~\\ref{tab:taskB_ranking_appendix_mseed}."
 )
@@ -176,7 +177,7 @@ def write_paper_topk_table(best_df: pd.DataFrame, out_path: Path) -> None:
         r"\begin{tabular}{l" + "r" * len(ks) + "}",
         r"\toprule",
         r"\textbf{Model} & "
-        + " & ".join(f"\\textbf{{Top-{k}}}" for k in ks)
+        + " & ".join(f"\\textbf{{DirAcc@{k}}}" for k in ks)
         + r" \\",
         r"\midrule",
     ]

@@ -294,27 +294,13 @@ def test_table_labels_cover_the_shipped_configuration_set():
         assert cfg.knob in tablegen.KNOB_LABELS
 
 
-PAPER_TEX = REPO_ROOT / "overleaf_drafts" / "acl_latex.tex"
-
-
-@pytest.mark.skipif(
-    not PAPER_TEX.exists(),
-    reason="ci.yml sparse-checkouts without overleaf_drafts/",
-)
-def test_paper_inputs_the_table_in_the_sweeps_appendix():
-    """Issue #195 computed the table; issue #235 took the decision to print it,
-    in Appendix app:attribution_sweeps beside the erasure-operator caveat."""
-    tex = PAPER_TEX.read_text()
-    assert r"\input{tables/attribution_delauc_sensitivity}" in tex
-    sweeps = tex.index(r"\label{app:attribution_sweeps}")
-    nxt = tex.index(r"\section", sweeps)
-    assert sweeps < tex.index(r"\input{tables/attribution_delauc_sensitivity}") < nxt
-
-
 def test_generated_table_names_no_repository_path():
-    table = REPO_ROOT / "overleaf_drafts" / "tables" / "attribution_delauc_sensitivity.tex"
+    # Token attribution left the paper (2 October 2026); the committed table now
+    # lives beside the other attribution artefacts under docs/.
+    table = (REPO_ROOT / "docs" / "analyses" / "attribution_artifacts" / "tables"
+             / "attribution_delauc_sensitivity.tex")
     if not table.exists():
-        pytest.skip("overleaf_drafts/ not checked out")
+        pytest.skip("docs/analyses/attribution_artifacts/ not checked out")
     text = table.read_text()
     assert text.splitlines()[0] == "% generated table"
     for leak in ("scripts/", "runs/", "docs/"):

@@ -1741,24 +1741,16 @@ def sif_reference_gap(gates: Optional[pd.DataFrame]) -> float:
 
 
 def caption(gates: Optional[pd.DataFrame] = None) -> str:
-    """Caption of tab:e2_token_audit. What it says about the SIF cells reported earlier
-    in the paper (the published ``sif_only`` cells) is read from gate 2a: the largest
-    difference over all models and layers, to three decimals."""
-    gap = sif_reference_gap(gates)
-    earlier = r"the SIF cells of Section~\ref{sec:geometry}"
-    if not np.isfinite(gap):
-        published = ""
-    elif gap <= GATE_TOL_AUROC:
-        published = f"; it reproduces {earlier}"
-    else:
-        published = (f"; its AUROC differs from {earlier} by up to {gap:.3f} over all models "
-                     "and layers")
+    """Caption of tab:e2_token_audit. ``gates`` is accepted for the callers' sake but no
+    longer read: the paper states nothing about how the SIF arm compares with the published
+    ``sif_only`` cells (the comparison stays in the facts file, gate 2a)."""
+    del gates
     return (
-        r"\caption{Token audit at each model's worst baseline layer (L). Pooling: Task~A test "
-        r"AUROC of mean pooling (Mean); mean pooling without special tokens (No spec.); SIF "
-        r"frequency weights with special tokens kept (SIF+spec.); SIF pooling, which also "
-        r"drops special tokens, recomputed in this experiment's forward pass with "
-        r"training-only token frequencies (SIF" + published + r"); and mean pooling without "
+        r"\caption{Token audit at each model's lowest-AUROC baseline layer (L). Pooling: test "
+        r"ranking AUROC of mean pooling (Mean); mean pooling without special tokens (No spec.); SIF "
+        r"frequency weights with special tokens kept (SIF+spec.); SIF pooling with "
+        r"training-only token frequencies, which also drops special tokens (SIF); and mean "
+        r"pooling without "
         r"the 100 most frequent training tokens (No freq.). Token ablation: test AUROC of "
         r"mean pooling after dropping the $m$ token types that contribute most to the top "
         r"principal components (Drop), with $m$ (1 to 100) and the ranking (one of two) "

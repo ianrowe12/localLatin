@@ -58,7 +58,7 @@ GEN_MODELS = [  # id, display, colour (Okabe-Ito, as geometry_vs_retrieval.py), 
 ]
 TEXTS = [("latin", "Latin"), ("english", "English")]
 DISP = {m[0]: m[1] for m in GEN_MODELS}
-COLLAPSE_PC1 = 0.6  # the paper's separation threshold (Sec. 4: marks all 26 collapsed layers)
+COLLAPSE_PC1 = 0.76  # the paper's one top-PC threshold: every collapsed Latin layer reaches it (min 0.764)
 
 
 # --------------------------------------------------------------------------- compute
@@ -251,7 +251,7 @@ def _ranges(layers) -> str:
 def write_gen_table(summ: pd.DataFrame, path: Path) -> None:
     lines = [HEADER, r"\begin{table}[t]", r"\centering", r"\footnotesize",
              r"\setlength{\tabcolsep}{3pt}", r"\begin{tabular}{@{}llcccc@{}}", r"\toprule",
-             r"& & & \multicolumn{3}{c}{Layers with PC1 $\ge$ " + f"{COLLAPSE_PC1:.1f}" + r"} \\",
+             r"& & & \multicolumn{3}{c}{Layers with PC1 $\ge$ " + f"{COLLAPSE_PC1:.2f}" + r"} \\",
              r"\cmidrule(lr){4-6}",
              r"Model & Text & PC1$_{\max}$ ($\ell$) & Layers & PC1 & Eff.\ rank \\", r"\midrule"]
     prev = None
@@ -270,8 +270,8 @@ def write_gen_table(summ: pd.DataFrame, path: Path) -> None:
               r"in mT5 token length (US court opinions, Caselaw Access Project). PC1$_{\max}$: peak "
               r"top-PC share over the 12 layers, the share of centered variance on the first "
               r"principal component, with its layer $\ell$. The last three columns cover the layers "
-              r"whose top-PC share is at least " + f"{COLLAPSE_PC1:.1f}" + r", the threshold that "
-              r"marks every collapsed Latin layer (one false alarm, mT5-base layer~4), and give the "
+              r"whose top-PC share is at least " + f"{COLLAPSE_PC1:.2f}" + r", a share that every "
+              r"collapsed Latin layer reaches, and give the "
               r"range of top-PC share and of entropy effective rank over them. No labels are used, so the "
               r"English rows say nothing about retrieval.}",
               r"\label{tab:gen_geometry}", r"\end{table}"]
@@ -286,14 +286,14 @@ def write_ft_table(ft: pd.DataFrame, path: Path) -> None:
              r"& \multicolumn{2}{c}{AUROC} & \multicolumn{2}{c}{Top-PC share} & "
              r"\multicolumn{2}{c}{Eff.\ rank} \\",
              r"\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}",
-             r"Layer & PT & FT & PT & FT & PT & FT \\", r"\midrule"]
+             r"Layer & Before & After & Before & After & Before & After \\", r"\midrule"]
     for layer in p.index:
         a, b = p.loc[layer], f.loc[layer]
         lines.append(f"{layer} & {a.auroc:.3f} & {b.auroc:.3f} & {a.pc1:.3f} & {b.pc1:.3f} & "
                      f"{a.erank:.2f} & {b.erank:.2f} \\\\")
     lines += [r"\bottomrule", r"\end{tabular}",
-              r"\caption{LaTa before (PT) and after (FT) contrastive fine-tuning on training pairs, "
-              r"per layer, with no post-hoc correction. AUROC: Task~A test pairwise AUROC of cosine on "
+              r"\caption{LaTa before and after contrastive fine-tuning on training pairs, "
+              r"per layer, with no post-hoc correction. AUROC: test ranking AUROC of cosine on "
               r"mean-pooled vectors. Top-PC share and effective rank: label-free geometry of the "
               r"centered training vectors, which include the passages of the fine-tuning pairs. Fine-tuning lifts the last layer and leaves the middle "
               r"layers collapsed.}",
@@ -382,7 +382,7 @@ def facts(geo, summ, summ_all, rep, ft, path: Path, rem: pd.DataFrame | None = N
     w = L.append
     for title, sm in [("train subset (primary)", summ), ("all 1,705 rows (sensitivity)", summ_all)]:
         w(f"## Summary, {title}")
-        w("| model | text | n | PC1 max (layer) | layers PC1>=0.6 | PC1 range there | eff rank range there | min eff rank (layer) | PC1 L1 | PC1 L12 |")
+        w(f"| model | text | n | PC1 max (layer) | layers PC1>={COLLAPSE_PC1} | PC1 range there | eff rank range there | min eff rank (layer) | PC1 L1 | PC1 L12 |")
         w("|---|---|---|---|---|---|---|---|---|---|")
         for _, x in sm.iterrows():
             w(f"| {x.model} | {x.text} | {x.n} | {x.pc1_max:.3f} ({x.pc1_max_layer}) | {x.high_layers.replace('--', '-')} | "
@@ -403,7 +403,7 @@ def facts(geo, summ, summ_all, rep, ft, path: Path, rem: pd.DataFrame | None = N
         w("## Sensitivity: train rows re-matched on each model's own tokenizer lengths")
         w("Latin and English training rows re-paired greedily on the model's own token lengths "
           "(clipped at 512, tolerance max(2, 3%)); geometry recomputed on the matched rows.")
-        w("| model | text | tokenizer | n | max abs change in PC1 vs primary | same, layers PC1>=0.6 only | max rel change in eff rank | layers PC1>=0.6 | same layers as primary | peak PC1 | layers with Latin-English sign unchanged |")
+        w(f"| model | text | tokenizer | n | max abs change in PC1 vs primary | same, layers PC1>={COLLAPSE_PC1} only | max rel change in eff rank | layers PC1>={COLLAPSE_PC1} | same layers as primary | peak PC1 | layers with Latin-English sign unchanged |")
         w("|---|---|---|---|---|---|---|---|---|---|---|")
         for _, x in rs.iterrows():
             w(f"| {x.model} | {x.text} | {x.tokenizer} | {x.n} | {x.max_dpc1:.3f} | {x.max_dpc1_high:.3f} | {x.max_derank_rel:.3f} | "

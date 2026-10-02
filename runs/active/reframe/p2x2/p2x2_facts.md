@@ -13,14 +13,14 @@ The paper reports the four models of the two matched pairs only (author decision
 | Ancient Greek, Latin, English | PhilBERTa | Enc. | 0.883 (6) | 0.162 (6) | 82.12 (11) |
 
 ## Full panel, not in the paper
-| model | HF id | cell | emb. objective | source | layers | n train | AUROC min (layer) | AUROC max (layer) | AUROC first layer | AUROC last layer | PC1 max (layer) | eff rank at PC1 max | AUROC at PC1 max | eff rank min (layer) | layers PC1 >= 0.6 | which | layers AUROC < 0.80 | which |
+| model | HF id | cell | emb. objective | source | layers | n train | AUROC min (layer) | AUROC max (layer) | AUROC first layer | AUROC last layer | PC1 max (layer) | eff rank at PC1 max | AUROC at PC1 max | eff rank min (layer) | layers PC1 >= 0.76 | which | layers AUROC < 0.80 | which |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | LaTa | `bowphs/LaTa` | T5, raw | none | panel | 1-12 | 847 | 0.496 (6) | 0.938 (12) | 0.934 | 0.938 | 0.952 (4) | 1.38 | 0.500 | 1.36 (8) | 10 | 2-11 | 10 | 2-11 |
 | PhilTa | `bowphs/PhilTa` | T5, raw | none | panel | 1-12 | 847 | 0.538 (10) | 0.939 (1) | 0.939 | 0.911 | 0.858 (6) | 1.81 | 0.541 | 1.81 (6) | 9 | 3-11 | 9 | 3-11 |
 | mT5-base | `google/mt5-base` | T5, raw | none | panel | 1-12 | 847 | 0.654 (5) | 0.838 (12) | 0.822 | 0.838 | 1.000 (5) | 1.00 | 0.654 | 1.00 (5) | 8 | 4-11 | 8 | 4-11 |
 | T5-v1.1-base | `google/t5-v1_1-base` | T5, raw | none | p2x2 | 1-12 | 847 | 0.489 (2) | 0.848 (1) | 0.848 | 0.772 | 0.975 (9) | 1.14 | 0.533 | 1.14 (9) | 10 | 2-11 | 11 | 2-12 |
 | T5-base | `google-t5/t5-base` | T5, raw | none | p2x2 | 1-12 | 847 | 0.816 (11) | 0.864 (3) | 0.855 | 0.843 | 0.545 (8) | 14.85 | 0.847 | 14.85 (8) | 0 | none | 0 | none |
-| Sentence-T5 | `sentence-transformers/sentence-t5-base` | T5, emb. | contrastive | p2x2 | 1-12 | 847 | 0.800 (11) | 0.891 (2) | 0.884 | 0.874 | 0.943 (6) | 1.56 | 0.876 | 1.56 (6) | 10 | 2-11 | 1 | 11 |
+| Sentence-T5 | `sentence-transformers/sentence-t5-base` | T5, emb. | contrastive | p2x2 | 1-12 | 847 | 0.800 (11) | 0.891 (2) | 0.884 | 0.874 | 0.943 (6) | 1.56 | 0.876 | 1.56 (6) | 8 | 2-9 | 1 | 11 |
 | LaBERTa | `bowphs/LaBerta` | Enc., raw | none | p2x2 | 1-12 | 847 | 0.826 (1) | 0.910 (12) | 0.826 | 0.910 | 0.254 (9) | 57.87 | 0.857 | 57.87 (9) | 0 | none | 0 | none |
 | PhilBERTa | `bowphs/PhilBerta` | Enc., raw | none | p2x2 | 1-12 | 847 | 0.883 (6) | 0.923 (12) | 0.893 | 0.923 | 0.162 (6) | 97.28 | 0.883 | 82.12 (11) | 0 | none | 0 | none |
 | LaBSE | `sentence-transformers/LaBSE` | Enc., emb. | contrastive | panel | 1-12 | 847 | 0.806 (1) | 0.960 (11) | 0.806 | 0.956 | 0.524 (8) | 16.19 | 0.879 | 16.19 (8) | 0 | none | 0 | none |

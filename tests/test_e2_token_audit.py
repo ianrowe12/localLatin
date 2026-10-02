@@ -1011,11 +1011,10 @@ def test_table_renders_from_the_fixture_and_omits_absent_models(tmp_path):
     e2.write_table(w, out, gates)
     cap = next(ln for ln in tex.splitlines() if ln.startswith(r"\caption{"))
     assert cap.endswith("}") and "--" not in cap and chr(0x2014) not in cap
-    for phrase in ("worst baseline layer", "special tokens", "100 most frequent",
+    for phrase in ("lowest-AUROC baseline layer", "special tokens", "100 most frequent",
                    "five random sets", "20 random directions", "training passages only",
-                   "recomputed in this experiment's forward pass with training-only token "
-                   "frequencies (SIF; it reproduces the SIF cells of "
-                   r"Section~\ref{sec:geometry})",
+                   "SIF pooling with training-only token frequencies, which also drops "
+                   "special tokens (SIF)",
                    "chosen by training AUROC", "hold at least as many training tokens",
                    "orthogonal to the top ten principal components",
                    "the three sum to one, but a single share can fall below zero or exceed one",
@@ -1027,14 +1026,14 @@ def test_table_renders_from_the_fixture_and_omits_absent_models(tmp_path):
     y = w[w.m == "LaBSE"].iloc[0]
     assert y.sh_special_pc1 < 0 and labse[11] == f"$-${abs(y.sh_special_pc1):.2f}"
     assert "& -" not in tex
-    # the caption's statement about the published cells is read from gate 2a
+    # the caption says nothing about the published SIF cells, whatever gate 2a found
     worse = _set(res, lambda r: (r.model == LATA) & (r.layer == 3) & (r.method == "sif_only"),
                  "aucroc", 0.68 - 0.0150072)
     worse = _set(worse, lambda r: (r.model == MT5) & (r.method == "sif_only"), "aucroc", 0.670)
     e2.write_table(w, out, _gt(frames, worse))
     cap = next(ln for ln in out.read_text().splitlines() if ln.startswith(r"\caption{"))
-    assert ("(SIF; its AUROC differs from the SIF cells of Section~\\ref{sec:geometry} by up "
-            "to 0.015 over all models and layers)") in cap and "reproduces" not in cap
+    assert "sec:geometry" not in cap and "differs" not in cap and "0.015" not in cap
+    assert "reproduces" not in cap and "(SIF)" in cap
     assert e2.sif_reference_gap(_gt(frames, worse)) == pytest.approx(0.0150072, abs=1e-9)
     # without gates (no published cells) the caption makes no claim about them
     e2.write_table(w, out)
@@ -1214,7 +1213,7 @@ def test_facts_report_r1_under_both_references_when_gate_2a_fails(tmp_path, caps
     verdicts = facts.split("## 11. Verdicts in one place")[1].split("## 12.")[0]
     assert ("R1 verdict is the same with the published sif_only cell as AUROC_sif "
             "((collapsed layer, arm) cells): 9/9") in verdicts
-    assert "by up to 0.010 over all models and layers" in table
+    assert "by up to" not in table and "sec:geometry" not in table  # the paper caption is silent on it
     capsys.readouterr()
 
 
@@ -1311,7 +1310,7 @@ def test_facts_without_a_gate_2_failure_and_smoke_runs(tmp_path, capsys):
     sub = facts.split("### R1 under the published SIF reference")[1].split("## 4.")[0]
     assert "- verdicts that differ between the two references: 0 of 9" in sub
     assert "largest absolute change of the recovered share of the SIF gain: 0.000" in sub
-    assert r"it reproduces the SIF cells of Section~\ref{sec:geometry}" in table
+    assert "sec:geometry" not in table and "reproduces" not in table
     # a smoke run says so at the top and skips the AUROC gates
     facts, table = _render(*_fixture(limit=10), tmp_path, "smoke")
     assert "**SMOKE RUN (--limit 10)" in facts.split("## Frozen")[0]

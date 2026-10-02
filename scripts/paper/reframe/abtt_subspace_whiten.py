@@ -557,7 +557,7 @@ def write_d_table(w: pd.DataFrame, path: Path) -> None:
              r"\setlength{\tabcolsep}{3.1pt}", rf"\begin{{tabular}}{{{cols}}}", r"\toprule",
              rf"& & & \multicolumn{{{len(Ds)}}}{{c}}{{\textbf{{Removed components $D$}}}} \\",
              rf"\cmidrule(lr){{4-{3 + len(Ds)}}}", head, r"\midrule",
-             rf"\multicolumn{{{3 + len(Ds)}}}{{l}}{{\emph{{Worst baseline layer of each model}}}} \\"]
+             rf"\multicolumn{{{3 + len(Ds)}}}{{l}}{{\emph{{Lowest-AUROC baseline layer of each model}}}} \\"]
     for m in ORDER:
         s = w[w.m == m]
         x = s.loc[s.auc_raw.idxmin()]
@@ -574,7 +574,7 @@ def write_d_table(w: pd.DataFrame, path: Path) -> None:
         lines.append(f"{name} & {len(s)} & {f3(s.auc_raw.median())} & "
                      + " & ".join(f3(s[f'auc_D{D}'].median()) for D in Ds) + r" \\")
     lines += [r"\bottomrule", r"\end{tabular}",
-              r"\caption{Task~A test AUROC against the number $D$ of top principal components "
+              r"\caption{Test ranking AUROC against the number $D$ of top principal components "
               r"that ABTT removes, fit on training embeddings only. Raw: mean-pooled vectors with no "
               r"correction; $D=0$: centering on the training mean alone. The top block reads each "
               r"model at its lowest-AUROC baseline layer (layer in parentheses); the bottom block "
@@ -613,7 +613,7 @@ def e3_rows(e3: pd.DataFrame) -> Tuple[List[Dict], List[Dict]]:
         if s.empty:
             continue
         layer = first_argmax_layer(s.assign(t=s.train_auc_retained), "t")
-        block2.append({"name": f"{DISP[pre]}, pre-trained", **_at_d10(e3, pre, layer)})
+        block2.append({"name": f"{DISP[pre]}, pretrained", **_at_d10(e3, pre, layer)})
         block2.append({"name": f"{DISP[pre]}, fine-tuned", **_at_d10(e3, mid, layer)})
     return block1, block2
 
@@ -638,7 +638,7 @@ def write_e3_table(block1: List[Dict], block2: List[Dict], coll: pd.DataFrame, p
                 + " & ".join(f3(x[c]) for c, _ in cols) + r" \\")
 
     ncol = 4 + len(cols)
-    lines.append(rf"\multicolumn{{{ncol}}}{{l}}{{\emph{{Pre-trained, train-selected layer and $D$}}}} \\")
+    lines.append(rf"\multicolumn{{{ncol}}}{{l}}{{\emph{{Pretrained, train-selected layer and $D$}}}} \\")
     lines += [row(x) for x in block1]
     lines.append(f"Collapsed T5, median ({len(coll)}) & -- & -- & "
                  f"{coll.removed_var_share_train.median():.2f} & "
@@ -648,7 +648,7 @@ def write_e3_table(block1: List[Dict], block2: List[Dict], coll: pd.DataFrame, p
                   rf"\multicolumn{{{ncol}}}{{l}}{{\emph{{Fine-tuning contrast, same layer, $D=10$}}}} \\"]
         lines += [row(x) for x in block2]
     lines += [r"\bottomrule", r"\end{tabular}",
-              r"\caption{Task~A test AUROC of cosine ranking within parts of the pooled vector. ABTT "
+              r"\caption{Test ranking AUROC of cosine within parts of the pooled vector. ABTT "
               r"removes the top $D$ principal components of the centered training embeddings; Var.\ "
               r"is their share of the centered training variance. Raw: uncorrected vector; Cent.: "
               r"centered on the training mean; PC1: projection onto the first component alone, "
@@ -657,11 +657,11 @@ def write_e3_table(block1: List[Dict], block2: List[Dict], coll: pd.DataFrame, p
               r"dimension-matched control: Next $D$, PCs $D{+}1$ to $2D$; Rand.\ $D$, "
               r"random $D$-dimensional projections of the retained vectors (mean over five seeds); "
               r"All, the ABTT output. "
-              r"Top block: each pre-trained model at its train-selected ABTT layer $\ell$ with $D$ "
+              r"Top block: each pretrained model at its train-selected ABTT layer $\ell$ with $D$ "
               r"chosen on training DirAcc@1, and the median over the 26 collapsed T5 layers "
               r"(baseline AUROC below 0.70), each at its own layer and $D$. Bottom block: each "
               r"contrastively fine-tuned encoder at its train-selected ABTT layer, next to its "
-              r"pre-trained model at the same layer, both with $D=10$. All components are fit on "
+              r"pretrained model at the same layer, both with $D=10$. All components are fit on "
               r"training embeddings only.}",
               r"\label{tab:e3_subspace_split}", r"\end{table*}"]
     path.write_text("\n".join(lines) + "\n")
@@ -716,12 +716,12 @@ def write_whiten_table(rows: List[Dict], path: Path) -> None:
     kh = " & ".join(ks)
     lines = [HEADER, r"\begin{table*}[t]", r"\centering", r"\footnotesize",
              r"\setlength{\tabcolsep}{3.2pt}", r"\begin{tabular}{lrrrrrrrrrrrrrrrr}", r"\toprule",
-             r"& \multicolumn{6}{c}{\textbf{Task~A AUROC}} & "
-             r"\multicolumn{5}{c}{\textbf{Task~B DirAcc@1}} & "
-             r"\multicolumn{5}{c}{\textbf{Task~B assignment}} \\",
+             r"& \multicolumn{6}{c}{\textbf{Ranking AUROC}} & "
+             r"\multicolumn{5}{c}{\textbf{Routing DirAcc@1}} & "
+             r"\multicolumn{5}{c}{\textbf{Routing assignment}} \\",
              r"\cmidrule(lr){2-7}\cmidrule(lr){8-12}\cmidrule(lr){13-17}",
-             r"& & & \multicolumn{4}{c}{whitening, $k$} & & \multicolumn{4}{c}{whitening, $k$} & "
-             r"& \multicolumn{4}{c}{whitening, $k$} \\",
+             r"& & & \multicolumn{4}{c}{whitening, $r$} & & \multicolumn{4}{c}{whitening, $r$} & "
+             r"& \multicolumn{4}{c}{whitening, $r$} \\",
              r"\cmidrule(lr){4-7}\cmidrule(lr){9-12}\cmidrule(lr){14-17}",
              r"\textbf{Model} & Base & ABTT & " + kh + " & ABTT & " + kh + " & ABTT & " + kh + r" \\",
              r"\midrule"]
@@ -734,15 +734,15 @@ def write_whiten_table(rows: List[Dict], path: Path) -> None:
                      + " & " + f"{pct(x['abtt_assign'])} & "
                      + " & ".join(pct(x[f'w{k}_assign']) for k in ks) + r" \\")
     lines += [r"\bottomrule", r"\end{tabular}",
-              r"\caption{PCA whitening to $k$ components against the baseline and ABTT. Whitening "
-              r"keeps the top $k$ principal components of the centered training embeddings and "
+              r"\caption{PCA whitening to $r$ components against the baseline and ABTT. Whitening "
+              r"keeps the top $r$ principal components of the centered training embeddings and "
               r"rescales each to unit variance. Full keeps every component: 768 for the T5 encoders "
               r"and LaBSE, and 847, the number of training passages, for Qwen3-0.6B and KaLM-mini, "
-              r"whose last component then has numerically zero variance. Task~A cells are read at "
-              r"each setting's train-selected layer (highest training AUROC), Task~B cells at the "
-              r"layer with the highest training DirAcc@1. Task~B values are single-split test "
+              r"whose last component then has numerically zero variance. Ranking cells are read at "
+              r"each setting's train-selected layer (highest training AUROC), routing cells at the "
+              r"layer with the highest training DirAcc@1. Routing values are single-split test "
               r"DirAcc@1 and assignment accuracy in percent, with the threshold learned on training "
-              r"pairs; they are not the five-seed values of Table~\ref{tab:taskB_headline}. Every "
+              r"pairs. Every "
               r"transform is fit on training embeddings only. Whitening ranks on par with ABTT, but "
               r"routes below it.}",
               r"\label{tab:whiten_reduced}", r"\end{table*}"]

@@ -816,12 +816,12 @@ class CeilingFacts:
                 else " so $D$ was never free to go higher."
             )
             return (
-                f" ABTT rows{self._who()} sweep $D$ per layer on train and select "
+                f" ABTT rows{self._who()} sweep $D$ per layer on the training split and select "
                 f"$D={max(self.D_values)}$ everywhere, which is the top of the grid "
                 f"${self.d_grid_tex()}$," + tail
             )
         return (
-            f" ABTT rows{self._who()} sweep $D$ per layer on train over the grid "
+            f" ABTT rows{self._who()} sweep $D$ per layer on the training split over the grid "
             f"${self.d_grid_tex()}$; {self.n_optimal_at_max_D} of {self.n_optimal_rows} "
             f"layer rows select the top of the grid."
         )
@@ -831,7 +831,7 @@ class CeilingFacts:
             return ""
         if self.selected_epoch == 0:
             return (
-                f" Model selection{self._who()} kept the pre-trained encoder (epoch 0): "
+                f" Model selection{self._who()} kept the pretrained encoder (epoch 0): "
                 "no training epoch improved dev directory accuracy."
             )
         budget = f"{self.epoch_budget}-epoch budget" if self.epoch_budget else "epoch budget"
@@ -1029,7 +1029,9 @@ def _row_tex(row: pd.Series, mseed: Optional[Tuple[float, float]] = None,
     def fmt(x: float, nd: int = 3) -> str:
         return f"{x:.{nd}f}"
 
-    name = str(row["system"]).replace("_", r"\_")
+    # The comparison CSVs name the not-fine-tuned rows "(pre-trained)"; the paper calls
+    # them "(zero-shot)" (consistency review C18). Only the printed label changes.
+    name = str(row["system"]).replace(" (pre-trained)", " (zero-shot)").replace("_", r"\_")
     cells = (
         f"{name} & {fmt(row['taskA_aucroc'])} "
         f"& {fmt(row['taskA_cosine_gap'])} "
@@ -1085,11 +1087,11 @@ def takeaway_sentence(sections: Sequence["CeilingSection"]) -> str:
             verdicts.append(None)
     every = "every model" if len(sections) > 1 else "the model"
     if all(raises):
-        parts.append(f"Fine-tuning raises Task A AUROC for {every}")
+        parts.append(f"Fine-tuning raises ranking AUROC for {every}")
         if all(lowers):
             parts[-1] += ", and ABTT on top of it lowers AUROC again in point estimate"
     elif all(lowers):
-        parts.append(f"ABTT lowers the Task A AUROC of the fine-tuned encoder for {every}")
+        parts.append(f"ABTT lowers the ranking AUROC of the fine-tuned encoder for {every}")
     if all(v is not None for v in verdicts):
         groups: Dict[str, List[str]] = {}
         for name, word in verdicts:
@@ -1097,10 +1099,10 @@ def takeaway_sentence(sections: Sequence["CeilingSection"]) -> str:
         clauses = []
         for i, (word, names) in enumerate(groups.items()):
             who = names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
-            target = "its pre-trained ABTT row" if i == 0 else "it"
+            target = "its zero-shot ABTT row" if i == 0 else "it"
             clauses.append(f"{word} {target} for {who}")
         parts.append(
-            "on five-seed routing, the fine-tuned encoder with ABTT is "
+            "on routing over the five reseedings, the fine-tuned encoder with ABTT is "
             + " and ".join(clauses)
         )
     if not parts:
@@ -1121,11 +1123,11 @@ def _pairs_clause(sections: Sequence[CeilingSection]) -> str:
         for sec in sections if sec.facts is not None
     }
     if len(counts) != 1:
-        return "positive pairs available in the train split "
+        return "positive pairs available in the training split "
     n_fit, n_all = counts.pop()
     # The headline captions say "499 of the 565 positive train pairs"; this
     # table says the same thing in the same words (review of 2026-09-15).
-    return f"{n_fit} of the {n_all} positive train pairs "
+    return f"{n_fit} of the {n_all} positive training pairs "
 
 
 def load_extra_section(spec: str, results_dir: Path) -> CeilingSection:
@@ -1187,14 +1189,14 @@ def write_tex(sections: Sequence[CeilingSection], path: Path,
         r"\setlength{\tabcolsep}{4pt}",
         r"\begin{tabular}{lccccc}" if with_mseed else r"\begin{tabular}{lcccc}",
         r"\toprule",
-        (r"& \multicolumn{2}{c}{\textbf{Task A}} & \multicolumn{3}{c}{\textbf{Task B}} \\"
+        (r"& \multicolumn{2}{c}{\textbf{Ranking}} & \multicolumn{3}{c}{\textbf{Routing}} \\"
          if with_mseed else
-         r"& \multicolumn{2}{c}{\textbf{Task A}} & \multicolumn{2}{c}{\textbf{Task B}} \\"),
+         r"& \multicolumn{2}{c}{\textbf{Ranking}} & \multicolumn{2}{c}{\textbf{Routing}} \\"),
         (r"\cmidrule(lr){2-3}\cmidrule(lr){4-6}" if with_mseed
          else r"\cmidrule(lr){2-3}\cmidrule(lr){4-5}"),
         r"\textbf{System} & AUROC & \makecell{Cosine\\gap} & \makecell{Assign.\\acc.} "
-        r"& \makecell{Dir.\\acc.@1}"
-        + (r" & \makecell{Dir.\ acc.@1\\5 seeds}" if with_mseed else "") + r" \\",
+        r"& DirAcc@1"
+        + (r" & \makecell{DirAcc@1\\5 reseedings}" if with_mseed else "") + r" \\",
         r"\midrule",
     ]
     for i, sec in enumerate(sections):
@@ -1210,11 +1212,11 @@ def write_tex(sections: Sequence[CeilingSection], path: Path,
         + r" The fine-tuned " + encoder + r" trained contrastively on "
         + _pairs_clause(sections) +
         r"(in-batch negatives, symmetric InfoNCE), with a dev slice carved "
-        r"out of train by directory for model selection; the test split is untouched "
-        r"until this evaluation. Task A columns are test AUROC and cosine gap at the "
-        r"layer chosen by train AUROC; Task B columns are test assignment accuracy and "
-        r"directory accuracy at rank 1, in percent, at the layer chosen by train "
-        r"directory accuracy, with $\tau$ learned on train. The selected layers "
+        r"out of the training split by directory for model selection; the test split is untouched "
+        r"until this evaluation. Ranking columns are test AUROC and cosine gap at the "
+        r"layer chosen by training AUROC; routing columns are test assignment accuracy and "
+        r"DirAcc@1, in percent, at the layer chosen by training "
+        r"DirAcc@1, with $\tau$ learned on the training split. The selected layers "
         r"are listed in Table~\ref{tab:selected_layers}."
     )
     if with_mseed:
@@ -1224,9 +1226,9 @@ def write_tex(sections: Sequence[CeilingSection], path: Path,
         n_words = {3: "three", 5: "five", 10: "ten"}
         n_seeds = n_words.get(seeds.pop(), "several") if len(seeds) == 1 else "several"
         caption += (
-            r" The last column repeats directory accuracy at rank 1 at the same "
-            rf"layer as a mean $\pm$ standard deviation over {n_seeds} random "
-            r"reassignments of query and reference files."
+            r" The last column repeats DirAcc@1 at the same "
+            rf"layer as a mean $\pm$ standard deviation over {n_seeds} "
+            r"reseedings of the query and reference files, with the training/test split fixed."
         )
     for sec in sections:
         if sec.facts is not None:

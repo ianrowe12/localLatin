@@ -5,7 +5,7 @@
 \setlength{\tabcolsep}{3pt}
 \begin{tabular}{@{}llcccc@{}}
 \toprule
-& & & \multicolumn{3}{c}{Layers with PC1 $\ge$ 0.6} \\
+& & & \multicolumn{3}{c}{Layers with PC1 $\ge$ 0.76} \\
 \cmidrule(lr){4-6}
 Model & Text & PC1$_{\max}$ ($\ell$) & Layers & PC1 & Eff.\ rank \\
 \midrule
@@ -19,6 +19,6 @@ T5-v1.1-base & Latin & 0.975 (9) & 2--11 & 0.958--0.975 & 1.14--1.20 \\
  & English & 0.950 (9) & 2--11 & 0.931--0.950 & 1.28--1.36 \\
 \bottomrule
 \end{tabular}
-\caption{Label-free layer geometry crossed by model and text. Each cell reads the mean-pooled hidden states of 847 passages: the Latin training passages, or the English passages paired with them one to one and matched in mT5 token length (US court opinions, Caselaw Access Project). PC1$_{\max}$: peak top-PC share over the 12 layers, the share of centered variance on the first principal component, with its layer $\ell$. The last three columns cover the layers whose top-PC share is at least 0.6, the threshold that marks every collapsed Latin layer (one false alarm, mT5-base layer~4), and give the range of top-PC share and of entropy effective rank over them. No labels are used, so the English rows say nothing about retrieval.}
+\caption{Label-free layer geometry crossed by model and text. Each cell reads the mean-pooled hidden states of 847 passages: the Latin training passages, or the English passages paired with them one to one and matched in mT5 token length (US court opinions, Caselaw Access Project). PC1$_{\max}$: peak top-PC share over the 12 layers, the share of centered variance on the first principal component, with its layer $\ell$. The last three columns cover the layers whose top-PC share is at least 0.76, a share that every collapsed Latin layer reaches, and give the range of top-PC share and of entropy effective rank over them. No labels are used, so the English rows say nothing about retrieval.}
 \label{tab:gen_geometry}
 \end{table}

@@ -37,6 +37,9 @@ FT_ROWS = [f"{m} (fine-tuned)" for m in ("LaTa", "Qwen3-0.6B", "KaLM-mini")]
 LEX_ROWS = [("BM25 (word)", "BM25 (word)"), ("TF-IDF char 3-5", "TF-IDF char 3--5"),
             ("Levenshtein", "Levenshtein")]
 LEX_TEX = dict(LEX_ROWS)
+# Row labels of tab:headline_ci, which call the character n-gram reference by its paper name.
+# The compact headline tables keep LEX_ROWS: they copy the committed headline rows line for line.
+LEX_CI_TEX = {"TF-IDF char 3-5": r"Char.\ n-grams"}
 LEX_CSV = {tex: csv for csv, tex in LEX_ROWS}
 FMT = {"auroc": (".3f", 1.0), "gap": (".3f", 1.0), "assign": (".1f", 100.0),
        "dir1": (".1f", 100.0)}
@@ -116,7 +119,7 @@ def render_appendix(ci: pd.DataFrame, info: Dict) -> str:
         r"\setlength{\tabcolsep}{3pt}",
         r"\begin{tabular}{llllll}",
         r"\toprule",
-        r"& & \multicolumn{2}{c}{\textbf{Task A}} & \multicolumn{2}{c}{\textbf{Task B}} \\",
+        r"& & \multicolumn{2}{c}{\textbf{Ranking}} & \multicolumn{2}{c}{\textbf{Routing}} \\",
         r"\cmidrule(lr){3-4}\cmidrule(lr){5-6}",
         r"\textbf{Model} & \textbf{Setting} & AUROC & Cosine gap & Assignment acc. "
         r"& DirAcc@1 \\",
@@ -145,15 +148,16 @@ def render_appendix(ci: pd.DataFrame, info: Dict) -> str:
     if lex:
         lines.append(r"\midrule")
         for csv, tex in lex:
-            lines.append(row(tex, csv, "ref", True, "--"))
+            lines.append(row(LEX_CI_TEX.get(csv, tex), csv, "ref", True, "--"))
     n_dirs = _n_dirs(info)
     caption = (
-        "Every headline cell of Tables~\\ref{tab:taskA_headline} and~\\ref{tab:taskB_headline} "
-        "with its " + _boot_clause(info, n_dirs) + ". A replicate keeps every file and pair of a drawn "
+        "Every headline cell, those of Table~\\ref{tab:headline} and the SIF and SIF+ABTT "
+        "cells, with its " + _boot_clause(info, n_dirs) + ". A replicate keeps every file and pair of a drawn "
         "directory; a directory drawn twice counts twice, and pairs between its two copies are "
         "not formed. " + FIXED_CLAUSE + " Each cell is read at its train-selected layer "
-        "(Table~\\ref{tab:selected_layers}); Task B in percent. The lexical rows are the "
-        "reference systems of Table~\\ref{tab:lexical_baselines}."
+        "(Table~\\ref{tab:selected_layers}); routing in percent. The lexical rows are the "
+        "lexical reference systems of Table~\\ref{tab:lexical_baselines}; Char.\\ n-grams is "
+        "TF-IDF over character 3--5-grams."
     )
     lines += [r"\bottomrule", r"\end{tabular}", f"\\caption{{{caption}}}",
               r"\label{tab:headline_ci}", r"\end{table*}"]
@@ -172,7 +176,7 @@ DIFF_GROUPS: List[Tuple[str, str]] = [
     ("abtt_minus_base", "ABTT $-$ Base"),
     ("ft_abtt_minus_ft_base", "Fine-tuned: ABTT $-$ Base"),
     ("ft_abtt_minus_zs_abtt", "Fine-tuned ABTT $-$ zero-shot ABTT"),
-    ("tfidf_minus_abtt", "TF-IDF char 3--5 $-$ ABTT"),
+    ("tfidf_minus_abtt", r"Char.\ n-grams $-$ ABTT"),
     ("center_minus_base_at_abtt_layer", "Centering $-$ Base (ABTT layer)"),
     ("abtt_minus_center_at_abtt_layer", "ABTT $-$ centering (ABTT layer)"),
 ]
@@ -233,11 +237,11 @@ def render_diffs(diffs: pd.DataFrame, info: Dict) -> str:
         f"{n_dirs} test directories, seed {info['seed']}). Both cells of a contrast are "
         "recomputed on each replicate, so the interval reflects their correlation. Each cell "
         "sits at its own train-selected layer. The two centering contrasts compare baseline, "
-        "centering alone ($D=0$) and ABTT at the layer of the ABTT cell, the Task A ABTT layer "
-        "for $\\Delta$ AUROC and the Task B ABTT layer for the two routing columns. Spread: the largest "
-        "minus the smallest of the six zero-shot models. Task B in points. Differences are "
-        "computed at full precision, so they can differ by one unit in the last digit from "
-        "the difference of the rounded cells. "
+        "centering alone ($D=0$) and ABTT at the layer of the ABTT cell, the ranking ABTT layer "
+        "for $\\Delta$ AUROC and the routing ABTT layer for the two routing columns. Spread: the largest "
+        "minus the smallest of the six zero-shot models. Routing in points. Spreads and "
+        "differences are computed before rounding, so they can differ by one unit in the last "
+        "digit from the difference of the rounded cells. "
         + FIXED_CLAUSE
     )
     lines += [r"\bottomrule", r"\end{tabular}", f"\\caption{{{caption}}}",
@@ -306,7 +310,7 @@ def render_pq(pq: pd.DataFrame, info: Dict, sweep: Optional[pd.DataFrame]) -> st
     lines[-1] = r"\bottomrule"
     moved = _moved_clause(pq, sweep)
     caption = (
-        "Routing checks at the Task B cells (Table~\\ref{tab:taskB_headline}) of the six "
+        "Routing checks at the headline routing cells (Table~\\ref{tab:headline}) of the six "
         "zero-shot models: the Base and ABTT cells at their train-selected layers (L), and "
         "baseline and centering alone ($D=0$, subtract the training mean) at the ABTT cell's "
         "layer (a second baseline row only where that layer differs). Cos.\\ SD: standard deviation of all test pairwise cosines. Exist./new AUROC: "
@@ -329,7 +333,7 @@ def _moved_clause(pq: pd.DataFrame, sweep: Optional[pd.DataFrame]) -> str:
     fixed = {g: int(head[f"assign_moves_{g}"].astype(bool).sum()
                     + head[f"dir1_moves_{g}"].astype(bool).sum()) for g in ("fine", "exact")}
     s = (f"Holding layer and $D$ fixed, the fine grid (step $10^{{-4}}$) moves "
-         f"{fixed['fine']} and the exact cut {fixed['exact']} of the {2 * n} printed Task B "
+         f"{fixed['fine']} and the exact cut {fixed['exact']} of the {2 * n} printed routing "
          "numbers")
     if sweep is not None:
         sub = sweep[(sweep["task"] == "B") & sweep["published_layer"].notna()]

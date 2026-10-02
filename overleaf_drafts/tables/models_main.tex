@@ -1,0 +1,32 @@
+% generated table
+% python scripts/paper/reframe/spine_tables.py
+\begin{table}[t]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{3.5pt}
+\begin{tabular}{@{}llrccr@{}}
+\toprule
+Model & Type & L & AUROC$_{\min}$ ($\ell$) & PC1$_{\max}$ & Coll. \\
+\midrule
+\multicolumn{6}{@{}l}{\emph{Raw T5 encoders, T5 v1.1 layout}} \\
+LaTa & T5 & 12 & 0.496 (6) & 0.952 & 10 \\
+PhilTa & T5 & 12 & 0.538 (10) & 0.858 & 9 \\
+mT5-base & T5 & 12 & 0.654 (5) & 1.000 & 7 \\
+T5-v1.1-base & T5 & 12 & 0.489 (2) & 0.975 & 10 \\
+\addlinespace
+\multicolumn{6}{@{}l}{\emph{Raw T5 encoder, original layout}} \\
+T5-base & T5 & 12 & 0.816 (11) & 0.545 & 0 \\
+\addlinespace
+\multicolumn{6}{@{}l}{\emph{Raw encoder-only siblings}} \\
+LaBERTa & Enc. & 12 & 0.826 (1) & 0.254 & 0 \\
+PhilBERTa & Enc. & 12 & 0.883 (6) & 0.162 & 0 \\
+\addlinespace
+\multicolumn{6}{@{}l}{\emph{Embedding-trained}} \\
+LaBSE & Enc. & 12 & 0.806 (1) & 0.524 & 0 \\
+Qwen3-0.6B & Dec. & 28 & 0.858 (1) & 0.183 & 0 \\
+KaLM-mini & Dec. & 24 & 0.861 (5) & 0.419 & 0 \\
+\bottomrule
+\end{tabular}
+\caption{The ten main-text models, read as mean-pooled hidden states with no correction. Type: T5 encoder (T5), encoder-only (Enc.) or decoder (Dec.; KaLM-mini runs with bidirectional attention). L: blocks read. AUROC$_{\min}$: lowest test ranking AUROC over layers, at layer $\ell$. PC1$_{\max}$: peak top-PC share of the training embeddings. Coll.: collapsed layers (AUROC below 0.70). Only the four raw T5 encoders with the T5 v1.1 layout (gated-GELU feed-forward, untied embeddings) collapse.}
+\label{tab:models}
+\end{table}

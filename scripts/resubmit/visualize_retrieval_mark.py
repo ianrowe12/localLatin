@@ -159,7 +159,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--out_dir",
         type=str,
-        default="overleaf_drafts/figures",
+        default="docs/analyses/attribution_artifacts/figures",
         help="Directory to write the PDF + PNG figure.",
     )
     parser.add_argument(
