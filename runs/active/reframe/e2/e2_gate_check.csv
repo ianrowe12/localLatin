@@ -1,0 +1,37 @@
+gate,model,gated,n_cells,n_missing_reference,n_published_layers_absent,max_diff,tolerance,n_over_tolerance,cells_over_tolerance,note,ok
+1a mean arm AUROC vs published baseline,bowphs/LaTa,1,12,0,0,2.74563e-08,1e-06,0,,,True
+1b mean arm vectors vs cached hidden_mean_tokempty (relative L2),bowphs/LaTa,1,12,0,0,0,0.001,0,,max abs diff 0.000e+00,True
+2a sif arm AUROC vs published sif_only,bowphs/LaTa,1,12,0,0,0.0150072,1e-06,12,L1 4.41e-04; L2 7.43e-04; L3 3.63e-03; L4 1.06e-02; L5 1.20e-02; L6 1.29e-02; L7 1.32e-02; L8 1.50e-02; L9 1.39e-02; L10 1.24e-02; L11 1.09e-02; L12 2.48e-04,,False
+"2b sif arm vectors vs cached hidden_sif_tokempty (relative L2; reported, not gated)",bowphs/LaTa,0,12,0,0,0,0.001,0,,max abs diff 0.000e+00,True
+3 score identity (relative to the passage vector norm),bowphs/LaTa,1,624,0,0,7.8001e-15,1e-09,0,,max abs diff 1.546e-11; to the cached vectors' score 6.324e-04,True
+4 group shares sum to 1,bowphs/LaTa,1,1488,0,0,1.28786e-14,1e-08,0,,,True
+1a mean arm AUROC vs published baseline,bowphs/PhilTa,1,12,0,0,7.54608e-08,1e-06,0,,,True
+1b mean arm vectors vs cached hidden_mean_tokempty (relative L2),bowphs/PhilTa,1,12,0,0,0,0.001,0,,max abs diff 0.000e+00,True
+2a sif arm AUROC vs published sif_only,bowphs/PhilTa,1,12,0,0,0.00660891,1e-06,12,L1 1.44e-04; L2 2.79e-04; L3 5.37e-04; L4 2.63e-03; L5 4.52e-03; L6 6.61e-03; L7 5.48e-03; L8 4.61e-03; L9 5.63e-03; L10 5.70e-03; L11 4.79e-03; L12 2.72e-04,,False
+"2b sif arm vectors vs cached hidden_sif_tokempty (relative L2; reported, not gated)",bowphs/PhilTa,0,12,0,0,0,0.001,0,,max abs diff 0.000e+00,True
+3 score identity (relative to the passage vector norm),bowphs/PhilTa,1,624,0,0,6.51269e-15,1e-09,0,,max abs diff 1.310e-10; to the cached vectors' score 2.907e-03,True
+4 group shares sum to 1,bowphs/PhilTa,1,1488,0,0,1.26565e-14,1e-08,0,,,True
+1a mean arm AUROC vs published baseline,google/mt5-base,1,12,0,0,1.89671e-07,1e-06,0,,,True
+1b mean arm vectors vs cached hidden_mean_tokempty (relative L2),google/mt5-base,1,12,0,0,0,0.001,0,,max abs diff 0.000e+00,True
+2a sif arm AUROC vs published sif_only,google/mt5-base,1,12,0,0,0.00106016,1e-06,12,L1 6.09e-04; L2 5.46e-04; L3 5.24e-04; L4 5.39e-04; L5 5.57e-04; L6 6.23e-04; L7 7.23e-04; L8 5.21e-04; L9 7.52e-04; L10 8.02e-04; L11 1.06e-03; L12 8.32e-05,,False
+"2b sif arm vectors vs cached hidden_sif_tokempty (relative L2; reported, not gated)",google/mt5-base,0,12,0,0,0,0.001,0,,max abs diff 0.000e+00,True
+3 score identity (relative to the passage vector norm),google/mt5-base,1,624,0,0,3.1235e-14,1e-09,0,,max abs diff 3.492e-10; to the cached vectors' score 2.044e-02,True
+4 group shares sum to 1,google/mt5-base,1,1488,0,0,1.60982e-14,1e-08,0,,,True
+1a mean arm AUROC vs published baseline,sentence-transformers/LaBSE,1,12,0,0,9.37139e-08,1e-06,0,,,True
+1b mean arm vectors vs cached hidden_mean_tokempty (relative L2),sentence-transformers/LaBSE,1,12,0,0,0,0.001,0,,max abs diff 0.000e+00,True
+2a sif arm AUROC vs published sif_only,sentence-transformers/LaBSE,1,12,0,0,0.000251303,1e-06,11,L1 2.51e-04; L2 9.82e-05; L3 3.92e-05; L4 4.94e-05; L6 4.72e-05; L7 1.95e-05; L8 1.23e-06; L9 4.30e-05; L10 4.17e-05; L11 1.38e-04; L12 4.25e-05,,False
+"2b sif arm vectors vs cached hidden_sif_tokempty (relative L2; reported, not gated)",sentence-transformers/LaBSE,0,12,0,0,0,0.001,0,,max abs diff 0.000e+00,True
+3 score identity (relative to the passage vector norm),sentence-transformers/LaBSE,1,624,0,0,2.48949e-15,1e-09,0,,max abs diff 1.865e-14; to the cached vectors' score 1.287e-06,True
+4 group shares sum to 1,sentence-transformers/LaBSE,1,1488,0,0,1.86517e-14,1e-08,0,,,True
+1a mean arm AUROC vs published baseline,Qwen/Qwen3-Embedding-0.6B,1,28,0,0,2.30864e-07,1e-06,0,,,True
+1b mean arm vectors vs cached hidden_mean_tokempty (relative L2),Qwen/Qwen3-Embedding-0.6B,1,28,0,0,0,0.001,0,,max abs diff 0.000e+00,True
+2a sif arm AUROC vs published sif_only,Qwen/Qwen3-Embedding-0.6B,1,28,0,0,0.000586307,1e-06,28,L1 5.16e-04; L2 5.86e-04; L3 4.71e-04; L4 3.15e-04; L5 2.24e-04; L6 2.04e-04; L7 1.70e-04; L8 1.10e-04; L9 9.37e-05; L10 7.97e-05; L11 3.26e-05; L12 1.10e-05; and 16 more,,False
+"2b sif arm vectors vs cached hidden_sif_tokempty (relative L2; reported, not gated)",Qwen/Qwen3-Embedding-0.6B,0,28,0,0,0,0.001,0,,max abs diff 0.000e+00,True
+3 score identity (relative to the passage vector norm),Qwen/Qwen3-Embedding-0.6B,1,1456,0,0,1.19133e-15,1e-09,0,,max abs diff 2.487e-13; to the cached vectors' score 4.695e-05,True
+4 group shares sum to 1,Qwen/Qwen3-Embedding-0.6B,1,3472,0,0,1.44329e-14,1e-08,0,,,True
+1a mean arm AUROC vs published baseline,KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,1,24,0,0,9.82563e-08,1e-06,0,,,True
+1b mean arm vectors vs cached hidden_mean_tokempty (relative L2),KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,1,24,0,0,0,0.001,0,,max abs diff 0.000e+00,True
+2a sif arm AUROC vs published sif_only,KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,1,24,0,0,0.000947097,1e-06,24,L1 7.09e-04; L2 5.32e-04; L3 9.47e-04; L4 7.64e-04; L5 5.37e-04; L6 4.37e-04; L7 2.39e-04; L8 2.11e-04; L9 2.09e-04; L10 2.12e-04; L11 3.00e-04; L12 2.50e-04; and 12 more,,False
+"2b sif arm vectors vs cached hidden_sif_tokempty (relative L2; reported, not gated)",KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,0,0,0,0,,0.001,0,,no hidden_sif_tokempty cache,True
+3 score identity (relative to the passage vector norm),KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,1,1248,0,0,2.44957e-15,1e-09,0,,max abs diff 8.527e-14; to the cached vectors' score 1.356e-05,True
+4 group shares sum to 1,KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5,1,2976,0,0,1.84297e-14,1e-08,0,,,True
