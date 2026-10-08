@@ -207,7 +207,6 @@ The embedding-trained models stay at or above 0.806 at every layer.
 ABTT (Section~\ref{sec:testbed}) lifts all 100 layers of the panel to AUROC 0.962 to 0.987.
 The 26 collapsed layers are included (Figure~\ref{fig:depth}, solid lines).
 Reduced-rank whitening, fit on the same training embeddings, ranks within 0.021 of ABTT at every layer (Table~\ref{tab:whiten_reduced}, Appendix~\ref{app:sif_variants}).
-We use ABTT to test the reading of \citet{timkey2021rogue}, that post-processing reveals quality which a few dominant dimensions hide, at layers that rank at chance.
 The restoration holds for ranking only: routing after ABTT still varies by layer, from 75.6 to 90.2 DirAcc@1 (Appendix~\ref{app:per_layer}).
 
 \begin{figure}[t]
@@ -219,7 +218,6 @@ The restoration holds for ranking only: routing after ABTT still varies by layer
 
 \paragraph{Mean pairwise cosine gives no reliable warning.}
 Figure~\ref{fig:diagnostics}a plots mean pairwise cosine, computed on training embeddings, against baseline test AUROC.
-It fails in both directions.
 The collapsed layers of LaTa, PhilTa and mT5-base have a lower mean cosine (0.22 to 0.58) than the embedding-trained models, which retrieve well (0.59 to 0.97).
 T5-v1.1-base (Section~\ref{sec:testbed}), which collapses on the same Latin text (Table~\ref{tab:models}), sits at a high mean cosine (0.87 to 0.96).
 So neither a high nor a low mean cosine marks a collapsed layer.
@@ -300,7 +298,7 @@ The dominant direction does load mostly on these coordinates: the ten of highest
 Yet zeroing them leaves the direction dominant.
 On the remaining coordinates it still holds a median 72\% of the variance, and it still masks retrieval.
 Zeroing far more coordinates does restore LaTa and PhilTa: ranked by variance, the first layers recover at 50 coordinates and all 19 by 300 (by 400 under the mean-absolute-value ranking of Figure~\ref{fig:localize}a); no mT5-base layer recovers even at 400.
-This extends the outlier-dimension account: the masking direction is concentrated on a few coordinates, yet its effect reaches beyond them.
+This extends the outlier-dimension account: the masking direction is concentrated on a few coordinates, yet acts beyond them.
 
 \paragraph{Removing three directions restores every collapsed layer.}
 ABTT removes whole directions instead of coordinates, so we vary the number $D$ of principal components it removes (Figure~\ref{fig:localize}b).
@@ -326,7 +324,7 @@ PhilTa needs more types: dropping its top 30, about a third of its tokens, resto
 \paragraph{In mT5-base, no set of up to 100 token types restores a collapsed layer.}
 Dropping up to 100 token types, ranked the same way, restores none of its 7 collapsed layers; the best reaches 0.748.
 mT5-base also resists coordinate zeroing, yet removing three to ten directions repairs it.
-Its mask is thus confined neither to a few coordinates nor to a few token types, and we have no token-level account of it.
+Its mask is thus confined neither to a few coordinates nor to a few token types, and has no token-level account.
 
 \section{Routing and Limits}
 \label{sec:routing}
@@ -379,8 +377,8 @@ Choosing among layers still needs a train-only task signal, such as the training
 
 In decoder language models, gated feed-forward blocks are reported to amplify outlier activations \citep{fishman2025fp8,yang2025activationspikes}, but the original T5 also carries large outliers \citep{zhao2025outlier}; why the T5 v1.1 layout collapses remains open.
 Our localization names carriers in LaTa, not a cause.
-Concurrently, \citet{mikkelsen2026clinical} reports a mid-depth retrieval trough with final-layer recovery in retrieval-trained encoders on clinical text.
-That pattern differs from ours: in our panel the embedding-trained encoders do not collapse, and that study tests no T5 model.
+Concurrently, \citet{mikkelsen2026clinical} reports on clinical text a mid-depth retrieval trough in retrieval-trained encoders, with recovery in the last layers, and only partial recovery in encoders without a retrieval objective.
+That pattern differs from ours: in our models neither the embedding-trained encoders nor the encoder-only siblings collapse, and that study tests no T5 model.
 
 For the editor of a text collection, the projection makes the choice of encoder matter little (Section~\ref{sec:routing}; maps in Appendix~\ref{app:cluster_geometry}).
 The existing-versus-new decision is still wrong for about one test witness in ten (assignment accuracy 88.5 to 91.7; Table~\ref{tab:headline_ci}), so the final call stays with the scholar.
