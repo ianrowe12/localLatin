@@ -255,7 +255,7 @@ The two models share their tokenizer, the span-corruption objective and the C4 p
 On the Latin corpus, T5-v1.1-base falls to 0.489 at layer 2, and its layers 2 to 11 collapse.
 T5-base stays at 0.816 or above at every layer, and its top-PC share peaks at 0.545.
 The two differ in layout (Section~\ref{sec:testbed}), and by their checkpoint configurations LaTa, PhilTa and mT5-base share T5-v1.1-base's (Table~\ref{tab:all_models}).
-Across the ten models we test, the collapse tracks the T5 v1.1 layout; we do not isolate which change is responsible.
+Across the twelve models we test, the collapse tracks the T5 v1.1 layout; we do not isolate which change is responsible.
 T5-base also saw supervised tasks in pretraining \citep{raffel2020t5}, so this contrast does not separate layout from pretraining mix.
 We did not apply the projection to the controls (Limitations).
 
@@ -295,7 +295,7 @@ Figure~\ref{fig:localize} shows the two geometric tests; Appendix~\ref{app:local
 
 \paragraph{Zeroing the ten largest coordinates restores no collapsed layer.}
 In pretrained transformers a few outlier coordinates dominate cosine similarity \citep{timkey2021rogue}.
-Zeroing them improves pooled similarity \citep{luo2021positional,haemmerl2023anisotropy}.
+Zeroing them improves pooled similarity in pretrained encoders \citep{luo2021positional,haemmerl2023anisotropy}.
 We therefore expected that zeroing five or fewer coordinates of largest variance on training embeddings would restore the collapsed layers.
 Zeroing up to ten, ranked by variance or by mean absolute value, restores none of the 26, and the best layer reaches 0.794 (Figure~\ref{fig:localize}a).
 The dominant direction does load mostly on these coordinates: the ten of highest variance carry a median 92\% of its squared loading.
@@ -322,9 +322,9 @@ We expected some $m$ to restore the collapsed layers.
 In LaTa, $m=3$ does.
 Pooling without the comma, the period and \texttt{</s>} drops 11\% of the test tokens and restores all 10 collapsed layers (median 0.919).
 Dropping random token types of the same training mass leaves the median at 0.500.
-The dominant direction also does not track passage length: its score correlates with log token count at $|\rho| \le 0.44$ at every collapsed layer.
+The dominant direction also does not track passage length: its score correlates with log token count at $|\rho| \le 0.44$ on test passages at every collapsed layer.
 The tokens are carriers, not a cause: LaBERTa also pools commas, periods and \texttt{</s>}, and it does not collapse (Section~\ref{sec:models}).
-PhilTa needs more types: dropping its top 30, about a third of its tokens, restores all 9 of its collapsed layers.
+PhilTa needs more types: dropping its top 30, about a third of its tokens, restores all 9 of its collapsed layers on test passages (7 of 9 on training passages).
 
 \paragraph{In mT5-base, no set of up to 100 token types restores a collapsed layer.}
 Dropping up to 100 token types, ranked the same way, restores none of its 7 collapsed layers; the best reaches 0.748.
@@ -365,14 +365,14 @@ Our claims therefore concern where the retrieval signal sits inside the encoders
 As a supervised reference, we fine-tune LaTa, Qwen3-0.6B and KaLM-mini contrastively on 499 training pairs (Appendix~\ref{app:reference_systems}).
 These references are flattered: 206 of the 535 existing test witnesses (38.5\%) sit in a directory that supplied a training pair.
 Fine-tuned Qwen3-0.6B and KaLM-mini rank above the character n-gram reference in point estimate (0.996 and 0.997 AUROC; Table~\ref{tab:headline}).
-After fine-tuning, the projection no longer helps ranking: AUROC falls slightly in all three fine-tuned models (by 0.002 to 0.014), in line with \citet{rajaee2021finetuning}.
+After fine-tuning, the projection no longer helps ranking: AUROC falls slightly in point estimate in all three fine-tuned models (by 0.002 to 0.014; every interval includes zero), in line with \citet{rajaee2021finetuning}.
 For routing, fine-tuning plus ABTT beats the zero-shot projection by 1.8 points for Qwen3-0.6B (92.3 against 90.5) and by 2.1 for KaLM-mini (93.0 against 90.9); on LaTa the two tie at 87.7.
-These are means over five reseedings of the query and reference witnesses (Table~\ref{tab:finetune_ceiling}, Appendix~\ref{app:reference_systems}); Table~\ref{tab:headline} shows the single-split cells, where the gains are 2.0 and 3.1 points and LaTa falls 0.9 points.
+These are means over five reseedings of the query and reference witnesses (Table~\ref{tab:finetune_ceiling}, Appendix~\ref{app:reference_systems}); Table~\ref{tab:headline} shows the single-split cells, where the gains are 2.0 and 3.1 points (only KaLM-mini's interval excludes zero) and LaTa falls 0.9 points.
 
 \section{Discussion}
 \label{sec:discussion}
 
-Before reading an intermediate layer of a frozen encoder, fit a projection on training embeddings: it is cheap insurance.
+Before reading an intermediate layer of a frozen encoder, fit a projection on training embeddings: in our panel it was cheap insurance.
 In the six panel models it scored above the baseline at all 100 layers in ranking and routing (Appendix~\ref{app:per_layer}), but routing after it still varies by layer, so the layer still matters.
 For raw states, check top-PC share, not mean pairwise cosine.
 In our models mean cosine gave no reliable warning in either direction, while every collapsed layer of the pretrained models had a top-PC share of at least 0.76 (Section~\ref{sec:depth}).
@@ -715,7 +715,7 @@ Two pooling variants separate the two changes that SIF makes.
 In LaTa, dropping the 100 most frequent training tokens recovers at least 80\% of SIF's gain at all 10 layers (median AUROC 0.901).
 Dropping special tokens alone recovers it at none (median 0.498).
 In PhilTa the token mix explains only a median 0.42 of the first component's score.
-Its ablation needs more types: dropping the top 3 restores 1 of 9 layers, the top 10 restore 8, and the top 30 restore all 9 (median 0.925).
+Its ablation needs more types: on test passages, dropping the top 3 restores 1 of 9 layers, the top 10 restore 8, and the top 30 restore all 9 (median 0.925); on training passages the counts are 1, 6 and 7.
 Dropping random types of the same training mass stays at a median of 0.542.
 In mT5-base the token mix explains 0.066 of the first component's score, against 0.160 for random directions.
 Dropping its top 100 types lifts AUROC to 0.724 to 0.748, short of 0.90.
