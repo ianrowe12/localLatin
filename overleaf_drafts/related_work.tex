@@ -4,11 +4,11 @@
 \paragraph{Anisotropy statistics.}
 Contextual representations occupy a narrow cone, and the usual check is the mean cosine of random pairs \citep{gao2019degeneration, ethayarajh2019contextual}.
 This statistic is not an appropriate measure of isotropy \citep{rudman2022isoscore}.
-At the final layer, the variance share of the top principal direction predicts when rank-based similarity beats cosine \citep{parupudi2026anisotropy}, and effective rank moderately predicts retrieval quality \citep{rottach2025topology}.
+For pooled output embeddings, the variance share of the largest coordinate or top principal direction predicts how much rank-based similarity gains over cosine \citep{parupudi2026anisotropy}, and a topological signature led by effective rank moderately predicts retrieval quality \citep{rottach2025topology}.
 Yet geometric statistics do not reliably predict downstream performance \citep{nastase2025geometry, kulkarni2026geometry}.
 We relate both statistics to retrieval at every layer (Section~\ref{sec:depth}).
 
-\paragraph{Outlier dimensions and the tokens that carry them.}
+\paragraph{Outlier dimensions and their carrier tokens.}
 One to three rogue dimensions dominate cosine similarity in pretrained transformers \citep{timkey2021rogue}.
 In BERT they are tied to a few LayerNorm weights and to token frequency \citep{kovaleva2021bertbusters, puccetti2022outlier}.
 Clipping them improves mean-pooled sentence embeddings \citep{luo2021positional}, though multilingual BERT is anisotropic without them \citep{rajaee2022mbert}.
@@ -18,10 +18,11 @@ In BERT most outliers sit on \texttt{[SEP]}, the period and the comma \citep{bon
 We test these accounts on pooled T5 encoder states, comparing coordinate zeroing, direction removal and token dropping (Section~\ref{sec:localizing}).
 
 \paragraph{Layerwise analysis and post-hoc correction.}
-Prior T5 embedding results use the final layer \citep{ni2022sentencet5}, the first and last layers averaged \citep{huang2021whiteningbert}, or encoder and decoder states concatenated \citep{godey2024anisotropy}.
+Prior T5 embedding work reads the final layer \citep{ni2022sentencet5} or the first and last layers averaged \citep{huang2021whiteningbert}; \citet{godey2024anisotropy} trace anisotropy through T5-base's encoder and decoder layers but do not measure retrieval.
+Large decoder language models dip at mid-depth in retrieval and similarity and recover near the top, while two decoder embedding models stay roughly flat there before rising \citep{rizwan2026lexicality}.
 Post-hoc corrections remove the mean and top principal components \citep{mu2018allbutthetop}, whiten \citep{su2021whitening}, or down-weight frequent tokens \citep{arora2017sif}.
 \citet{timkey2021rogue} apply them at every layer of four models and find that rogue dimensions obscure representational quality; our reading of the collapse as masked follows theirs.
-Whitening beats zeroing outlier dimensions in a multilingual encoder \citep{haemmerl2023anisotropy}, centering alone barely changes embedding models \citep{ren2026meanbias}, and after fine-tuning isotropy corrections become ineffective \citep{rajaee2021finetuning}.
+Whitening beats zeroing outlier dimensions in a multilingual encoder \citep{haemmerl2023anisotropy}, centering alone gives embedding models gains under one point \citep{ren2026meanbias}, and after fine-tuning isotropy corrections become ineffective \citep{rajaee2021finetuning}.
 For routing, the nearest precedent is out-of-distribution detection in supervised classifiers, where low-variance components carry much of the signal \citep{kamoi2020mahalanobis, podolskiy2021mahalanobis}, and nearest-neighbor scores depend on feature geometry \citep{sun2022knnood}.
-Lexical methods match or beat dense retrievers on Latin intertextuality \citep{schelb2026locisimiles}, while dense encoders win on paraphrastic reuse \citep{delaselle2026transcription}.
-We use an existing projection, ABTT, as a probe.
+Lexical methods match or beat dense retrievers on Latin intertextuality \citep{schelb2026locisimiles}, while dense encoders reportedly help on paraphrastic reuse \citep{delaselle2026transcription}.
+We use ABTT as a probe.
