@@ -171,8 +171,7 @@ Three are raw T5 encoders with no embedding objective: the Latin LaTa \citep{lat
 Three are embedding-trained: LaBSE \citep{feng2022labse}, Qwen3-Embedding-0.6B \citep[Qwen3-0.6B;][]{qwen3embedding2025} and KaLM-mini \citep{kalm2025embedding}.
 Four raw controls complete the main text.
 Two are the encoder-only siblings LaBERTa and PhilBERTa.
-LaTa and LaBERTa were released by the same authors and were both trained on the Corpus Corporum \citep{lata2023card,laberta2023card}.
-PhilTa and PhilBERTa share authors and pretraining data \citep{riemenschneider2023lata}.
+LaTa and LaBERTa, and PhilTa and PhilBERTa, share authors and pretraining corpora \citep{lata2023card,laberta2023card,riemenschneider2023lata}.
 The other two are English T5 encoders that share a tokenizer: T5-v1.1-base \citep{t5v11release} and the original T5-base \citep{raffel2020t5}.
 We say a model has the \emph{T5 v1.1 layout} when it has a gated-GELU feed-forward \citep{shazeer2020glu} and untied input and output embeddings \citep{t5v11release}.
 LaTa, PhilTa, mT5-base and T5-v1.1-base have it; T5-base keeps a ReLU feed-forward and tied embeddings.
@@ -232,8 +231,7 @@ In the three embedding-trained panel models it peaks at 0.524 (LaBSE).
 A high share is necessary for collapse in our models, but it is not sufficient.
 mT5-base layer~4 has a share of 0.893 and still ranks at 0.799.
 Sentence-T5 \citep{ni2022sentencet5}, an embedding-trained T5 encoder reported in the appendix, combines shares of 0.66 to 0.94 with AUROC 0.800 to 0.891 at layers 2--11 (Table~\ref{tab:all_models}).
-The share marks the collapsed regime.
-It does not order layers inside it (Appendix~\ref{app:depth_extra}).
+The share marks the collapsed regime but does not order layers inside it (Appendix~\ref{app:depth_extra}).
 
 \section{Collapse Across Models}
 \label{sec:models}
@@ -289,7 +287,7 @@ The mask is about three directions; zeroing the ten largest coordinates does not
 
 We run each test at the 26 collapsed layers, fit every intervention on training embeddings, and read test ranking AUROC; a layer counts as restored at 0.90.
 We fixed most tests before running them ($\dagger$, Table~\ref{tab:predictions}); four of these fail.
-Figure~\ref{fig:localize} shows the two geometric tests; Appendix~\ref{app:localizing} gives per-layer tables and further controls.
+Appendix~\ref{app:localizing} gives per-layer tables and further controls.
 
 \input{tables/predictions}
 
@@ -303,7 +301,6 @@ Yet zeroing them leaves the direction dominant.
 On the remaining coordinates it still holds a median 72\% of the variance, and it still masks retrieval.
 Zeroing far more coordinates does restore LaTa and PhilTa: ranked by variance, the first layers recover at 50 coordinates and all 19 by 300 (by 400 under the mean-absolute-value ranking of Figure~\ref{fig:localize}a); no mT5-base layer recovers even at 400.
 This extends the outlier-dimension account: the masking direction is concentrated on a few coordinates, yet its effect reaches beyond them.
-It agrees with \citet{haemmerl2023anisotropy}, who find that whitening improves a multilingual encoder more than zeroing its outlier dimensions.
 
 \paragraph{Removing three directions restores every collapsed layer.}
 ABTT removes whole directions instead of coordinates, so we vary the number $D$ of principal components it removes (Figure~\ref{fig:localize}b).
