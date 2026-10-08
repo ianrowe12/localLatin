@@ -88,8 +88,7 @@ Latin also offers T5 and encoder-only models from the same authors and pretraini
 
 Three raw T5 encoders, trained with no embedding objective, fail at mid-depth (Figure~\ref{fig:depth}).
 In LaTa, PhilTa and mT5-base \citep{xue2021mt5}, 26 of 36 layers rank same-source pairs at AUROC 0.50 to 0.66, near chance.
-Their first and last layers still retrieve: LaTa ranks at 0.934 at layer~1 and 0.938 at layer~12.
-The three embedding-trained encoders of our panel stay at or above 0.806 at every layer.
+Their first and last layers still retrieve, and the three embedding-trained encoders of our panel never collapse.
 The usual check, mean pairwise cosine, gives no reliable warning in either direction.
 The share of variance on the first principal component (top-PC share) is high at every collapsed layer: necessary for collapse in our models, but not sufficient.
 
@@ -103,8 +102,7 @@ Controls show which models collapse.
 The encoder-only siblings LaBERTa and PhilBERTa never fall below 0.826 and 0.883.
 Within the T5 family, T5-v1.1-base collapses on the same Latin text (lowest AUROC 0.489), while the original T5-base \citep{raffel2020t5} never falls below 0.816.
 Four of the five raw T5-family encoders we test collapse, and all four share the T5 v1.1 layout: a gated-GELU feed-forward block \citep{shazeer2020glu} and untied input and output embeddings \citep{t5v11release}.
-Across the ten models we test, the collapse tracks the T5 v1.1 layout; we do not isolate which change is responsible.
-T5-base also saw supervised tasks in pretraining, so this contrast does not separate layout from pretraining mix.
+We do not isolate which change is responsible, and T5-base also saw supervised tasks in pretraining, which this contrast does not separate from layout.
 
 Inside the collapsed layers, about three directions mask the signal.
 Removing three principal components brings all 26 layers to AUROC 0.914 or above, and mT5-base keeps improving up to ten.
@@ -196,7 +194,6 @@ Our \emph{character n-gram reference}, TF-IDF over character 3--5-grams fit on t
 
 This section asks whether the middle layers of our encoders retrieve, and whether the usual anisotropy check warns when they do not.
 In three of the six panel models most middle layers rank near chance, and a projection fit on training embeddings restores them all: the signal is masked, not missing.
-Mean pairwise cosine does not flag these layers, while top-PC share is high at every one of them.
 
 \paragraph{LaTa, PhilTa and mT5-base fall to near chance at mid-depth.}
 Figure~\ref{fig:depth} gives baseline ranking AUROC at every layer of the six panel models.
@@ -206,14 +203,11 @@ The next-lowest layer in the panel ranks at 0.799 (mT5-base, layer~4), so in the
 A cutoff on training AUROC picks the same 26 layers, so no test score defines the collapse.
 The first and last layers still retrieve: LaTa ranks at 0.934 at layer~1 and 0.938 at layer~12.
 The embedding-trained models stay at or above 0.806 at every layer.
-Section~\ref{sec:models} shows that not every T5 encoder collapses.
 
 \paragraph{A train-only projection restores ranking at every layer of the six panel models.}
 ABTT (Section~\ref{sec:testbed}) lifts all 100 layers of the panel to AUROC 0.962 to 0.987.
 The 26 collapsed layers are included (Figure~\ref{fig:depth}, solid lines).
 Reduced-rank whitening, fit on the same training embeddings, ranks within 0.021 of ABTT at every layer (Table~\ref{tab:whiten_reduced}, Appendix~\ref{app:sif_variants}).
-The projection is linear and never sees a test label.
-The ranking it recovers must therefore already be present in each collapsed layer.
 We use ABTT to test the reading of \citet{timkey2021rogue}, that post-processing reveals quality which a few dominant dimensions hide, at layers that rank at chance.
 The restoration holds for ranking only: routing after ABTT still varies by layer, from 75.6 to 90.2 DirAcc@1 (Appendix~\ref{app:per_layer}).
 
@@ -230,8 +224,6 @@ It fails in both directions.
 The collapsed layers of LaTa, PhilTa and mT5-base have a lower mean cosine (0.22 to 0.58) than the embedding-trained models, which retrieve well (0.59 to 0.97).
 T5-v1.1-base (Section~\ref{sec:testbed}), which collapses on the same Latin text (Table~\ref{tab:models}), sits at a high mean cosine (0.87 to 0.96).
 So neither a high nor a low mean cosine marks a collapsed layer.
-Mean cosine is already known to be a poor measure of isotropy \citep{rudman2022isoscore}.
-Our result adds that it gives no warning at the layers where retrieval fails.
 
 \paragraph{Top-PC share is high at every collapsed layer.}
 Top-PC share needs no labels either (Figure~\ref{fig:diagnostics}b).
@@ -251,7 +243,7 @@ Of the ten models in Table~\ref{tab:models}, four collapse: LaTa, PhilTa, mT5-ba
 All four have the T5 v1.1 layout, and none of the other six collapses at any layer.
 
 \paragraph{Encoder-only siblings pretrained on the same corpora do not collapse.}
-LaTa and PhilTa each have an encoder-only sibling with no embedding objective, released by the same authors with the same pretraining data (Section~\ref{sec:testbed}).
+LaBERTa and PhilBERTa have no embedding objective (Section~\ref{sec:testbed}).
 The T5 members collapse, with lowest AUROC 0.496 (LaTa) and 0.538 (PhilTa).
 The siblings never fall below 0.826 (LaBERTa) and 0.883 (PhilBERTa).
 Their top-PC share also stays low, peaking at 0.254 and 0.162 against 0.952 and 0.858 in LaTa and PhilTa.
@@ -259,19 +251,16 @@ Shared pretraining text and a missing embedding objective therefore do not produ
 Architecture, pretraining objective and tokenizer vary together within each pair, so the pairs cannot say which of them matters (Appendix~\ref{app:models}).
 
 \paragraph{T5-v1.1-base collapses; the original T5-base does not.}
-This contrast stays inside the T5 family.
 The two models share their tokenizer, the span-corruption objective and the C4 pretraining text \citep{raffel2020t5,t5v11release}.
 On the Latin corpus, T5-v1.1-base falls to 0.489 at layer 2, and its layers 2 to 11 collapse.
 T5-base stays at 0.816 or above at every layer, and its top-PC share peaks at 0.545.
-The two differ in layout (Section~\ref{sec:testbed}): T5-v1.1-base has the T5 v1.1 layout, and T5-base the original ReLU, tied-embedding one.
-By their checkpoint configurations, LaTa, PhilTa and mT5-base have the T5 v1.1 layout too (Table~\ref{tab:all_models}).
+The two differ in layout (Section~\ref{sec:testbed}), and by their checkpoint configurations LaTa, PhilTa and mT5-base share T5-v1.1-base's (Table~\ref{tab:all_models}).
 Across the ten models we test, the collapse tracks the T5 v1.1 layout; we do not isolate which change is responsible.
 T5-base also saw supervised tasks in pretraining \citep{raffel2020t5}, so this contrast does not separate layout from pretraining mix.
 We did not apply the projection to the controls (Limitations).
 
 \paragraph{In three T5 v1.1-layout models, the middle layers with high top-PC share appear on English text too.}
 T5-v1.1-base was pretrained on English alone, so its collapse on Latin could be an out-of-distribution effect.
-The middle-layer geometry, which needs no labels, says otherwise.
 We read mT5-base, PhilTa and T5-v1.1-base on 847 English passages of US court opinions \citep{cap2024,kandpal2025commonpile}, paired one to one with the Latin training witnesses and matched in length.
 In all three models, layers 4 to 11 keep a top-PC share of at least 0.82 on English, and the first and last layers stay at or below 0.34 (Table~\ref{tab:gen_geometry} and Figure~\ref{fig:gen_geometry}).
 At layers 2 to 11 of T5-v1.1-base, top-PC share is 0.931 to 0.950 on English and 0.958 to 0.975 on Latin.
@@ -284,15 +273,12 @@ Fine-tuning lifts the last layer from 0.938 to 0.984 AUROC.
 Layers 2 to 11 stay at 0.50 to 0.57.
 Their geometry barely moves: peak top-PC share is 0.945 after fine-tuning, against 0.952 before (Table~\ref{tab:ft_lata_layerwise}).
 This is consistent with \citet{haemmerl2023anisotropy}, who report that a sentence-tuned multilingual encoder has no large outlier dimension at its output layer but still has one at a middle layer.
-Output supervision at this scale does not reach these layers.
 
 \section{Localizing the Collapse}
 \label{sec:localizing}
 
 This section asks what masks the retrieval signal in the collapsed layers and where the mask sits.
-The mask is about three directions, and removing them restores every collapsed layer.
-Zeroing the ten coordinates that carry most of the dominant direction restores none.
-In LaTa three token types feed these directions; in mT5-base no set of up to 100 token types does.
+The mask is about three directions; zeroing the ten largest coordinates does not remove it, and only in LaTa do a few token types feed it.
 
 \begin{figure*}[t]
 \centering
@@ -302,7 +288,7 @@ In LaTa three token types feed these directions; in mT5-base no set of up to 100
 \end{figure*}
 
 We run each test at the 26 collapsed layers, fit every intervention on training embeddings, and read test ranking AUROC; a layer counts as restored at 0.90.
-We fixed most tests before running them ($\dagger$, Table~\ref{tab:predictions}), either as our expectation or as the decision rule of a rival account (passage length); four of these fail.
+We fixed most tests before running them ($\dagger$, Table~\ref{tab:predictions}); four of these fail.
 Figure~\ref{fig:localize} shows the two geometric tests; Appendix~\ref{app:localizing} gives per-layer tables and further controls.
 
 \input{tables/predictions}
@@ -315,7 +301,6 @@ Zeroing up to ten, ranked by variance or by mean absolute value, restores none o
 The dominant direction does load mostly on these coordinates: the ten of highest variance carry a median 92\% of its squared loading.
 Yet zeroing them leaves the direction dominant.
 On the remaining coordinates it still holds a median 72\% of the variance, and it still masks retrieval.
-Zeroing ten random coordinates instead moves AUROC by at most 0.0004.
 Zeroing far more coordinates does restore LaTa and PhilTa: ranked by variance, the first layers recover at 50 coordinates and all 19 by 300 (by 400 under the mean-absolute-value ranking of Figure~\ref{fig:localize}a); no mT5-base layer recovers even at 400.
 This extends the outlier-dimension account: the masking direction is concentrated on a few coordinates, yet its effect reaches beyond them.
 It agrees with \citet{haemmerl2023anisotropy}, who find that whitening improves a multilingual encoder more than zeroing its outlier dimensions.
@@ -323,19 +308,15 @@ It agrees with \citet{haemmerl2023anisotropy}, who find that whitening improves 
 \paragraph{Removing three directions restores every collapsed layer.}
 ABTT removes whole directions instead of coordinates, so we vary the number $D$ of principal components it removes (Figure~\ref{fig:localize}b).
 Centering alone ($D=0$) does not help, as expected: the median AUROC over the collapsed layers falls from 0.541 to 0.503.
-This agrees with reports that centering alone barely changes embedding models \citep{ren2026meanbias}.
 At these layers the first component holds a median 94\% of the centered training variance.
 We expected that removing it alone would recover at least 80\% of the gain from removing ten.
 It recovers a median 45\%, and reaches 80\% at only one layer of 26.
 Three components suffice for 0.91: they bring all 26 layers to 0.914 or above.
 mT5-base keeps improving up to ten components (median 0.934 at three, 0.978 at ten).
-At the collapsed layers the removed directions rank near chance.
-Ranking with the ten removed components alone gives a median AUROC of 0.489, against 0.977 for the retained subspace.
-At these layers, then, the mask occupies a few directions and the signal lies outside them.
+Ranking with the ten removed components alone gives a median AUROC of 0.489, against 0.977 for the retained subspace: at these layers the mask occupies a few directions and the signal lies outside them.
 
 \paragraph{In LaTa, three token types feed the removed directions.}
-A pooled vector is the mean of its token vectors.
-If a few token types add large values along the removed directions, a witness's position on them follows how often it uses those types.
+A pooled vector is the mean of its token vectors, so a few token types with large values along the removed directions would set a witness's position on them.
 We ranked token types on training witnesses by how much of the variance of the witness scores on the top three components they contribute, then pooled without the top $m$ types, for $m$ up to 100.
 We expected some $m$ to restore the collapsed layers.
 In LaTa, $m=3$ does.
@@ -349,15 +330,12 @@ PhilTa needs more types: dropping its top 30, about a third of its tokens, resto
 Dropping up to 100 token types, ranked the same way, restores none of its 7 collapsed layers; the best reaches 0.748.
 mT5-base also resists coordinate zeroing, yet removing three to ten directions repairs it.
 Its mask is thus confined neither to a few coordinates nor to a few token types, and we have no token-level account of it.
-Section~\ref{sec:routing} turns from ranking to routing, the task an editor faces.
 
 \section{Routing and Limits}
 \label{sec:routing}
 
 This section asks what the projection gains for routing and where it stops.
-After ABTT the six encoders route about equally well at their train-selected layers.
-For the embedding-trained encoders, the gain also shows in a score that uses no threshold.
-No frozen encoder, at its train-selected layer, beats a character n-gram reference, and fine-tuning still adds about two routing points to Qwen3-0.6B and KaLM-mini.
+At their train-selected layers after ABTT, the six frozen encoders route about equally well, but none beats a character n-gram reference.
 
 \input{tables/headline_main}
 
@@ -366,15 +344,13 @@ After ABTT, the six encoders route within 3.3 DirAcc@1 points of each other (95\
 Without correction they span 39.3 points (34.6 to 43.7), from 46.6 for mT5-base to 85.9 for KaLM-mini.
 The bootstrap interval of every encoder's routing gain excludes zero.
 The gains run from 3.5 points for KaLM-mini (1.0 to 6.0) to 41.8 for mT5-base (Table~\ref{tab:headline_ci_diffs}, Appendix~\ref{app:ci_pq}).
-At train-selected layers, the choice of encoder then matters little for routing (t-SNE and UMAP maps: Appendix~\ref{app:cluster_geometry}).
 
 \paragraph{For the embedding-trained encoders, the routing gain does not depend on the threshold.}
 LaBSE, Qwen3-0.6B and KaLM-mini already rank well without correction (AUROC 0.956 to 0.972), so their routing gain cannot come from a ranking repair.
 ABTT still raises their DirAcc@1 by 7.0, 9.1 and 3.5 points.
-Routing applies a threshold $\tau$ fit on training pairs, so we also score the existing-versus-new decision without one.
-The score is the AUROC of each test witness's best-match cosine, existing against new witnesses.
+Because routing applies a threshold $\tau$ fit on training pairs, we also score the existing-versus-new decision without it, as the AUROC of each test witness's best-match cosine, existing against new.
 ABTT raises it by 0.037 for LaBSE, 0.055 for Qwen3-0.6B and 0.027 for KaLM-mini, and every paired interval excludes zero (Appendix~\ref{app:routing_no_threshold}; per-cell values in Table~\ref{tab:pq_routing}).
-The gain in assignment accuracy also holds when both settings use their best test threshold, and a finer threshold grid changes no conclusion (Appendix~\ref{app:ci_pq}).
+The assignment-accuracy gain also holds at each setting's best test threshold and under a finer threshold grid (Appendix~\ref{app:ci_pq}).
 For these three encoders, centering alone, which removes only the training mean, scores 12 to 26 points lower in assignment accuracy than ABTT at the same layer (Table~\ref{tab:headline_ci_diffs}).
 We do not test what in the removed components produces the routing gain.
 
@@ -383,7 +359,6 @@ We compare against the character n-gram reference of Section~\ref{sec:testbed} (
 The best projected cells tie it: LaBSE ranks at 0.987, and Qwen3-0.6B and KaLM-mini route at 89.4, with every difference interval including zero.
 Two ranking cells fall below it with intervals that exclude zero, LaTa and Qwen3-0.6B (by 0.016 and 0.014 AUROC); mT5-base falls 0.012 below, with an interval that touches zero (0.000 to 0.027).
 LaTa's routing cell falls 3.7 points below it (Table~\ref{tab:headline_ci_diffs}).
-\citet{schelb2026locisimiles} report the same for Latin intertextuality, where lexical methods match or outperform dense retrievers.
 Our claims therefore concern where the retrieval signal sits inside the encoders and what masks it.
 
 \paragraph{Fine-tuning Qwen3-0.6B and KaLM-mini adds about two routing points over the projection.}
@@ -398,8 +373,7 @@ These are means over five reseedings of the query and reference witnesses (Table
 \label{sec:discussion}
 
 Before reading an intermediate layer of a frozen encoder, fit a projection on training embeddings: it is cheap insurance.
-In the six panel models it scored above the baseline at all 100 layers, in ranking and in routing, with no parameter update (Appendix~\ref{app:per_layer}); after contrastive fine-tuning it no longer helped ranking (Section~\ref{sec:routing}).
-It restores ranking at every layer, but routing after it still varies by layer (75.6 to 90.2 DirAcc@1), so the layer still matters.
+In the six panel models it scored above the baseline at all 100 layers in ranking and routing (Appendix~\ref{app:per_layer}), but routing after it still varies by layer, so the layer still matters.
 For raw states, check top-PC share, not mean pairwise cosine.
 In our models mean cosine gave no reliable warning in either direction, while every collapsed layer of the pretrained models had a top-PC share of at least 0.76 (Section~\ref{sec:depth}).
 The 0.76 is the lowest share we observed at a collapsed layer of a pretrained checkpoint, not a cutoff validated on held-out models.
@@ -411,7 +385,7 @@ Our localization names carriers in LaTa, not a cause.
 Concurrently, \citet{mikkelsen2026clinical} reports a mid-depth retrieval trough with final-layer recovery in retrieval-trained encoders on clinical text.
 That pattern differs from ours: in our panel the embedding-trained encoders do not collapse, and that study tests no T5 model.
 
-For the editor of a text collection, the projection makes the choice of encoder matter little (Section~\ref{sec:routing}).
+For the editor of a text collection, the projection makes the choice of encoder matter little (Section~\ref{sec:routing}; maps in Appendix~\ref{app:cluster_geometry}).
 The existing-versus-new decision is still wrong for about one test witness in ten (assignment accuracy 88.5 to 91.7; Table~\ref{tab:headline_ci}), so the final call stays with the scholar.
 Because the task is lexically solvable, a practical tool can start from character n-grams; dense encoders are reported to help where reuse is paraphrastic \citep{delaselle2026transcription}, a case our testbed does not measure.
 
