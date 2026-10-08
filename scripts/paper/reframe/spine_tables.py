@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """The main-text tables of the paper-spine rewrite (2 October 2026), and the appendix table of
-all twelve models, rendered from committed result files only (no embeddings, no GPU).
+all thirteen models, rendered from committed result files only (no embeddings, no GPU).
 
 Outputs (``overleaf_drafts/tables/``):
 
 ``models_main.tex``    T1, label ``tab:models``: the ten main-text models, grouped by embedding
                        training and, for the raw T5 encoders, by layout; lowest
                        baseline AUROC (layer), peak top-PC share, number of collapsed layers.
-``all_models.tex``     appendix, label ``tab:all_models``: all twelve models with the fuller
+``all_models.tex``     appendix, label ``tab:all_models``: all thirteen models with the fuller
                        statistics and the checkpoint facts.
 ``predictions.tex``    T2, label ``tab:predictions`` (one column, terse cells): each
                        localization test of Section 6, what
@@ -23,6 +23,7 @@ Outputs (``overleaf_drafts/tables/``):
 
 Inputs (all committed):
   runs/active/reframe/p2x2/p2x2_layers.csv                 the twelve-layer controls, per layer
+  runs/active/reframe/d2/p2x2_layers.csv                   T5-efficient-base (D2), per layer
   runs/active/resubmit/results/phase_resubmit_results.csv  panel baseline AUROC, per layer
   runs/active/resubmit/layer_diagnostics/geometry_per_layer.csv  panel train geometry, per layer
   runs/active/reframe/e1/e1_k_sweep.csv                    coordinate zeroing and its random control
@@ -55,6 +56,7 @@ HEADER = "% generated table\n% python scripts/paper/reframe/spine_tables.py\n"
 TAB_DIR = Path("overleaf_drafts/tables")
 
 P2X2_CSV = Path("runs/active/reframe/p2x2/p2x2_layers.csv")
+D2_CSV = Path("runs/active/reframe/d2/p2x2_layers.csv")  # T5-efficient-base (reframe_d2_controls.md)
 RES_CSV = Path("runs/active/resubmit/results/phase_resubmit_results.csv")
 GEO_CSV = Path("runs/active/resubmit/layer_diagnostics/geometry_per_layer.csv")
 KSWEEP_CSV = Path("runs/active/reframe/e1/e1_k_sweep.csv")
@@ -72,13 +74,15 @@ AGREE_TOL = 1e-6
 # display name -> (HF id, type, embedding objective, group, source)
 # type: T5 = the encoder of a T5 encoder-decoder; Enc. = encoder-only; Dec. = decoder.
 # group: v11 = raw T5, T5 v1.1 layout; orig = raw T5, original layout; enc = raw encoder-only;
-#        emb = embedding-trained.  source: panel = the published panel CSVs; p2x2 = p2x2_layers.csv
+#        emb = embedding-trained.  source: panel = the published panel CSVs; p2x2 = p2x2_layers.csv;
+#        d2 = the D2 run's p2x2_layers.csv (T5-efficient-base only)
 MODELS: Dict[str, Tuple[str, str, str, str, str]] = {
     "LaTa": ("bowphs/LaTa", "T5", "none", "v11", "panel"),
     "PhilTa": ("bowphs/PhilTa", "T5", "none", "v11", "panel"),
     "mT5-base": ("google/mt5-base", "T5", "none", "v11", "panel"),
     "T5-v1.1-base": ("google/t5-v1_1-base", "T5", "none", "v11", "p2x2"),
     "T5-base": ("google-t5/t5-base", "T5", "none", "orig", "p2x2"),
+    "T5-efficient-base": ("google/t5-efficient-base", "T5", "none", "orig", "d2"),
     "LaBERTa": ("bowphs/LaBerta", "Enc.", "none", "enc", "p2x2"),
     "PhilBERTa": ("bowphs/PhilBerta", "Enc.", "none", "enc", "p2x2"),
     "LaBSE": ("sentence-transformers/LaBSE", "Enc.", "contrastive", "emb", "panel"),
@@ -91,13 +95,13 @@ MODELS: Dict[str, Tuple[str, str, str, str, str]] = {
 MAIN_MODELS = ("LaTa", "PhilTa", "mT5-base", "T5-v1.1-base", "T5-base", "LaBERTa", "PhilBERTa",
                "LaBSE", "Qwen3-0.6B", "KaLM-mini")
 ALL_MODELS = ("LaTa", "PhilTa", "mT5-base", "T5-v1.1-base", "T5-base", "LaBERTa", "PhilBERTa",
-              "LaBSE", "Qwen3-0.6B", "KaLM-mini", "Sentence-T5", "SPhilBERTa")
+              "LaBSE", "Qwen3-0.6B", "KaLM-mini", "Sentence-T5", "SPhilBERTa", "T5-efficient-base")
 PANEL = ("LaTa", "PhilTa", "mT5-base", "LaBSE", "Qwen3-0.6B", "KaLM-mini")
 T5_PANEL_IDS = ("bowphs/LaTa", "bowphs/PhilTa", "google/mt5-base")
 
 # Feed-forward activation, inner width d_ff (intermediate_size), and whether the input and
 # output embeddings are tied, from each checkpoint's config.json (fetched 2026-10-02).
-# T5-base, LaBERTa and PhilBERTa leave tie_word_embeddings unset, so the transformers default
+# T5-base, T5-efficient-base, LaBERTa and PhilBERTa leave tie_word_embeddings unset, so the transformers default
 # (True) applies; "n/a": the checkpoint has no output head (T5EncoderModel, BertModel,
 # RobertaModel). Qwen3 and KaLM-mini (Qwen2) use a gated SiLU MLP (SwiGLU).
 CHECKPOINTS: Dict[str, Tuple[str, int, str]] = {
@@ -106,6 +110,7 @@ CHECKPOINTS: Dict[str, Tuple[str, int, str]] = {
     "mT5-base": ("gated GELU", 2048, "no"),
     "T5-v1.1-base": ("gated GELU", 2048, "no"),
     "T5-base": ("ReLU", 3072, "yes"),
+    "T5-efficient-base": ("ReLU", 3072, "yes"),
     "Sentence-T5": ("ReLU", 3072, "n/a"),
     "LaBERTa": ("GELU", 3072, "yes"),
     "PhilBERTa": ("GELU", 3072, "yes"),
@@ -125,12 +130,14 @@ GROUPS_MAIN = [
 
 # --------------------------------------------------------------------------- loading
 def per_layer(root: Path) -> pd.DataFrame:
-    """One row per (model, layer) for all twelve models: test AUROC of the unmodified
+    """One row per (model, layer) for all thirteen models: test AUROC of the unmodified
     mean-pooled vectors, and top-PC share, effective rank and mean pairwise cosine of the
-    training passages. Panel models come from the published CSVs, the others from
-    p2x2_layers.csv; where both exist they must agree."""
+    training passages. Panel models come from the published CSVs, T5-efficient-base from the
+    D2 run's p2x2_layers.csv, the others from the P2x2 p2x2_layers.csv; where the panel CSVs
+    and the P2x2 file both hold a model they must agree."""
     root = Path(root)
     p2 = pd.read_csv(root / P2X2_CSV)
+    d2 = pd.read_csv(root / D2_CSV)
     res = pd.read_csv(root / RES_CSV)
     res = res[(res["repr"] == "hidden") & (res["pooling"] == "mean") & (res["method"] == "baseline")]
     geo = pd.read_csv(root / GEO_CSV)
@@ -145,7 +152,8 @@ def per_layer(root: Path) -> pd.DataFrame:
     rows = []
     for name in ALL_MODELS:
         model_id, _, _, _, source = MODELS[name]
-        src = pub[pub["model_id"] == model_id] if source == "panel" else p2[p2["model_id"] == model_id]
+        table = {"panel": pub, "p2x2": p2, "d2": d2}[source]
+        src = table[table["model_id"] == model_id]
         if src.empty:
             raise SystemExit(f"no per-layer rows for {name} ({model_id}) in the {source} source")
         s = src[["layer", "aucroc", "pc1", "erank", "mean_cos"]].copy()
@@ -232,9 +240,9 @@ def render_models_main(summ: pd.DataFrame) -> str:
     lines += [r"\bottomrule", r"\end{tabular}",
               r"\caption{The ten main-text models, read as mean-pooled hidden states with no "
               r"correction. Type: T5 encoder (T5), encoder-only (Enc.) or decoder (Dec.; "
-              r"KaLM-mini runs with bidirectional attention). L: blocks read. AUROC$_{\min}$: "
+              r"KaLM-mini with bidirectional attention). L: blocks read. AUROC$_{\min}$: "
               r"lowest test ranking AUROC over layers, at layer $\ell$. PC1$_{\max}$: peak "
-              r"top-PC share of the training embeddings. Coll.: collapsed layers (AUROC below "
+              r"top-PC share of training embeddings. Coll.: collapsed layers (AUROC below "
               r"0.70). Only the " + _WORDS[len(v11)] + r" raw T5 encoders with the T5 v1.1 layout "
               r"(gated-GELU feed-forward, untied embeddings) collapse.}",
               r"\label{tab:models}", r"\end{table}"]
@@ -243,7 +251,7 @@ def render_models_main(summ: pd.DataFrame) -> str:
 
 def render_all_models(summ: pd.DataFrame) -> str:
     lines = [HEADER.rstrip("\n"), r"\begin{table*}[t]", r"\centering", r"\footnotesize",
-             r"\setlength{\tabcolsep}{2.5pt}", r"\begin{tabular}{@{}lllllrccccll@{}}", r"\toprule",
+             r"\setlength{\tabcolsep}{1.8pt}", r"\begin{tabular}{@{}lllllrccccll@{}}", r"\toprule",
              r"& & & \multicolumn{3}{c}{Checkpoint} & \multicolumn{4}{c}{Over layers} & "
              r"\multicolumn{2}{c}{Layers} \\",
              r"\cmidrule(lr){4-6}\cmidrule(lr){7-10}\cmidrule(lr){11-12}",
@@ -281,13 +289,14 @@ def render_all_models(summ: pd.DataFrame) -> str:
     if floor < HIGH_PC1:
         raise SystemExit(f"a collapsed layer has top-PC share {floor:.3f} < {HIGH_PC1}")
     lines += [r"\bottomrule", r"\end{tabular}",
-              r"\caption{All twelve models, read on the Latin corpus as mean-pooled hidden "
+              r"\caption{All thirteen models, read on the Latin corpus as mean-pooled hidden "
               r"states with no post-hoc correction. Type: the encoder of a T5 encoder-decoder "
               r"(T5), an encoder-only model (Enc.), or a decoder (Dec.). Emb.\ obj.: the "
               r"embedding objective trained after pretraining, if any. Checkpoint: the "
               r"feed-forward activation and inner width $d_\mathrm{ff}$, and whether input and "
               r"output embeddings are tied, as the checkpoint's configuration file states them "
-              r"(T5-base, LaBERTa and PhilBERTa leave tying at the library default, tied; n/a: "
+              r"(T5-base, T5-efficient-base, LaBERTa and PhilBERTa leave tying at the library "
+              r"default, tied; n/a: "
               r"the checkpoint has no output head). Over layers: the lowest test ranking AUROC, "
               r"the peak top-PC share and the lowest entropy effective rank, each with its "
               r"layer, and the range of mean pairwise cosine; top-PC share, effective rank and "
@@ -475,8 +484,8 @@ def render_predictions(x: Dict[str, float]) -> str:
     lines += [r"\bottomrule", r"\end{tabular}",
               r"\caption{Localization tests at the " + f"{n}" + r" collapsed layers (AUROC "
               r"below 0.70) of LaTa, PhilTa and mT5-base, unless a row names one model. Outcomes are test ranking "
-              r"AUROC or medians over layers; ``restores'' means AUROC $\ge$ 0.90. Every "
-              r"intervention is fit on training embeddings only. Coordinates are ranked by variance "
+              r"AUROC or medians over layers; ``restores'' means AUROC $\ge$ 0.90. All fits use "
+              r"training embeddings only. Coordinates are ranked by variance "
               r"or mean $|x|$. PC: principal component of the centered training embeddings; PC1: "
               r"the first. Gain: that of removing ten PCs; top types: those that feed the top "
               r"PCs. "

@@ -20,7 +20,7 @@ sys.path.insert(0, str(REPO / "scripts" / "paper" / "reframe"))
 import spine_tables as S  # noqa: E402
 
 TABLES = REPO / "overleaf_drafts" / "tables"
-NEEDED = [S.P2X2_CSV, S.RES_CSV, S.GEO_CSV, S.KSWEEP_CSV, S.DABL_CSV, S.SPLIT3_CSV,
+NEEDED = [S.P2X2_CSV, S.D2_CSV, S.RES_CSV, S.GEO_CSV, S.KSWEEP_CSV, S.DABL_CSV, S.SPLIT3_CSV,
           S.TOKABL_CSV, S.AUDIT_CSV, S.CI_DIR / "headline_ci.csv", S.CI_DIR / "run_info.json"]
 needs_data = pytest.mark.skipif(not all((REPO / p).exists() for p in NEEDED),
                                 reason="committed result CSVs not present")
@@ -57,11 +57,16 @@ def test_model_summary():
     assert round(float(summ["pc1_min_collapsed"].min()), 3) == 0.764
     exp = {"LaTa": (0.496, 6), "PhilTa": (0.538, 10), "mT5-base": (0.654, 5),
            "T5-v1.1-base": (0.489, 2), "T5-base": (0.816, 11), "LaBERTa": (0.826, 1),
-           "PhilBERTa": (0.883, 6), "LaBSE": (0.806, 1)}
+           "PhilBERTa": (0.883, 6), "LaBSE": (0.806, 1), "T5-efficient-base": (0.736, 11)}
     for m, (auc, layer) in exp.items():
         assert f"{summ.loc[m, 'auroc_min']:.3f}" == f"{auc:.3f}"
         assert summ.loc[m, "auroc_min_layer"] == layer
     assert summ.loc["Qwen3-0.6B", "n_layers"] == 28 and summ.loc["KaLM-mini", "n_layers"] == 24
+    # D2: T5-efficient-base (original layout, C4 only) does not collapse and stays below 0.76
+    assert len(S.ALL_MODELS) == 13
+    assert summ.loc["T5-efficient-base", "n_collapsed"] == 0
+    assert summ.loc["T5-efficient-base", "n_high_pc1"] == 0
+    assert f"{summ.loc['T5-efficient-base', 'pc1_max']:.3f}" == "0.627"
 
 
 @needs_data
@@ -93,7 +98,7 @@ def test_headline_spread_and_reference():
 
 @needs_data
 def test_sources_must_agree(tmp_path):
-    for p in (S.P2X2_CSV, S.RES_CSV, S.GEO_CSV):
+    for p in (S.P2X2_CSV, S.D2_CSV, S.RES_CSV, S.GEO_CSV):
         (tmp_path / p).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(REPO / p, tmp_path / p)
     S.per_layer(tmp_path)  # unchanged copies agree
