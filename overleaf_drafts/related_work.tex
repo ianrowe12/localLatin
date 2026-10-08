@@ -2,9 +2,9 @@
 \label{sec:related}
 
 \paragraph{Anisotropy statistics.}
-Contextual representations occupy a narrow cone, and the usual check is the mean cosine of random pairs \citep{gao2019degeneration, ethayarajh2019contextual}.
-This statistic is not an appropriate measure of isotropy \citep{rudman2022isoscore}.
-For pooled output embeddings, the variance share of the largest coordinate or top principal direction predicts how much rank-based similarity gains over cosine \citep{parupudi2026anisotropy}, and a topological signature led by effective rank moderately predicts retrieval quality \citep{rottach2025topology}.
+Contextual embeddings occupy a narrow cone, and the usual check is mean cosine over random pairs \citep{gao2019degeneration, ethayarajh2019contextual}.
+It is not an appropriate measure of isotropy \citep{rudman2022isoscore}.
+For pooled output embeddings, the variance share of the largest coordinate or top principal direction predicts how much rank-based similarity gains over cosine \citep{parupudi2026anisotropy}, and a topological signature led by effective rank moderately predicts retrieval \citep{rottach2025topology}.
 Yet geometric statistics do not reliably predict downstream performance \citep{nastase2025geometry, kulkarni2026geometry}.
 We relate both statistics to retrieval at every layer (Section~\ref{sec:depth}).
 
@@ -15,7 +15,7 @@ Clipping them improves mean-pooled sentence embeddings \citep{luo2021positional}
 Decoder language models carry massive activations on starting and delimiter tokens \citep{sun2024massive}.
 The original T5's encoder carries outliers that grow with depth \citep{zhao2025outlier}, and outliers persist through fine-tuning \citep{rudman2023outlier}.
 In BERT most outliers sit on \texttt{[SEP]}, the period and the comma \citep{bondarenko2023quantizable}, and removing punctuation and special tokens before pooling improves sentence similarity \citep{fusterbaggetto2022anisotropy}.
-We test these accounts on pooled T5 encoder states, comparing coordinate zeroing, direction removal and token dropping (Section~\ref{sec:localizing}).
+On pooled T5 encoder states we compare coordinate zeroing, direction removal and token dropping (Section~\ref{sec:localizing}).
 
 \paragraph{Layerwise analysis and post-hoc correction.}
 Prior T5 embedding work reads the final layer \citep{ni2022sentencet5} or the first and last layers averaged \citep{huang2021whiteningbert}; \citet{godey2024anisotropy} trace anisotropy through T5-base's encoder and decoder layers but do not measure retrieval.
