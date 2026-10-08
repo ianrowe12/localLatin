@@ -1,0 +1,29 @@
+% generated table
+% python scripts/paper/reframe/d2_controls.py --stage render
+\begin{table}[t]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{2.5pt}
+\begin{tabular}{@{}rcccccccc@{}}
+\toprule
+& \multicolumn{2}{c}{LaBERTa} & \multicolumn{2}{c}{PhilBERTa} & \multicolumn{2}{c}{T5-base} & \multicolumn{2}{c}{T5-v1.1-base} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}\cmidrule(lr){8-9}
+Layer & Base & ABTT & Base & ABTT & Base & ABTT & Base & ABTT \\
+\midrule
+1 & 0.826 & 0.974 & 0.893 & 0.976 & 0.855 & 0.981 & 0.848 & 0.970 \\
+2 & 0.832 & 0.977 & 0.905 & 0.977 & 0.864 & 0.981 & 0.489 & 0.969 \\
+3 & 0.839 & 0.972 & 0.913 & 0.978 & 0.864 & 0.974 & 0.493 & 0.965 \\
+4 & 0.830 & 0.969 & 0.903 & 0.974 & 0.849 & 0.971 & 0.505 & 0.963 \\
+5 & 0.828 & 0.967 & 0.885 & 0.976 & 0.848 & 0.969 & 0.515 & 0.963 \\
+6 & 0.834 & 0.963 & 0.883 & 0.974 & 0.843 & 0.967 & 0.523 & 0.959 \\
+7 & 0.836 & 0.964 & 0.896 & 0.974 & 0.849 & 0.962 & 0.533 & 0.952 \\
+8 & 0.844 & 0.963 & 0.905 & 0.975 & 0.847 & 0.966 & 0.536 & 0.945 \\
+9 & 0.857 & 0.965 & 0.911 & 0.979 & 0.836 & 0.969 & 0.533 & 0.934 \\
+10 & 0.873 & 0.968 & 0.919 & 0.978 & 0.826 & 0.962 & 0.531 & 0.930 \\
+11 & 0.892 & 0.966 & 0.913 & 0.980 & 0.816 & 0.959 & 0.522 & 0.927 \\
+12 & 0.910 & 0.967 & 0.923 & 0.976 & 0.843 & 0.973 & 0.772 & 0.959 \\
+\bottomrule
+\end{tabular}
+\caption{Test ranking AUROC of the four control models on the Latin corpus, before (Base: unmodified mean-pooled vectors) and after ABTT fit on the training passages, with $D$ chosen per layer on training DirAcc@1 from 1, 2, 3, 5, 7 and 10, as for the panel.}
+\label{tab:d2_controls_abtt}
+\end{table}

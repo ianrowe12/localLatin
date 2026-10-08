@@ -1,0 +1,29 @@
+% generated table
+% python scripts/paper/reframe/d2_controls.py --stage render
+\begin{table}[t]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}rcccccc@{}}
+\toprule
+& \multicolumn{5}{c}{T5-efficient-base} & T5-base \\
+\cmidrule(lr){2-6}\cmidrule(lr){7-7}
+Layer & AUROC & PC1 & Rank & Cos & ABTT & AUROC \\
+\midrule
+1 & 0.820 & 0.164 & 49.85 & 0.994 & 0.975 & 0.855 \\
+2 & 0.822 & 0.137 & 54.66 & 0.995 & 0.968 & 0.864 \\
+3 & 0.812 & 0.190 & 48.51 & 0.994 & 0.973 & 0.864 \\
+4 & 0.798 & 0.193 & 47.78 & 0.994 & 0.974 & 0.849 \\
+5 & 0.794 & 0.231 & 45.57 & 0.994 & 0.971 & 0.848 \\
+6 & 0.803 & 0.304 & 35.04 & 0.993 & 0.967 & 0.843 \\
+7 & 0.809 & 0.263 & 37.85 & 0.992 & 0.969 & 0.849 \\
+8 & 0.812 & 0.327 & 32.52 & 0.991 & 0.970 & 0.847 \\
+9 & 0.794 & 0.260 & 36.81 & 0.990 & 0.964 & 0.836 \\
+10 & 0.782 & 0.276 & 34.43 & 0.987 & 0.962 & 0.826 \\
+11 & 0.736 & 0.627 & 8.10 & 0.973 & 0.959 & 0.816 \\
+12 & 0.827 & 0.213 & 66.67 & 0.891 & 0.964 & 0.843 \\
+\bottomrule
+\end{tabular}
+\caption{T5-efficient-base, the original T5 layout (ReLU feed-forward, tied embeddings) pretrained on C4 alone without dropout for 524{,}288 steps of 65{,}536 tokens, on the Latin corpus. AUROC: test ranking AUROC of cosine on unmodified mean-pooled vectors. PC1: top-PC share, the share of centered variance on the first principal component of the 847 training passages. Rank: their entropy effective rank. Cos: their mean pairwise cosine. ABTT: test AUROC after ABTT fit on the training passages, with $D$ chosen on training DirAcc@1. Last column: T5-base, which has the same layout and pools the same tokens of every passage and was pretrained on C4 mixed with supervised tasks, with dropout, for about 30 times as many tokens; its vectors come from the same extraction run.}
+\label{tab:d2_t5_efficient}
+\end{table}
