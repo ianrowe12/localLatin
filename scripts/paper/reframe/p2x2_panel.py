@@ -91,6 +91,13 @@ MODELS = [
     ("LaBSE", "sentence-transformers/LaBSE", "Enc., emb.", "contrastive", "panel"),
     ("SPhilBERTa", "bowphs/SPhilBerta", "Enc., emb.", "distillation", "p2x2"),
 ]
+# Extra controls (spine D2, approved 2026-10-08), scored only when named in --models; the
+# default run, the render stage and the tables cover MODELS alone. T5-efficient-base has the
+# original T5 layout (ReLU feed-forward, tied embeddings) and was pretrained on C4 only.
+# Driver: scripts/paper/reframe/d2_controls.py.
+EXTRA_MODELS = [
+    ("T5-efficient-base", "google/t5-efficient-base", "T5, raw", "none", "p2x2"),
+]
 
 # Reproduction gate.
 PUBLISHED_TOL = 1e-6   # a: AUROC against phase_resubmit_results.csv
@@ -144,11 +151,12 @@ def score_models(split: pd.DataFrame, bases_root: Path, p2x2_bases: Path,
     from embedding_alignment import STATUS_UNVERIFIED, AlignmentResolver
     from raw_auroc_layers import task_a_auroc
 
-    known = [m[0] for m in MODELS]
+    known = [m[0] for m in MODELS + EXTRA_MODELS]
     unknown = [n for n in (names or []) if n not in known]
     if unknown:
         raise SystemExit(f"unknown model(s) {unknown}; choose from {known}")
-    chosen = [m for m in MODELS if not names or m[0] in names]
+    chosen = ([m for m in MODELS if not names or m[0] in names]
+              + [m for m in EXTRA_MODELS if names and m[0] in names])
     missing = []
     for name, model_id, _, _, source in chosen:
         d = run_dir(source, model_id, bases_root, p2x2_bases)
@@ -213,7 +221,7 @@ def _compare(gate: str, metric: str, got: pd.Series, ref: pd.Series, tol: float,
 
 def summarize(df: pd.DataFrame) -> pd.DataFrame:
     """One row per model. Minima and maxima take the first layer on ties."""
-    order = {m[0]: i for i, m in enumerate(MODELS)}
+    order = {m[0]: i for i, m in enumerate(MODELS + EXTRA_MODELS)}
     names = sorted(df["model"].unique(), key=lambda n: (order.get(n, len(order)), n))
     out = []
     for name in names:
@@ -597,7 +605,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     help="holds phase9_bases/<slug>/hidden_mean_tokempty (the paper's cache)")
     ap.add_argument("--p2x2_bases", type=Path, default=P2X2_BASES,
                     help="holds <slug>/hidden_mean_tokempty (the issue #248 extraction)")
-    ap.add_argument("--models", nargs="*", default=None, help="display names, default all ten")
+    ap.add_argument("--models", nargs="*", default=None, help="display names, default the ten of MODELS; "
+                    "EXTRA_MODELS run only when named")
     ap.add_argument("--out_dir", type=Path, default=OUT_DIR)
     ap.add_argument("--tab_dir", type=Path, default=TAB_DIR)
     args = ap.parse_args(argv)
