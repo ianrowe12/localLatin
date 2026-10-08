@@ -223,3 +223,7 @@ def test_committed_facts_and_tables_rerender(tmp_path):
     for name in ("d2_t5_efficient.tex", "d2_controls_abtt.tex"):
         committed = REPO / "overleaf_drafts" / "tables" / name
         assert (tab / name).read_text() == committed.read_text()
+    # The caption states the pretraining budgets (review round of PR #257).
+    cap = (tab / "d2_t5_efficient.tex").read_text()
+    assert "524{,}288 steps of 65{,}536 tokens" in cap
+    assert "for about 30 times as many tokens" in cap

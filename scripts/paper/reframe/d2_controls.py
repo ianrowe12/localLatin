@@ -523,7 +523,8 @@ def write_t5_efficient_table(layers_df: pd.DataFrame, proj: pd.DataFrame, path: 
                      f"{t['aucroc']:.3f} \\\\")
     lines += [r"\bottomrule", r"\end{tabular}",
               r"\caption{T5-efficient-base, the original T5 layout (ReLU feed-forward, tied "
-              r"embeddings) pretrained on C4 alone without dropout, on the Latin corpus. "
+              r"embeddings) pretrained on C4 alone without dropout for 524{,}288 steps of "
+              r"65{,}536 tokens, on the Latin corpus. "
               r"AUROC: test ranking "
               r"AUROC of cosine on unmodified mean-pooled vectors. PC1: top-PC share, the share "
               r"of centered variance on the first principal component of the " + n +
@@ -531,8 +532,8 @@ def write_t5_efficient_table(layers_df: pd.DataFrame, proj: pd.DataFrame, path: 
               r"pairwise cosine. ABTT: test AUROC after ABTT fit on the training passages, "
               r"with $D$ chosen on training DirAcc@1. Last column: T5-base, which has the same "
               r"layout and pools the same tokens of every passage and was pretrained on C4 "
-              r"mixed with supervised tasks, with dropout; its vectors come from the same "
-              r"extraction run.}",
+              r"mixed with supervised tasks, with dropout, for about 30 times as many tokens; "
+              r"its vectors come from the same extraction run.}",
               r"\label{tab:d2_t5_efficient}", r"\end{table}"]
     path.write_text("\n".join(lines) + "\n")
 
