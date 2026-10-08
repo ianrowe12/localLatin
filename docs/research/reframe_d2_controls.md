@@ -88,7 +88,7 @@ the released Mesh TensorFlow `operative_config.gin`:
 | pretraining steps | 524,288 (gin `run.train_steps`) | about 1M (released checkpoint `model.ckpt-999900`; gin `train_steps` is the open-ended 1e9) | 1,000,000 (gin; checkpoint `model.ckpt-1000000`) |
 | tokens per batch (gin `run.batch_size`) | 65,536 | 1,048,576 | 1,048,576 |
 | pretraining tokens | about 34.4B | about 1.05T | about 1.05T |
-| pretraining dropout | 0.0 (gin) | 0.1 (gin; Raffel et al. 2020) | off, by the T5.1.1 release notes (the released gin carries `dropout_rate = 0.1`, the fine-tuning default) |
+| pretraining dropout | 0.0 (gin) | 0.1 (gin; Raffel et al. 2020) | off, by the T5.1.1 release notes (the released pretraining gin carries `dropout_rate = 0.1`; the two sources disagree) |
 | gin `shared_embedding` / encoder activation | True / relu | True / relu (`shared_embedding_and_softmax_weights = True`) | True / gelu, linear (`shared_embedding_and_softmax_weights = False`) |
 
 The model card calls it "a *pretrained-only* checkpoint" trained "on the Colossal, Cleaned
@@ -207,7 +207,7 @@ Routing after ABTT, for the record only (claim 2 is about ranking): test DirAcc@
 predicted that "the layout account survives this control" in that case, and it does, with a
 budget caveat. Of the two differences between T5-base and T5-v1.1-base that the paper could not
 separate, pretraining mix and layout, this checkpoint takes T5-base's layout and T5-v1.1-base's
-pretraining data and dropout setting (C4 only, no dropout), at about 1/30 of their pretraining
+pretraining data (C4 only), without dropout, at about 1/30 of their pretraining
 tokens, and stays healthy. So a model with the original layout can avoid the collapse without
 supervised tasks or pretraining dropout, at least at this budget; longer C4-only pretraining of
 the original layout is untested. The supervised-mixture explanation does not become the leading
@@ -269,7 +269,7 @@ Current:
 > T5-base also saw supervised tasks in pretraining \citep{raffel2020t5}, so this contrast does not separate layout from pretraining mix.
 
 Proposed:
-> T5-base also saw supervised tasks in pretraining \citep{raffel2020t5}, so we add T5-efficient-base \citep{tay2022scale}, which has T5-base's layout but, like T5-v1.1-base, was pretrained on C4 alone without dropout, on about 30 times fewer tokens than either.
+> T5-base also saw supervised tasks in pretraining \citep{raffel2020t5}, so we add T5-efficient-base \citep{tay2022scale}, which has T5-base's layout but, like T5-v1.1-base, was pretrained on C4 alone; it was also pretrained without dropout and on about 30 times fewer tokens than either.
 > It does not collapse either: its lowest AUROC is 0.736 and its top-PC share peaks at 0.627 (Appendix~\ref{app:models}).
 > Across the ten models in Table~\ref{tab:models} and T5-efficient-base, the collapse tracks the T5 v1.1 layout; we do not isolate which of its changes is responsible.
 
@@ -313,7 +313,7 @@ Proposed:
 > We claim the narrow band for the six-model panel only: on the four controls ABTT lifts every layer to AUROC 0.927 or above, but eight of their 48 layers, seven of them in T5-v1.1-base, stay below the panel's band (0.962 to 0.987).
 
 **6. Appendix, "T5-base and T5-v1.1-base" paragraph: append.**
-> T5-efficient-base \citep{tay2022scale} has T5-base's ReLU feed-forward with inner width 3072, tied embeddings, vocabulary, depth and width, and T5-v1.1-base's pretraining data and dropout setting (C4 alone, no dropout), but a much shorter pretraining run: 524,288 steps of 65,536 tokens, about 1/30 of the tokens of either, by the released training configurations.
+> T5-efficient-base \citep{tay2022scale} has T5-base's ReLU feed-forward with inner width 3072, tied embeddings, vocabulary, depth and width, and T5-v1.1-base's C4-only pretraining data; it was pretrained without dropout and on a much shorter run: 524,288 steps of 65,536 tokens, about 1/30 of the tokens of either, by the released training configurations.
 > On the Latin corpus it never falls below 0.736 (layer 11), and its top-PC share stays at or below 0.627 (Table~\ref{tab:d2_t5_efficient}).
 > It ranks below T5-base at every layer, by 0.016 to 0.080, and its layer 11 has effective rank 8.1, a mild form of the low-rank profile.
 > Its tokenizer adds one whitespace token to 471 passages, which the pooling filter drops; reading it with T5-base's tokenizer changes no AUROC by more than 0.002 and no top-PC share by more than 0.07 (peak 0.615).
