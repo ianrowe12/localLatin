@@ -204,7 +204,7 @@ def fig_depth(d: pd.DataFrame, path: Path) -> None:
 def fig_diagnostics(d: pd.DataFrame, path: Path) -> None:
     """(a) mean pairwise cosine, (b) top-PC share, against baseline test AUROC. The six
     panel models are in the legend above; the two T5 controls in a legend inside the empty
-    lower left of panel (b)."""
+    left of panel (a)."""
     import matplotlib
 
     matplotlib.use("Agg")
@@ -248,10 +248,12 @@ def fig_diagnostics(d: pd.DataFrame, path: Path) -> None:
     fig.legend(handles=top, loc="upper center", ncol=3, frameon=False,
                bbox_to_anchor=(0.53, 1.0), handletextpad=0.1, columnspacing=0.6)
     if inner:
-        # the empty lower left of panel (b) (no point below AUROC 0.70 left of share 0.76);
-        # T5-base on top so the longer label sits on the bottom row, below every point
-        axes[1].legend(handles=inner[::-1], loc="lower left", bbox_to_anchor=(-0.02, 0.0),
-                       frameon=False, handletextpad=0.0, borderaxespad=0.0, labelspacing=0.25)
+        # the empty left of panel (a), above the gray band: no point at AUROC 0.70-0.76
+        # (inside panel (b) the T5-v1.1-base label covered that model's points at share ~0.97)
+        leg = axes[0].legend(handles=inner[::-1], loc="center left", bbox_to_anchor=(0.0, 0.545),
+                             frameon=False, handletextpad=0.0, borderaxespad=0.0,
+                             labelspacing=0.25)
+        leg.set_in_layout(False)
     fig.tight_layout(rect=(0, 0, 1, 0.83), w_pad=0.6)
     _save(fig, path)
     plt.close(fig)
