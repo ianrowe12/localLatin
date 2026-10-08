@@ -58,7 +58,8 @@ GEN_MODELS = [  # id, display, colour (Okabe-Ito, as geometry_vs_retrieval.py), 
 ]
 TEXTS = [("latin", "Latin"), ("english", "English")]
 DISP = {m[0]: m[1] for m in GEN_MODELS}
-COLLAPSE_PC1 = 0.76  # the paper's one top-PC threshold: every collapsed Latin layer reaches it (min 0.764)
+COLLAPSE_PC1 = 0.76  # the paper's one top-PC threshold: every collapsed Latin layer of the pretrained
+# models reaches it (min 0.764, PhilTa layer 3); fine-tuned LaTa layer 2 sits just below, at 0.759
 
 
 # --------------------------------------------------------------------------- compute
@@ -271,7 +272,7 @@ def write_gen_table(summ: pd.DataFrame, path: Path) -> None:
               r"top-PC share over the 12 layers, the share of centered variance on the first "
               r"principal component, with its layer $\ell$. The last three columns cover the layers "
               r"whose top-PC share is at least " + f"{COLLAPSE_PC1:.2f}" + r", a share that every "
-              r"collapsed Latin layer reaches, and give the "
+              r"collapsed Latin layer of the pretrained models reaches, and give the "
               r"range of top-PC share and of entropy effective rank over them. No labels are used, so the "
               r"English rows say nothing about retrieval.}",
               r"\label{tab:gen_geometry}", r"\end{table}"]
