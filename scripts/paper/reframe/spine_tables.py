@@ -484,7 +484,7 @@ def render_predictions(x: Dict[str, float]) -> str:
     lines += [r"\bottomrule", r"\end{tabular}",
               r"\caption{Localization tests at the " + f"{n}" + r" collapsed layers (AUROC "
               r"below 0.70) of LaTa, PhilTa and mT5-base, unless a row names one model. Outcomes are test ranking "
-              r"AUROC or medians over layers; ``restores'' means AUROC $\ge$ 0.90. All fits use "
+              r"AUROC or medians over layers; ``restores'' means AUROC $\ge$ 0.90. Every intervention uses "
               r"training embeddings only. Coordinates are ranked by variance "
               r"or mean $|x|$. PC: principal component of the centered training embeddings; PC1: "
               r"the first. Gain: that of removing ten PCs; top types: those that feed the top "
