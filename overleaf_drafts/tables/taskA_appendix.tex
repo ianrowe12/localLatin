@@ -2,24 +2,25 @@
 \small
 \setlength{\tabcolsep}{4pt}
 \begin{longtable}{llcccc}
-\caption{Per-layer ranking metrics for the embedding-trained models (LaBSE, Qwen3-0.6B, KaLM-mini), under the same two-method comparison as Table~\ref{tab:taskA_main}. \texttt{baseline} is mean pooling without correction; \texttt{abtt\_optimal} applies ABTT (no SIF weighting) with $D$ tuned per layer on the training split. Both AUROC and cosine gap are computed over the test n$\times$n cosine matrix with no threshold and no directory routing: AUROC treats same-directory test pairs as positives, and cosine gap is the difference between mean same-directory and mean different-directory cosine. Rows in bold mark the layer chosen on the training split, the layer with the highest training-set AUROC under ABTT. It is the layer behind the ABTT cell of Table~\ref{tab:headline_ci} (listed in Table~\ref{tab:selected_layers}), and not always the layer with the highest test score in this table.}
-\label{tab:taskA_appendix} \\
 \toprule
 \multicolumn{2}{c}{} & \multicolumn{4}{c}{\textbf{Ranking (embedding-trained models)}} \\
 \cmidrule(lr){3-6}
-\textbf{Model} & \textbf{Layer} & \makecell{AUROC\\(base)} & \makecell{AUROC\\(ABTT)} & \makecell{Cosine gap\\(base)} & \makecell{Cosine gap\\(ABTT)} \\
+\textbf{Model} & \textbf{Layer} & \makecell{AUROC\\(Base)} & \makecell{AUROC\\(ABTT)} & \makecell{Cosine gap\\(Base)} & \makecell{Cosine gap\\(ABTT)} \\
 \midrule
 \endfirsthead
 \toprule
 \multicolumn{2}{c}{} & \multicolumn{4}{c}{\textbf{Ranking (embedding-trained models)}} \\
 \cmidrule(lr){3-6}
-\textbf{Model} & \textbf{Layer} & \makecell{AUROC\\(base)} & \makecell{AUROC\\(ABTT)} & \makecell{Cosine gap\\(base)} & \makecell{Cosine gap\\(ABTT)} \\
+\textbf{Model} & \textbf{Layer} & \makecell{AUROC\\(Base)} & \makecell{AUROC\\(ABTT)} & \makecell{Cosine gap\\(Base)} & \makecell{Cosine gap\\(ABTT)} \\
 \midrule
 \endhead
 \midrule
 \multicolumn{6}{r}{\textit{(continued on next page)}} \\
 \endfoot
 \bottomrule
+\noalign{\vskip 8pt}
+\caption{Per-layer ranking metrics for the embedding-trained models (LaBSE, Qwen3-0.6B, KaLM-mini), under the same two-method comparison as Table~\ref{tab:taskA_main}. Base is mean pooling without correction; ABTT is applied without SIF weighting, with $D$ tuned per layer on the training split. Both AUROC and cosine gap are computed over the test n$\times$n cosine matrix with no threshold and no directory routing: AUROC treats same-directory test pairs as positives, and cosine gap is the difference between mean same-directory and mean different-directory cosine. Bold marks the layer chosen on the training split, the layer with the highest training-set AUROC under ABTT, and its ABTT values; the other columns of that row stay plain, because the layer is selected for ABTT only. It is the layer behind the ABTT cell of Table~\ref{tab:headline_ci} (listed in Table~\ref{tab:selected_layers}), and not always the layer with the highest test score in this table.}
+\label{tab:taskA_appendix} \\
 \endlastfoot
 LaBSE & 1 & 0.806 & 0.977 & 0.060 & 0.520 \\
  & 2 & 0.833 & 0.979 & 0.037 & 0.531 \\
@@ -31,11 +32,11 @@ LaBSE & 1 & 0.806 & 0.977 & 0.060 & 0.520 \\
  & 8 & 0.879 & 0.975 & 0.080 & 0.522 \\
  & 9 & 0.916 & 0.979 & 0.090 & 0.565 \\
  & 10 & 0.934 & 0.982 & 0.103 & 0.586 \\
- & \textbf{11} & \textbf{0.960} & \textbf{0.987} & \textbf{0.061} & \textbf{0.611} \\
+ & \textbf{11} & 0.960 & \textbf{0.987} & 0.061 & \textbf{0.611} \\
  & 12 & 0.956 & 0.981 & 0.183 & 0.592 \\
 \midrule
 Qwen3-0.6B & 1 & 0.858 & 0.978 & 0.033 & 0.564 \\
- & \textbf{2} & \textbf{0.863} & \textbf{0.973} & \textbf{0.024} & \textbf{0.553} \\
+ & \textbf{2} & 0.863 & \textbf{0.973} & 0.024 & \textbf{0.553} \\
  & 3 & 0.862 & 0.980 & 0.037 & 0.556 \\
  & 4 & 0.860 & 0.986 & 0.036 & 0.547 \\
  & 5 & 0.861 & 0.981 & 0.030 & 0.545 \\
@@ -63,7 +64,7 @@ Qwen3-0.6B & 1 & 0.858 & 0.978 & 0.033 & 0.564 \\
  & 27 & 0.967 & 0.982 & 0.017 & 0.559 \\
  & 28 & 0.958 & 0.975 & 0.098 & 0.556 \\
 \midrule
-KaLM-mini & \textbf{1} & \textbf{0.887} & \textbf{0.981} & \textbf{0.063} & \textbf{0.568} \\
+KaLM-mini & \textbf{1} & 0.887 & \textbf{0.981} & 0.063 & \textbf{0.568} \\
  & 2 & 0.906 & 0.983 & 0.044 & 0.566 \\
  & 3 & 0.881 & 0.981 & 0.062 & 0.551 \\
  & 4 & 0.871 & 0.983 & 0.060 & 0.553 \\

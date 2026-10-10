@@ -528,7 +528,7 @@ mT5-base layer~4 is an exception: its standardized gap is the lowest of the mode
 \begin{figure*}[t]
 \centering
 \includegraphics[width=0.96\textwidth]{fig_release_gap_6model.pdf}
-\caption{Raw cosine gap against normalized layer depth for the six panel models, test split. The gap is the mean cosine of same-directory pairs minus that of different-directory pairs, the margin a threshold works with. Gray: baseline mean pooling. Orange: SIF-weighted pooling. Blue: ABTT, with $D$ chosen per layer on training data. Baseline gaps stay below 0.29 at every layer of every model. In the middle layers the LaTa and PhilTa gaps stay within 0.09 of zero, while mT5-base's gap rises as its ranking fails (compare Figure~\ref{fig:depth}). Figure~\ref{fig:standardized_gap} resolves the mT5-base case by dividing the gap by the spread of all cosines. ABTT raises every model's gap to between 0.44 and 0.61 at every depth. SIF raises the LaTa and PhilTa gaps and leaves the other four near or below baseline.}
+\caption{Raw cosine gap against normalized layer depth for the six panel models, test split. The gap is the mean cosine of same-directory pairs minus that of different-directory pairs, the margin a threshold works with. Gray dotted: baseline mean pooling. Purple dash-dot: SIF-weighted pooling. Black solid: ABTT, with $D$ chosen per layer on training data. Baseline gaps stay below 0.29 at every layer of every model. In the middle layers the LaTa and PhilTa gaps stay within 0.09 of zero, while mT5-base's gap rises as its ranking fails (compare Figure~\ref{fig:depth}). Figure~\ref{fig:standardized_gap} resolves the mT5-base case by dividing the gap by the spread of all cosines. ABTT raises every model's gap to between 0.44 and 0.61 at every depth. SIF raises the LaTa and PhilTa gaps and leaves the other four near or below baseline.}
 \label{fig:gap}
 \end{figure*}
 
@@ -559,7 +559,7 @@ At PhilTa's collapsed layer~8 the cosines of same-source and different-source pa
 \begin{figure}[t]
 \centering
 \includegraphics[width=\columnwidth]{paper_fig_density_2x2.pdf}
-\caption{Cosine similarity distributions for PhilTa at its last layer and at the collapsed layer~8 (test AUROC 0.542, close to chance), before and after ABTT. Same: pairs that share a directory; Different: pairs that do not. Layer~8 is not PhilTa's worst layer: its lowest baseline test AUROC, 0.538, falls at layer~10. Before ABTT the two distributions sit almost on top of each other, and ABTT separates them.}
+\caption{Cosine similarity distributions for PhilTa at its last layer and at the collapsed layer~8 (test AUROC 0.542, close to chance), before and after ABTT. Same: pairs that share a directory; Different: pairs that do not; dashed and dotted vertical lines: the Same and Different means; gap: their difference. Layer~8 has the highest training AUROC of PhilTa's layers 4 to 8 (30 to 70\% of depth), all of them collapsed, so it is not PhilTa's worst layer: that is layer~10, at baseline test AUROC 0.538. Before ABTT the two distributions sit almost on top of each other, and ABTT separates them.}
 \label{fig:density}
 \end{figure}
 
@@ -697,7 +697,7 @@ Top-PC share falls before AUROC recovers: at 100 zeroed coordinates it is below 
 \begin{figure}[tb]
 \centering
 \includegraphics[width=\columnwidth]{fig_d_ablation.pdf}
-\caption{Test ranking AUROC (top) and training DirAcc@1 (bottom) against the number $D$ of removed principal components, one line per model at its lowest-AUROC baseline layer (in parentheses in the legend). The horizontal axis is categorical: raw is the uncorrected vector, $D=0$ is centering on the training mean alone, and the ticks are not evenly spaced in $D$. ABTT is fit on training embeddings only; the dotted vertical line marks $D=10$, the top of the selection grid, and the gray horizontal line chance (AUROC 0.5). Filled markers and solid lines: T5 encoders; hollow markers and dashed lines: embedding-trained models. At the plotted T5 layers one component restores part of the ranking. LaTa and PhilTa recover nearly all of it with two or three components; mT5-base keeps improving up to ten.}
+\caption{Test ranking AUROC (top) and training DirAcc@1 as a fraction (bottom) against the number $D$ of removed principal components, one line per model at its lowest-AUROC baseline layer (in parentheses in the legend). The horizontal axis is categorical: raw is the uncorrected vector, $D=0$ is centering on the training mean alone, and the ticks are not evenly spaced in $D$. ABTT is fit on training embeddings only; the dotted vertical line marks $D=10$, the top of the selection grid, and the gray horizontal line chance (AUROC 0.5). Filled markers and solid lines: T5 encoders; hollow markers and dashed lines: embedding-trained models. At the plotted T5 layers one component restores part of the ranking. LaTa and PhilTa recover nearly all of it with two or three components; mT5-base keeps improving up to ten.}
 \label{fig:d_ablation}
 \end{figure}
 

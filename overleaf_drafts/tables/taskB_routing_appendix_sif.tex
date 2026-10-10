@@ -2,24 +2,25 @@
 \small
 \setlength{\tabcolsep}{4pt}
 \begin{longtable}{llcccc}
-\caption{Per-layer routing assignment accuracy across the SIF-conditioned suite for all six models. Restricted to overall routing accuracy (existing/new decomposition omitted) to keep the table compact; see Tables~\ref{tab:taskB_routing_main} and~\ref{tab:taskB_routing_appendix} for the pure-ABTT pairwise comparison with existing/new broken out. Rows in bold mark the layer chosen on the training split, the layer with the highest training-set DirAcc@1 under SIF+ABTT. It is the layer behind the SIF+ABTT cell of Table~\ref{tab:headline_ci} (listed in Table~\ref{tab:selected_layers}), and not always the layer with the highest test score in this table.}
-\label{tab:taskB_routing_appendix_sif} \\
 \toprule
 \multicolumn{2}{c}{} & \multicolumn{4}{c}{\textbf{Routing: SIF-suite assignment accuracy (six models)}} \\
 \cmidrule(lr){3-6}
-\textbf{Model} & \textbf{Layer} & \makecell{Overall\\(base)} & \makecell{Overall\\(SIF)} & \makecell{Overall\\(SIF+ABTT$_{10}$)} & \makecell{Overall\\(SIF+ABTT)} \\
+\textbf{Model} & \textbf{Layer} & \makecell{Overall\\(Base)} & \makecell{Overall\\(SIF)} & \makecell{Overall\\(SIF+ABTT$_{10}$)} & \makecell{Overall\\(SIF+ABTT)} \\
 \midrule
 \endfirsthead
 \toprule
 \multicolumn{2}{c}{} & \multicolumn{4}{c}{\textbf{Routing: SIF-suite assignment accuracy (six models)}} \\
 \cmidrule(lr){3-6}
-\textbf{Model} & \textbf{Layer} & \makecell{Overall\\(base)} & \makecell{Overall\\(SIF)} & \makecell{Overall\\(SIF+ABTT$_{10}$)} & \makecell{Overall\\(SIF+ABTT)} \\
+\textbf{Model} & \textbf{Layer} & \makecell{Overall\\(Base)} & \makecell{Overall\\(SIF)} & \makecell{Overall\\(SIF+ABTT$_{10}$)} & \makecell{Overall\\(SIF+ABTT)} \\
 \midrule
 \endhead
 \midrule
 \multicolumn{6}{r}{\textit{(continued on next page)}} \\
 \endfoot
 \bottomrule
+\noalign{\vskip 8pt}
+\caption{Per-layer routing assignment accuracy across the SIF-conditioned suite for all six models. Restricted to overall routing accuracy (existing/new decomposition omitted) to keep the table compact; see Tables~\ref{tab:taskB_routing_main} and~\ref{tab:taskB_routing_appendix} for the pure-ABTT pairwise comparison with existing/new broken out. Accuracies are fractions (0.885 is 88.5\%). Bold marks the layer chosen on the training split, the layer with the highest training-set DirAcc@1 under SIF+ABTT, and its SIF+ABTT values; the other columns of that row stay plain, because the layer is selected for SIF+ABTT only. It is the layer behind the SIF+ABTT cell of Table~\ref{tab:headline_ci} (listed in Table~\ref{tab:selected_layers}), and not always the layer with the highest test score in this table.}
+\label{tab:taskB_routing_appendix_sif} \\
 \endlastfoot
 LaTa & 1 & 0.738 & 0.832 & 0.920 & 0.899 \\
  & 2 & 0.439 & 0.791 & 0.904 & 0.900 \\
@@ -32,9 +33,9 @@ LaTa & 1 & 0.738 & 0.832 & 0.920 & 0.899 \\
  & 9 & 0.501 & 0.618 & 0.889 & 0.889 \\
  & 10 & 0.498 & 0.655 & 0.890 & 0.890 \\
  & 11 & 0.490 & 0.621 & 0.880 & 0.880 \\
- & \textbf{12} & \textbf{0.710} & \textbf{0.804} & \textbf{0.902} & \textbf{0.902} \\
+ & \textbf{12} & 0.710 & 0.804 & 0.902 & \textbf{0.902} \\
 \midrule
-PhilTa & \textbf{1} & \textbf{0.709} & \textbf{0.790} & \textbf{0.914} & \textbf{0.914} \\
+PhilTa & \textbf{1} & 0.709 & 0.790 & 0.914 & \textbf{0.914} \\
  & 2 & 0.625 & 0.738 & 0.892 & 0.892 \\
  & 3 & 0.455 & 0.713 & 0.892 & 0.892 \\
  & 4 & 0.439 & 0.663 & 0.886 & 0.886 \\
@@ -48,7 +49,7 @@ PhilTa & \textbf{1} & \textbf{0.709} & \textbf{0.790} & \textbf{0.914} & \textbf
  & 12 & 0.549 & 0.667 & 0.899 & 0.899 \\
 \midrule
 mT5-base & 1 & 0.453 & 0.545 & 0.907 & 0.907 \\
- & \textbf{2} & \textbf{0.436} & \textbf{0.537} & \textbf{0.903} & \textbf{0.903} \\
+ & \textbf{2} & 0.436 & 0.537 & 0.903 & \textbf{0.903} \\
  & 3 & 0.449 & 0.568 & 0.885 & 0.885 \\
  & 4 & 0.491 & 0.488 & 0.857 & 0.857 \\
  & 5 & 0.512 & 0.483 & 0.826 & 0.826 \\
@@ -70,14 +71,14 @@ LaBSE & 1 & 0.477 & 0.521 & 0.886 & 0.886 \\
  & 8 & 0.568 & 0.571 & 0.854 & 0.854 \\
  & 9 & 0.612 & 0.613 & 0.859 & 0.859 \\
  & 10 & 0.713 & 0.698 & 0.864 & 0.864 \\
- & \textbf{11} & \textbf{0.833} & \textbf{0.807} & \textbf{0.896} & \textbf{0.896} \\
+ & \textbf{11} & 0.833 & 0.807 & 0.896 & \textbf{0.896} \\
  & 12 & 0.808 & 0.834 & 0.890 & 0.880 \\
 \midrule
 Qwen3-0.6B & 1 & 0.526 & 0.566 & 0.914 & 0.909 \\
  & 2 & 0.579 & 0.524 & 0.894 & 0.894 \\
  & 3 & 0.513 & 0.537 & 0.904 & 0.901 \\
  & 4 & 0.576 & 0.531 & 0.899 & 0.904 \\
- & \textbf{5} & \textbf{0.464} & \textbf{0.537} & \textbf{0.908} & \textbf{0.908} \\
+ & \textbf{5} & 0.464 & 0.537 & 0.908 & \textbf{0.908} \\
  & 6 & 0.576 & 0.526 & 0.906 & 0.906 \\
  & 7 & 0.513 & 0.573 & 0.911 & 0.911 \\
  & 8 & 0.592 & 0.627 & 0.911 & 0.911 \\
@@ -102,7 +103,7 @@ Qwen3-0.6B & 1 & 0.526 & 0.566 & 0.914 & 0.909 \\
  & 27 & 0.808 & 0.760 & 0.899 & 0.899 \\
  & 28 & 0.823 & 0.774 & 0.890 & 0.890 \\
 \midrule
-KaLM-mini & \textbf{1} & \textbf{0.585} & \textbf{0.604} & \textbf{0.906} & \textbf{0.908} \\
+KaLM-mini & \textbf{1} & 0.585 & 0.604 & 0.906 & \textbf{0.908} \\
  & 2 & 0.627 & 0.594 & 0.908 & 0.908 \\
  & 3 & 0.604 & 0.576 & 0.907 & 0.907 \\
  & 4 & 0.544 & 0.577 & 0.901 & 0.901 \\

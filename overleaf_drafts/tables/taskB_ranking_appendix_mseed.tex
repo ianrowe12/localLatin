@@ -2,24 +2,25 @@
 \small
 \setlength{\tabcolsep}{4pt}
 \begin{longtable}{llcccccc}
-\caption{Per-layer routing DirAcc@1, overall and for existing and new witnesses, across all six models, averaged over five reseedings of the query and reference files, with the training/test split fixed (mean $\pm$ std). \texttt{sif\_abtt\_optimal} applies SIF weighting plus ABTT with $D$ tuned per layer on the training split. This table covers SIF+ABTT; five-reseeding ABTT-only values for LaTa, Qwen3-0.6B and KaLM-mini, at their train-selected layers, are in Table~\ref{tab:finetune_ceiling} (Appendix~\ref{app:reference_systems}). Overall assignment accuracy coincides with DirAcc@1 under the five reseedings, so we report the existing/new decomposition instead. Rows in bold mark the layer reported per model, the row printed in Table~\ref{tab:taskb}. For each model the reported layer is chosen on the training split: the layer with the highest training-set DirAcc@1 for SIF+ABTT in the single-seed run, the layer behind the SIF+ABTT cell of Table~\ref{tab:headline_ci}, listed in Table~\ref{tab:selected_layers}. $D$ is tuned per layer on the training split. This is not always the layer with the highest mean over the five reseedings.}
-\label{tab:taskB_ranking_appendix_mseed} \\
 \toprule
 \multicolumn{2}{c}{} & \multicolumn{6}{c}{\textbf{Routing: DirAcc@1 (five reseedings, mean $\pm$ std, SIF+ABTT)}} \\
 \cmidrule(lr){3-8}
-\textbf{Model} & \textbf{Layer} & \makecell{DirAcc@1\\(base)} & \makecell{DirAcc@1\\(SIF+ABTT)} & \makecell{Existing\\(base)} & \makecell{Existing\\(SIF+ABTT)} & \makecell{New\\(base)} & \makecell{New\\(SIF+ABTT)} \\
+\textbf{Model} & \textbf{Layer} & \makecell{DirAcc@1\\(Base)} & \makecell{DirAcc@1\\(SIF+ABTT)} & \makecell{Existing\\(Base)} & \makecell{Existing\\(SIF+ABTT)} & \makecell{New\\(Base)} & \makecell{New\\(SIF+ABTT)} \\
 \midrule
 \endfirsthead
 \toprule
 \multicolumn{2}{c}{} & \multicolumn{6}{c}{\textbf{Routing: DirAcc@1 (five reseedings, mean $\pm$ std, SIF+ABTT)}} \\
 \cmidrule(lr){3-8}
-\textbf{Model} & \textbf{Layer} & \makecell{DirAcc@1\\(base)} & \makecell{DirAcc@1\\(SIF+ABTT)} & \makecell{Existing\\(base)} & \makecell{Existing\\(SIF+ABTT)} & \makecell{New\\(base)} & \makecell{New\\(SIF+ABTT)} \\
+\textbf{Model} & \textbf{Layer} & \makecell{DirAcc@1\\(Base)} & \makecell{DirAcc@1\\(SIF+ABTT)} & \makecell{Existing\\(Base)} & \makecell{Existing\\(SIF+ABTT)} & \makecell{New\\(Base)} & \makecell{New\\(SIF+ABTT)} \\
 \midrule
 \endhead
 \midrule
 \multicolumn{8}{r}{\textit{(continued on next page)}} \\
 \endfoot
 \bottomrule
+\noalign{\vskip 8pt}
+\caption{Per-layer routing DirAcc@1, overall and for existing and new witnesses, across all six models, averaged over five reseedings of the query and reference files, with the training/test split fixed (mean $\pm$ std). SIF+ABTT applies SIF weighting plus ABTT with $D$ tuned per layer on the training split. Accuracies are fractions (0.885 is 88.5\%). This table covers SIF+ABTT; five-reseeding ABTT-only values for LaTa, Qwen3-0.6B and KaLM-mini, at their train-selected layers, are in Table~\ref{tab:finetune_ceiling} (Appendix~\ref{app:reference_systems}). Overall assignment accuracy coincides with DirAcc@1 under the five reseedings, so we report the existing/new decomposition instead. Bold marks the layer reported per model and its SIF+ABTT values, the row printed in Table~\ref{tab:taskb}; the Base values in that row stay plain. For each model the reported layer is chosen on the training split: the layer with the highest training-set DirAcc@1 for SIF+ABTT in the single-seed run, the layer behind the SIF+ABTT cell of Table~\ref{tab:headline_ci}, listed in Table~\ref{tab:selected_layers}. $D$ is tuned per layer on the training split. This is not always the layer with the highest mean over the five reseedings.}
+\label{tab:taskB_ranking_appendix_mseed} \\
 \endlastfoot
 LaTa & 1 & 0.731 $\pm$ 0.010 & 0.889 $\pm$ 0.010 & 0.563 $\pm$ 0.007 & 0.844 $\pm$ 0.011 & 0.949 $\pm$ 0.011 & 0.948 $\pm$ 0.010 \\
  & 2 & 0.429 $\pm$ 0.011 & 0.888 $\pm$ 0.007 & 0.049 $\pm$ 0.006 & 0.841 $\pm$ 0.007 & 0.920 $\pm$ 0.008 & 0.948 $\pm$ 0.007 \\
@@ -32,9 +33,9 @@ LaTa & 1 & 0.731 $\pm$ 0.010 & 0.889 $\pm$ 0.010 & 0.563 $\pm$ 0.007 & 0.844 $\p
  & 9 & 0.332 $\pm$ 0.019 & 0.886 $\pm$ 0.011 & 0.045 $\pm$ 0.010 & 0.848 $\pm$ 0.009 & 0.701 $\pm$ 0.024 & 0.935 $\pm$ 0.015 \\
  & 10 & 0.346 $\pm$ 0.017 & 0.889 $\pm$ 0.004 & 0.045 $\pm$ 0.010 & 0.846 $\pm$ 0.008 & 0.735 $\pm$ 0.021 & 0.944 $\pm$ 0.012 \\
  & 11 & 0.361 $\pm$ 0.018 & 0.882 $\pm$ 0.009 & 0.045 $\pm$ 0.009 & 0.862 $\pm$ 0.010 & 0.767 $\pm$ 0.029 & 0.907 $\pm$ 0.014 \\
- & \textbf{12} & \textbf{0.707 $\pm$ 0.014} & \textbf{0.889 $\pm$ 0.005} & \textbf{0.511 $\pm$ 0.016} & \textbf{0.834 $\pm$ 0.005} & \textbf{0.961 $\pm$ 0.008} & \textbf{0.961 $\pm$ 0.010} \\
+ & \textbf{12} & 0.707 $\pm$ 0.014 & \textbf{0.889 $\pm$ 0.005} & 0.511 $\pm$ 0.016 & \textbf{0.834 $\pm$ 0.005} & 0.961 $\pm$ 0.008 & \textbf{0.961 $\pm$ 0.010} \\
 \midrule
-PhilTa & \textbf{1} & \textbf{0.705 $\pm$ 0.015} & \textbf{0.898 $\pm$ 0.008} & \textbf{0.531 $\pm$ 0.016} & \textbf{0.858 $\pm$ 0.010} & \textbf{0.931 $\pm$ 0.012} & \textbf{0.951 $\pm$ 0.011} \\
+PhilTa & \textbf{1} & 0.705 $\pm$ 0.015 & \textbf{0.898 $\pm$ 0.008} & 0.531 $\pm$ 0.016 & \textbf{0.858 $\pm$ 0.010} & 0.931 $\pm$ 0.012 & \textbf{0.951 $\pm$ 0.011} \\
  & 2 & 0.626 $\pm$ 0.019 & 0.888 $\pm$ 0.010 & 0.410 $\pm$ 0.017 & 0.866 $\pm$ 0.010 & 0.906 $\pm$ 0.018 & 0.917 $\pm$ 0.017 \\
  & 3 & 0.440 $\pm$ 0.013 & 0.893 $\pm$ 0.009 & 0.071 $\pm$ 0.014 & 0.858 $\pm$ 0.010 & 0.917 $\pm$ 0.013 & 0.939 $\pm$ 0.011 \\
  & 4 & 0.421 $\pm$ 0.016 & 0.891 $\pm$ 0.009 & 0.027 $\pm$ 0.007 & 0.858 $\pm$ 0.008 & 0.928 $\pm$ 0.015 & 0.935 $\pm$ 0.013 \\
@@ -48,7 +49,7 @@ PhilTa & \textbf{1} & \textbf{0.705 $\pm$ 0.015} & \textbf{0.898 $\pm$ 0.008} & 
  & 12 & 0.566 $\pm$ 0.013 & 0.897 $\pm$ 0.010 & 0.282 $\pm$ 0.014 & 0.863 $\pm$ 0.010 & 0.934 $\pm$ 0.007 & 0.941 $\pm$ 0.018 \\
 \midrule
 mT5-base & 1 & 0.487 $\pm$ 0.012 & 0.899 $\pm$ 0.005 & 0.100 $\pm$ 0.009 & 0.856 $\pm$ 0.007 & 0.987 $\pm$ 0.007 & 0.954 $\pm$ 0.011 \\
- & \textbf{2} & \textbf{0.476 $\pm$ 0.012} & \textbf{0.893 $\pm$ 0.005} & \textbf{0.083 $\pm$ 0.008} & \textbf{0.851 $\pm$ 0.012} & \textbf{0.984 $\pm$ 0.008} & \textbf{0.947 $\pm$ 0.013} \\
+ & \textbf{2} & 0.476 $\pm$ 0.012 & \textbf{0.893 $\pm$ 0.005} & 0.083 $\pm$ 0.008 & \textbf{0.851 $\pm$ 0.012} & 0.984 $\pm$ 0.008 & \textbf{0.947 $\pm$ 0.013} \\
  & 3 & 0.483 $\pm$ 0.014 & 0.883 $\pm$ 0.011 & 0.124 $\pm$ 0.009 & 0.817 $\pm$ 0.014 & 0.947 $\pm$ 0.008 & 0.970 $\pm$ 0.007 \\
  & 4 & 0.500 $\pm$ 0.015 & 0.852 $\pm$ 0.007 & 0.206 $\pm$ 0.006 & 0.772 $\pm$ 0.010 & 0.879 $\pm$ 0.020 & 0.956 $\pm$ 0.010 \\
  & 5 & 0.371 $\pm$ 0.014 & 0.825 $\pm$ 0.008 & 0.155 $\pm$ 0.006 & 0.724 $\pm$ 0.007 & 0.651 $\pm$ 0.023 & 0.956 $\pm$ 0.006 \\
@@ -70,14 +71,14 @@ LaBSE & 1 & 0.502 $\pm$ 0.012 & 0.858 $\pm$ 0.007 & 0.170 $\pm$ 0.003 & 0.838 $\
  & 8 & 0.572 $\pm$ 0.012 & 0.847 $\pm$ 0.006 & 0.314 $\pm$ 0.019 & 0.802 $\pm$ 0.009 & 0.904 $\pm$ 0.016 & 0.905 $\pm$ 0.008 \\
  & 9 & 0.631 $\pm$ 0.008 & 0.854 $\pm$ 0.007 & 0.381 $\pm$ 0.015 & 0.828 $\pm$ 0.002 & 0.954 $\pm$ 0.008 & 0.887 $\pm$ 0.012 \\
  & 10 & 0.712 $\pm$ 0.016 & 0.858 $\pm$ 0.005 & 0.551 $\pm$ 0.019 & 0.836 $\pm$ 0.005 & 0.920 $\pm$ 0.015 & 0.887 $\pm$ 0.010 \\
- & \textbf{11} & \textbf{0.820 $\pm$ 0.010} & \textbf{0.906 $\pm$ 0.010} & \textbf{0.731 $\pm$ 0.012} & \textbf{0.875 $\pm$ 0.013} & \textbf{0.935 $\pm$ 0.012} & \textbf{0.944 $\pm$ 0.017} \\
+ & \textbf{11} & 0.820 $\pm$ 0.010 & \textbf{0.906 $\pm$ 0.010} & 0.731 $\pm$ 0.012 & \textbf{0.875 $\pm$ 0.013} & 0.935 $\pm$ 0.012 & \textbf{0.944 $\pm$ 0.017} \\
  & 12 & 0.793 $\pm$ 0.015 & 0.884 $\pm$ 0.006 & 0.670 $\pm$ 0.019 & 0.850 $\pm$ 0.012 & 0.952 $\pm$ 0.013 & 0.927 $\pm$ 0.015 \\
 \midrule
 Qwen3-0.6B & 1 & 0.550 $\pm$ 0.008 & 0.894 $\pm$ 0.005 & 0.223 $\pm$ 0.006 & 0.840 $\pm$ 0.010 & 0.972 $\pm$ 0.003 & 0.965 $\pm$ 0.011 \\
  & 2 & 0.572 $\pm$ 0.015 & 0.882 $\pm$ 0.004 & 0.363 $\pm$ 0.014 & 0.828 $\pm$ 0.005 & 0.841 $\pm$ 0.032 & 0.952 $\pm$ 0.007 \\
  & 3 & 0.541 $\pm$ 0.007 & 0.889 $\pm$ 0.006 & 0.216 $\pm$ 0.007 & 0.827 $\pm$ 0.008 & 0.962 $\pm$ 0.007 & 0.968 $\pm$ 0.011 \\
  & 4 & 0.580 $\pm$ 0.012 & 0.891 $\pm$ 0.004 & 0.353 $\pm$ 0.008 & 0.845 $\pm$ 0.007 & 0.874 $\pm$ 0.028 & 0.950 $\pm$ 0.006 \\
- & \textbf{5} & \textbf{0.487 $\pm$ 0.017} & \textbf{0.893 $\pm$ 0.007} & \textbf{0.133 $\pm$ 0.012} & \textbf{0.839 $\pm$ 0.011} & \textbf{0.944 $\pm$ 0.014} & \textbf{0.964 $\pm$ 0.009} \\
+ & \textbf{5} & 0.487 $\pm$ 0.017 & \textbf{0.893 $\pm$ 0.007} & 0.133 $\pm$ 0.012 & \textbf{0.839 $\pm$ 0.011} & 0.944 $\pm$ 0.014 & \textbf{0.964 $\pm$ 0.009} \\
  & 6 & 0.568 $\pm$ 0.012 & 0.897 $\pm$ 0.005 & 0.350 $\pm$ 0.010 & 0.857 $\pm$ 0.008 & 0.850 $\pm$ 0.023 & 0.948 $\pm$ 0.012 \\
  & 7 & 0.541 $\pm$ 0.007 & 0.902 $\pm$ 0.006 & 0.211 $\pm$ 0.009 & 0.862 $\pm$ 0.008 & 0.967 $\pm$ 0.012 & 0.953 $\pm$ 0.012 \\
  & 8 & 0.609 $\pm$ 0.009 & 0.903 $\pm$ 0.006 & 0.362 $\pm$ 0.013 & 0.861 $\pm$ 0.010 & 0.929 $\pm$ 0.017 & 0.956 $\pm$ 0.005 \\
@@ -102,7 +103,7 @@ Qwen3-0.6B & 1 & 0.550 $\pm$ 0.008 & 0.894 $\pm$ 0.005 & 0.223 $\pm$ 0.006 & 0.8
  & 27 & 0.812 $\pm$ 0.004 & 0.881 $\pm$ 0.005 & 0.741 $\pm$ 0.008 & 0.824 $\pm$ 0.006 & 0.903 $\pm$ 0.011 & 0.954 $\pm$ 0.011 \\
  & 28 & 0.824 $\pm$ 0.010 & 0.871 $\pm$ 0.006 & 0.736 $\pm$ 0.015 & 0.802 $\pm$ 0.010 & 0.939 $\pm$ 0.005 & 0.961 $\pm$ 0.007 \\
 \midrule
-KaLM-mini & \textbf{1} & \textbf{0.596 $\pm$ 0.012} & \textbf{0.893 $\pm$ 0.005} & \textbf{0.344 $\pm$ 0.003} & \textbf{0.846 $\pm$ 0.005} & \textbf{0.922 $\pm$ 0.022} & \textbf{0.953 $\pm$ 0.006} \\
+KaLM-mini & \textbf{1} & 0.596 $\pm$ 0.012 & \textbf{0.893 $\pm$ 0.005} & 0.344 $\pm$ 0.003 & \textbf{0.846 $\pm$ 0.005} & 0.922 $\pm$ 0.022 & \textbf{0.953 $\pm$ 0.006} \\
  & 2 & 0.620 $\pm$ 0.018 & 0.893 $\pm$ 0.003 & 0.422 $\pm$ 0.014 & 0.845 $\pm$ 0.005 & 0.876 $\pm$ 0.023 & 0.955 $\pm$ 0.008 \\
  & 3 & 0.605 $\pm$ 0.011 & 0.893 $\pm$ 0.004 & 0.379 $\pm$ 0.008 & 0.843 $\pm$ 0.000 & 0.896 $\pm$ 0.018 & 0.959 $\pm$ 0.010 \\
  & 4 & 0.562 $\pm$ 0.015 & 0.889 $\pm$ 0.005 & 0.265 $\pm$ 0.009 & 0.842 $\pm$ 0.008 & 0.945 $\pm$ 0.016 & 0.949 $\pm$ 0.008 \\
