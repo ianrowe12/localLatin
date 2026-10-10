@@ -108,13 +108,15 @@ def test_real_localize_numbers(res):
 @pytest.mark.parametrize("name", ["fig_depth.pdf", "fig_localize.pdf", "fig_localize_col.pdf"])
 def test_figures_regenerate_byte_identically(res, tmp_path, name):
     """The committed main-text figures are what the generator draws from the committed CSVs."""
-    pytest.importorskip("matplotlib")
+    matplotlib = pytest.importorskip("matplotlib")
     _need(pf.KSWEEP_CSV, pf.H1_CSV)
     committed = REPO_ROOT / "overleaf_drafts" / "figures" / name
     if not committed.exists():
         pytest.skip(f"{name} not checked out")
-    pf.main(["--only", "depth" if name == "fig_depth.pdf" else "localize",
-             "--fig_dir", str(tmp_path)])
+    # style() sets global rcParams; restore them so later figure tests see the defaults
+    with matplotlib.rc_context():
+        pf.main(["--only", "depth" if name == "fig_depth.pdf" else "localize",
+                 "--fig_dir", str(tmp_path)])
     assert (tmp_path / name).read_bytes() == committed.read_bytes(), name
 
 
