@@ -122,7 +122,7 @@ We localize and repair the collapse but do not explain why the T5 v1.1 layout pr
 \begin{figure*}[t]
 \centering
 \includegraphics[width=\textwidth]{fig_depth}
-\caption{Test ranking AUROC at every layer of the six panel models. Dotted lines, open markers: baseline (mean-pooled hidden states). Solid lines: All-but-the-Top (ABTT: remove the mean and the top principal components), fit on training embeddings only. Gray band: AUROC below 0.70, the collapsed range; horizontal line: chance. After ABTT every layer scores 0.962 to 0.987.}
+\caption{Test ranking AUROC at every layer of the six panel models. Dotted, open markers: baseline (mean-pooled hidden states). Solid, filled: ABTT (remove the training mean and the top $D \le 10$ principal components), fit on training embeddings only. Gray band: AUROC below 0.70, the collapsed range; gray line: chance. The three raw T5 encoders collapse at mid-depth; after ABTT every layer scores 0.962 to 0.987.}
 \label{fig:depth}
 \end{figure*}
 
@@ -279,7 +279,7 @@ The mask is about three directions; zeroing the ten largest coordinates does not
 \begin{figure*}[t]
 \centering
 \includegraphics[width=\textwidth]{fig_localize}
-\caption{Test ranking AUROC at the 26 collapsed layers of LaTa (10 layers), PhilTa (9) and mT5-base (7); lines: median over a model's collapsed layers; bands: their range. (a)~Zeroing the $k$ coordinates of largest mean absolute value; dotted: $k$ random coordinates (mean of five draws), within 0.001 of the baseline up to $k=10$ and within 0.03 at 400. Up to $k=10$ (vertical line) the best layer reaches 0.794. (b)~Removing the top $D$ principal components ($D=0$: centering only). Dashed line: AUROC 0.90. All fits use training embeddings.}
+\caption{Test ranking AUROC at the 26 collapsed layers of LaTa (10 layers), PhilTa (9) and mT5-base (7); lines: median over a model's collapsed layers; bands: their range; dashed line: AUROC 0.90. (a)~Zeroing the $k$ coordinates of largest mean absolute value; dotted: $k$ random coordinates (mean of five draws). Up to $k=10$ (vertical line) the best layer reaches 0.794. (b)~Removing the top $D$ principal components ($D=0$: centering only; ticks follow the selection grid, not evenly spaced in $D$). From $D=3$ every layer passes 0.90. All fits use training embeddings.}
 \label{fig:localize}
 \end{figure*}
 
