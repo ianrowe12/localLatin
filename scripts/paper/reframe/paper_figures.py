@@ -10,7 +10,8 @@ Reads only committed result CSVs (no embeddings, CPU only, a few seconds):
 
 Writes, in overleaf_drafts/figures/:
   fig_depth.pdf        (fig:depth, figure*)   baseline and ABTT test AUROC by layer, six panel
-                                              models, one small panel each
+                                              models, one small panel each, grouped and
+                                              labelled as raw T5 / embedding-trained
   fig_diagnostics.pdf  (fig:diagnostics, figure, one column) baseline test AUROC against
                                               top-PC share and mean pairwise cosine (both on
                                               the training passages), one point per layer;
@@ -163,6 +164,9 @@ def _save(fig, path: Path) -> None:
 
 
 def fig_depth(d: pd.DataFrame, path: Path) -> None:
+    """Six panels in two labelled groups (raw T5 encoders, embedding-trained encoders) with a
+    gap between them; the Baseline/ABTT key sits in the empty gray band of the LaBSE panel.
+    The 24- and 28-layer models are drawn without markers, which merged into a bar there."""
     import matplotlib
 
     matplotlib.use("Agg")
@@ -170,33 +174,47 @@ def fig_depth(d: pd.DataFrame, path: Path) -> None:
     from matplotlib.lines import Line2D
 
     style()
-    fig, axes = plt.subplots(1, 6, figsize=(TEXT_WIDTH_IN, DEPTH_HEIGHT_IN), sharey=True)
-    for ax, (mid, name, t5, c, mk, _ls) in zip(axes, PANEL):
+    fig = plt.figure(figsize=(TEXT_WIDTH_IN, DEPTH_HEIGHT_IN))
+    gs = fig.add_gridspec(1, 7, width_ratios=[1, 1, 1, 0.22, 1, 1, 1], wspace=0.12)
+    axes = []
+    for col in (0, 1, 2, 4, 5, 6):
+        axes.append(fig.add_subplot(gs[0, col], sharey=axes[0] if axes else None))
+    for i, (ax, (mid, name, t5, c, mk, _ls)) in enumerate(zip(axes, PANEL)):
         s = d[d.model == mid]
-        ms = 2.6 if s.layer.max() <= 12 else 1.8
+        n = int(s.layer.max())
+        mark = mk if n <= 12 else None
         ax.axhspan(0.45, COLLAPSE_AUROC, color="#f2f2f2", lw=0, zorder=0)
         ax.axhline(0.5, color="#888888", lw=0.6, zorder=1)
-        ax.plot(s.layer, s.aucroc_abtt, color=c, lw=1.1, ls="-", marker=mk, markersize=ms,
+        ax.plot(s.layer, s.aucroc_abtt, color=c, lw=1.2, ls="-", marker=mark, markersize=2.6,
                 markerfacecolor=c, markeredgecolor=c, zorder=3)
-        ax.plot(s.layer, s.aucroc_base, color=c, lw=1.1, ls=":", marker=mk, markersize=ms,
+        ax.plot(s.layer, s.aucroc_base, color=c, lw=1.2, ls=":", marker=mark, markersize=2.6,
                 markerfacecolor="white", markeredgecolor=c, markeredgewidth=0.7, zorder=4)
-        n = int(s.layer.max())
         ax.set_xlim(0.3, n + 0.7)
         step = 4 if n <= 12 else 8
         ax.set_xticks([1] + list(range(step, n + 1, step)))
         ax.set_title(name, pad=2)
         ax.grid(True, axis="y", zorder=0)
         ax.set_xlabel("Layer")
+        if i:
+            ax.tick_params(labelleft=False)
     axes[0].set_ylim(0.45, 1.0)
     axes[0].set_yticks([0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
     axes[0].set_ylabel("Test AUROC")
     key = [Line2D([0], [0], color="#444444", ls=":", marker="o", markersize=3,
                   markerfacecolor="white", markeredgecolor="#444444", label="Baseline"),
            Line2D([0], [0], color="#444444", ls="-", marker="o", markersize=3,
-                  markerfacecolor="#444444", label="ABTT (fit on training embeddings)")]
-    fig.legend(handles=key, loc="upper center", ncol=2, frameon=False,
-               bbox_to_anchor=(0.5, 1.10), handlelength=2.4, columnspacing=1.6)
-    fig.tight_layout(w_pad=0.5)
+                  markerfacecolor="#444444", label="ABTT")]
+    axes[3].legend(handles=key, loc="lower left", frameon=False, handlelength=1.8,
+                   borderaxespad=0.2, labelspacing=0.2, handletextpad=0.4)
+    fig.subplots_adjust(left=0.075, right=0.995, bottom=0.25, top=0.80)
+    for grp, label in ((axes[:3], "Raw T5 encoders (no embedding objective)"),
+                       (axes[3:], "Embedding-trained encoders")):
+        x0 = grp[0].get_position().x0
+        x1 = grp[-1].get_position().x1
+        y = grp[0].get_position().y1 + 0.13
+        fig.text((x0 + x1) / 2, y + 0.02, label, ha="center", va="bottom", fontsize=8)
+        fig.add_artist(Line2D([x0, x1], [y, y], transform=fig.transFigure, color="#888888",
+                              lw=0.6))
     _save(fig, path)
     plt.close(fig)
 
@@ -293,7 +311,7 @@ def fig_localize(zb: Dict[str, pd.DataFrame], cb: pd.DataFrame, path: Path,
         ax.axhline(0.5, color="#888888", lw=0.6, zorder=1)
         ax.axhline(REPAIR_AUROC, color="#888888", lw=0.6, ls="--", zorder=1)
         ax.grid(True, zorder=0)
-    axk.axvline(10, color="#888888", lw=0.6, ls=":", zorder=1)
+    axk.axvline(10, color="#555555", lw=0.8, ls=":", zorder=1)  # darker: visible in print
     axk.set_xscale("log")
     ticks = (1, 3, 10, 30, 100, 400)
     axk.set_xticks(ticks)

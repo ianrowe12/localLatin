@@ -54,7 +54,7 @@ OUT_DIR = Path("runs/active/reframe/gen")
 GEN_MODELS = [  # id, display, colour (Okabe-Ito, as geometry_vs_retrieval.py), marker
     ("google/mt5-base", "mT5-base", "#009E73", "^"),
     ("bowphs/PhilTa", "PhilTa", "#E69F00", "s"),
-    ("google/t5-v1_1-base", "T5-v1.1-base", "#882255", "o"),
+    ("google/t5-v1_1-base", "T5-v1.1-base", "#000000", "X"),  # as in fig_diagnostics (Figure 2)
 ]
 TEXTS = [("latin", "Latin"), ("english", "English")]
 DISP = {m[0]: m[1] for m in GEN_MODELS}

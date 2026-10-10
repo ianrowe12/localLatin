@@ -57,7 +57,7 @@ CAPTION = (
     "Table~\\ref{tab:selected_layers}); $D$ is the number of principal "
     "components removed at that layer. The three score columns are test-set routing "
     "assignment accuracy, routing DirAcc@1, and ranking cosine gap at "
-    "that layer."
+    "that layer; the two accuracies are fractions (0.885 is 88.5\\%)."
 )
 LABEL = "tab:lasttok_comparison"
 COLUMN_FORMAT = "llrrccc"

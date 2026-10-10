@@ -6,7 +6,7 @@
 \toprule
 \multicolumn{2}{c}{} & \multicolumn{6}{c}{\textbf{Routing (T5 encoders, file-level, $\tau$-thresholded)}} \\
 \cmidrule(lr){3-8}
-\textbf{Model} & \textbf{Layer} & \makecell{Existing\\(base)} & \makecell{Existing\\(ABTT)} & \makecell{New\\(base)} & \makecell{New\\(ABTT)} & \makecell{Overall\\(base)} & \makecell{Overall\\(ABTT)} \\
+\textbf{Model} & \textbf{Layer} & \makecell{Existing\\(Base)} & \makecell{Existing\\(ABTT)} & \makecell{New\\(Base)} & \makecell{New\\(ABTT)} & \makecell{Overall\\(Base)} & \makecell{Overall\\(ABTT)} \\
 \midrule
 LaTa & 1 & 0.630 & 0.910 & 0.916 & 0.907 & 0.738 & 0.909 \\
  & 2 & 0.153 & 0.905 & 0.913 & 0.892 & 0.439 & 0.900 \\
@@ -15,13 +15,13 @@ LaTa & 1 & 0.630 & 0.910 & 0.916 & 0.907 & 0.738 & 0.909 \\
  & 5 & 0.374 & 0.892 & 0.715 & 0.913 & 0.502 & 0.900 \\
  & 6 & 0.378 & 0.884 & 0.712 & 0.913 & 0.503 & 0.895 \\
  & 7 & 0.372 & 0.875 & 0.715 & 0.916 & 0.501 & 0.890 \\
- & \textbf{8} & \textbf{0.379} & \textbf{0.884} & \textbf{0.706} & \textbf{0.885} & \textbf{0.502} & \textbf{0.885} \\
+ & \textbf{8} & 0.379 & \textbf{0.884} & 0.706 & \textbf{0.885} & 0.502 & \textbf{0.885} \\
  & 9 & 0.366 & 0.886 & 0.724 & 0.873 & 0.501 & 0.881 \\
  & 10 & 0.344 & 0.873 & 0.752 & 0.882 & 0.498 & 0.876 \\
  & 11 & 0.310 & 0.867 & 0.786 & 0.901 & 0.490 & 0.880 \\
  & 12 & 0.576 & 0.890 & 0.932 & 0.833 & 0.710 & 0.868 \\
 \midrule
-PhilTa & \textbf{1} & \textbf{0.591} & \textbf{0.918} & \textbf{0.904} & \textbf{0.901} & \textbf{0.709} & \textbf{0.911} \\
+PhilTa & \textbf{1} & 0.591 & \textbf{0.918} & 0.904 & \textbf{0.901} & 0.709 & \textbf{0.911} \\
  & 2 & 0.479 & 0.895 & 0.867 & 0.885 & 0.625 & 0.892 \\
  & 3 & 0.193 & 0.897 & 0.889 & 0.879 & 0.455 & 0.890 \\
  & 4 & 0.148 & 0.886 & 0.923 & 0.873 & 0.439 & 0.881 \\
@@ -34,7 +34,7 @@ PhilTa & \textbf{1} & \textbf{0.591} & \textbf{0.918} & \textbf{0.904} & \textbf
  & 11 & 0.256 & 0.869 & 0.824 & 0.836 & 0.470 & 0.857 \\
  & 12 & 0.338 & 0.880 & 0.898 & 0.876 & 0.549 & 0.879 \\
 \midrule
-mT5-base & \textbf{1} & \textbf{0.135} & \textbf{0.877} & \textbf{0.981} & \textbf{0.947} & \textbf{0.453} & \textbf{0.903} \\
+mT5-base & \textbf{1} & 0.135 & \textbf{0.877} & 0.981 & \textbf{0.947} & 0.453 & \textbf{0.903} \\
  & 2 & 0.110 & 0.890 & 0.975 & 0.910 & 0.436 & 0.897 \\
  & 3 & 0.161 & 0.794 & 0.926 & 0.941 & 0.449 & 0.850 \\
  & 4 & 0.269 & 0.787 & 0.858 & 0.882 & 0.491 & 0.823 \\
@@ -48,6 +48,6 @@ mT5-base & \textbf{1} & \textbf{0.135} & \textbf{0.877} & \textbf{0.981} & \text
  & 12 & 0.198 & 0.834 & 0.926 & 0.799 & 0.472 & 0.821 \\
 \bottomrule
 \end{tabular}
-\caption{Per-layer routing accuracy for the three T5 encoders. \texttt{baseline} is mean pooling without correction; \texttt{abtt\_optimal} applies ABTT (no SIF weighting) with $D$ tuned per layer on the training split. For every test file we compute $s_i = \max_{j \neq i} \cos(e_i, e_j)$ against the rest of the test set and compare to the learned threshold $\tau$ (fit on the training split via an $F_1$-optimal cut on same-directory vs.\ different-directory pairs). The decision is binary first (existing if $s_i \geq \tau$, else new); only files predicted existing are then routed to their top-1 neighbor's directory. We report \textbf{existing accuracy} (restricted to files whose true partner is in the test set), \textbf{new accuracy} (files that should be flagged as novel), and \textbf{overall assignment accuracy}. Rows in bold mark the layer chosen on the training split, the layer with the highest training-set DirAcc@1 under ABTT. It is the layer behind the ABTT cell of Table~\ref{tab:headline_ci} (listed in Table~\ref{tab:selected_layers}), and not always the layer with the highest test score in this table.}
+\caption{Per-layer routing accuracy for the three T5 encoders. Base is mean pooling without correction; ABTT is applied without SIF weighting, with $D$ tuned per layer on the training split. For every test file we compute $s_i = \max_{j \neq i} \cos(e_i, e_j)$ against the rest of the test set and compare to the learned threshold $\tau$ (fit on the training split via an $F_1$-optimal cut on same-directory vs.\ different-directory pairs). The decision is binary first (existing if $s_i \geq \tau$, else new); only files predicted existing are then routed to their top-1 neighbor's directory. We report \textbf{existing accuracy} (restricted to files whose true partner is in the test set), \textbf{new accuracy} (files that should be flagged as novel), and \textbf{overall assignment accuracy}. Accuracies are fractions (0.885 is 88.5\%). Bold marks the layer chosen on the training split, the layer with the highest training-set DirAcc@1 under ABTT, and its ABTT values; the other columns of that row stay plain, because the layer is selected for ABTT only. It is the layer behind the ABTT cell of Table~\ref{tab:headline_ci} (listed in Table~\ref{tab:selected_layers}), and not always the layer with the highest test score in this table.}
 \label{tab:taskB_routing_main}
 \end{table*}

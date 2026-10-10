@@ -64,7 +64,8 @@ We test this practice on medieval Latin canon law, where a scholarly edition lab
 In the raw T5 encoders LaTa, PhilTa and mT5-base, 26 of 36 layers rank same-source pairs near chance, although their first and last layers retrieve well.
 Mean pairwise cosine gives no reliable warning of this collapse, while the share of variance on the first principal component is high at every collapsed layer.
 The signal is masked, not missing: a projection fit on training embeddings alone brings all 100 layers of our six-encoder panel to AUROC 0.962--0.987.
-Four of the six raw T5-family encoders we test, these three and T5-v1.1-base, collapse, and all four share the T5 v1.1 layout; encoder-only siblings pretrained on the same corpora and two checkpoints with the original T5 layout do not.
+Of the six raw T5-family encoders we test, four collapse: these three and T5-v1.1-base.
+All four share the T5 v1.1 layout; encoder-only siblings pretrained on the same corpora and two checkpoints with the original T5 layout do not.
 Removing about three principal directions restores every collapsed layer, while zeroing the ten largest coordinates restores none.
 After the projection the six encoders route witnesses to their source or to ``new'' about equally well, but no frozen encoder at its train-selected layer beats a character n-gram reference.
 \end{abstract}
@@ -81,28 +82,29 @@ Mean cosine is already known to be a poor isotropy measure \citep{rudman2022isos
 
 Medieval Latin suits this test.
 The Carolingian Canon Law project \citep[CCL;][]{firey2009ccl} keys each transcribed manuscript unit to the source it copies, with expert labels that no model shaped.
+Latin also offers T5 and encoder-only models from the same authors and pretraining corpora.
 Our testbed holds 1,705 \emph{witnesses}, manuscript copies of 840 sources.
 We evaluate two tasks: \emph{ranking} pairs of witnesses by cosine, scored by AUROC, and \emph{routing} each witness to its source or to ``new''.
 Because witnesses copy their source's wording, a character n-gram reference ranks pairs at 0.987 AUROC, so a retrieval failure points to the representation.
-Latin also offers T5 and encoder-only models from the same authors and pretraining corpora.
 
 Three raw T5 encoders, trained with no embedding objective, fail at mid-depth (Figure~\ref{fig:depth}).
 In LaTa, PhilTa and mT5-base \citep{xue2021mt5}, 26 of 36 layers rank same-source pairs at AUROC 0.50 to 0.66, near chance.
-Their first and last layers still retrieve, and the three embedding-trained encoders of our panel never collapse.
+Their first and last layers still retrieve.
+Three embedding-trained encoders, which complete our six-model panel, never collapse.
 The usual check, mean pairwise cosine, gives no reliable warning in either direction.
 The share of variance on the first principal component (top-PC share) is high at every collapsed layer: necessary for collapse in our models, but not sufficient.
 
 The signal is masked, not missing.
-All-but-the-Top \citep[ABTT;][]{mu2018allbutthetop}, fit on training embeddings only, removes the mean and the top principal components from every embedding, with no parameter update.
-It brings all 100 layers of the six panel models to AUROC 0.962 to 0.987, the 26 collapsed layers included.
-The projection is linear and sees no test label, so the ranking it recovers is already present in each collapsed layer.
+All-but-the-Top \citep[ABTT;][]{mu2018allbutthetop}, a linear projection fit on training embeddings only, removes the mean and the top principal components from every embedding, with no parameter update.
+It brings all 100 panel layers to AUROC 0.962 to 0.987, the 26 collapsed layers included.
+Because the projection sees no test label, the ranking it recovers is already present in each collapsed layer.
 
-Controls show which models collapse.
-The encoder-only siblings LaBERTa and PhilBERTa never fall below 0.826 and 0.883.
-Within the T5 family, T5-v1.1-base collapses on the same Latin text (lowest AUROC 0.489), while the original T5-base \citep{raffel2020t5} never falls below 0.816.
-T5-base also saw supervised tasks in pretraining, but T5-efficient-base \citep{tay2022scale}, with T5-base's layout and pretrained on C4 alone, without dropout and on about 30 times fewer tokens, does not collapse either.
-Four of the six raw T5-family encoders we test collapse, and all four share the T5 v1.1 layout: a gated-GELU feed-forward block \citep{shazeer2020glu} and untied input and output embeddings \citep{t5v11release}.
-Across the thirteen models we test, the collapse tracks the T5 v1.1 layout; we do not isolate which change is responsible.
+Across the thirteen models we test, the collapse tracks the T5 v1.1 layout: a gated-GELU feed-forward block \citep{shazeer2020glu} and untied input and output embeddings \citep{t5v11release}.
+LaBERTa and PhilBERTa, encoder-only siblings of LaTa and PhilTa, never fall below 0.826 and 0.883.
+T5-v1.1-base collapses on the same Latin text (lowest AUROC 0.489), while the original T5-base \citep{raffel2020t5} never falls below 0.816.
+T5-base also saw supervised tasks in pretraining, so we add T5-efficient-base \citep{tay2022scale}, with T5-base's layout but pretrained on C4 alone, without dropout and on about 30 times fewer tokens; it does not collapse either.
+Of the six raw T5-family encoders we test, the four that collapse all have this layout.
+We do not isolate which change matters.
 
 Inside the collapsed layers, about three directions mask the signal.
 Removing three principal components brings all 26 layers to AUROC 0.914 or above, and mT5-base keeps improving up to ten.
@@ -110,9 +112,9 @@ Zeroing the ten largest coordinates restores none of them, although the first pr
 In LaTa, pooling without the comma, the period and \texttt{</s>} restores every collapsed layer; in mT5-base, no set of up to 100 token types does.
 
 This paper makes four contributions.
-(1)~The first per-layer retrieval profile of T5 encoder states that we know of, each layer read on its own rather than averaged with another layer (Section~\ref{sec:depth}).
-(2)~A within-family contrast: T5-v1.1-base collapses on the same text where the original T5-base does not, and every collapsing model has the T5 v1.1 layout; encoder-only siblings on the same corpora do not collapse, and the high-share middle layers also appear on English text (Section~\ref{sec:models}).
-(3)~A localization of the mask to about three principal directions, which zeroing the ten largest coordinates does not remove, with a token-level account in LaTa and none in mT5-base (Section~\ref{sec:localizing}).
+(1)~A per-layer retrieval profile of T5 encoder states, each layer read alone, the first we know of; it shows a mid-depth collapse that ABTT reverses (Section~\ref{sec:depth}).
+(2)~Controls showing that the collapse tracks the T5 v1.1 layout: T5-v1.1-base collapses where the original T5-base does not, encoder-only siblings on the same corpora do not, and the high-share middle layers recur on English text (Section~\ref{sec:models}).
+(3)~A localization of the mask to about three directions, which zeroing the ten largest coordinates does not remove, with a token-level account in LaTa and none in mT5-base (Section~\ref{sec:localizing}).
 (4)~A measure of what the projection gains for routing and where it stops, set against a character n-gram reference (Section~\ref{sec:routing}).
 We will release the frozen testbed, split, evaluation code and character n-gram reference scores.
 We localize and repair the collapse but do not explain why the T5 v1.1 layout produces it.
@@ -120,7 +122,7 @@ We localize and repair the collapse but do not explain why the T5 v1.1 layout pr
 \begin{figure*}[t]
 \centering
 \includegraphics[width=\textwidth]{fig_depth}
-\caption{Test ranking AUROC at every layer of the six panel models. Dotted lines, open markers: baseline (mean-pooled hidden states). Solid lines: All-but-the-Top (ABTT: remove the mean and the top principal components), fit on training embeddings only. Gray band: AUROC below 0.70, the collapsed range; horizontal line: chance. After ABTT every layer scores 0.962 to 0.987.}
+\caption{Test ranking AUROC at every layer of the six panel models. Dotted, open markers: baseline (mean-pooled hidden states). Solid, filled: ABTT (remove the training mean and the top $D \le 10$ principal components), fit on training embeddings only. Gray band: AUROC below 0.70, the collapsed range; gray line: chance. The three raw T5 encoders collapse at mid-depth; after ABTT every layer scores 0.962 to 0.987.}
 \label{fig:depth}
 \end{figure*}
 
@@ -139,10 +141,10 @@ The labels are expert-assigned by the project and checked by collation in its pa
 \paragraph{Split and train-only rule.}
 \label{sec:setup}
 \label{sec:layers}
-We split the witnesses into 847 training and 858 test witnesses, with 565 and 596 positive pairs; pairs form only within a split (Appendix~\ref{app:testbed_details}).
+We split the witnesses into 847 training and 858 test witnesses, with 565 and 596 same-source pairs; pairs form only within a split (Appendix~\ref{app:testbed_details}).
 Of the test witnesses, 535 have a same-source partner in test (\emph{existing}) and 323 do not (\emph{new}).
-The layer, the routing threshold and the post-hoc correction are all chosen or fit on the training split.
-Each headline number (Table~\ref{tab:headline}) reads a model at its layer of highest training AUROC for ranking, or of highest training routing accuracy (DirAcc@1, defined below) for routing (Table~\ref{tab:selected_layers}).
+The layer, routing threshold and ABTT are chosen or fit on the training split.
+Each headline number (Table~\ref{tab:headline}) reads a model at its \emph{train-selected} layer: the one of highest training AUROC for ranking, or of highest training DirAcc@1 for routing (Table~\ref{tab:selected_layers}).
 The test split selects nothing.
 
 \paragraph{Tasks and metrics.}
@@ -150,13 +152,13 @@ The test split selects nothing.
 \emph{Ranking} scores every pair of test witnesses by the cosine of their mean-pooled embeddings.
 We report AUROC with same-source pairs as positives.
 \emph{Routing} is open-set: each test witness goes to an existing directory or to ``new''.
-Each test directory scores a witness by the highest cosine between the witness and any member.
+Each test directory scores a witness by the highest cosine between the witness and any other member.
 A pseudo-directory \texttt{NEW} scores a fixed threshold $\tau$, chosen to maximize training F1 at separating same-source from different-source pairs.
 The witness goes to the highest-scoring directory.
 DirAcc@1 counts a decision as correct if it names the labeled directory, or \texttt{NEW} for a new witness.
 Assignment accuracy scores only the existing-versus-new decision; always answering existing scores 62.4\%.
 
-A \emph{collapsed layer} has baseline test AUROC below 0.70.
+A \emph{collapsed layer} has \emph{baseline} (uncorrected) test AUROC below 0.70.
 The cutoff only describes layers; it selects no reported number.
 Two label-free statistics, computed on the training embeddings, describe each layer.
 The \emph{mean pairwise cosine} is the usual anisotropy check \citep{ethayarajh2019contextual}.
@@ -168,44 +170,44 @@ The \emph{top-PC share} is the share of variance on the first principal componen
 Of the ten models in Table~\ref{tab:models}, six form the \emph{panel}, analyzed in full over 100 layers.
 Three are raw T5 encoders with no embedding objective: the Latin LaTa \citep{lata2023card}, its Ancient Greek, Latin and English sibling PhilTa \citep{riemenschneider2023lata}, and mT5-base \citep{xue2021mt5}.
 Three are embedding-trained: LaBSE \citep{feng2022labse}, Qwen3-Embedding-0.6B \citep[Qwen3-0.6B;][]{qwen3embedding2025} and KaLM-mini \citep{kalm2025embedding}.
-Four raw controls complete the main text, two of them the encoder-only siblings LaBERTa and PhilBERTa.
+The other four are raw controls, two of them the encoder-only siblings LaBERTa and PhilBERTa.
 LaTa and LaBERTa, and PhilTa and PhilBERTa, share authors and pretraining corpora \citep{lata2023card,laberta2023card,riemenschneider2023lata}.
 The other two are English T5 encoders that share a tokenizer: T5-v1.1-base \citep{t5v11release} and the original T5-base \citep{raffel2020t5}.
 A model has the \emph{T5 v1.1 layout} when it has a gated-GELU feed-forward \citep{shazeer2020glu} and untied input and output embeddings \citep{t5v11release}.
 LaTa, PhilTa, mT5-base and T5-v1.1-base have it; T5-base keeps a ReLU feed-forward and tied embeddings.
 We mean-pool the hidden states of every transformer block, dropping only padding and tokens that decode to no text, such as SentencePiece's bare word-boundary piece; special tokens such as \texttt{</s>} and punctuation are kept.
 Mean pooling routes better than last-token pooling in all five models we checked (Appendix~\ref{app:lasttok}).
-Sentence-T5 \citep{ni2022sentencet5} and SPhilBERTa \citep{riemenschneider2023sphilberta} appear only in Table~\ref{tab:all_models}.
+Table~\ref{tab:all_models} lists all thirteen models, adding Sentence-T5 \citep{ni2022sentencet5}, SPhilBERTa \citep{riemenschneider2023sphilberta} and T5-efficient-base (Section~\ref{sec:models}).
 
 \paragraph{Post-processing and lexical reference.}
 \label{sec:postproc}
 ABTT \citep{mu2018allbutthetop} subtracts the training mean and removes the top $D$ principal components of the centered training embeddings from every vector.
 We choose $D \in \{1,2,3,5,7,10\}$ per layer by training DirAcc@1.
-ABTT is fit on training embeddings only and updates no model parameter; we also call it \emph{the projection}.
-SIF frequency weighting \citep{arora2017sif} and reduced-rank whitening \citep{su2021whitening} are baselines in Appendix~\ref{app:sif_variants}.
-The task is lexically solvable by design, because the witnesses of one source copy its wording.
-Our \emph{character n-gram reference}, TF-IDF over character 3--5-grams fit on training witnesses, reaches 0.987 AUROC and 89.9 DirAcc@1 (Table~\ref{tab:lexical_baselines}), the level the projection approaches.
+ABTT is fit on training embeddings only and updates no parameter; we also call it \emph{the projection}.
+We compare SIF frequency weighting \citep{arora2017sif} and reduced-rank whitening \citep{su2021whitening} in Appendix~\ref{app:sif_variants}.
+The task is lexically solvable by design, since the witnesses of one source copy its wording.
+Our \emph{character n-gram reference}, TF-IDF over character 3--5-grams fit on training witnesses, reaches 0.987 AUROC and 89.9 DirAcc@1 (Table~\ref{tab:lexical_baselines}), the level ABTT approaches.
 
 \section{Collapse by Depth}
 \label{sec:depth}
 
-This section asks whether the middle layers of our encoders retrieve, and whether the usual anisotropy check warns when they do not.
-In three of the six panel models most middle layers rank near chance, and a projection fit on training embeddings restores them all: the signal is masked, not missing.
+In three of the six panel models most middle layers rank near chance and mean cosine gives no reliable warning of it; ABTT, fit on training embeddings, restores every layer.
 
 \paragraph{LaTa, PhilTa and mT5-base fall to near chance at mid-depth.}
 Figure~\ref{fig:depth} gives baseline ranking AUROC at every layer of the six panel models.
 In LaTa, PhilTa and mT5-base, 26 of the 36 layers collapse, ranking at AUROC 0.50 to 0.66.
 They are layers 2--11 of LaTa, 3--11 of PhilTa and 5--11 of mT5-base.
-The next-lowest layer in the panel ranks at 0.799 (mT5-base, layer~4), so in the panel any cutoff from 0.66 to 0.79 gives the same split.
-A cutoff on training AUROC picks the same 26 layers, so no test score defines the collapse.
-The first and last layers still retrieve: LaTa ranks at 0.934 at layer~1 and 0.938 at layer~12.
+The next-lowest layer in the panel ranks at 0.799 (mT5-base, layer~4), and any cutoff from 0.66 to 0.79 gives the same split.
+A cutoff on training AUROC picks the same 26 layers; no test score defines the collapse.
+The first and last layers still retrieve; LaTa ranks at 0.934 at layer~1 and 0.938 at layer~12.
 The embedding-trained models stay at or above 0.806 at every layer.
 
 \paragraph{A train-only projection restores ranking at every layer of the six panel models.}
 ABTT (Section~\ref{sec:testbed}) lifts all 100 layers of the panel, the 26 collapsed layers included, to AUROC 0.962 to 0.987 (Figure~\ref{fig:depth}, solid lines).
-This bears out the reading of \citet{timkey2021rogue}, that a few dominant dimensions hide representational quality, here at layers that rank near chance.
+This extends the reading of \citet{timkey2021rogue}, that a few dominant dimensions hide representational quality, to layers that rank near chance.
 Reduced-rank whitening, fit on the same training embeddings, ranks within 0.021 of ABTT at every layer (Table~\ref{tab:whiten_reduced}, Appendix~\ref{app:sif_variants}).
-The restoration holds for ranking only: routing after ABTT still varies by layer, from 75.6 to 90.2 DirAcc@1 (Appendix~\ref{app:per_layer}).
+This result holds for ranking only.
+Routing after ABTT still varies by layer, from 75.6 to 90.2 DirAcc@1 (Appendix~\ref{app:per_layer}).
 
 \begin{figure}[t]
 \centering
@@ -257,17 +259,16 @@ On the four controls ABTT lifts every layer to AUROC 0.927 or above, the ten col
 \paragraph{In three T5 v1.1-layout models, the high-share middle layers appear on English text too.}
 T5-v1.1-base was pretrained on English alone, so its collapse on Latin could be an out-of-distribution effect.
 We read mT5-base, PhilTa and T5-v1.1-base on 847 English passages of US court opinions \citep{cap2024,kandpal2025commonpile}, paired one to one with the Latin training witnesses and matched in length.
-In all three models, layers 4 to 11 keep a top-PC share of at least 0.82 on English, and the first and last layers stay at or below 0.34 (Table~\ref{tab:gen_geometry} and Figure~\ref{fig:gen_geometry}).
+In all three models, layers 4 to 11 have a top-PC share of at least 0.82 on English, and the first and last layers stay at or below 0.34 (Table~\ref{tab:gen_geometry}, Figure~\ref{fig:gen_geometry}).
 At layers 2 to 11 of T5-v1.1-base, top-PC share is 0.931 to 0.950 on English and 0.958 to 0.975 on Latin.
-In these models, then, the high-share middle layers do not depend on Latin input.
-The check covers geometry only: without labels, it says nothing about retrieval on English.
+In these models the high-share middle layers do not depend on Latin input.
+The check covers geometry only; without labels, it says nothing about English retrieval.
 
 \paragraph{In LaTa, contrastive fine-tuning leaves the middle layers collapsed.}
-We fine-tuned LaTa contrastively on 499 training pairs (Appendix~\ref{app:reference_systems}).
-Fine-tuning lifts the last layer from 0.938 to 0.984 AUROC.
-Layers 2 to 11 stay at 0.50 to 0.57.
-Geometry barely moves: peak top-PC share is 0.945 after fine-tuning and 0.952 before (Table~\ref{tab:ft_lata_layerwise}).
-This agrees with \citet{haemmerl2023anisotropy}: a sentence-tuned multilingual encoder has no large outlier dimension at its output layer but one at a middle layer.
+We fine-tuned LaTa on 499 training pairs, adding the contrastive embedding objective it lacks (Appendix~\ref{app:reference_systems}).
+It lifts the last layer from 0.938 to 0.984 AUROC but leaves layers 2 to 11 at 0.50 to 0.57.
+Peak top-PC share barely moves (0.952 before, 0.945 after; Table~\ref{tab:ft_lata_layerwise}).
+This agrees with \citet{haemmerl2023anisotropy}, whose sentence-tuned multilingual encoder has a large outlier dimension at a middle layer but none at its output layer.
 
 \section{Localizing the Collapse}
 \label{sec:localizing}
@@ -278,7 +279,7 @@ The mask is about three directions; zeroing the ten largest coordinates does not
 \begin{figure*}[t]
 \centering
 \includegraphics[width=\textwidth]{fig_localize}
-\caption{Test ranking AUROC at the 26 collapsed layers of LaTa (10 layers), PhilTa (9) and mT5-base (7); lines: median over a model's collapsed layers; bands: their range. (a)~Zeroing the $k$ coordinates of largest mean absolute value; dotted: $k$ random coordinates (mean of five draws), within 0.001 of the baseline up to $k=10$ and within 0.03 at 400. Up to $k=10$ (vertical line) the best layer reaches 0.794. (b)~Removing the top $D$ principal components ($D=0$: centering only). Dashed line: AUROC 0.90. All fits use training embeddings.}
+\caption{Test ranking AUROC at the 26 collapsed layers of LaTa (10 layers), PhilTa (9) and mT5-base (7); lines: median over a model's collapsed layers; bands: their range; dashed line: AUROC 0.90. (a)~Zeroing the $k$ coordinates of largest mean absolute value; dotted: $k$ random coordinates (mean of five draws). Up to $k=10$ (vertical line) the best layer reaches 0.794. (b)~Removing the top $D$ principal components ($D=0$: centering only; ticks follow the selection grid, not evenly spaced in $D$). From $D=3$ every layer passes 0.90. All fits use training embeddings.}
 \label{fig:localize}
 \end{figure*}
 
@@ -304,9 +305,10 @@ Centering alone ($D=0$) does not help, as expected: the median AUROC over the co
 At these layers the first component holds a median 94\% of the centered training variance.
 We expected that removing it alone would recover at least 80\% of the gain from removing ten.
 It recovers a median 45\%, and reaches 80\% at only one layer of 26.
-Three components suffice for 0.91: they bring all 26 layers to 0.914 or above.
+Removing three components brings all 26 layers to 0.914 or above.
 mT5-base keeps improving up to ten components (median 0.934 at three, 0.978 at ten).
-Ranking with the ten removed components alone gives a median AUROC of 0.489, against 0.977 for the retained subspace: at these layers the mask occupies a few directions and the signal lies outside them.
+Ranking within the retained subspace gives a median AUROC of 0.977, and within the ten removed components 0.489.
+At these layers the signal lies outside the mask.
 
 \paragraph{In LaTa, three token types feed the removed directions.}
 A pooled vector is the mean of its token vectors, so a few token types with large values along the removed directions would set a witness's position on them.
@@ -327,57 +329,60 @@ Its mask is thus confined neither to a few coordinates nor to a few token types,
 \section{Routing and Limits}
 \label{sec:routing}
 
-This section asks what the projection gains for routing and where it stops.
 At their train-selected layers after ABTT, the six frozen encoders route about equally well, but none beats the n-gram reference.
 
 \input{tables/headline_main}
 
 \paragraph{At train-selected layers, routing after the projection converges across the six encoders.}
-After ABTT, the six encoders route within 3.3 DirAcc@1 points of each other (95\% CI 1.8 to 6.0), from 86.1 to 89.4, at the train-selected layers of Table~\ref{tab:headline}.
-Without correction they span 39.3 points (34.6 to 43.7), from 46.6 for mT5-base to 85.9 for KaLM-mini.
+At the train-selected layers of Table~\ref{tab:headline}, the DirAcc@1 spread across the six encoders falls from 39.3 points without correction (95\% CI 34.6 to 43.7) to 3.3 after ABTT (1.8 to 6.0).
+Uncorrected, they run from 46.6 (mT5-base) to 85.9 (KaLM-mini); after ABTT, from 86.1 to 89.4.
 Every encoder's routing gain has a bootstrap interval excluding zero, from 3.5 points for KaLM-mini (1.0 to 6.0) to 41.8 for mT5-base (Table~\ref{tab:headline_ci_diffs}).
 
 \paragraph{For the embedding-trained encoders, the routing gain does not depend on the threshold.}
 LaBSE, Qwen3-0.6B and KaLM-mini already rank well without correction (AUROC 0.956 to 0.972), so their routing gain cannot come from a ranking repair.
 ABTT still raises their DirAcc@1 by 7.0, 9.1 and 3.5 points.
-Because routing applies a threshold $\tau$ fit on training pairs, we also score the existing-versus-new decision without it, as the AUROC of each test witness's best-match cosine, existing against new.
+Because the gain could come from a better-placed threshold $\tau$, we also score the existing-versus-new decision without one, as the AUROC of each test witness's best-match cosine, existing against new.
 ABTT raises it by 0.037 for LaBSE, 0.055 for Qwen3-0.6B and 0.027 for KaLM-mini, and every paired interval excludes zero (Appendix~\ref{app:routing_no_threshold}; per-cell values in Table~\ref{tab:pq_routing}).
-The assignment-accuracy gain also holds at each setting's best test threshold and under a finer threshold grid (Appendix~\ref{app:ci_pq}).
+ABTT's gain in assignment accuracy also holds at each setting's best test threshold and under a finer threshold grid (Appendix~\ref{app:ci_pq}).
 For these three encoders, centering alone ($D=0$) scores 12 to 26 points lower in assignment accuracy than ABTT at the same layer (Table~\ref{tab:headline_ci_diffs}).
-We do not test what in the removed components produces the routing gain.
+We do not test what in the removed components produces this gain.
 
 \paragraph{No frozen encoder at its train-selected layer beats a character n-gram reference.}
-The best projected cells of Table~\ref{tab:headline} tie the reference (Section~\ref{sec:testbed}): LaBSE ranks at 0.987, and Qwen3-0.6B and KaLM-mini route at 89.4, with every difference interval including zero.
+The best ABTT results in Table~\ref{tab:headline} tie the reference: LaBSE ranks at 0.987, and Qwen3-0.6B and KaLM-mini route at 89.4, with every difference interval including zero.
 Two ranking cells fall below it with intervals excluding zero, LaTa and Qwen3-0.6B (by 0.016 and 0.014 AUROC); mT5-base falls 0.012 below, its interval touching zero (0.000 to 0.027).
 LaTa's routing cell falls 3.7 points below it (Table~\ref{tab:headline_ci_diffs}).
 Our claims thus concern where the signal sits in the encoders and what masks it.
 
 \paragraph{Fine-tuning Qwen3-0.6B and KaLM-mini adds about two routing points over the projection.}
 As a supervised reference, we fine-tune LaTa, Qwen3-0.6B and KaLM-mini contrastively on 499 training pairs (Appendix~\ref{app:reference_systems}).
+For routing, fine-tuning plus ABTT beats zero-shot ABTT by 1.8 points for Qwen3-0.6B (92.3 against 90.5) and by 2.1 for KaLM-mini (93.0 against 90.9); on LaTa the two tie at 87.7.
+These are means over five reseedings, each a new random draw of which test witnesses are queries and which are the references they are routed against (Table~\ref{tab:finetune_ceiling}).
+In the single-split cells of Table~\ref{tab:headline} the gains are 2.0 and 3.1 points (only KaLM-mini's interval excludes zero), and LaTa falls 0.9.
 These references are flattered: 206 of the 535 existing test witnesses (38.5\%) sit in a directory that supplied a training pair.
-Fine-tuned Qwen3-0.6B and KaLM-mini rank above the character n-gram reference in point estimate (0.996 and 0.997 AUROC; Table~\ref{tab:headline}).
-After fine-tuning, the projection no longer helps ranking: AUROC falls slightly in point estimate in all three fine-tuned models (by 0.002 to 0.014; every interval includes zero), in line with \citet{rajaee2021finetuning}.
-For routing, fine-tuning plus ABTT beats the zero-shot projection by 1.8 points for Qwen3-0.6B (92.3 against 90.5) and by 2.1 for KaLM-mini (93.0 against 90.9); on LaTa the two tie at 87.7.
-These are means over five reseedings of the query and reference witnesses (Table~\ref{tab:finetune_ceiling}, Appendix~\ref{app:reference_systems}); Table~\ref{tab:headline} shows the single-split cells, where the gains are 2.0 and 3.1 points (only KaLM-mini's interval excludes zero) and LaTa falls 0.9 points.
+Fine-tuned Qwen3-0.6B and KaLM-mini rank above the n-gram reference in point estimate (0.996 and 0.997 AUROC).
+After fine-tuning, ABTT no longer helps ranking: AUROC falls slightly in point estimate in all three models (by 0.002 to 0.014; every interval includes zero), in line with \citet{rajaee2021finetuning}.
 
 \section{Discussion}
 \label{sec:discussion}
 
-Before reading an intermediate layer of a frozen encoder, fit a projection on training embeddings: in our panel it was cheap insurance.
-In the six panel models it scored above the baseline in point estimate at all 100 layers in ranking and routing (Appendix~\ref{app:per_layer}), but routing after it still varies by layer, so the layer still matters.
-For raw states, check top-PC share, not mean pairwise cosine.
+Before reading an intermediate layer of a frozen encoder, fit a projection on training embeddings.
+In the six panel models it scored above the baseline in point estimate at all 100 layers in ranking and routing (Appendix~\ref{app:per_layer}), which makes it cheap insurance.
+Routing after it still varies by layer, so the layer still matters.
+To screen uncorrected states, check top-PC share, not mean pairwise cosine.
 In our models mean cosine gave no reliable warning in either direction, while every collapsed layer of the pretrained models had a top-PC share of at least 0.76 (Section~\ref{sec:depth}).
 The 0.76 is the lowest share we observed at a collapsed layer of a pretrained checkpoint, not a cutoff validated on held-out models.
-The share is a screen, not a verdict: a high share is necessary for collapse here but not sufficient, and it does not order the layers inside the collapsed regime.
+A high share is necessary for collapse here but not sufficient, and does not order layers inside the collapsed regime.
 Choosing among layers still needs a train-only task signal, such as training AUROC.
 
-In decoder language models, gated feed-forward blocks are reported to amplify outlier activations \citep{fishman2025fp8,yang2025activationspikes}, but the original T5 also carries large outliers \citep{zhao2025outlier}; why the T5 v1.1 layout collapses remains open.
-Our localization names carriers in LaTa, not a cause.
-Concurrently, \citet{mikkelsen2026clinical} reports on clinical text a mid-depth retrieval trough in retrieval-trained encoders, recovering in the last layers, and recovering only partly in encoders without a retrieval objective.
+Why models with the T5 v1.1 layout collapse remains open.
+Gated feed-forward blocks are reported to amplify outlier activations in decoder language models \citep{fishman2025fp8,yang2025activationspikes}, but the original T5 also carries large outliers \citep{zhao2025outlier}.
+Our localization names carriers in LaTa but no cause.
+Concurrently, \citet{mikkelsen2026clinical} reports a mid-depth retrieval trough on clinical text; retrieval-trained encoders recover in the last layers, and encoders without a retrieval objective recover only partly.
 In our models, by contrast, neither the embedding-trained encoders nor the encoder-only siblings collapse, and that study tests no T5 model.
 
-For the editor of a text collection, the projection makes the choice of encoder matter little (Section~\ref{sec:routing}; maps in Appendix~\ref{app:cluster_geometry}).
-The existing-versus-new decision is still wrong for about one test witness in ten (assignment accuracy 88.5 to 91.7; Table~\ref{tab:headline_ci}), so the final call stays with the scholar.
+For the editor of a text collection, ABTT makes the choice among these six encoders matter little (Section~\ref{sec:routing}; maps in Appendix~\ref{app:cluster_geometry}).
+The existing-versus-new decision is still wrong for about one test witness in ten (assignment accuracy 88.5 to 91.7; Table~\ref{tab:headline_ci}).
+The final call stays with the scholar.
 Because the task is lexically solvable, a practical tool can start from character n-grams; dense encoders are reported to help where reuse is paraphrastic \citep{delaselle2026transcription}, a case our testbed does not measure.
 
 % Numbered content ends with the Discussion; start the unnumbered
@@ -387,22 +392,25 @@ Because the task is lexically solvable, a practical tool can start from characte
 
 Four factors are uncontrolled.
 (i)~We use one labeled corpus in one language and genre, early medieval Latin canon law; its 1,705 witnesses are many for this field but few by current NLP standards.
-(ii)~Within each matched pair, architecture, pretraining objective and tokenizer vary together, so the pairs do not say which of them matters; that LaTa and LaBERTa share authors and a pretraining corpus rests on their model cards \citep{lata2023card,laberta2023card}.
-(iii)~The T5 v1.1 changes (gated-GELU feed-forward, untied embeddings) vary together, so we do not say which of them matters; T5-efficient-base has the original layout without T5-base's supervised pretraining, but it is a single checkpoint pretrained on about 30 times fewer tokens, so it separates layout from pretraining mix only at that budget.
+(ii)~Within each matched pair, architecture, pretraining objective and tokenizer vary together, so the pairs do not say which of them matters.
+That LaTa and LaBERTa share authors and a pretraining corpus rests on their model cards \citep{lata2023card,laberta2023card}.
+(iii)~The T5 v1.1 changes (gated-GELU feed-forward, untied embeddings) vary together, so we do not say which of them matters.
+T5-efficient-base has the original layout without T5-base's supervised pretraining, but it is a single checkpoint pretrained on about 30 times fewer tokens; it separates layout from pretraining mix only at that budget.
 (iv)~The token ablation accounts for the masking directions in LaTa only; in mT5-base no set of up to 100 token types restores a collapsed layer, so its mask has no token-level account.
 
 The scope of three results is narrow.
 We claim the narrow band for the six-model panel only: on the four controls ABTT lifts every layer to AUROC 0.927 or above, but eight of their 48 layers, seven of them in T5-v1.1-base, stay below the panel's band (0.962 to 0.987).
 The English check measures geometry only; we have no labels for English retrieval.
-The task is lexically solvable by design, and a character n-gram reference ties the best projected encoders, so we do not claim that encoders beat surface overlap on this corpus.
+The task is lexically solvable by design, and a character n-gram reference ties the best encoders after ABTT, so we do not claim that encoders beat surface overlap on this corpus.
 
 The fine-tuning test is small (499 pairs, at most eight epochs), and its references are flattered by directory overlap with the training pairs (Section~\ref{sec:routing}).
-Our intervals resample test directories with the layer, threshold and projection held fixed, so they cover test sampling and not the choice of split.
+Our intervals resample test directories with the layer, threshold and ABTT fit held fixed; they cover test sampling and not the choice of split.
 ABTT needs enough text to estimate principal components, so smaller archives need separate study.
 
 The labels are expert-assigned, but by one project.
-Its director or supervised graduate students assigned the keys, and verification is by collation in the project's parallel display, not by independent double annotation, so no inter-annotator agreement figure exists for this testbed.
-Collation compares the witnesses of one key, so it has nothing to compare when a key has a single witness, and 545 of the 840 directories hold one witness in this testbed.
+Its director or supervised graduate students assigned the keys, and verification is by collation in the project's parallel display, not by independent double annotation.
+No inter-annotator agreement figure therefore exists for this testbed.
+Collation needs at least two witnesses of a key, and 545 of the 840 directories hold only one.
 
 \section*{Ethical Considerations}
 
@@ -430,11 +438,11 @@ This appendix records where the testbed text comes from and how our files were d
 
 \paragraph{Identifiers.} The project has two identifier systems, both designed at its launch in 2009 by its director in consultation with a mathematician, a software developer and a second scholar of early medieval canon law. The first is a location identifier. Every manuscript is a unique object, so every unit has exactly one place in one manuscript, and the identifier records it as the manuscript siglum, the folium, and the unit's position on that folium. Our file names are these identifiers. The second is the source key. Many units in different manuscripts copy the same prescription issued by the same authority, and the key names that common source. It encodes the type of source (a church council, a papal decretal, a royal capitulary, a theologian, a penitential), the point of origin (a particular council, pope or author), the date of origin, and the item's reference in modern scholarship, such as a canon, letter or register number. The key is designed so that a researcher can find the modern authoritative edition of the source where one exists.
 
-\paragraph{Labels.} CCL keys a unit to its original source, such as a fourth-century council or a papal decretal, once that source is identified, and our directories reuse that key as supplied. In a label, a four-letter code carries the type of source and its point of origin, followed by the year and the canon or chapter number, as in \texttt{CTOU.567.16}; some labels carry a trailing annotation, as in \texttt{CTOU.567.16 (15)} or \texttt{CARL.501?.18}. Counting a directory as key-named when its label begins with a four-letter code, a period, a year and a period, whatever follows, 689 of the 840 directory labels are source keys. The other 151 are modern edition citations, the Apostolic Canons (\texttt{Can.apost.}$N$), references to other collections such as the Capitula Martini, biblical references, and a handful of unidentified sources; each unidentified source is a singleton directory and contributes no positive pairs.
+\paragraph{Labels.} CCL keys a unit to its original source, such as a fourth-century council or a papal decretal, once that source is identified, and our directories reuse that key as supplied. In a label, a four-letter code carries the type of source and its point of origin, followed by the year and the canon or chapter number, as in \texttt{CTOU.567.16}; some labels carry a trailing annotation, as in \texttt{CTOU.567.16 (15)} or \texttt{CARL.501?.18}. A label counts as key-named when it begins with a four-letter code, a period, a year and a period, whatever follows; by this rule 689 of the 840 directory labels are source keys. The other 151 are modern edition citations, the Apostolic Canons (\texttt{Can.apost.}$N$), references to other collections such as the Capitula Martini, biblical references, and a handful of unidentified sources; each unidentified source is a singleton directory and contributes no positive pairs.
 
 \paragraph{Assignment and verification.} Keys were assigned by the project's director, a specialist in early medieval canon law, or by graduate students working under the director's supervision, who had enough Latin to check a manuscript version against the modern authoritative version of the source. Verification, and occasional correction, runs through the project's parallel display, which sets side by side all units that share a key and shows how far their wording agrees. A misidentified unit stands out there as a text that cannot be a version of the others. This is verification by collation (see Limitations). The project supplied two label corrections during this study, and both are logged with the frozen testbed. We assigned no label ourselves and changed only those two. What remains unidentified is large: across the several hundred manuscripts that contain the project's texts, thousands of units still carry no key, and they are the queries that routing is meant to serve.
 
-\paragraph{Derivation.} We hold the witnesses as plain text derived from CCL TEI-P5 exports. The rule is one file per unit: the directory is the source key from the unit's \texttt{scholSource} division, which is stripped from the text so that no file carries its own label; the text is the manuscript rubric followed by the canon text, with inline markup flattened (editorial notes kept, deletions dropped) and layout whitespace collapsed; a unit without a source key receives no directory. The rule is scripted; checked against a current export of one manuscript (Paris, BnF, lat.\ 2123), it reproduces all 279 units present in both the export and the corpus, 100 percent after whitespace normalization with no character-level disagreement, and places every one of them in the same directory.
+\paragraph{Derivation.} We hold the witnesses as plain text derived from CCL TEI-P5 exports. The rule is one file per unit: the directory is the source key from the unit's \texttt{scholSource} division, which is stripped from the text so that no file carries its own label; the text is the manuscript rubric followed by the canon text, with inline markup flattened (editorial notes kept, deletions dropped) and layout whitespace collapsed; a unit without a source key receives no directory. The rule is scripted. On a current export of one manuscript (Paris, BnF, lat.\ 2123), it reproduces all 279 units present in both the export and the corpus character for character after whitespace normalization, and places every one in the same directory.
 
 \FloatBarrier
 \section{Testbed and Protocol Details}
@@ -461,7 +469,7 @@ Our mean pairwise cosine averages over all pairs of pooled passages, an adaptati
 SIF \citep{arora2017sif} reweights each token by $a/(a+p(w))$ before pooling, with $a=10^{-3}$ and $p(w)$ estimated on training texts.
 It gives special tokens, such as the end-of-sequence token \texttt{</s>}, zero weight.
 We use only this weighting step of SIF, not its common-component removal.
-SIF+ABTT applies both corrections, and ABTT-only names ABTT when we contrast the two.
+SIF+ABTT applies both; ABTT-only marks ABTT alone where we contrast the two.
 
 \paragraph{Software.}
 We extract hidden states with PyTorch \citep{paszke2019pytorch} and Hugging Face Transformers \citep{wolf2020transformers}, fit whitening and the character TF-IDF reference with scikit-learn \citep{pedregosa2011scikit}, and compute principal components and the remaining statistics with NumPy \citep{harris2020numpy}.
@@ -508,7 +516,8 @@ The absence of a reliable ordering agrees with reports that geometric statistics
 
 \paragraph{Raw and standardized gap.}
 The raw cosine gap, the margin a routing threshold works with, tracks ranking poorly: across the panel it correlates with AUROC at Spearman $+0.22$ (Figure~\ref{fig:gap}).
-The standardized gap reaches $+0.97$, but it is a label-based signal-to-noise ratio close to the $d'$ from which a binormal model computes AUROC, so it tracks AUROC by construction and we do not count it as a predictor.
+The standardized gap reaches $+0.97$, but it is a label-based signal-to-noise ratio close to the $d'$ from which a binormal model computes AUROC.
+It tracks AUROC by construction, so we do not count it as a predictor.
 It explains one pattern in mT5-base (Figure~\ref{fig:standardized_gap}).
 There the raw gap rises from about 0.03 to 0.21--0.25 exactly where ranking fails.
 Over the same layers the standard deviation of all pairwise cosines grows from 0.05--0.07 to about 0.75.
@@ -519,7 +528,7 @@ mT5-base layer~4 is an exception: its standardized gap is the lowest of the mode
 \begin{figure*}[t]
 \centering
 \includegraphics[width=0.96\textwidth]{fig_release_gap_6model.pdf}
-\caption{Raw cosine gap against normalized layer depth for the six panel models, test split. The gap is the mean cosine of same-directory pairs minus that of different-directory pairs, the margin a threshold works with. Gray: baseline mean pooling. Orange: SIF-weighted pooling. Blue: ABTT, with $D$ chosen per layer on training data. Baseline gaps stay below 0.29 at every layer of every model. In the middle layers the LaTa and PhilTa gaps stay within 0.09 of zero, while mT5-base's gap rises as its ranking fails (compare Figure~\ref{fig:depth}). Figure~\ref{fig:standardized_gap} resolves the mT5-base case by dividing the gap by the spread of all cosines. ABTT raises every model's gap to between 0.44 and 0.61 at every depth. SIF raises the LaTa and PhilTa gaps and leaves the other four near or below baseline.}
+\caption{Raw cosine gap against normalized layer depth for the six panel models, test split. The gap is the mean cosine of same-directory pairs minus that of different-directory pairs, the margin a threshold works with. Gray dotted: baseline mean pooling. Purple dash-dot: SIF-weighted pooling. Black solid: ABTT, with $D$ chosen per layer on training data. Baseline gaps stay below 0.29 at every layer of every model. In the middle layers the LaTa and PhilTa gaps stay within 0.09 of zero, while mT5-base's gap rises as its ranking fails (compare Figure~\ref{fig:depth}). Figure~\ref{fig:standardized_gap} resolves the mT5-base case by dividing the gap by the spread of all cosines. ABTT raises every model's gap to between 0.44 and 0.61 at every depth. SIF raises the LaTa and PhilTa gaps and leaves the other four near or below baseline.}
 \label{fig:gap}
 \end{figure*}
 
@@ -550,7 +559,7 @@ At PhilTa's collapsed layer~8 the cosines of same-source and different-source pa
 \begin{figure}[t]
 \centering
 \includegraphics[width=\columnwidth]{paper_fig_density_2x2.pdf}
-\caption{Cosine similarity distributions for PhilTa at its last layer and at the collapsed layer~8 (test AUROC 0.542, close to chance), before and after ABTT. Equivalent pairs share a directory (Same in the legend); non-equivalent pairs do not (Different). Layer~8 is not PhilTa's worst layer: its lowest baseline test AUROC, 0.538, falls at layer~10. Before ABTT the two distributions sit almost on top of each other, and ABTT separates them.}
+\caption{Cosine similarity distributions for PhilTa at its last layer and at the collapsed layer~8 (test AUROC 0.542, close to chance), before and after ABTT. Same: pairs that share a directory; Different: pairs that do not; dashed and dotted vertical lines: the Same and Different means; gap: their difference. Layer~8 has the highest training AUROC of PhilTa's layers 4 to 8 (30 to 70\% of depth), all of them collapsed, so it is not PhilTa's worst layer: that is layer~10, at baseline test AUROC 0.538. Before ABTT the two distributions sit almost on top of each other, and ABTT separates them.}
 \label{fig:density}
 \end{figure}
 
@@ -609,13 +618,15 @@ $D=10$, the top of the selection grid, is selected at 46 of the 48 control layer
 \paragraph{Sentence-T5.}
 Sentence-T5 has the original T5 layout and a contrastive embedding objective.
 At its layers 2 to 11, top-PC share is 0.659 to 0.943 while AUROC stays between 0.800 and 0.891.
-A high top-PC share is therefore necessary for collapse in our data but not sufficient: every one of the 36 collapsed layers of the pretrained checkpoints in Table~\ref{tab:all_models} (26 in the panel, 10 in T5-v1.1-base) has a share of at least 0.76, and high-share layers also occur without collapse.
+Sentence-T5 thus shows that a high top-PC share is not sufficient for collapse.
+It is necessary in our data: every one of the 36 collapsed layers of the pretrained checkpoints in Table~\ref{tab:all_models} (26 in the panel, 10 in T5-v1.1-base) has a share of at least 0.76.
 
 \paragraph{English text.}
 Table~\ref{tab:gen_geometry} and Figure~\ref{fig:gen_geometry} give the label-free check of Section~\ref{sec:models}.
 The English sample comes from the public-domain US court opinions of the Caselaw Access Project \citep{cap2024}, in the redistribution of the Common Pile \citep{kandpal2025commonpile}; every sampled document is marked public domain.
 Legal prose is the nearest openly licensed English register to canon law.
-Each non-empty Latin passage receives one English passage from a distinct opinion (the two empty Latin files receive an empty one): a run of whole words from a random sentence start in the body text, whose mT5 token count is within $\max(2, 3\%)$ tokens of the Latin passage's, and the English passage inherits its partner's split.
+Each non-empty Latin passage receives one English passage from a distinct opinion, and the two empty Latin files receive an empty one.
+The English passage is a run of whole words from a random sentence start in the body text, with an mT5 token count within $\max(2, 3\%)$ tokens of the Latin passage's, and it inherits its partner's split.
 The two texts then have the same mT5 length distribution (median 98 tokens).
 The match holds only under the mT5 tokenizer: under PhilTa's tokenizer the English passages are about 40 percent longer, and under T5-v1.1's English-only tokenizer the Latin passages are about 55 percent longer.
 Re-pairing the training passages on each model's own token lengths (653 to 847 pairs) moves top-PC share by at most 0.010 at the layers that Table~\ref{tab:gen_geometry} lists.
@@ -686,7 +697,7 @@ Top-PC share falls before AUROC recovers: at 100 zeroed coordinates it is below 
 \begin{figure}[tb]
 \centering
 \includegraphics[width=\columnwidth]{fig_d_ablation.pdf}
-\caption{Test ranking AUROC (top) and training DirAcc@1 (bottom) against the number $D$ of removed principal components, one line per model at its lowest-AUROC baseline layer (in parentheses in the legend). The horizontal axis is categorical: raw is the uncorrected vector, $D=0$ is centering on the training mean alone, and the ticks are not evenly spaced in $D$. ABTT is fit on training embeddings only; the dotted vertical line marks $D=10$, the top of the selection grid, and the gray horizontal line chance (AUROC 0.5). Filled markers and solid lines: T5 encoders; hollow markers and dashed lines: embedding-trained models. At the plotted T5 layers one component restores part of the ranking. LaTa and PhilTa recover nearly all of it with two or three components; mT5-base keeps improving up to ten.}
+\caption{Test ranking AUROC (top) and training DirAcc@1 as a fraction (bottom) against the number $D$ of removed principal components, one line per model at its lowest-AUROC baseline layer (in parentheses in the legend). The horizontal axis is categorical: raw is the uncorrected vector, $D=0$ is centering on the training mean alone, and the ticks are not evenly spaced in $D$. ABTT is fit on training embeddings only; the dotted vertical line marks $D=10$, the top of the selection grid, and the gray horizontal line chance (AUROC 0.5). Filled markers and solid lines: T5 encoders; hollow markers and dashed lines: embedding-trained models. At the plotted T5 layers one component restores part of the ranking. LaTa and PhilTa recover nearly all of it with two or three components; mT5-base keeps improving up to ten.}
 \label{fig:d_ablation}
 \end{figure}
 
@@ -749,7 +760,7 @@ This appendix gives the intervals behind Table~\ref{tab:headline} and the routin
 
 \paragraph{Routing checks.} Table~\ref{tab:pq_routing} reports, at the headline routing cells, the AUROC of each test witness's maximum cosine for existing against new witnesses (no threshold), the gap between the best test threshold and the training threshold, the skewness of the 10-occurrence distribution \citep{radovanovic2010hubs}, centering alone ($D=0$), and assignment accuracy with $\tau$ refit as the exact best-F1 cut over all training pair scores.
 
-\paragraph{Threshold grid.} We keep the grid of 200 evenly spaced thresholds in $[0,1]$ used for every printed number. Every finer grid optimizes the same training objective, the best F1 over same- against different-directory training pairs, and differs only in resolution. With the layer and $D$ fixed, a grid of 10,001 values moves 45 of the 66 printed routing numbers, by a median of 3 files (0.35 points); ABTT, SIF+ABTT, and fine-tuned cells move by at most 0.8 points, and Base and SIF cells by up to 2.6 (mT5-base's baseline). The exact best-F1 cut moves 48 of them. Refitting would trade one set of differences of one to a few files for another and changes no conclusion of Section~\ref{sec:routing}.
+\paragraph{Threshold grid.} We keep the grid of 200 evenly spaced thresholds in $[0,1]$ used for every printed number. Every finer grid optimizes the same training objective, the best F1 over same- against different-directory training pairs, and differs only in resolution. With the layer and $D$ fixed, a grid of 10,001 values moves 45 of the 66 printed routing numbers, by a median of 3 files (0.35 points); ABTT, SIF+ABTT, and fine-tuned cells move by at most 0.8 points, and Base and SIF cells by up to 2.6 (mT5-base's baseline). The exact best-F1 cut moves 48 of them. Refitting would trade one set of differences of one to a few files for another; it changes no conclusion of Section~\ref{sec:routing}.
 
 \input{tables/headline_ci}
 \input{tables/headline_ci_diffs}
@@ -790,7 +801,11 @@ Table~\ref{tab:finetune_ceiling} gives the three fine-tuning ceilings with the z
 Some routing numbers are means over \emph{five reseedings}: each reseeding keeps the training/test split and redraws, within each directory's test witnesses, which serve as queries and which as references; queries are routed against the reference directories.
 Every model we fine-tuned is reported, on whichever side of its own zero-shot row it lands.
 
-Three encoders are fine-tuned under one recipe, LaTa, Qwen3-0.6B and KaLM-mini. Fine-tuning only the Latin-pretrained model would leave the ceiling confounded with Latin pretraining, so the second model is a multilingual decoder-only encoder with no Latin-specific pretraining, Qwen3-0.6B. The third answers the remaining question, whether supervision can clear the best cell the correction produces anywhere in the paper: KaLM-mini holds it, at 91.7 assignment accuracy and at 89.4 DirAcc@1 tied with Qwen3-0.6B. All three are trained with symmetric InfoNCE over positive pairs and in-batch negatives (no two pairs from one directory in a batch), temperature 0.05, AdamW at learning rate $2\times10^{-5}$ with weight decay 0.01, linear warmup over the first 10 percent of steps then linear decay, gradient clipping at 1.0, 16 pairs per batch, up to 8 epochs with early stopping after 3 epochs without dev improvement, and seed 42. All three are mean-pooled with the same token filter as their zero-shot rows, so the fine-tuned vectors live in the space those rows are measured in; Qwen3-0.6B and KaLM-mini add gradient checkpointing, which recomputes activations rather than storing them and leaves the gradients unchanged. The dev slice holds out 28 of the 190 train directories with at least two files (71 files), the same directories for every model, so each trains on 499 of the 565 positive train pairs, and the checkpoint is chosen by dev DirAcc@1 with dev AUROC as the tie-break. Accuracy differences at or below one dev file are treated as ties, because one file out of 71 is the pool's whole resolution; without that, a model whose zero-shot encoder already routes all 71 dev files can never select a trained checkpoint. A 71-file pool is the weak link in this protocol: one borderline file flipped between two otherwise identical Qwen3-0.6B runs at a training loss of $6\times10^{-4}$, which is GPU non-determinism rather than a difference in the model, and it is worth 1.4 points of the selection criterion. LaTa selects epoch 7, the last epoch run before early stopping fired, and its ABTT sweep selects $D=10$, the top of the grid, at every layer, so the tuned and fixed ABTT variants coincide there. Qwen3-0.6B selects epoch 3 of 6 run, and its sweep is a genuine one, selecting the top of the grid at 12 of 28 layers and $D=2$ at the layer its routing row reports. KaLM-mini selects epoch 1 of 4 run, the only model of the three whose zero-shot encoder leaves the dev pool room to improve, and its sweep selects the top of the grid at 19 of 24 layers including the layer its routing row reports. All three rows are ceilings at this training budget rather than asymptotes: training loss reaches $4\times10^{-5}$ on Qwen3-0.6B by epoch 4 and $3\times10^{-5}$ on KaLM-mini, so the 499 pairs are memorized and more epochs buy nothing.
+Three encoders are fine-tuned under one recipe, LaTa, Qwen3-0.6B and KaLM-mini. Fine-tuning only the Latin-pretrained model would leave the ceiling confounded with Latin pretraining, so the second model is a multilingual decoder-only encoder with no Latin-specific pretraining, Qwen3-0.6B. The third, KaLM-mini, has the best ABTT cell in the paper (91.7 assignment accuracy; 89.4 DirAcc@1, tied with Qwen3-0.6B), so it tests whether supervision can clear that cell.
+
+All three are trained with symmetric InfoNCE over positive pairs and in-batch negatives (no two pairs from one directory in a batch), temperature 0.05, AdamW at learning rate $2\times10^{-5}$ with weight decay 0.01, linear warmup over the first 10 percent of steps then linear decay, gradient clipping at 1.0, 16 pairs per batch, up to 8 epochs with early stopping after 3 epochs without dev improvement, and seed 42. All three are mean-pooled with the same token filter as their zero-shot rows, so the fine-tuned vectors live in the space those rows are measured in; Qwen3-0.6B and KaLM-mini add gradient checkpointing, which recomputes activations rather than storing them and leaves the gradients unchanged.
+
+The dev slice holds out 28 of the 190 train directories with at least two files (71 files), the same directories for every model, so each trains on 499 of the 565 positive train pairs, and the checkpoint is chosen by dev DirAcc@1 with dev AUROC as the tie-break. Accuracy differences at or below one dev file are treated as ties, because one file out of 71 is the pool's whole resolution; without that, a model whose zero-shot encoder already routes all 71 dev files can never select a trained checkpoint. A 71-file pool is the weak link in this protocol: one borderline file flipped between two otherwise identical Qwen3-0.6B runs at a training loss of $6\times10^{-4}$, which is GPU non-determinism rather than a difference in the model, and it is worth 1.4 points of the selection criterion. LaTa selects epoch 7, the last epoch run before early stopping fired, and its ABTT sweep selects $D=10$, the top of the grid, at every layer, so the tuned and fixed ABTT variants coincide there. Qwen3-0.6B selects epoch 3 of 6 run, and its sweep is a genuine one, selecting the top of the grid at 12 of 28 layers and $D=2$ at the layer its routing row reports. KaLM-mini selects epoch 1 of 4 run, the only model of the three whose zero-shot encoder leaves the dev pool room to improve, and its sweep selects the top of the grid at 19 of 24 layers including the layer its routing row reports. All three rows are ceilings at this training budget rather than asymptotes: training loss reaches $4\times10^{-5}$ on Qwen3-0.6B by epoch 4 and $3\times10^{-5}$ on KaLM-mini, so the 499 pairs are memorized and more epochs buy nothing.
 
 \paragraph{Compute.}
 Most hidden-state extraction and all fine-tuning ran on a single NVIDIA A100 GPU; the control-model extraction and the token audit ran on a single NVIDIA A40, and T5-efficient-base, with a re-extraction of the four controls for Table~\ref{tab:d2_controls_abtt}, on CPU.
@@ -876,7 +891,7 @@ DirAcc@2 ranges from 95.1 to 96.1 percent across the six models, and little is g
 \paragraph{Whitening.}
 Full-rank PCA whitening \citep{su2021whitening} is ill-conditioned here, since it estimates 768 to 1,024 dimensions from 847 training vectors (condition numbers $3\times10^{5}$ to $10^{16}$).
 It ranks below ABTT at every layer: its test AUROC is 0.820--0.876 for the T5 encoders and LaBSE, and 0.552--0.643 for the two decoders.
-It also degenerates the routing threshold.
+It also breaks the routing threshold.
 Full-rank whitening leaves the different-directory cosine mean at or below 0.015, so across all 100 whitening cells every file is routed to an existing directory, existing accuracy is 1.000, and new accuracy never exceeds one file in 323.
 Assignment accuracy then sits at the 62.4 percent class prior.
 That prior beats the baseline in 60 of 100 cells while DirAcc@1 never exceeds 41.5 percent, so the apparent gain is a thresholding artifact.
