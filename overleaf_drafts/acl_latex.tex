@@ -117,12 +117,12 @@ This paper makes four contributions.
 (3)~A localization of the mask to about three directions, which zeroing the ten largest coordinates does not remove, with a token-level account in LaTa and none in mT5-base (Section~\ref{sec:localizing}).
 (4)~A measure of what the projection gains for routing and where it stops, set against a character n-gram reference (Section~\ref{sec:routing}).
 We will release the frozen testbed, split, evaluation code and character n-gram reference scores.
-We localize and repair the collapse but do not explain why the T5 v1.1 layout produces it.
+We localize and repair the collapse but do not explain why it tracks the T5 v1.1 layout.
 
 \begin{figure*}[t]
 \centering
 \includegraphics[width=\textwidth]{fig_depth}
-\caption{Test ranking AUROC at every layer of the six panel models. Dotted, open markers: baseline (mean-pooled hidden states). Solid, filled: ABTT (remove the training mean and the top $D \le 10$ principal components), fit on training embeddings only. Gray band: AUROC below 0.70, the collapsed range; gray line: chance. The three raw T5 encoders collapse at mid-depth; after ABTT every layer scores 0.962 to 0.987.}
+\caption{Test ranking AUROC at every layer of the six panel models. Dotted: baseline (mean-pooled hidden states). Solid: ABTT (remove the training mean and the top $D \le 10$ principal components), fit on training embeddings only. Gray band: AUROC below 0.70, the collapsed range; gray line: chance. The three raw T5 encoders collapse at mid-depth; after ABTT every layer scores 0.962 to 0.987.}
 \label{fig:depth}
 \end{figure*}
 
@@ -144,7 +144,7 @@ The labels are expert-assigned by the project and checked by collation in its pa
 We split the witnesses into 847 training and 858 test witnesses, with 565 and 596 same-source pairs; pairs form only within a split (Appendix~\ref{app:testbed_details}).
 Of the test witnesses, 535 have a same-source partner in test (\emph{existing}) and 323 do not (\emph{new}).
 The layer, routing threshold and ABTT are chosen or fit on the training split.
-Each headline number (Table~\ref{tab:headline}) reads a model at its \emph{train-selected} layer: the one of highest training AUROC for ranking, or of highest training DirAcc@1 for routing (Table~\ref{tab:selected_layers}).
+Each headline number (Table~\ref{tab:headline}) reads a model at its \emph{train-selected} layer: the one of highest training AUROC for ranking, or of highest training routing accuracy (Table~\ref{tab:selected_layers}).
 The test split selects nothing.
 
 \paragraph{Tasks and metrics.}
@@ -191,14 +191,14 @@ Our \emph{character n-gram reference}, TF-IDF over character 3--5-grams fit on t
 \section{Collapse by Depth}
 \label{sec:depth}
 
-In three of the six panel models most middle layers rank near chance and mean cosine gives no reliable warning of it; ABTT, fit on training embeddings, restores every layer.
+In three of the six panel models most middle layers rank near chance and mean cosine gives no reliable warning of it; ABTT, fit on training embeddings only, restores ranking at every panel layer.
 
 \paragraph{LaTa, PhilTa and mT5-base fall to near chance at mid-depth.}
 Figure~\ref{fig:depth} gives baseline ranking AUROC at every layer of the six panel models.
 In LaTa, PhilTa and mT5-base, 26 of the 36 layers collapse, ranking at AUROC 0.50 to 0.66.
 They are layers 2--11 of LaTa, 3--11 of PhilTa and 5--11 of mT5-base.
-The next-lowest layer in the panel ranks at 0.799 (mT5-base, layer~4), and any cutoff from 0.66 to 0.79 gives the same split.
-A cutoff on training AUROC picks the same 26 layers; no test score defines the collapse.
+The next-lowest layer in the panel ranks at 0.799 (mT5-base, layer~4), and in the panel any cutoff from 0.66 to 0.79 gives the same split.
+Training AUROC picks the same 26 layers.
 The first and last layers still retrieve; LaTa ranks at 0.934 at layer~1 and 0.938 at layer~12.
 The embedding-trained models stay at or above 0.806 at every layer.
 
@@ -206,7 +206,7 @@ The embedding-trained models stay at or above 0.806 at every layer.
 ABTT (Section~\ref{sec:testbed}) lifts all 100 layers of the panel, the 26 collapsed layers included, to AUROC 0.962 to 0.987 (Figure~\ref{fig:depth}, solid lines).
 This extends the reading of \citet{timkey2021rogue}, that a few dominant dimensions hide representational quality, to layers that rank near chance.
 Reduced-rank whitening, fit on the same training embeddings, ranks within 0.021 of ABTT at every layer (Table~\ref{tab:whiten_reduced}, Appendix~\ref{app:sif_variants}).
-This result holds for ranking only.
+The restoration holds for ranking only.
 Routing after ABTT still varies by layer, from 75.6 to 90.2 DirAcc@1 (Appendix~\ref{app:per_layer}).
 
 \begin{figure}[t]
@@ -254,7 +254,7 @@ The two differ in layout (Section~\ref{sec:testbed}); by their checkpoint config
 T5-base also saw supervised tasks in pretraining \citep{raffel2020t5}, so we add T5-efficient-base \citep{tay2022scale}, which has T5-base's layout but, like T5-v1.1-base, was pretrained on C4 alone; it was also pretrained without dropout and on about 30 times fewer tokens than either.
 It does not collapse either, at that budget: its lowest AUROC is 0.736 and its top-PC share peaks at 0.627 (Table~\ref{tab:d2_t5_efficient}).
 Across the thirteen models we test, the collapse tracks the T5 v1.1 layout; we do not isolate which change is responsible.
-On the four controls ABTT lifts every layer to AUROC 0.927 or above, the ten collapsed layers of T5-v1.1-base included (0.927 to 0.969), so every layer of the ten models in Table~\ref{tab:models} reaches 0.927; but eight of the 48 control layers, seven in T5-v1.1-base, stay below the panel's band (0.962 to 0.987; Table~\ref{tab:d2_controls_abtt}).
+On the four controls ABTT lifts every layer to AUROC 0.927 or above, the ten collapsed layers of T5-v1.1-base included (0.927 to 0.969), so every layer of the ten models in Table~\ref{tab:models} reaches 0.927; but eight of the 48 control layers, seven in T5-v1.1-base, stay below the panel's band (0.962--0.987; Table~\ref{tab:d2_controls_abtt}).
 
 \paragraph{In three T5 v1.1-layout models, the high-share middle layers appear on English text too.}
 T5-v1.1-base was pretrained on English alone, so its collapse on Latin could be an out-of-distribution effect.
@@ -266,7 +266,7 @@ The check covers geometry only; without labels, it says nothing about English re
 
 \paragraph{In LaTa, contrastive fine-tuning leaves the middle layers collapsed.}
 We fine-tuned LaTa on 499 training pairs, adding the contrastive embedding objective it lacks (Appendix~\ref{app:reference_systems}).
-It lifts the last layer from 0.938 to 0.984 AUROC but leaves layers 2 to 11 at 0.50 to 0.57.
+Fine-tuning lifts the last layer from 0.938 to 0.984 AUROC but leaves layers 2 to 11 at 0.50 to 0.57.
 Peak top-PC share barely moves (0.952 before, 0.945 after; Table~\ref{tab:ft_lata_layerwise}).
 This agrees with \citet{haemmerl2023anisotropy}, whose sentence-tuned multilingual encoder has a large outlier dimension at a middle layer but none at its output layer.
 
@@ -378,12 +378,12 @@ Why models with the T5 v1.1 layout collapse remains open.
 Gated feed-forward blocks are reported to amplify outlier activations in decoder language models \citep{fishman2025fp8,yang2025activationspikes}, but the original T5 also carries large outliers \citep{zhao2025outlier}.
 Our localization names carriers in LaTa but no cause.
 Concurrently, \citet{mikkelsen2026clinical} reports a mid-depth retrieval trough on clinical text; retrieval-trained encoders recover in the last layers, and encoders without a retrieval objective recover only partly.
-In our models, by contrast, neither the embedding-trained encoders nor the encoder-only siblings collapse, and that study tests no T5 model.
+In our models, by contrast, neither the embedding-trained encoders nor the encoder-only siblings collapse, and it tests no T5 model.
 
 For the editor of a text collection, ABTT makes the choice among these six encoders matter little (Section~\ref{sec:routing}; maps in Appendix~\ref{app:cluster_geometry}).
 The existing-versus-new decision is still wrong for about one test witness in ten (assignment accuracy 88.5 to 91.7; Table~\ref{tab:headline_ci}).
 The final call stays with the scholar.
-Because the task is lexically solvable, a practical tool can start from character n-grams; dense encoders are reported to help where reuse is paraphrastic \citep{delaselle2026transcription}, a case our testbed does not measure.
+Because the task is lexically solvable, a practical tool can start from character n-grams; dense encoders are reported to help where reuse is paraphrastic \citep{delaselle2026transcription}, a case we do not test.
 
 % Numbered content ends with the Discussion; start the unnumbered
 % Limitations on a fresh page so the 8-page content limit is unambiguous.
@@ -410,7 +410,7 @@ ABTT needs enough text to estimate principal components, so smaller archives nee
 The labels are expert-assigned, but by one project.
 Its director or supervised graduate students assigned the keys, and verification is by collation in the project's parallel display, not by independent double annotation.
 No inter-annotator agreement figure therefore exists for this testbed.
-Collation needs at least two witnesses of a key, and 545 of the 840 directories hold only one.
+Collation needs at least two witnesses of a key, and 545 of the 840 directories hold only one in this testbed.
 
 \section*{Ethical Considerations}
 
@@ -874,7 +874,7 @@ Mean pooling routes better for each of the five models in this run, the two deco
 \section{SIF and Whitening Baselines}
 \label{app:sif_variants}
 
-Section~\ref{sec:testbed} names SIF frequency weighting and reduced-rank whitening as baselines to ABTT, and this appendix gives both.
+Section~\ref{sec:testbed} compares SIF frequency weighting and reduced-rank whitening with ABTT; this appendix gives both.
 Tables~\ref{tab:taskA_appendix_sif}, \ref{tab:taskB_routing_appendix_sif} and~\ref{tab:taskB_ranking_appendix_mseed} report SIF alone, SIF followed by ABTT with $D=10$, and SIF followed by ABTT with $D$ tuned per layer, at every layer of the six panel models, with one primary metric per task.
 
 \paragraph{SIF.}
