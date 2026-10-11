@@ -45,24 +45,27 @@ METHOD_ORDER = ["baseline", "abtt_optimal", "sif_only", "whitening"]
 # caption beside it never use two different words for the same series.
 METHOD_LABELS = {
     "baseline": "Baseline",
-    "abtt_optimal": "ABTT-only",
-    "sif_only": "SIF-only",
+    "abtt_optimal": "ABTT",
+    "sif_only": "SIF",
     "whitening": "Whitening",
 }
+# Method hues avoid the per-model colours of the main-text figures (blue is
+# LaTa and orange PhilTa there; reader pass, 10 October 2026). Baseline is
+# dotted, as in Figure 1.
 METHOD_COLORS = {
     "baseline": "#8a8a8a",
-    "abtt_optimal": "#1f77b4",
-    "sif_only": "#e67e22",
+    "abtt_optimal": "#000000",
+    "sif_only": "#7B3294",
     "whitening": "#2ca6a4",
 }
 # Every series also gets its own linestyle and marker (issue #235 item 6), so
 # the figures survive grayscale printing and a series drawn under another one
 # (the gray baseline under SIF in the LaBSE, Qwen3 and KaLM panels) still shows.
 METHOD_STYLE = {
-    "baseline": {"linestyle": "--", "marker": "s"},
-    "sif_only": {"linestyle": ":", "marker": "^"},
+    "baseline": {"linestyle": ":", "marker": "s"},
+    "sif_only": {"linestyle": "-.", "marker": "^"},
     "abtt_optimal": {"linestyle": "-", "marker": "o"},
-    "whitening": {"linestyle": "-.", "marker": "D"},
+    "whitening": {"linestyle": "--", "marker": "D"},
 }
 # Baseline on top: it is the series the others are read against.
 METHOD_ZORDER = {"baseline": 4, "sif_only": 3, "abtt_optimal": 2, "whitening": 2}

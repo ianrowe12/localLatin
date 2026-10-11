@@ -21,7 +21,8 @@ import spine_tables as S  # noqa: E402
 
 TABLES = REPO / "overleaf_drafts" / "tables"
 NEEDED = [S.P2X2_CSV, S.D2_CSV, S.RES_CSV, S.GEO_CSV, S.KSWEEP_CSV, S.DABL_CSV, S.SPLIT3_CSV,
-          S.TOKABL_CSV, S.AUDIT_CSV, S.CI_DIR / "headline_ci.csv", S.CI_DIR / "run_info.json"]
+          S.TOKABL_CSV, S.AUDIT_CSV, S.CI_DIR / "headline_ci.csv", S.CI_DIR / "run_info.json",
+          S.CI_DIR / "headline_ci_diffs.csv"]
 needs_data = pytest.mark.skipif(not all((REPO / p).exists() for p in NEEDED),
                                 reason="committed result CSVs not present")
 
@@ -94,6 +95,23 @@ def test_headline_spread_and_reference():
     assert (x["dir1_Base_min"], x["dir1_Base_max"]) == (46.6, 85.9)
     assert (x["dir1_ABTT_min"], x["dir1_ABTT_max"]) == (86.1, 89.4)
     assert (x["lex_auroc"], x["lex_dir1"]) == (0.987, 89.9)
+
+
+@needs_data
+def test_headline_below_reference_markers():
+    """Reader pass (10 October): T3 marks the ABTT cells below the n-gram reference whose paired
+    interval excludes zero, which Section 7 names (LaTa and Qwen3-0.6B ranking, LaTa routing).
+    mT5-base ranking prints [0.000, 0.027] and the text calls it touching zero: no marker."""
+    diffs = pd.read_csv(REPO / S.CI_DIR / "headline_ci_diffs.csv")
+    assert S.below_reference(diffs) == {("LaTa", "auroc"), ("Qwen3-0.6B", "auroc"),
+                                        ("LaTa", "dir1")}
+    t3 = S.render_all(REPO)["headline_main.tex"]
+    assert t3.count(S.BELOW) == 3
+    assert "LaTa & 0.938 & 0.971" + S.BELOW + " & 72.1 & 86.1" + S.BELOW in t3
+    assert "Qwen3-0.6B & 0.966 & 0.973" + S.BELOW + " & 80.3 & 89.4 \\\\" in t3
+    assert "mT5-base & 0.838 & 0.975 & 46.6 & 88.5 \\\\" in t3
+    assert "overlapping brackets do not imply a tie" in t3
+    assert r"\ref{tab:headline_ci_diffs}" in t3
 
 
 @needs_data

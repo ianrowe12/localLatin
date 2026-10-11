@@ -6,7 +6,7 @@
 \toprule
 \multicolumn{2}{c}{} & \multicolumn{4}{c}{\textbf{Ranking (T5 encoders)}} \\
 \cmidrule(lr){3-6}
-\textbf{Model} & \textbf{Layer} & \makecell{AUROC\\(base)} & \makecell{AUROC\\(ABTT)} & \makecell{Cosine gap\\(base)} & \makecell{Cosine gap\\(ABTT)} \\
+\textbf{Model} & \textbf{Layer} & \makecell{AUROC\\(Base)} & \makecell{AUROC\\(ABTT)} & \makecell{Cosine gap\\(Base)} & \makecell{Cosine gap\\(ABTT)} \\
 \midrule
 LaTa & 1 & 0.934 & 0.970 & 0.286 & 0.566 \\
  & 2 & 0.563 & 0.969 & 0.019 & 0.554 \\
@@ -19,7 +19,7 @@ LaTa & 1 & 0.934 & 0.970 & 0.286 & 0.566 \\
  & 9 & 0.503 & 0.965 & -0.073 & 0.557 \\
  & 10 & 0.505 & 0.971 & -0.072 & 0.551 \\
  & 11 & 0.508 & 0.973 & -0.067 & 0.550 \\
- & \textbf{12} & \textbf{0.938} & \textbf{0.971} & \textbf{0.237} & \textbf{0.525} \\
+ & \textbf{12} & 0.938 & \textbf{0.971} & 0.237 & \textbf{0.525} \\
 \midrule
 PhilTa & 1 & 0.939 & 0.977 & 0.231 & 0.574 \\
  & 2 & 0.911 & 0.973 & 0.161 & 0.553 \\
@@ -29,13 +29,13 @@ PhilTa & 1 & 0.939 & 0.977 & 0.231 & 0.574 \\
  & 6 & 0.541 & 0.981 & 0.047 & 0.551 \\
  & 7 & 0.542 & 0.979 & 0.046 & 0.554 \\
  & 8 & 0.542 & 0.984 & 0.046 & 0.555 \\
- & \textbf{9} & \textbf{0.539} & \textbf{0.983} & \textbf{0.041} & \textbf{0.540} \\
+ & \textbf{9} & 0.539 & \textbf{0.983} & 0.041 & \textbf{0.540} \\
  & 10 & 0.538 & 0.982 & 0.040 & 0.531 \\
  & 11 & 0.539 & 0.982 & 0.041 & 0.511 \\
  & 12 & 0.911 & 0.982 & 0.181 & 0.487 \\
 \midrule
 mT5-base & 1 & 0.822 & 0.979 & 0.027 & 0.550 \\
- & \textbf{2} & \textbf{0.822} & \textbf{0.975} & \textbf{0.026} & \textbf{0.536} \\
+ & \textbf{2} & 0.822 & \textbf{0.975} & 0.026 & \textbf{0.536} \\
  & 3 & 0.804 & 0.968 & 0.025 & 0.517 \\
  & 4 & 0.799 & 0.974 & 0.040 & 0.502 \\
  & 5 & 0.654 & 0.978 & 0.219 & 0.482 \\
@@ -48,6 +48,6 @@ mT5-base & 1 & 0.822 & 0.979 & 0.027 & 0.550 \\
  & 12 & 0.838 & 0.972 & 0.081 & 0.442 \\
 \bottomrule
 \end{tabular}
-\caption{Per-layer ranking metrics for the three T5 encoders (LaTa, PhilTa, mT5-base). \texttt{baseline} is mean pooling without correction; \texttt{abtt\_optimal} applies ABTT (no SIF weighting) with $D$ tuned per layer on the training split. Both AUROC and cosine gap are computed over the test n$\times$n cosine matrix with no threshold and no directory routing: AUROC treats same-directory test pairs as positives, and cosine gap is the difference between mean same-directory and mean different-directory cosine. Rows in bold mark the layer chosen on the training split, the layer with the highest training-set AUROC under ABTT. It is the layer behind the ABTT cell of Table~\ref{tab:headline_ci} (listed in Table~\ref{tab:selected_layers}), and not always the layer with the highest test score in this table.}
+\caption{Per-layer ranking metrics for the three T5 encoders (LaTa, PhilTa, mT5-base). Base is mean pooling without correction; ABTT is applied without SIF weighting, with $D$ tuned per layer on the training split. Both AUROC and cosine gap are computed over the test n$\times$n cosine matrix with no threshold and no directory routing: AUROC treats same-directory test pairs as positives, and cosine gap is the difference between mean same-directory and mean different-directory cosine. Bold marks the layer chosen on the training split, the layer with the highest training-set AUROC under ABTT, and its ABTT values; the other columns of that row stay plain, because the layer is selected for ABTT only. It is the layer behind the ABTT cell of Table~\ref{tab:headline_ci} (listed in Table~\ref{tab:selected_layers}), and not always the layer with the highest test score in this table.}
 \label{tab:taskA_main}
 \end{table*}

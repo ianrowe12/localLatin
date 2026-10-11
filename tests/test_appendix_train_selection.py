@@ -143,6 +143,15 @@ def test_bold_row_is_the_headline_selected_layer(
     tex = out.read_text()
     assert bplt.HEADLINE_LABEL[task] in tex
     assert "chosen on the training split" in tex
+    # Reader pass (10 October 2026): only the layer and the selection method's cells are bold;
+    # the Base cells of that row stay plain, so they never read as the Base headline cell.
+    for line in tex.splitlines():
+        cells = [c.strip() for c in line.split("&")]
+        if len(cells) > 2 and re.fullmatch(r"\\textbf\{\d+\}", cells[1]):
+            for k, cell in enumerate(cells[2:]):
+                method = ["baseline", select_method][k % 2]
+                assert cell.startswith(r"\textbf{") == (method == select_method), line
+    assert "stay plain" in tex
 
 
 def _mseed_frame() -> pd.DataFrame:

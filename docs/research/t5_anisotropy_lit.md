@@ -116,3 +116,5 @@ split our six-model panel makes. The safe claim for the paper is therefore: T5-f
 known, the mid-depth retrieval collapse of T5 **encoder** layers and its repair by ABTT are, to our
 knowledge, not previously reported, and we attribute the collapse to the three T5 encoders we test
 rather than to encoder-decoder architectures in general.
+
+> **Correction (2026-10-10).** The Mikkelsen (2026) entry above was written from the abstract's mixed-model slope summary. The open-access full text (PMC13469822) reports a classical mid-layer collapse with final-layer recovery in retrieval-trained encoders (BGE, GTE, BioLORD, MedCPT, Nomic; trough at 35-55% of depth) and a mid-layer dip with only modest final-layer recovery in BioBERT, ClinicalBERT and BERT-base. It tests no T5 model of its own. The paper's sentence follows the full text (reviews of PRs #256 and #259).

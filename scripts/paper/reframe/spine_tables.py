@@ -19,7 +19,9 @@ Outputs (``overleaf_drafts/tables/``):
 ``headline_main.tex``  T3, label ``tab:headline``: ranking AUROC and routing DirAcc@1, baseline and
                        ABTT for the six panel encoders (with bootstrap intervals), the three
                        fine-tuned encoders (intervals only in tab:headline_ci) and the
-                       character n-gram reference (with its interval).
+                       character n-gram reference (with its interval). A down arrow marks each
+                       ABTT cell whose paired "n-grams minus ABTT" interval (headline_ci_diffs.csv,
+                       printed in tab:headline_ci_diffs) excludes zero at printed precision.
 
 Inputs (all committed):
   runs/active/reframe/p2x2/p2x2_layers.csv                 the twelve-layer controls, per layer
@@ -32,6 +34,7 @@ Inputs (all committed):
   runs/active/reframe/e2/e2_token_ablation.csv             token ablation and mass-matched control
   runs/active/reframe/e2/e2_direction_audit.csv            Spearman of the PC1 score with log length
   docs/research/data/reframe_ci_pq/headline_ci.csv, run_info.json   headline cells and intervals
+  docs/research/data/reframe_ci_pq/headline_ci_diffs.csv          paired differences (T3 markers)
 plus ``CHECKPOINTS`` below: feed-forward type and width and embedding tying, read from each
 checkpoint's Hugging Face ``config.json`` on 2026-10-02 (not stored in any repo file).
 
@@ -521,6 +524,26 @@ def _int(lo: float, hi: float, metric: str) -> str:
     return f"[{a},{b}]"
 
 
+BELOW = r"$^{\downarrow}$"  # T3 marker: below the n-gram reference, paired interval excluding zero
+
+
+def below_reference(diffs: pd.DataFrame) -> set:
+    """(model, metric) of the panel ABTT cells that sit below the character n-gram reference
+    with a paired 95% interval excluding zero, judged at the precision Table
+    tab:headline_ci_diffs prints (three decimals for AUROC, one for DirAcc@1 points), so a
+    lower bound that prints as 0.000 counts as touching zero, as the text says."""
+    sub = diffs[diffs["group"] == "tfidf_minus_abtt"]
+    out = set()
+    for m in PANEL:
+        for task, metric in (("A", "auroc"), ("B", "dir1")):
+            row = sub[(sub["label"] == m) & (sub["task"] == task) & (sub["metric"] == metric)]
+            if len(row) != 1:
+                raise SystemExit(f"headline_ci_diffs.csv: {len(row)} rows for {m}/{task}/{metric}")
+            if float(_num(row.iloc[0]["ci_lo"], metric)) > 0:
+                out.add((m, metric))
+    return out
+
+
 def headline_numbers(ci: pd.DataFrame) -> Dict[str, float]:
     """Spreads across the six panel encoders, from the printed (rounded) values."""
     out = {}
@@ -537,12 +560,15 @@ def headline_numbers(ci: pd.DataFrame) -> Dict[str, float]:
     return out
 
 
-def render_headline(ci: pd.DataFrame, info: Dict) -> str:
+def render_headline(ci: pd.DataFrame, info: Dict, diffs: pd.DataFrame) -> str:
+    below = below_reference(diffs)
+
     def pair(row: str, setting: str) -> Tuple[List[str], List[str]]:
         vals, ints = [], []
         for task, metric in (("A", "auroc"), ("B", "dir1")):
             c = _cell(ci, task, row, setting, metric)
-            vals.append(_num(c["estimate"], metric))
+            mark = BELOW if setting == "ABTT" and (row, metric) in below else ""
+            vals.append(_num(c["estimate"], metric) + mark)
             ints.append(_int(c["ci_lo"], c["ci_hi"], metric))
         return vals, ints
 
@@ -589,7 +615,9 @@ def render_headline(ci: pd.DataFrame, info: Dict) -> str:
               r"Table~\ref{tab:headline_ci}). Char.\ n-grams: TF-IDF over character "
               r"3--5-grams. Brackets: 95\% bootstrap intervals over the "
               + f"{int(info['n_test_dirs'])}" + r" test directories. Spread: largest minus "
-              r"smallest printed value across the six encoders.}",
+              r"smallest printed value across the six encoders. $\downarrow$: below the "
+              r"n-gram reference, paired interval excluding zero "
+              r"(Table~\ref{tab:headline_ci_diffs}); overlapping brackets do not imply a tie.}",
               r"\label{tab:headline}", r"\end{table}"]
     return "\n".join(lines) + "\n"
 
@@ -601,6 +629,7 @@ def render_all(root: Path, tab_dir: Optional[Path] = None) -> Dict[str, str]:
     summ = summarize(per_layer(root))
     ci = pd.read_csv(root / CI_DIR / "headline_ci.csv")
     info = json.loads((root / CI_DIR / "run_info.json").read_text())
+    diffs = pd.read_csv(root / CI_DIR / "headline_ci_diffs.csv")
     x = headline_numbers(ci)
     frozen = [m for m in PANEL]
     for m in frozen:  # the caption's claim: no frozen cell above the reference
@@ -613,7 +642,7 @@ def render_all(root: Path, tab_dir: Optional[Path] = None) -> Dict[str, str]:
         "models_main.tex": render_models_main(summ),
         "all_models.tex": render_all_models(summ),
         "predictions.tex": render_predictions(prediction_numbers(root)),
-        "headline_main.tex": render_headline(ci, info),
+        "headline_main.tex": render_headline(ci, info, diffs),
     }
     if tab_dir is not None:
         tab_dir = Path(tab_dir)

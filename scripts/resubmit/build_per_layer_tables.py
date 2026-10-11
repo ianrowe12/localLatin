@@ -77,7 +77,7 @@ TASKB_SELECT_METRIC = "train_dir_acc_at_1"
 HEADLINE_LABEL = {"taskA": "tab:headline_ci", "taskB": "tab:headline_ci"}
 
 METHOD_DISPLAY = {
-    "baseline": "base",
+    "baseline": "Base",
     "abtt_optimal": "ABTT",
     "abtt_fixed": "ABTT$_{10}$",
     "sif_only": "SIF",
@@ -206,8 +206,6 @@ def _write_longtable(wide: pd.DataFrame, spec: TableSpec, out_path: Path) -> Non
     lines.append(r"\small")
     lines.append(r"\setlength{\tabcolsep}{4pt}")
     lines.append(r"\begin{longtable}{" + spec.col_spec + r"}")
-    lines.append(r"\caption{" + spec.caption + r"}")
-    lines.append(r"\label{" + spec.label + r"} \\")
     lines.append(r"\toprule")
     lines.append(banner_row)
     lines.append(r"\cmidrule(lr){3-" + str(ncols) + "}")
@@ -224,6 +222,11 @@ def _write_longtable(wide: pd.DataFrame, spec: TableSpec, out_path: Path) -> Non
     lines.append(r"\multicolumn{" + str(ncols) + r"}{r}{\textit{(continued on next page)}} \\")
     lines.append(r"\endfoot")
     lines.append(r"\bottomrule")
+    # Caption below the table, as formatting.md asks; longtable steps the table counter at
+    # its start, so the label resolves from the last foot.
+    lines.append(r"\noalign{\vskip 8pt}")
+    lines.append(r"\caption{" + spec.caption + r"}")
+    lines.append(r"\label{" + spec.label + r"} \\")
     lines.append(r"\endlastfoot")
 
     prev_model = None
@@ -349,7 +352,8 @@ def emit_taskA(
         cells = [row["model_display"], _bold(str(int(row["layer"])), is_best)]
         for metric in metrics:
             for method in methods:
-                cells.append(_bold(_fmt3(row[f"{metric}__{method}"]), is_best))
+                bold = is_best and method == select_method
+                cells.append(_bold(_fmt3(row[f"{metric}__{method}"]), bold))
         return cells
 
     spec = TableSpec(
@@ -409,7 +413,8 @@ def emit_taskB_routing(
         cells = [row["model_display"], _bold(str(int(row["layer"])), is_best)]
         for metric in metrics:
             for method in methods:
-                cells.append(_bold(_fmt3(row[f"{metric}__{method}"]), is_best))
+                bold = is_best and method == select_method
+                cells.append(_bold(_fmt3(row[f"{metric}__{method}"]), bold))
         return cells
 
     spec = TableSpec(
@@ -468,7 +473,8 @@ def emit_taskB_ranking_single(
         cells = [row["model_display"], _bold(str(int(row["layer"])), is_best)]
         for metric in metrics:
             for method in methods:
-                cells.append(_bold(_fmt3(row[f"{metric}__{method}"]), is_best))
+                bold = is_best and method == select_method
+                cells.append(_bold(_fmt3(row[f"{metric}__{method}"]), bold))
         return cells
 
     spec = TableSpec(
@@ -495,6 +501,7 @@ def emit_taskB_ranking_mseed(
     label: str,
     banner: str,
     selected_layers: dict[str, int],
+    bold_method: str = MSEED_METHOD,
 ) -> pd.DataFrame:
     """Emit mseed Task B ranking table with mean ± std.
 
@@ -533,7 +540,7 @@ def emit_taskB_ranking_mseed(
             for m in methods:
                 mean = row[f"{stem}_mean__{m}"]
                 std = row[f"{stem}_std__{m}"]
-                cells.append(_bold(_fmt_pm(mean, std), is_best))
+                cells.append(_bold(_fmt_pm(mean, std), is_best and m == bold_method))
         return cells
 
     spec = TableSpec(
@@ -553,9 +560,12 @@ def emit_taskB_ranking_mseed(
 
 
 CAP_BASE_ABTT = (
-    r"\texttt{baseline} is mean pooling without correction; "
-    r"\texttt{abtt\_optimal} applies ABTT (no SIF weighting) with $D$ tuned per layer on the training split. "
+    r"Base is mean pooling without correction; "
+    r"ABTT is applied without SIF weighting, with $D$ tuned per layer on the training split. "
 )
+# B3 (reader pass, 10 October 2026): these tables print accuracies as fractions, the main
+# text as percent; the captions say so rather than rescaling every cell.
+CAP_FRACTION = r"Accuracies are fractions (0.885 is 88.5\%). "
 CAP_TASKA_METHOD = CAP_BASE_ABTT + (
     r"Both AUROC and cosine gap are computed over the test n$\times$n cosine matrix with no threshold and "
     r"no directory routing: AUROC treats same-directory test pairs as positives, and cosine gap is the "
@@ -568,13 +578,13 @@ CAP_ROUTING_METHOD = CAP_BASE_ABTT + (
     r"$s_i \geq \tau$, else new); only files predicted existing are then routed to their top-1 "
     r"neighbor's directory. We report \textbf{existing accuracy} (restricted to files whose true "
     r"partner is in the test set), \textbf{new accuracy} (files that should be flagged as novel), and "
-    r"\textbf{overall assignment accuracy}. "
+    r"\textbf{overall assignment accuracy}. " + CAP_FRACTION
 )
 CAP_RANK_SINGLE_METHOD = CAP_BASE_ABTT + (
     r"This table is computed once, without the five reseedings of the query and reference files, "
     r"which were run only for the SIF-conditioned variants (see "
     r"Table~\ref{tab:taskB_ranking_appendix_mseed} for the five-reseeding SIF+ABTT view). "
-    r"We report DirAcc@1 with an existing/new decomposition. "
+    r"We report DirAcc@1 with an existing/new decomposition. " + CAP_FRACTION
 )
 
 
@@ -593,8 +603,10 @@ def _selected_layer_caption(method_label: str, task: str) -> str:
         "taskB": "DirAcc@1",
     }[task]
     return (
-        rf"Rows in bold mark the layer chosen on the training split, the layer with the highest "
-        rf"training-set {metric_phrase} under {method_label}. It is the layer behind the "
+        rf"Bold marks the layer chosen on the training split, the layer with the highest "
+        rf"training-set {metric_phrase} under {method_label}, and its {method_label} values; the "
+        rf"other columns of that row stay plain, because the layer is selected for "
+        rf"{method_label} only. It is the layer behind the "
         rf"{method_label} cell of Table~\ref{{{HEADLINE_LABEL[task]}}} (listed in "
         rf"Table~\ref{{tab:selected_layers}}), and not always the layer with the highest "
         rf"test score in this table."
@@ -658,8 +670,8 @@ def main() -> None:
         out_audit=audit_dir / "taskA_appendix_sif.csv",
         caption=(
             r"Per-layer ranking AUROC across the SIF-conditioned post-processing suite for all six "
-            r"models. \texttt{sif\_only} replaces mean pooling with SIF-weighted pooling; "
-            r"\texttt{sif\_abtt\_fixed} adds ABTT with fixed $D{=}10$; \texttt{sif\_abtt\_optimal} "
+            r"models. SIF replaces mean pooling with SIF-weighted pooling; "
+            r"SIF+ABTT$_{10}$ adds ABTT with fixed $D{=}10$; SIF+ABTT "
             r"tunes $D$ per layer on the training split. Gap is omitted to keep the table narrow; the "
             r"pure-ABTT comparison (not SIF-conditioned) is in "
             r"Tables~\ref{tab:taskA_main} and~\ref{tab:taskA_appendix}. "
@@ -716,7 +728,7 @@ def main() -> None:
             r"six models. Restricted to overall routing accuracy (existing/new decomposition omitted) "
             r"to keep the table compact; see Tables~\ref{tab:taskB_routing_main} and~"
             r"\ref{tab:taskB_routing_appendix} for the pure-ABTT pairwise comparison with existing/new "
-            r"broken out. "
+            r"broken out. " + CAP_FRACTION
             + _selected_layer_caption("SIF+ABTT", "taskB")
         ),
         label="tab:taskB_routing_appendix_sif",
@@ -775,14 +787,14 @@ def main() -> None:
             r"Per-layer routing DirAcc@1, overall and for existing and new witnesses, across all six models, averaged over five "
             r"reseedings of the query and reference files, with the training/test split fixed "
             r"(mean $\pm$ std). "
-            r"\texttt{sif\_abtt\_optimal} applies SIF weighting plus ABTT with $D$ tuned per layer on "
-            r"the training split. This table covers SIF+ABTT; five-reseeding ABTT-only values for LaTa, "
+            r"SIF+ABTT applies SIF weighting plus ABTT with $D$ tuned per layer on "
+            r"the training split. " + CAP_FRACTION + r"This table covers SIF+ABTT; five-reseeding ABTT-only values for LaTa, "
             r"Qwen3-0.6B and KaLM-mini, at their train-selected layers, are in "
             r"Table~\ref{tab:finetune_ceiling} (Appendix~\ref{app:reference_systems}). "
             r"Overall assignment accuracy coincides with DirAcc@1 under the "
             r"five reseedings, so we report the existing/new decomposition instead. "
-            r"Rows in bold mark the layer reported per model, the row printed in "
-            r"Table~\ref{tab:taskb}. "
+            r"Bold marks the layer reported per model and its SIF+ABTT values, the row printed in "
+            r"Table~\ref{tab:taskb}; the Base values in that row stay plain. "
             + SELECTION_RULE_CAPTION
         ),
         label="tab:taskB_ranking_appendix_mseed",
