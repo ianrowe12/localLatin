@@ -234,7 +234,6 @@ The share marks the collapsed regime but does not order layers inside it (Append
 \section{Collapse Across Models}
 \label{sec:models}
 
-This section asks which models collapse and what they share.
 Of the ten models in Table~\ref{tab:models}, four collapse: LaTa, PhilTa, mT5-base and T5-v1.1-base.
 All four have the T5 v1.1 layout, and none of the other six collapses at any layer.
 
@@ -243,20 +242,23 @@ LaBERTa and PhilBERTa have no embedding objective.
 The T5 members collapse, with lowest AUROC 0.496 (LaTa) and 0.538 (PhilTa).
 The siblings never fall below 0.826 (LaBERTa) and 0.883 (PhilBERTa).
 Their top-PC share peaks at only 0.254 and 0.162, against 0.952 and 0.858 in LaTa and PhilTa.
-Shared pretraining text and a missing embedding objective therefore do not produce the collapse on their own.
-Architecture, pretraining objective and tokenizer vary together within each pair, so the pairs cannot say which matters (Appendix~\ref{app:models}).
+Shared pretraining text and a missing embedding objective do not produce the collapse on their own.
+Architecture, pretraining objective and tokenizer vary together within each pair; the pairs cannot say which matters (Appendix~\ref{app:models}).
 
-\paragraph{T5-v1.1-base collapses; the original T5-base does not.}
-The two share their tokenizer, the span-corruption objective and C4 pretraining text \citep{raffel2020t5,t5v11release}.
+\paragraph{T5-v1.1-base collapses; T5-base and T5-efficient-base, with the original layout, do not.}
+T5-v1.1-base and T5-base share their tokenizer, the span-corruption objective and C4 pretraining text \citep{raffel2020t5,t5v11release}.
 On Latin text, T5-v1.1-base falls to 0.489 at layer 2; its layers 2 to 11 collapse.
 T5-base stays at 0.816 or above at every layer; its top-PC share peaks at 0.545.
 The two differ in layout (Section~\ref{sec:testbed}); by their checkpoint configurations LaTa, PhilTa and mT5-base share T5-v1.1-base's (Table~\ref{tab:all_models}).
-T5-base also saw supervised tasks in pretraining \citep{raffel2020t5}, so we add T5-efficient-base \citep{tay2022scale}, which has T5-base's layout but, like T5-v1.1-base, was pretrained on C4 alone; it was also pretrained without dropout and on about 30 times fewer tokens than either.
-It does not collapse either, at that budget: its lowest AUROC is 0.736 and its top-PC share peaks at 0.627 (Table~\ref{tab:d2_t5_efficient}).
+T5-base also saw supervised tasks in pretraining \citep{raffel2020t5}.
+To separate layout from that pretraining mix we add T5-efficient-base \citep{tay2022scale}, which has T5-base's layout but, like T5-v1.1-base, was pretrained on C4 alone.
+It was also pretrained without dropout and on about 30 times fewer tokens than either.
+At that budget it does not collapse; its lowest AUROC is 0.736 and its top-PC share peaks at 0.627 (Table~\ref{tab:d2_t5_efficient}).
 Across the thirteen models we test, the collapse tracks the T5 v1.1 layout; we do not isolate which change is responsible.
-On the four controls ABTT lifts every layer to AUROC 0.927 or above, the ten collapsed layers of T5-v1.1-base included (0.927 to 0.969), so every layer of the ten models in Table~\ref{tab:models} reaches 0.927; but eight of the 48 control layers, seven in T5-v1.1-base, stay below the panel's band (0.962--0.987; Table~\ref{tab:d2_controls_abtt}).
+On the four controls ABTT lifts every layer to AUROC 0.927 or above, the ten collapsed layers of T5-v1.1-base included (0.927 to 0.969).
+Every layer of the ten models in Table~\ref{tab:models} reaches 0.927, but eight of the 48 control layers, seven in T5-v1.1-base, stay below the panel's band (0.962--0.987; Table~\ref{tab:d2_controls_abtt}).
 
-\paragraph{In three T5 v1.1-layout models, the high-share middle layers appear on English text too.}
+\paragraph{In three models with the T5 v1.1 layout, high top-PC share in the middle layers appears on English text too.}
 T5-v1.1-base was pretrained on English alone, so its collapse on Latin could be an out-of-distribution effect.
 We read mT5-base, PhilTa and T5-v1.1-base on 847 English passages of US court opinions \citep{cap2024,kandpal2025commonpile}, paired one to one with the Latin training witnesses and matched in length.
 In all three models, layers 4 to 11 have a top-PC share of at least 0.82 on English, and the first and last layers stay at or below 0.34 (Table~\ref{tab:gen_geometry}, Figure~\ref{fig:gen_geometry}).
@@ -273,8 +275,8 @@ This agrees with \citet{haemmerl2023anisotropy}, whose sentence-tuned multilingu
 \section{Localizing the Collapse}
 \label{sec:localizing}
 
-This section asks what masks the retrieval signal in the collapsed layers and where the mask sits.
-The mask is about three directions; zeroing the ten largest coordinates does not remove it, and only in LaTa do a few token types feed it.
+In the collapsed layers about three directions mask the retrieval signal.
+Zeroing the ten largest coordinates does not remove this mask, and only in LaTa do a few token types feed it.
 
 \begin{figure*}[t]
 \centering
@@ -294,10 +296,11 @@ In pretrained transformers a few outlier coordinates dominate cosine similarity 
 Zeroing them improves pooled similarity in pretrained encoders \citep{luo2021positional,haemmerl2023anisotropy}.
 We therefore expected that zeroing five or fewer coordinates of largest variance on training embeddings would restore the collapsed layers.
 Zeroing up to ten, ranked by variance or by mean absolute value, restores none of the 26, and the best layer reaches 0.794 (Figure~\ref{fig:localize}a).
-The dominant direction does load mostly on these coordinates: the ten of highest variance carry a median 92\% of its squared loading.
+The dominant direction does load mostly on these coordinates; the ten of highest variance carry a median 92\% of its squared loading.
 Yet zeroing them leaves the direction dominant: on the remaining coordinates it still holds a median 72\% of the variance and still masks retrieval.
-Zeroing far more coordinates does restore LaTa and PhilTa: ranked by variance, the first layers recover at 50 coordinates and all 19 by 300 (by 400 under the mean-absolute-value ranking of Figure~\ref{fig:localize}a); no mT5-base layer recovers even at 400.
-This extends the outlier-dimension account: the masking direction concentrates on a few coordinates yet acts beyond them.
+Zeroing far more coordinates does restore LaTa and PhilTa.
+Ranked by variance, the first layers recover at 50 coordinates and all 19 by 300 (by 400 under the mean-absolute-value ranking of Figure~\ref{fig:localize}a); no mT5-base layer recovers even at 400.
+The masking direction concentrates on a few coordinates yet acts beyond them, which extends the outlier-dimension account.
 
 \paragraph{Removing three directions restores every collapsed layer.}
 ABTT removes whole directions instead of coordinates, so we vary the number $D$ of principal components it removes (Figure~\ref{fig:localize}b).
@@ -318,13 +321,13 @@ In LaTa, $m=3$ does.
 Pooling without the comma, the period and \texttt{</s>} drops 11\% of the test tokens and restores all 10 collapsed layers (median 0.919).
 Dropping random token types of the same training mass leaves the median at 0.500.
 The dominant direction also does not track passage length: its score correlates with log token count at $|\rho| \le 0.44$ on test passages at every collapsed layer.
-The tokens are carriers, not a cause: LaBERTa also pools commas, periods and \texttt{</s>}, and it does not collapse (Section~\ref{sec:models}).
+The tokens are carriers, not a cause, since LaBERTa also pools commas, periods and \texttt{</s>} and does not collapse (Section~\ref{sec:models}).
 PhilTa needs more types: dropping its top 30, about a third of its tokens, restores all 9 of its collapsed layers on test passages (7 of 9 on training passages).
 
 \paragraph{In mT5-base, no set of up to 100 token types restores a collapsed layer.}
 Dropping up to 100 token types, ranked the same way, restores none of its 7 collapsed layers; the best reaches 0.748.
 mT5-base also resists coordinate zeroing, yet removing three to ten directions repairs it.
-Its mask is thus confined neither to a few coordinates nor to a few token types, and we found no token-level account.
+Its mask is confined neither to a few coordinates nor to a few token types, and we found no token-level account.
 
 \section{Routing and Limits}
 \label{sec:routing}
