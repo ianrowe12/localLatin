@@ -4,7 +4,7 @@ all thirteen models, rendered from committed result files only (no embeddings, n
 
 Outputs (``overleaf_drafts/tables/``):
 
-``models_main.tex``    T1, label ``tab:models``: the ten main-text models, grouped by embedding
+``models_main.tex``    T1, label ``tab:models``: the eleven main-text models, grouped by embedding
                        training and, for the raw T5 encoders, by layout; lowest
                        baseline AUROC (layer), peak top-PC share, number of collapsed layers.
 ``all_models.tex``     appendix, label ``tab:all_models``: all thirteen models with the fuller
@@ -95,10 +95,11 @@ MODELS: Dict[str, Tuple[str, str, str, str, str]] = {
     "Sentence-T5": ("sentence-transformers/sentence-t5-base", "T5", "contrastive", "emb", "p2x2"),
     "SPhilBERTa": ("bowphs/SPhilBerta", "Enc.", "distillation", "emb", "p2x2"),
 }
-MAIN_MODELS = ("LaTa", "PhilTa", "mT5-base", "T5-v1.1-base", "T5-base", "LaBERTa", "PhilBERTa",
-               "LaBSE", "Qwen3-0.6B", "KaLM-mini")
-ALL_MODELS = ("LaTa", "PhilTa", "mT5-base", "T5-v1.1-base", "T5-base", "LaBERTa", "PhilBERTa",
-              "LaBSE", "Qwen3-0.6B", "KaLM-mini", "Sentence-T5", "SPhilBERTa", "T5-efficient-base")
+MAIN_MODELS = ("LaTa", "PhilTa", "mT5-base", "T5-v1.1-base", "T5-base", "T5-efficient-base",
+               "LaBERTa", "PhilBERTa", "LaBSE", "Qwen3-0.6B", "KaLM-mini")
+ALL_MODELS = ("LaTa", "PhilTa", "mT5-base", "T5-v1.1-base", "T5-base", "T5-efficient-base",
+              "LaBERTa", "PhilBERTa", "LaBSE", "Qwen3-0.6B", "KaLM-mini", "Sentence-T5",
+              "SPhilBERTa")
 PANEL = ("LaTa", "PhilTa", "mT5-base", "LaBSE", "Qwen3-0.6B", "KaLM-mini")
 T5_PANEL_IDS = ("bowphs/LaTa", "bowphs/PhilTa", "google/mt5-base")
 
@@ -125,7 +126,7 @@ CHECKPOINTS: Dict[str, Tuple[str, int, str]] = {
 
 GROUPS_MAIN = [
     ("v11", "Raw T5 encoders, T5 v1.1 layout"),
-    ("orig", "Raw T5 encoder, original layout"),
+    ("orig", "Raw T5 encoders, original layout"),
     ("enc", "Raw encoder-only siblings"),
     ("emb", "Embedding-trained"),
 ]
@@ -217,7 +218,8 @@ def _f3(x: float) -> str:
     return f"{x:.3f}"
 
 
-_WORDS = {2: "two", 3: "three", 4: "four", 5: "five", 6: "six"}
+_WORDS = {2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven", 8: "eight",
+          9: "nine", 10: "ten", 11: "eleven", 12: "twelve", 13: "thirteen"}
 
 
 def render_models_main(summ: pd.DataFrame) -> str:
@@ -227,7 +229,7 @@ def render_models_main(summ: pd.DataFrame) -> str:
     if min(n_v11) == 0 or any(summ.loc[m, "n_collapsed"] for m in others):
         raise SystemExit("the T1 caption assumes that exactly the T5 v1.1-layout rows collapse")
     lines = [HEADER.rstrip("\n"), r"\begin{table}[t]", r"\centering", r"\footnotesize",
-             r"\setlength{\tabcolsep}{3.5pt}", r"\begin{tabular}{@{}llrccr@{}}", r"\toprule",
+             r"\setlength{\tabcolsep}{2.8pt}", r"\begin{tabular}{@{}llrccr@{}}", r"\toprule",
              r"Model & Type & L & AUROC$_{\min}$ ($\ell$) & PC1$_{\max}$ & Coll. \\",
              r"\midrule"]
     for gi, (group, label) in enumerate(GROUPS_MAIN):
@@ -241,7 +243,8 @@ def render_models_main(summ: pd.DataFrame) -> str:
                          f"{_f3(x['auroc_min'])} ({int(x['auroc_min_layer'])}) & "
                          f"{_f3(x['pc1_max'])} & {int(x['n_collapsed'])} \\\\")
     lines += [r"\bottomrule", r"\end{tabular}",
-              r"\caption{The ten main-text models, read as mean-pooled hidden states with no "
+              r"\caption{The " + _WORDS[len(MAIN_MODELS)] + r" main-text models, read as "
+              r"mean-pooled hidden states with no "
               r"correction. Type: T5 encoder (T5), encoder-only (Enc.) or decoder (Dec.; "
               r"KaLM-mini with bidirectional attention). L: blocks read. AUROC$_{\min}$: "
               r"lowest test ranking AUROC over layers, at layer $\ell$. PC1$_{\max}$: peak "
