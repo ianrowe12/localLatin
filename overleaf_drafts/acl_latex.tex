@@ -129,7 +129,7 @@ We localize and repair the collapse but do not explain why it tracks the T5 v1.1
 
 \input{related_work}
 
-\section{Testbed and Protocol}
+\section{Experimental Setup}
 \label{sec:testbed}
 
 \paragraph{Corpus and labels.}
@@ -143,21 +143,14 @@ The labels are expert-assigned by the project and checked by collation in its pa
 \label{sec:setup}
 \label{sec:layers}
 We split the witnesses into 847 training and 858 test witnesses, with 565 and 596 same-source pairs; pairs form only within a split (Appendix~\ref{app:testbed_details}).
-Of the test witnesses, 535 have a same-source partner in test (\emph{existing}) and 323 do not (\emph{new}).
 The layer, routing threshold and ABTT are chosen or fit on the training split.
-Each headline number (Section~\ref{sec:routing}) reads a model at its \emph{train-selected} layer: the one of highest training AUROC for ranking, or of highest training routing accuracy (Table~\ref{tab:selected_layers}).
 The test split selects nothing.
 
 \paragraph{Tasks and metrics.}
 \label{sec:tasks}
 \emph{Ranking} scores every pair of test witnesses by the cosine of their mean-pooled embeddings.
 We report AUROC with same-source pairs as positives.
-\emph{Routing} is open-set: each test witness goes to an existing directory or to ``new''.
-Each test directory scores a witness by the highest cosine between the witness and any other member.
-A pseudo-directory \texttt{NEW} scores a fixed threshold $\tau$, chosen to maximize training F1 at separating same-source from different-source pairs.
-The witness goes to the highest-scoring directory.
-DirAcc@1 counts a decision as correct if it names the labeled directory, or \texttt{NEW} for a new witness.
-Assignment accuracy scores only the existing-versus-new decision; always answering existing scores 62.4\%.
+\emph{Routing} is open-set: each test witness goes to an existing directory or to ``new'', and DirAcc@1 is the share of correct decisions (Section~\ref{sec:routing} gives the procedure).
 
 A \emph{collapsed layer} has \emph{baseline} (uncorrected) test AUROC below 0.70.
 The cutoff only describes layers; it selects no reported number.
@@ -171,23 +164,17 @@ The \emph{top-PC share} is the share of variance on the first principal componen
 Of the eleven models in Table~\ref{tab:models}, six form the \emph{panel}, analyzed in full over 100 layers.
 Three are raw T5 encoders with no embedding objective: the Latin LaTa \citep{lata2023card}, its Ancient Greek, Latin and English sibling PhilTa \citep{riemenschneider2023lata}, and mT5-base \citep{xue2021mt5}.
 Three are embedding-trained: LaBSE \citep{feng2022labse}, Qwen3-Embedding-0.6B \citep[Qwen3-0.6B;][]{qwen3embedding2025} and KaLM-mini \citep{kalm2025embedding}.
-The other five are raw: T5-efficient-base (Section~\ref{sec:models}) and four controls, two of them the encoder-only siblings LaBERTa and PhilBERTa.
-LaTa and LaBERTa, and PhilTa and PhilBERTa, share authors and pretraining corpora \citep{lata2023card,laberta2023card,riemenschneider2023lata}.
-The other two controls are English T5 encoders that share a tokenizer: T5-v1.1-base \citep{t5v11release} and the original T5-base \citep{raffel2020t5}.
-A model has the \emph{T5 v1.1 layout} when it has a gated-GELU feed-forward \citep{shazeer2020glu} and untied input and output embeddings \citep{t5v11release}.
-LaTa, PhilTa, mT5-base and T5-v1.1-base have it (Table~\ref{tab:all_models}); T5-base keeps a ReLU feed-forward and tied embeddings.
+The other five are raw: T5-efficient-base and four controls, each matched to another model in Section~\ref{sec:models}: the encoder-only siblings LaBERTa \citep{laberta2023card} and PhilBERTa \citep{riemenschneider2023lata}, and the English T5 encoders T5-v1.1-base \citep{t5v11release} and the original T5-base \citep{raffel2020t5}.
 We mean-pool the hidden states of every transformer block, dropping only padding and tokens that decode to no text, such as SentencePiece's bare word-boundary piece; special tokens such as \texttt{</s>} and punctuation are kept.
-Mean pooling routes better than last-token pooling in all five models we checked (Appendix~\ref{app:lasttok}).
+Appendix~\ref{app:lasttok} compares last-token pooling.
 Table~\ref{tab:all_models} lists all thirteen models, adding Sentence-T5 \citep{ni2022sentencet5} and SPhilBERTa \citep{riemenschneider2023sphilberta}.
 
-\paragraph{Post-processing and lexical reference.}
+\paragraph{Post-processing.}
 \label{sec:postproc}
 ABTT \citep{mu2018allbutthetop} subtracts the training mean and removes the top $D$ principal components of the centered training embeddings from every vector.
 We choose $D \in \{1,2,3,5,7,10\}$ per layer by training DirAcc@1.
 ABTT is fit on training embeddings only and updates no parameter; we also call it \emph{the projection}.
 We compare SIF frequency weighting \citep{arora2017sif} and reduced-rank whitening \citep{su2021whitening} in Appendix~\ref{app:sif_variants}.
-The task is lexically solvable by design, since the witnesses of one source copy its wording.
-Our \emph{character n-gram reference}, TF-IDF over character 3--5-grams fit on training witnesses, reaches 0.987 AUROC and 89.9 DirAcc@1 (Table~\ref{tab:lexical_baselines}), the level ABTT approaches.
 
 \section{Collapse by Depth}
 \label{sec:depth}
@@ -237,10 +224,12 @@ Among collapsed layers a higher share does not predict a lower AUROC (Appendix~\
 \label{sec:models}
 
 Of the eleven models in Table~\ref{tab:models}, four collapse: LaTa, PhilTa, mT5-base and T5-v1.1-base.
-All four have the T5 v1.1 layout, and none of the other seven collapses at any layer.
+All four have the \emph{T5 v1.1 layout}: a gated-GELU feed-forward \citep{shazeer2020glu} and untied input and output embeddings \citep{t5v11release} (Table~\ref{tab:all_models}).
+None of the other seven collapses at any layer.
+T5-base and T5-efficient-base keep a ReLU feed-forward and tied embeddings.
 
 \paragraph{Encoder-only siblings pretrained on the same corpora do not collapse.}
-LaBERTa and PhilBERTa, like LaTa and PhilTa, have no embedding objective.
+LaBERTa and PhilBERTa share authors and pretraining corpora with LaTa and PhilTa \citep{lata2023card,laberta2023card,riemenschneider2023lata} and, like them, have no embedding objective.
 LaTa and PhilTa fall to 0.496 and 0.538 AUROC; the siblings never fall below 0.826 (LaBERTa) and 0.883 (PhilBERTa).
 Their top-PC share peaks at 0.254 and 0.162 (vs.\ 0.952 and 0.858 in LaTa and PhilTa).
 Shared pretraining text and a missing embedding objective do not produce the collapse on their own.
@@ -250,7 +239,7 @@ Architecture, layout included, pretraining objective and tokenizer vary together
 T5-v1.1-base and T5-base share their tokenizer, the span-corruption objective and C4 pretraining text \citep{raffel2020t5,t5v11release}.
 On Latin text, T5-v1.1-base falls to 0.489 at layer 2, and its layers 2 to 11 collapse.
 T5-base stays at 0.816 or above at every layer, with top-PC share peaking at 0.545.
-The two differ in layout (Section~\ref{sec:testbed}) and in pretraining mix: T5-base also saw supervised tasks \citep{raffel2020t5}.
+The two differ in layout and in pretraining mix: T5-base also saw supervised tasks \citep{raffel2020t5}.
 To separate layout from that mix we add T5-efficient-base \citep{tay2022scale}: T5-base's layout, but pretrained like T5-v1.1-base on C4 alone and without dropout, and on about 30 times fewer tokens than either.
 At that budget it does not collapse: its lowest AUROC (0.736) and its peak top-PC share (0.627) both fall at layer 11 (Table~\ref{tab:d2_t5_efficient}).
 On the four controls in Table~\ref{tab:models}, ABTT lifts every layer to AUROC 0.927 or above, the ten collapsed layers of T5-v1.1-base included, but eight of the 48 (seven in T5-v1.1-base) stay below the panel's band (0.962--0.987; Table~\ref{tab:d2_controls_abtt}).
@@ -326,7 +315,17 @@ Its mask sits neither in a few coordinates nor in a few token types, and we have
 \section{Routing and Limits}
 \label{sec:routing}
 
-At their train-selected layers after ABTT, the six frozen encoders route about equally well, but none beats the n-gram reference.
+At their train-selected layers after ABTT, the six frozen encoders route about equally well, but none beats a character n-gram reference.
+
+Of the 858 test witnesses, 535 have a same-source partner in test (\emph{existing}) and 323 do not (\emph{new}).
+Each test directory scores a witness by the highest cosine between the witness and any other member.
+A pseudo-directory \texttt{NEW} scores a fixed threshold $\tau$, chosen to maximize training F1 at separating same-source from different-source pairs.
+The witness goes to the highest-scoring directory.
+DirAcc@1 counts a decision as correct if it names the labeled directory, or \texttt{NEW} for a new witness.
+Assignment accuracy scores only the existing-versus-new decision; always answering existing scores 62.4\%.
+Each headline number reads a model at its \emph{train-selected} layer: the one of highest training AUROC for ranking, or of highest training DirAcc@1 for routing (Table~\ref{tab:selected_layers}).
+The task is lexically solvable by design, since the witnesses of one source copy its wording.
+Our \emph{character n-gram reference}, TF-IDF over character 3--5-grams fit on training witnesses, reaches 0.987 AUROC and 89.9 DirAcc@1 (Table~\ref{tab:lexical_baselines}).
 
 \input{tables/headline_main}
 
@@ -443,10 +442,10 @@ This appendix records where the testbed text comes from and how our files were d
 \paragraph{Derivation.} We hold the witnesses as plain text derived from CCL TEI-P5 exports. The rule is one file per unit: the directory is the source key from the unit's \texttt{scholSource} division, which is stripped from the text so that no file carries its own label; the text is the manuscript rubric followed by the canon text, with inline markup flattened (editorial notes kept, deletions dropped) and layout whitespace collapsed; a unit without a source key receives no directory. The rule is scripted. On a current export of one manuscript (Paris, BnF, lat.\ 2123), it reproduces all 279 units present in both the export and the corpus character for character after whitespace normalization, and places every one in the same directory.
 
 \FloatBarrier
-\section{Testbed and Protocol Details}
+\section{Experimental Setup Details}
 \label{app:testbed_details}
 
-This appendix gives the parts of the protocol that Section~\ref{sec:testbed} leaves out: how the split treats directories of each size, the further layer statistics, the SIF weighting, and how the lexical reference fares by degree of overlap.
+This appendix gives the parts of the setup that Sections~\ref{sec:testbed} and~\ref{sec:routing} leave out: how the split treats directories of each size, the further layer statistics, the SIF weighting, and how the lexical reference fares by degree of overlap.
 
 \paragraph{Split.}
 Singleton directories (545 of 840) are divided file by file between the two splits.
