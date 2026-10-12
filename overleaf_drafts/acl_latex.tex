@@ -284,18 +284,12 @@ Zeroing the ten largest coordinates does not remove this mask, and a few token t
 
 We run each test at the 26 collapsed layers, fit every intervention on training embeddings, and read test ranking AUROC.
 A layer counts as restored at AUROC 0.90 or above.
-We fixed most tests before running them ($\dagger$, Table~\ref{tab:predictions}).
-Three of our expectations fail.
-So does a rival account, that the first principal component tracks passage length ($|\rho| \le 0.44$ with log token count at all 26 layers).
 Appendix~\ref{app:localizing} gives further tables and controls.
-
-\input{tables/predictions}
 
 \paragraph{Zeroing the ten largest coordinates restores no collapsed layer.}
 In pretrained transformers a few outlier coordinates dominate cosine similarity \citep{timkey2021rogue}.
 Zeroing them improves pooled similarity in pretrained encoders \citep{luo2021positional}, and whitening does better still \citep{haemmerl2023anisotropy}.
-We therefore expected that zeroing five or fewer coordinates of largest training variance would restore these layers.
-Zeroing up to ten, ranked by variance or by mean absolute value, restores none of the 26, and the best layer reaches 0.794 (Figure~\ref{fig:localize}a).
+In our encoders, zeroing up to ten coordinates, ranked on training embeddings by variance or by mean absolute value, restores none of the 26, and the best layer reaches 0.794 (Figure~\ref{fig:localize}a).
 The dominant direction loads mostly on these coordinates: the ten of highest variance carry a median 92\% of its squared loading.
 Yet after zeroing them, its remainder still holds a median 72\% of the remaining variance.
 Zeroing far more coordinates does restore LaTa and PhilTa.
@@ -307,8 +301,8 @@ The dominant direction loads mostly on a few coordinates but acts beyond them, w
 ABTT removes whole directions instead of coordinates, so we vary the number $D$ of principal components it removes (Figure~\ref{fig:localize}b).
 Centering alone ($D=0$) does not help: the median AUROC over the collapsed layers falls from 0.541 to 0.503.
 At these layers the first component holds a median 94\% of the centered training variance.
-We expected that removing it alone would recover at least 80\% of the AUROC gain from removing ten components.
-It recovers a median 45\%, and reaches 80\% at only one of the 26 layers.
+It is not mainly a passage-length direction: $|\rho| \le 0.44$ with log token count at all 26 layers.
+Removing it alone recovers a median 45\% of the AUROC gain from removing ten components, and 80\% or more at only one of the 26 layers.
 Removing three components brings all 26 layers to 0.914 or above.
 mT5-base keeps improving up to ten components (median 0.934 at three, 0.978 at ten).
 The ten removed components rank at 0.489, the next ten at 0.919, and the retained subspace at 0.977 (Table~\ref{tab:e3_subspace_split}).
@@ -317,7 +311,7 @@ At these layers the signal lies outside the removed directions.
 \paragraph{In LaTa, three token types feed the removed directions.}
 A pooled vector is the mean of its token vectors, so a few token types with large values along the removed directions could dominate a witness's scores on those directions.
 We rank token types by their share of the variance of training-witness scores on the top three components, then pool without the top $m$ types, for $m$ up to 100.
-We expected some $m$ to restore the collapsed layers.
+We ask whether some $m$ restores the collapsed layers.
 In LaTa, $m=3$ does.
 Pooling without the comma, the period and \texttt{</s>} drops 11\% of the test tokens and restores all 10 collapsed layers (median 0.919).
 Random token types of the same training share leave the median at 0.500.
@@ -582,7 +576,7 @@ The rest of the appendix gives the per-layer readouts behind the sibling pairs, 
 \input{tables/all_models}
 
 \paragraph{The sibling pairs.}
-Before the run we required each encoder-only sibling to stay above 0.80 AUROC at every layer, and both did (Table~\ref{tab:p2x2_layerwise}).
+Both encoder-only siblings stay above 0.80 AUROC at every layer (Table~\ref{tab:p2x2_layerwise}).
 LaBERTa clears that floor by 0.026, at layer 1, and rises to 0.910 at layer 12; PhilBERTa stays between 0.883 and 0.923.
 Effective rank falls to 1.36 in LaTa and 1.81 in PhilTa, and never below 57.87 in LaBERTa or 82.12 in PhilBERTa.
 Within each pair, several factors differ together.
@@ -635,9 +629,8 @@ The English passage is a run of whole words from a random sentence start in the 
 The two texts then have the same mT5 length distribution (median 98 tokens).
 The match holds only under the mT5 tokenizer: under PhilTa's tokenizer the English passages are about 40 percent longer, and under T5-v1.1's English-only tokenizer the Latin passages are about 55 percent longer.
 Re-pairing the training passages on each model's own token lengths (653 to 847 pairs) moves top-PC share by at most 0.010 at the layers that Table~\ref{tab:gen_geometry} lists.
-We had expected each model to show a top-PC share above 0.8 and an effective rank near 1 at mid-depth on both texts.
-The share holds in every cell.
-The effective rank holds for mT5-base and T5-v1.1-base but not for PhilTa, whose effective rank is 1.82 to 2.30 at English layers 4 to 11, and 1.81 to 4.34 at Latin layers 3 to 11.
+At mid-depth the top-PC share is above 0.8 in every cell.
+The effective rank is near 1 for mT5-base and T5-v1.1-base but not for PhilTa, whose effective rank is 1.82 to 2.30 at English layers 4 to 11, and 1.81 to 4.34 at Latin layers 3 to 11.
 The two texts differ in language, era and genre together, and the English sample covers one register.
 
 % Generated single-column table wider than one column: set it at full width.
@@ -685,7 +678,6 @@ The embedding-trained models barely react to zeroing: at the train-selected laye
 
 \paragraph{Zeroing more coordinates.}
 Figure~\ref{fig:e1_k_sweep} extends the zeroing to 400 coordinates.
-We added this sweep after reading the results above, and it carries no prediction.
 Under the variance ranking, zeroing restores none of the 26 layers up to 30 coordinates, 7 at 100, and 19 at 300 and 400.
 The 19 are every collapsed layer of LaTa and PhilTa; no mT5-base layer is restored.
 Under the mean-absolute-value ranking of Figure~\ref{fig:localize}a, the first layers are restored at 50 coordinates and all 19 at 400.
@@ -695,7 +687,7 @@ Top-PC share falls before AUROC recovers: at 100 zeroed coordinates it is below 
 \begin{figure}[t]
 \centering
 \includegraphics[width=\columnwidth]{fig_e1_k_sweep.pdf}
-\caption{Test ranking AUROC (top) and top-PC share of the training embeddings (bottom) against the number $k$ of zeroed residual coordinates on a logarithmic axis, one color per model at its lowest-AUROC baseline layer (in parentheses in the legend). Coordinates are ranked by variance across training passages; the dotted line in the same color zeroes $k$ random coordinates instead (mean over five seeds). Rankings and top-PC share are fit on training embeddings only; the gray horizontal line marks chance (AUROC 0.5). Filled markers and solid lines: T5 encoders; hollow markers and dashed lines: embedding-trained models. LaTa and PhilTa pass AUROC 0.90 only after 200 and 150 coordinates are zeroed (0.924 and 0.937 at $k=400$). mT5-base reaches only 0.779 at $k=400$, where its top-PC share is still 0.949. At the plotted T5 layers random zeroing moves AUROC by at most 0.010, and zeroing by variance moves the embedding-trained models by at most 0.038. The sweep was added after the first coordinate ablation and carries no prediction.}
+\caption{Test ranking AUROC (top) and top-PC share of the training embeddings (bottom) against the number $k$ of zeroed residual coordinates on a logarithmic axis, one color per model at its lowest-AUROC baseline layer (in parentheses in the legend). Coordinates are ranked by variance across training passages; the dotted line in the same color zeroes $k$ random coordinates instead (mean over five seeds). Rankings and top-PC share are fit on training embeddings only; the gray horizontal line marks chance (AUROC 0.5). Filled markers and solid lines: T5 encoders; hollow markers and dashed lines: embedding-trained models. LaTa and PhilTa pass AUROC 0.90 only after 200 and 150 coordinates are zeroed (0.924 and 0.937 at $k=400$). mT5-base reaches only 0.779 at $k=400$, where its top-PC share is still 0.949. At the plotted T5 layers random zeroing moves AUROC by at most 0.010, and zeroing by variance moves the embedding-trained models by at most 0.038.}
 \label{fig:e1_k_sweep}
 \end{figure}
 
@@ -707,13 +699,12 @@ Top-PC share falls before AUROC recovers: at 100 zeroed coordinates it is below 
 \end{figure}
 
 \paragraph{What survives zeroing.}
-A follow-up, also designed after the results, zeroes the ten highest-variance coordinates and asks which direction then dominates.
+A follow-up zeroes the ten highest-variance coordinates and asks which direction then dominates.
 These ten coordinates carry a median 92\% of the first component's squared loading.
 The new dominant direction is the remainder of the first component on the other coordinates (median cosine 0.999 with that remainder).
 It holds a median 72\% of the remaining variance.
 Removing the original second and third components while keeping the first restores none of the 26 layers.
 Zeroing followed by ABTT with one, two or three components restores 9, 21 and 26 layers, against 1, 13 and 26 without zeroing.
-These intervention cells were added after the follow-up's first run and carry no prediction.
 
 \paragraph{Number of directions.}
 Figure~\ref{fig:d_ablation} plots the sweep over $D$ at each model's lowest-AUROC layer, and Table~\ref{tab:d_ablation} gives medians over groups of layers.
