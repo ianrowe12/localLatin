@@ -22,6 +22,7 @@
 \graphicspath{{figures/}}
 % \FloatBarrier keeps each appendix's floats inside that appendix.
 \usepackage{placeins}
+\usepackage{needspace}
 
 % Float packing. These values only reduce the slack around floats; they do not
 % touch margins or fonts. Keep float slack small; do not tighten further.
@@ -92,7 +93,7 @@ In LaTa, PhilTa and mT5-base \citep{xue2021mt5}, 26 of 36 layers rank same-sourc
 Their first and last layers still retrieve.
 Three embedding-trained encoders, which complete our six-model panel, never collapse.
 The usual check, mean pairwise cosine, gives no reliable warning in either direction.
-The share of variance on the first principal component (top-PC share) is high at every collapsed layer: necessary for collapse in our models, but not sufficient.
+The share of variance on the first principal component (top-PC share) is high at every collapsed layer: necessary for collapse in our pretrained models, but not sufficient.
 
 The signal is masked, not missing.
 All-but-the-Top \citep[ABTT;][]{mu2018allbutthetop}, a linear projection fit on training embeddings only, removes the mean and the top principal components from every embedding, with no parameter update.
@@ -109,10 +110,10 @@ We do not isolate which change matters.
 Inside the collapsed layers, about three directions mask the signal.
 Removing three principal components brings all 26 layers to AUROC 0.914 or above, and mT5-base keeps improving up to ten.
 Zeroing the ten largest coordinates restores none of them, although the first principal component (the dominant direction) sits mostly on such coordinates.
-In LaTa, pooling without the comma, the period and \texttt{</s>} restores every collapsed layer; in mT5-base, no set of up to 100 token types does.
+In LaTa, pooling without the comma, the period and \texttt{</s>} restores every collapsed layer; in mT5-base, dropping up to its top 100 token types does not.
 
 This paper makes four contributions.
-(1)~A per-layer retrieval profile of T5 encoder states, each layer read alone, the first we know of; it shows a mid-depth collapse that ABTT reverses (Section~\ref{sec:depth}).
+(1)~A per-layer retrieval profile of T5 encoder states, the first we know of; it shows a mid-depth collapse that mean cosine misses, top-PC share flags and ABTT reverses (Section~\ref{sec:depth}).
 (2)~Controls showing that the collapse tracks the T5 v1.1 layout: T5-v1.1-base collapses where the original T5-base does not, encoder-only siblings on the same corpora do not, and the high-share middle layers recur on English text (Section~\ref{sec:models}).
 (3)~A localization of the mask to about three directions, which zeroing the ten largest coordinates does not remove, with a token-level account in LaTa and none in mT5-base (Section~\ref{sec:localizing}).
 (4)~A measure of what the projection gains for routing and where it stops, set against a character n-gram reference (Section~\ref{sec:routing}).
@@ -144,7 +145,7 @@ The labels are expert-assigned by the project and checked by collation in its pa
 We split the witnesses into 847 training and 858 test witnesses, with 565 and 596 same-source pairs; pairs form only within a split (Appendix~\ref{app:testbed_details}).
 Of the test witnesses, 535 have a same-source partner in test (\emph{existing}) and 323 do not (\emph{new}).
 The layer, routing threshold and ABTT are chosen or fit on the training split.
-Each headline number (Table~\ref{tab:headline}) reads a model at its \emph{train-selected} layer: the one of highest training AUROC for ranking, or of highest training routing accuracy (Table~\ref{tab:selected_layers}).
+Each headline number (Section~\ref{sec:routing}) reads a model at its \emph{train-selected} layer: the one of highest training AUROC for ranking, or of highest training routing accuracy (Table~\ref{tab:selected_layers}).
 The test split selects nothing.
 
 \paragraph{Tasks and metrics.}
@@ -174,7 +175,7 @@ The other four are raw controls, two of them the encoder-only siblings LaBERTa a
 LaTa and LaBERTa, and PhilTa and PhilBERTa, share authors and pretraining corpora \citep{lata2023card,laberta2023card,riemenschneider2023lata}.
 The other two are English T5 encoders that share a tokenizer: T5-v1.1-base \citep{t5v11release} and the original T5-base \citep{raffel2020t5}.
 A model has the \emph{T5 v1.1 layout} when it has a gated-GELU feed-forward \citep{shazeer2020glu} and untied input and output embeddings \citep{t5v11release}.
-LaTa, PhilTa, mT5-base and T5-v1.1-base have it; T5-base keeps a ReLU feed-forward and tied embeddings.
+LaTa, PhilTa, mT5-base and T5-v1.1-base have it (Table~\ref{tab:all_models}); T5-base keeps a ReLU feed-forward and tied embeddings.
 We mean-pool the hidden states of every transformer block, dropping only padding and tokens that decode to no text, such as SentencePiece's bare word-boundary piece; special tokens such as \texttt{</s>} and punctuation are kept.
 Mean pooling routes better than last-token pooling in all five models we checked (Appendix~\ref{app:lasttok}).
 Table~\ref{tab:all_models} lists all thirteen models, adding Sentence-T5 \citep{ni2022sentencet5}, SPhilBERTa \citep{riemenschneider2023sphilberta} and T5-efficient-base (Section~\ref{sec:models}).
@@ -191,45 +192,46 @@ Our \emph{character n-gram reference}, TF-IDF over character 3--5-grams fit on t
 \section{Collapse by Depth}
 \label{sec:depth}
 
-In three of the six panel models most middle layers rank near chance and mean cosine gives no reliable warning of it; ABTT, fit on training embeddings only, restores ranking at every panel layer.
+In LaTa, PhilTa and mT5-base most middle layers rank near chance.
+Mean cosine gives no reliable warning, but top-PC share is high at every collapsed layer.
+ABTT restores ranking at every panel layer.
 
 \paragraph{LaTa, PhilTa and mT5-base fall to near chance at mid-depth.}
 Figure~\ref{fig:depth} gives baseline ranking AUROC at every layer of the six panel models.
 In LaTa, PhilTa and mT5-base, 26 of the 36 layers collapse, ranking at AUROC 0.50 to 0.66.
 They are layers 2--11 of LaTa, 3--11 of PhilTa and 5--11 of mT5-base.
-The next-lowest layer in the panel ranks at 0.799 (mT5-base, layer~4), and in the panel any cutoff from 0.66 to 0.79 gives the same split.
-Training AUROC picks the same 26 layers.
+The lowest remaining panel layer ranks at 0.799 (mT5-base, layer~4), so any cutoff from 0.66 to 0.79 gives the same 26 layers.
+Training AUROC below 0.70 picks the same 26 layers.
 The first and last layers still retrieve; LaTa ranks at 0.934 at layer~1 and 0.938 at layer~12.
-The embedding-trained models stay at or above 0.806 at every layer.
+The embedding-trained panel models never rank below 0.806.
 
 \paragraph{A train-only projection restores ranking at every layer of the six panel models.}
-ABTT (Section~\ref{sec:testbed}) lifts all 100 layers of the panel, the 26 collapsed layers included, to AUROC 0.962 to 0.987 (Figure~\ref{fig:depth}, solid lines).
-This extends the reading of \citet{timkey2021rogue}, that a few dominant dimensions hide representational quality, to layers that rank near chance.
-Reduced-rank whitening, fit on the same training embeddings, ranks within 0.021 of ABTT at every layer (Table~\ref{tab:whiten_reduced}, Appendix~\ref{app:sif_variants}).
-The restoration holds for ranking only.
+ABTT (Section~\ref{sec:postproc}) lifts all 100 layers of the panel, the 26 collapsed layers included, to AUROC 0.962 to 0.987 (Figure~\ref{fig:depth}, solid lines).
+Reduced-rank whitening (128 or 256 components), fit on the same training embeddings, ranks within 0.021 of ABTT at every panel layer (Appendix~\ref{app:sif_variants}).
+The narrow band holds for ranking only.
 Routing after ABTT still varies by layer, from 75.6 to 90.2 DirAcc@1 (Appendix~\ref{app:per_layer}).
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=\columnwidth]{fig_diagnostics}
-\caption{Baseline test AUROC against (a) mean pairwise cosine and (b) top-PC share (share of variance on the first principal component) of the training embeddings, one point per layer, for the six panel models, T5-base and T5-v1.1-base (filled: raw T5-family encoders; open: embedding-trained). Gray band: AUROC below 0.70, the collapsed range. Mean cosine fails in both directions. Every collapsed layer has a top-PC share of at least 0.76, but a high share does not imply collapse (mT5-base layer~4: 0.893, AUROC 0.799).}
+\caption{Baseline test AUROC against two label-free statistics of the training embeddings: (a) mean pairwise cosine and (b) top-PC share, the share of variance on the first principal component. One point per layer of the six panel models, T5-base and T5-v1.1-base (filled: raw T5-family; open: embedding-trained). Gray band: AUROC below 0.70, the collapsed range. Collapsed layers occur at both low and high mean cosine. Every collapsed layer has a top-PC share of at least 0.76, but a high share does not imply collapse (mT5-base layer~4: 0.893, AUROC 0.799).}
 \label{fig:diagnostics}
 \end{figure}
 
 \paragraph{Mean pairwise cosine gives no reliable warning.}
-Figure~\ref{fig:diagnostics}a plots mean pairwise cosine, computed on training embeddings, against baseline test AUROC.
-The collapsed layers of LaTa, PhilTa and mT5-base have a lower mean cosine (0.22 to 0.58) than the embedding-trained models, which retrieve well (0.59 to 0.97).
-T5-v1.1-base, which also collapses on the Latin text (Table~\ref{tab:models}), sits at a high mean cosine (0.87 to 0.96).
-So neither a high nor a low mean cosine marks a collapsed layer.
+Figure~\ref{fig:diagnostics}a plots training-set mean pairwise cosine against baseline test AUROC.
+Collapsed panel layers have a lower mean cosine (0.22 to 0.58) than any embedding-trained panel layer (0.59 to 0.97).
+But LaTa's healthy layers~1 and~12 sit in the collapsed range (0.50 and 0.58).
+T5-v1.1-base, which also collapses (Table~\ref{tab:models}; Section~\ref{sec:models}), sits at 0.87 to 0.96 at every layer, collapsed or not.
+Neither a high nor a low mean cosine marks a collapsed layer.
 
-\paragraph{Top-PC share is high at every collapsed layer.}
+\paragraph{Top-PC share is high at every collapsed layer of the pretrained models.}
 Top-PC share needs no labels either (Figure~\ref{fig:diagnostics}b).
-It is at least 0.76 at every collapsed layer of the panel and at every collapsed layer of T5-v1.1-base.
+It is at least 0.76 at every collapsed layer of the panel and of T5-v1.1-base.
 In the three embedding-trained panel models it peaks at 0.524 (LaBSE).
-A high share is necessary for collapse in our models, but it is not sufficient.
-mT5-base layer~4 has a share of 0.893 and still ranks at 0.799.
-Sentence-T5 \citep{ni2022sentencet5}, an embedding-trained T5 encoder reported in the appendix, combines shares of 0.66 to 0.94 with AUROC 0.800 to 0.891 at layers 2--11 (Table~\ref{tab:all_models}).
-The share marks the collapsed regime but does not order layers inside it (Appendix~\ref{app:depth_extra}).
+A high share is necessary for collapse in our pretrained models but not sufficient: of the 88 healthy layers in Figure~\ref{fig:diagnostics}, only mT5-base layer~4 reaches 0.76 (0.893, AUROC 0.799).
+Sentence-T5 \citep{ni2022sentencet5}, an embedding-trained T5 encoder, has a share of 0.76 or more at layers 2--9 (peak 0.94) yet ranks at 0.800 or above at every layer (Table~\ref{tab:all_models}).
+Among collapsed layers a higher share does not predict a lower AUROC (Appendix~\ref{app:depth_extra}).
 
 \section{Collapse Across Models}
 \label{sec:models}
@@ -238,45 +240,40 @@ Of the ten models in Table~\ref{tab:models}, four collapse: LaTa, PhilTa, mT5-ba
 All four have the T5 v1.1 layout, and none of the other six collapses at any layer.
 
 \paragraph{Encoder-only siblings pretrained on the same corpora do not collapse.}
-LaBERTa and PhilBERTa have no embedding objective.
-The T5 members collapse, with lowest AUROC 0.496 (LaTa) and 0.538 (PhilTa).
-The siblings never fall below 0.826 (LaBERTa) and 0.883 (PhilBERTa).
-Their top-PC share peaks at only 0.254 and 0.162, against 0.952 and 0.858 in LaTa and PhilTa.
+LaBERTa and PhilBERTa, like LaTa and PhilTa, have no embedding objective.
+LaTa and PhilTa fall to 0.496 and 0.538 AUROC, while the siblings never fall below 0.826 (LaBERTa) and 0.883 (PhilBERTa).
+Their top-PC share peaks at 0.254 and 0.162 (vs.\ 0.952 and 0.858 in LaTa and PhilTa).
 Shared pretraining text and a missing embedding objective do not produce the collapse on their own.
-Architecture, pretraining objective and tokenizer vary together within each pair; the pairs cannot say which matters (Appendix~\ref{app:models}).
+Architecture, layout included, pretraining objective and tokenizer vary together within each pair, so the pairs cannot say which of these matters (Appendix~\ref{app:models}).
 
 \paragraph{T5-v1.1-base collapses; T5-base and T5-efficient-base, with the original layout, do not.}
 T5-v1.1-base and T5-base share their tokenizer, the span-corruption objective and C4 pretraining text \citep{raffel2020t5,t5v11release}.
-On Latin text, T5-v1.1-base falls to 0.489 at layer 2; its layers 2 to 11 collapse.
-T5-base stays at 0.816 or above at every layer; its top-PC share peaks at 0.545.
-The two differ in layout (Section~\ref{sec:testbed}); by their checkpoint configurations LaTa, PhilTa and mT5-base share T5-v1.1-base's (Table~\ref{tab:all_models}).
-T5-base also saw supervised tasks in pretraining \citep{raffel2020t5}.
-To separate layout from that pretraining mix we add T5-efficient-base \citep{tay2022scale}, which has T5-base's layout but, like T5-v1.1-base, was pretrained on C4 alone.
-It was also pretrained without dropout and on about 30 times fewer tokens than either.
-At that budget it does not collapse; its lowest AUROC is 0.736 and its top-PC share peaks at 0.627 (Table~\ref{tab:d2_t5_efficient}).
+On Latin text, T5-v1.1-base falls to 0.489 at layer 2, and its layers 2 to 11 collapse.
+T5-base stays at 0.816 or above at every layer, with top-PC share peaking at 0.545.
+The two differ in layout (Section~\ref{sec:testbed}) and in pretraining mix: T5-base also saw supervised tasks \citep{raffel2020t5}.
+To separate layout from that pretraining mix we add T5-efficient-base \citep{tay2022scale}: T5-base's layout, but pretrained like T5-v1.1-base on C4 alone and without dropout, and on about 30 times fewer tokens than either.
+At that budget it does not collapse: its lowest AUROC (0.736) and its peak top-PC share (0.627) both fall at layer 11 (Table~\ref{tab:d2_t5_efficient}).
+On the four controls in Table~\ref{tab:models}, ABTT lifts every layer to AUROC 0.927 or above, the ten collapsed layers of T5-v1.1-base included, but eight of the 48 (seven in T5-v1.1-base) stay below the panel's band (0.962--0.987; Table~\ref{tab:d2_controls_abtt}).
 Across the thirteen models we test, the collapse tracks the T5 v1.1 layout; we do not isolate which change is responsible.
-On the four controls ABTT lifts every layer to AUROC 0.927 or above, the ten collapsed layers of T5-v1.1-base included (0.927 to 0.969).
-Every layer of the ten models in Table~\ref{tab:models} reaches 0.927, but eight of the 48 control layers, seven in T5-v1.1-base, stay below the panel's band (0.962--0.987; Table~\ref{tab:d2_controls_abtt}).
 
 \paragraph{In three models with the T5 v1.1 layout, high top-PC share in the middle layers appears on English text too.}
-T5-v1.1-base was pretrained on English alone, so its collapse on Latin could be an out-of-distribution effect.
-We read mT5-base, PhilTa and T5-v1.1-base on 847 English passages of US court opinions \citep{cap2024,kandpal2025commonpile}, paired one to one with the Latin training witnesses and matched in length.
-In all three models, layers 4 to 11 have a top-PC share of at least 0.82 on English, and the first and last layers stay at or below 0.34 (Table~\ref{tab:gen_geometry}, Figure~\ref{fig:gen_geometry}).
+T5-v1.1-base was pretrained on English alone, so its high-share layers on Latin could reflect a language mismatch.
+We read mT5-base, PhilTa and T5-v1.1-base on 847 English passages of US court opinions \citep{cap2024,kandpal2025commonpile}, paired with the Latin training witnesses and matched in mT5 token length.
+On English, in all three models, layers 4 to 11 have a top-PC share of at least 0.82 and the first and last layers stay at or below 0.34 (Table~\ref{tab:gen_geometry}, Figure~\ref{fig:gen_geometry}).
 At layers 2 to 11 of T5-v1.1-base, top-PC share is 0.931 to 0.950 on English and 0.958 to 0.975 on Latin.
-In these models the high-share middle layers do not depend on Latin input.
 The check covers geometry only; without labels, it says nothing about English retrieval.
 
 \paragraph{In LaTa, contrastive fine-tuning leaves the middle layers collapsed.}
-We fine-tuned LaTa on 499 training pairs, adding the contrastive embedding objective it lacks (Appendix~\ref{app:reference_systems}).
+In a small test, we fine-tune LaTa on 499 training pairs, adding the contrastive embedding objective it lacks (Appendix~\ref{app:reference_systems}).
 Fine-tuning lifts the last layer from 0.938 to 0.984 AUROC but leaves layers 2 to 11 at 0.50 to 0.57.
 Peak top-PC share barely moves (0.952 before, 0.945 after; Table~\ref{tab:ft_lata_layerwise}).
-This agrees with \citet{haemmerl2023anisotropy}, whose sentence-tuned multilingual encoder has a large outlier dimension at a middle layer but none at its output layer.
+\citet{haemmerl2023anisotropy} report the same split: their sentence-tuned multilingual encoder keeps a large outlier dimension at a middle layer but none at its output layer.
 
 \section{Localizing the Collapse}
 \label{sec:localizing}
 
 In the collapsed layers about three directions mask the retrieval signal.
-Zeroing the ten largest coordinates does not remove this mask, and only in LaTa do a few token types feed it.
+Zeroing the ten largest coordinates does not remove this mask, and a few token types feed it in LaTa but not in mT5-base.
 
 \begin{figure*}[t]
 \centering
@@ -285,49 +282,52 @@ Zeroing the ten largest coordinates does not remove this mask, and only in LaTa 
 \label{fig:localize}
 \end{figure*}
 
-We run each test at the 26 collapsed layers, fit every intervention on training embeddings, and read test ranking AUROC; a layer counts as restored at 0.90.
-We fixed most tests before running them ($\dagger$, Table~\ref{tab:predictions}); four of these fail.
-Appendix~\ref{app:localizing} gives per-layer tables and further controls.
+We run each test at the 26 collapsed layers, fit every intervention on training embeddings, and read test ranking AUROC.
+A layer counts as restored at AUROC 0.90 or above.
+We fixed most tests before running them ($\dagger$, Table~\ref{tab:predictions}).
+Three of our expectations fail.
+So does a rival account, that the first principal component tracks passage length ($|\rho| \le 0.44$ with log token count at all 26 layers).
+Appendix~\ref{app:localizing} gives further tables and controls.
 
 \input{tables/predictions}
 
 \paragraph{Zeroing the ten largest coordinates restores no collapsed layer.}
 In pretrained transformers a few outlier coordinates dominate cosine similarity \citep{timkey2021rogue}.
-Zeroing them improves pooled similarity in pretrained encoders \citep{luo2021positional,haemmerl2023anisotropy}.
+Zeroing them improves pooled similarity in pretrained encoders \citep{luo2021positional}, and whitening does better still \citep{haemmerl2023anisotropy}.
 We therefore expected that zeroing five or fewer coordinates of largest variance on training embeddings would restore the collapsed layers.
 Zeroing up to ten, ranked by variance or by mean absolute value, restores none of the 26, and the best layer reaches 0.794 (Figure~\ref{fig:localize}a).
-The dominant direction does load mostly on these coordinates; the ten of highest variance carry a median 92\% of its squared loading.
-Yet zeroing them leaves the direction dominant: on the remaining coordinates it still holds a median 72\% of the variance and still masks retrieval.
+The dominant direction loads mostly on these coordinates: the ten of highest variance carry a median 92\% of its squared loading.
+Yet after zeroing them, its remainder still holds a median 72\% of the remaining variance.
 Zeroing far more coordinates does restore LaTa and PhilTa.
-Ranked by variance, the first layers recover at 50 coordinates and all 19 by 300 (by 400 under the mean-absolute-value ranking of Figure~\ref{fig:localize}a); no mT5-base layer recovers even at 400.
-The masking direction concentrates on a few coordinates yet acts beyond them, which extends the outlier-dimension account.
+Ranked by variance, recovery starts at 50 coordinates, and all 19 of their collapsed layers recover by 300 (by 400 under the mean-absolute-value ranking of Figure~\ref{fig:localize}a).
+No mT5-base layer recovers even at 400.
+The dominant direction loads mostly on a few coordinates but acts beyond them, which extends the outlier-dimension account.
 
 \paragraph{Removing three directions restores every collapsed layer.}
 ABTT removes whole directions instead of coordinates, so we vary the number $D$ of principal components it removes (Figure~\ref{fig:localize}b).
-Centering alone ($D=0$) does not help, as expected: the median AUROC over the collapsed layers falls from 0.541 to 0.503.
+Centering alone ($D=0$) does not help: the median AUROC over the collapsed layers falls from 0.541 to 0.503.
 At these layers the first component holds a median 94\% of the centered training variance.
-We expected that removing it alone would recover at least 80\% of the gain from removing ten.
-It recovers a median 45\%, and reaches 80\% at only one layer of 26.
+We expected that removing it alone would recover at least 80\% of the AUROC gain from removing ten components.
+It recovers a median 45\%, and reaches 80\% at only one of the 26 layers.
 Removing three components brings all 26 layers to 0.914 or above.
 mT5-base keeps improving up to ten components (median 0.934 at three, 0.978 at ten).
-Ranking within the retained subspace gives a median AUROC of 0.977, and within the ten removed components 0.489.
-At these layers the signal lies outside the mask.
+The ten removed components rank at 0.489, the next ten at 0.919, and the retained subspace at 0.977 (Table~\ref{tab:e3_subspace_split}).
+At these layers the signal lies outside the removed directions.
 
 \paragraph{In LaTa, three token types feed the removed directions.}
-A pooled vector is the mean of its token vectors, so a few token types with large values along the removed directions would set a witness's position on them.
-We ranked token types on training witnesses by how much of the variance of the witness scores on the top three components they contribute, then pooled without the top $m$ types, for $m$ up to 100.
+A pooled vector is the mean of its token vectors, so a few token types with large values along the removed directions could dominate a witness's scores on those directions.
+We rank token types by their share of the variance of training-witness scores on the top three components, then pool without the top $m$ types, for $m$ up to 100.
 We expected some $m$ to restore the collapsed layers.
 In LaTa, $m=3$ does.
 Pooling without the comma, the period and \texttt{</s>} drops 11\% of the test tokens and restores all 10 collapsed layers (median 0.919).
-Dropping random token types of the same training mass leaves the median at 0.500.
-The dominant direction also does not track passage length: its score correlates with log token count at $|\rho| \le 0.44$ on test passages at every collapsed layer.
+Dropping random token types that cover the same share of training tokens leaves the median at 0.500.
 The tokens are carriers, not a cause, since LaBERTa also pools commas, periods and \texttt{</s>} and does not collapse (Section~\ref{sec:models}).
 PhilTa needs more types: dropping its top 30, about a third of its tokens, restores all 9 of its collapsed layers on test passages (7 of 9 on training passages).
 
-\paragraph{In mT5-base, no set of up to 100 token types restores a collapsed layer.}
-Dropping up to 100 token types, ranked the same way, restores none of its 7 collapsed layers; the best reaches 0.748.
+\paragraph{In mT5-base, dropping up to its top 100 token types restores no collapsed layer.}
+Dropping up to 100 token types, ranked the same way, restores none of its 7 collapsed layers, the best reaching 0.748.
 mT5-base also resists coordinate zeroing, yet removing three to ten directions repairs it.
-Its mask is confined neither to a few coordinates nor to a few token types, and we found no token-level account.
+Its mask sits neither in a few coordinates nor in a few token types, and we have no token-level account.
 
 \section{Routing and Limits}
 \label{sec:routing}
@@ -341,6 +341,7 @@ At the train-selected layers of Table~\ref{tab:headline}, the DirAcc@1 spread ac
 Uncorrected, they run from 46.6 (mT5-base) to 85.9 (KaLM-mini); after ABTT, from 86.1 to 89.4.
 Every encoder's routing gain has a bootstrap interval excluding zero, from 3.5 points for KaLM-mini (1.0 to 6.0) to 41.8 for mT5-base (Table~\ref{tab:headline_ci_diffs}).
 
+\needspace{3\baselineskip}
 \paragraph{For the embedding-trained encoders, the routing gain does not depend on the threshold.}
 LaBSE, Qwen3-0.6B and KaLM-mini already rank well without correction (AUROC 0.956 to 0.972), so their routing gain cannot come from a ranking repair.
 ABTT still raises their DirAcc@1 by 7.0, 9.1 and 3.5 points.
@@ -395,14 +396,14 @@ Because the task is lexically solvable, a practical tool can start from characte
 
 Four factors are uncontrolled.
 (i)~We use one labeled corpus in one language and genre, early medieval Latin canon law; its 1,705 witnesses are many for this field but few by current NLP standards.
-(ii)~Within each matched pair, architecture, pretraining objective and tokenizer vary together, so the pairs do not say which of them matters.
-That LaTa and LaBERTa share authors and a pretraining corpus rests on their model cards \citep{lata2023card,laberta2023card}.
-(iii)~The T5 v1.1 changes (gated-GELU feed-forward, untied embeddings) vary together, so we do not say which of them matters.
+(ii)~Within each sibling pair, architecture, pretraining objective and tokenizer vary together, so the pairs do not say which of them matters.
+That LaTa and LaBERTa share authors and pretraining corpora rests on their model cards \citep{lata2023card,laberta2023card}.
+(iii)~The T5 v1.1 changes (gated-GELU feed-forward with a narrower inner width, untied embeddings) vary together, so we do not say which of them matters.
 T5-efficient-base has the original layout without T5-base's supervised pretraining, but it is a single checkpoint pretrained on about 30 times fewer tokens; it separates layout from pretraining mix only at that budget.
-(iv)~The token ablation accounts for the masking directions in LaTa only; in mT5-base no set of up to 100 token types restores a collapsed layer, so its mask has no token-level account.
+(iv)~The token ablation accounts for the masking directions in LaTa with three token types and in PhilTa only with 30, about a third of its tokens; in mT5-base dropping up to its top 100 token types restores no collapsed layer, so its mask has no token-level account.
 
 The scope of three results is narrow.
-We claim the narrow band for the six-model panel only: on the four controls ABTT lifts every layer to AUROC 0.927 or above, but eight of their 48 layers, seven of them in T5-v1.1-base, stay below the panel's band (0.962 to 0.987).
+We claim the narrow band for the six-model panel only: on the four controls and T5-efficient-base ABTT lifts every layer to AUROC 0.927 or above, but nine of their 60 layers, seven of them in T5-v1.1-base, stay below the panel's band (0.962 to 0.987).
 The English check measures geometry only; we have no labels for English retrieval.
 The task is lexically solvable by design, and a character n-gram reference ties the best encoders after ABTT, so we do not claim that encoders beat surface overlap on this corpus.
 
@@ -547,12 +548,12 @@ At the collapsed layers, test cosines spread across both signs.
 At mT5-base's collapsed layers the 5th percentile lies between $-0.83$ and $-0.77$ and the median between 0.84 and 0.90, with a standard deviation of about 0.75.
 At LaTa's collapsed layers the 5th percentile lies between $-0.50$ and $-0.26$, and the standard deviation reaches 0.63.
 In the embedding-trained models the standard deviation stays between 0.007 and 0.10 at every layer.
-Pooled passages at a collapsed layer therefore lie on both sides of one dominant axis, which Section~\ref{sec:localizing} examines.
+Pooled passages at a collapsed layer therefore lie on both sides of one dominant direction, which Section~\ref{sec:localizing} examines.
 
 \paragraph{SIF at the collapsed layers.}
 SIF pooling \citep{arora2017sif} down-weights frequent tokens and drops special tokens (Appendix~\ref{app:testbed_details}).
 At the collapsed layers it recovers about 80 percent of the ABTT gain in LaTa and PhilTa, and under 10 percent in mT5-base.
-This split agrees with the token ablation of Section~\ref{sec:localizing}: in LaTa, mean pooling without the comma, the period and \texttt{</s>} restores every collapsed layer, while in mT5-base no set of up to 100 token types, ranked on training passages, does.
+This split agrees with the token ablation of Section~\ref{sec:localizing}: in LaTa, mean pooling without the comma, the period and \texttt{</s>} restores every collapsed layer, while in mT5-base dropping up to its top 100 token types, ranked on training passages, does not.
 SIF stays below ABTT at every collapsed layer, and its full sweeps are in Appendix~\ref{app:sif_variants}.
 
 \paragraph{Score distributions.}
@@ -576,11 +577,11 @@ It adds three models that Table~\ref{tab:models} leaves out: two embedding-train
 It also gives each checkpoint's feed-forward type and width, whether its embeddings are tied, its lowest effective rank and its range of mean pairwise cosine.
 None of the added models collapses.
 Every checkpoint has at most 0.6B parameters, and each is released under the Apache 2.0 license, as its Hugging Face model card states.
-The rest of the appendix gives the per-layer readouts behind the matched pairs, T5-efficient-base, the projection on the four controls, the English-text check and the fine-tuned LaTa model.
+The rest of the appendix gives the per-layer readouts behind the sibling pairs, T5-efficient-base, the projection on the four controls, the English-text check and the fine-tuned LaTa model.
 
 \input{tables/all_models}
 
-\paragraph{The matched pairs.}
+\paragraph{The sibling pairs.}
 Before the run we required each encoder-only sibling to stay above 0.80 AUROC at every layer, and both did (Table~\ref{tab:p2x2_layerwise}).
 LaBERTa clears that floor by 0.026, at layer 1, and rises to 0.910 at layer 12; PhilBERTa stays between 0.883 and 0.923.
 Effective rank falls to 1.36 in LaTa and 1.81 in PhilTa, and never below 57.87 in LaBERTa or 82.12 in PhilBERTa.
@@ -607,9 +608,10 @@ Its mean pairwise cosine is 0.97 to 0.995 at layers 1 to 11, so a high mean cosi
 
 \input{tables/d2_t5_efficient}
 
-\paragraph{The projection on the four controls.}
-Table~\ref{tab:d2_controls_abtt} applies ABTT to the four controls with the panel's recipe.
+\paragraph{The projection on the controls.}
+Table~\ref{tab:d2_controls_abtt} applies ABTT to the four controls with the panel's settings.
 LaBERTa (0.963 to 0.977) and PhilBERTa (0.974 to 0.980) stay inside the panel's band at every layer, T5-base misses it at layer 11 (0.959), and T5-v1.1-base reaches 0.927 to 0.970, below the band at layers 6 to 12.
+T5-efficient-base reaches 0.959 to 0.975 (Table~\ref{tab:d2_t5_efficient}), below the band at layer 11 only.
 $D=10$, the top of the selection grid, is selected at 46 of the 48 control layers, so a larger $D$ might narrow the gap; we did not test this.
 
 % Generated single-column table wider than one column: set it at full width.
@@ -726,6 +728,7 @@ The selection grid stops at $D=10$; extending it to $D=50$ changes test AUROC by
 \paragraph{Removed and retained subspaces.}
 Table~\ref{tab:e3_subspace_split} ranks passages within the removed and within the retained subspace.
 At the collapsed layers the removed subspace holds a median 99\% of the centered variance of vectors that already rank at chance, so its chance-level ranking there is close to a tautology.
+The next ten components alone rank at a median 0.919 at those layers, a dimension-matched control (Table~\ref{tab:e3_subspace_split}).
 The healthy layers are more informative.
 At the 74 healthy panel layers the removed subspace still ranks at 0.736 to 0.937, so ABTT discards some signal.
 Yet at all 36 layers of the three pretrained T5 encoders the removed directions rank below the next $D$ components.
@@ -747,7 +750,7 @@ Dropping special tokens alone recovers it at none (median 0.498).
 In PhilTa the token mix explains only a median 0.42 of the first component's score.
 Its ablation needs more types: on test passages, dropping the top 3 restores 1 of 9 layers, the top 10 restore 8, and the top 30 restore all 9 (median 0.925); on training passages the counts are 1, 6 and 7.
 Dropping random types of the same training mass stays at a median of 0.542.
-In mT5-base the token mix explains 0.066 of the first component's score, against 0.160 for random directions.
+In mT5-base the token mix explains a median 0.066 of the first component's score, against a median 0.160 for random directions.
 Dropping its top 100 types lifts AUROC to 0.724 to 0.748, short of 0.90.
 In none of the three models does the first token carry the dominant direction (share at most 0.005).
 The same three delimiter roles carry outlier activations in BERT \citep{bondarenko2023quantizable}, and delimiter tokens carry massive activations in large language models \citep{sun2024massive}.
