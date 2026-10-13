@@ -27,6 +27,6 @@ Embedding-trained & 64 & 0.903 & 0.944 & 0.966 & 0.971 & 0.976 & 0.979 & 0.980 &
 All & 100 & 0.885 & 0.936 & 0.958 & 0.968 & 0.973 & 0.978 & 0.979 & 0.977 & 0.975 & 0.974 & 0.974 & 0.972 \\
 \bottomrule
 \end{tabular}
-\caption{Test ranking AUROC against the number $D$ of top principal components that ABTT removes, fit on training embeddings only. Raw: mean-pooled vectors with no correction; $D=0$: centering on the training mean alone. The top block reads each model at its lowest-AUROC baseline layer (layer in parentheses); the bottom block gives medians over the 26 collapsed T5 layers (baseline AUROC below 0.70), also split by model, the other 10 T5 layers, the 64 layers of the embedding-trained models, and all 100 model-layers. The paper's selection grid for $D$ stops at 10.}
+\caption{Test ranking AUROC against the number $D$ of components ABTT removes, fit on training embeddings ($D=0$: centering alone). Top: each model at its lowest-AUROC baseline layer (in parentheses). Bottom: medians over each group's $n$ model-layers. Three components bring every collapsed layer to 0.91 or above; mT5-base keeps improving to ten.}
 \label{tab:d_ablation}
 \end{table*}

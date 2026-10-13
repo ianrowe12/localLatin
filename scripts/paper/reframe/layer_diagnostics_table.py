@@ -30,14 +30,10 @@ DIAG = Path("runs/active/resubmit/layer_diagnostics")
 MODELS = [("bowphs/LaTa", "LaTa"), ("bowphs/PhilTa", "PhilTa"), ("google/mt5-base", "mT5-base")]
 
 CAPTION = (
-    r"Most anisotropic layers, by top-PC share on the test split, for the three "
-    r"T5 encoders. PC1: top-PC share. PC1 and "
-    r"effective-rank values compare baseline geometry with ABTT-D10 at the most "
-    r"anisotropic layer, on the test split. Table~\ref{tab:geometry_regimes} and the "
-    r"main text read top-PC share on the training split, "
-    r"where LaTa peaks at layer {train_peak} instead of {test_peak}; LaTa's training "
-    r"curve is flat, with a top-PC share of {flat_lo:.2f} to {flat_hi:.2f} over layers "
-    r"{flat_from}--{flat_to}."
+    r"Most anisotropic layer of each raw T5-family panel encoder, by top-PC share (PC1) "
+    r"on test passages; Table~\ref{tab:geometry_regimes} reads top-PC share on training "
+    r"passages. PC1 and effective rank before and after ABTT with $D=10$, fit on training "
+    r"passages."
 )
 
 
@@ -63,14 +59,6 @@ def peak_layer(rows: pd.DataFrame) -> int:
     return int(rows.loc[rows["pc1_variance_ratio"].idxmax(), "layer"])
 
 
-def lata_flat_range(geom: pd.DataFrame) -> tuple[float, float, int, int]:
-    """LaTa's training-split top-PC share over its collapsed layers 3--11,
-    the range the caption quotes to explain the train/test peak difference."""
-    tr = _view(geom, "bowphs/LaTa", "train", "raw")
-    band = tr[(tr["layer"] >= 3) & (tr["layer"] <= 11)]["pc1_variance_ratio"]
-    return float(band.min()), float(band.max()), 3, 11
-
-
 def render(geom: pd.DataFrame) -> str:
     rows = []
     for model, display in MODELS:
@@ -85,13 +73,7 @@ def render(geom: pd.DataFrame) -> str:
             f"{before['effective_rank_entropy']:.2f}$\\rightarrow$"
             f"{after['effective_rank_entropy']:.2f} \\\\"
         )
-    train_peak = peak_layer(_view(geom, "bowphs/LaTa", "train", "raw"))
-    test_peak = peak_layer(_view(geom, "bowphs/LaTa", "test", "raw"))
-    lo, hi, a, b = lata_flat_range(geom)
-    caption = (CAPTION.replace("{train_peak}", str(train_peak))
-               .replace("{test_peak}", str(test_peak))
-               .replace("{flat_lo:.2f}", f"{lo:.2f}").replace("{flat_hi:.2f}", f"{hi:.2f}")
-               .replace("{flat_from}", str(a)).replace("{flat_to}", str(b)))
+    caption = CAPTION
     lines = [
         "% generated table",
         r"\begin{table*}[t]",

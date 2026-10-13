@@ -557,60 +557,61 @@ def emit_taskB_ranking_mseed(
 
 
 # --------------------------------- captions ----------------------------------
+# Caption pass (12 October 2026): the first table of each kind (taskA_main,
+# taskB_routing_main, taskB_ranking_main) carries the compact key; its siblings
+# point to it and say only what differs (model set, SIF variants, reseeding).
 
 
-CAP_BASE_ABTT = (
-    r"Base is mean pooling without correction; "
-    r"ABTT is applied without SIF weighting, with $D$ tuned per layer on the training split. "
-)
 # B3 (reader pass, 10 October 2026): these tables print accuracies as fractions, the main
 # text as percent; the captions say so rather than rescaling every cell.
-CAP_FRACTION = r"Accuracies are fractions (0.885 is 88.5\%). "
-CAP_TASKA_METHOD = CAP_BASE_ABTT + (
-    r"Both AUROC and cosine gap are computed over the test n$\times$n cosine matrix with no threshold and "
-    r"no directory routing: AUROC treats same-directory test pairs as positives, and cosine gap is the "
-    r"difference between mean same-directory and mean different-directory cosine. "
+CAP_FRACTION = r"as fractions"
+CAP_BASE_ABTT = (
+    r"Base: mean pooling; ABTT: fit on the training split, $D$ tuned per layer. "
 )
-CAP_ROUTING_METHOD = CAP_BASE_ABTT + (
-    r"For every test file we compute $s_i = \max_{j \neq i} \cos(e_i, e_j)$ against the rest of the test "
-    r"set and compare to the learned threshold $\tau$ (fit on the training split via an $F_1$-optimal cut on "
-    r"same-directory vs.\ different-directory pairs). The decision is binary first (existing if "
-    r"$s_i \geq \tau$, else new); only files predicted existing are then routed to their top-1 "
-    r"neighbor's directory. We report \textbf{existing accuracy} (restricted to files whose true "
-    r"partner is in the test set), \textbf{new accuracy} (files that should be flagged as novel), and "
-    r"\textbf{overall assignment accuracy}. " + CAP_FRACTION
+CAP_MAIN_MODELS = r"LaTa, PhilTa and mT5-base"
+CAP_APPENDIX_MODELS = r"the embedding-trained models LaBSE, Qwen3-0.6B and KaLM-mini"
+# Caption-only reading caveat: the ABTT routing tables are single runs, while the
+# five reseedings were run for the SIF variants only (Table tab:taskB_ranking_appendix_mseed).
+CAP_SINGLE_RUN = r"computed once, without reseedings"
+
+CAP_TASKA_MAIN = (
+    rf"Per-layer test ranking AUROC and cosine gap for {CAP_MAIN_MODELS}. "
 )
-CAP_RANK_SINGLE_METHOD = CAP_BASE_ABTT + (
-    r"This table is computed once, without the five reseedings of the query and reference files, "
-    r"which were run only for the SIF-conditioned variants (see "
-    r"Table~\ref{tab:taskB_ranking_appendix_mseed} for the five-reseeding SIF+ABTT view). "
-    r"We report DirAcc@1 with an existing/new decomposition. " + CAP_FRACTION
+CAP_ROUTING_MAIN = (
+    rf"Per-layer test routing assignment accuracy for {CAP_MAIN_MODELS}, overall and among "
+    rf"existing and new witnesses, {CAP_FRACTION}. "
+)
+CAP_RANK_SINGLE_MAIN = (
+    rf"Per-layer test routing DirAcc@1 for {CAP_MAIN_MODELS}, {CAP_FRACTION}, "
+    rf"{CAP_SINGLE_RUN}. Existing, New: assignment accuracy on existing or new witnesses. "
 )
 
 
 def _selected_layer_caption(method_label: str, task: str) -> str:
-    """The bold-row sentence: the train-only rule, tied to the headline cell.
+    """The bold-row key: the train-only rule, tied to the headline cell.
 
-    ``task`` is ``"taskA"`` (selection by training-set AUROC, the rule of
-    Table~tab:taskA_headline) or ``"taskB"`` (training-set directory accuracy
-    at rank 1, Table~tab:taskB_headline). ``method_label`` must be the
-    headline column name (``ABTT`` or ``SIF+ABTT``) so the reader can find
-    the cell, and its layer in the selected-layers table (``tab:selected_layers``,
-    issue #219; the headline cells no longer carry the layer as a subscript).
+    ``task`` is ``"taskA"`` (selection by training AUROC) or ``"taskB"``
+    (selection by training DirAcc@1). ``method_label`` must be the headline
+    column name (``ABTT`` or ``SIF+ABTT``) so the reader can find the cell in
+    ``tab:headline_ci``; the layers themselves are listed in
+    ``tab:selected_layers`` (issue #219), which Appendix I's prose cites.
+    Only the layer and the ``method_label`` cells are bold, so the Base cells of
+    that row never read as the Base headline cell.
     """
     metric_phrase = {
         "taskA": "AUROC",
         "taskB": "DirAcc@1",
     }[task]
     return (
-        rf"Bold marks the layer chosen on the training split, the layer with the highest "
-        rf"training-set {metric_phrase} under {method_label}, and its {method_label} values; the "
-        rf"other columns of that row stay plain, because the layer is selected for "
-        rf"{method_label} only. It is the layer behind the "
-        rf"{method_label} cell of Table~\ref{{{HEADLINE_LABEL[task]}}} (listed in "
-        rf"Table~\ref{{tab:selected_layers}}), and not always the layer with the highest "
-        rf"test score in this table."
+        rf"Bold: the layer behind the {method_label} cell of "
+        rf"Table~\ref{{{HEADLINE_LABEL[task]}}} (best training {metric_phrase} under "
+        rf"{method_label}) and its {method_label} values, not always the best test layer."
     )
+
+
+def _sibling_caption(what: str, first_label: str) -> str:
+    """Caption of a sibling table: what it shows, then a pointer to the key."""
+    return what + rf" Layout and markers as in Table~\ref{{{first_label}}}."
 
 
 # ----------------------------------- main ------------------------------------
@@ -635,9 +636,7 @@ def main() -> None:
         out_tex=tex_dir / "taskA_main.tex",
         out_audit=audit_dir / "taskA_main.csv",
         caption=(
-            r"Per-layer ranking metrics for the three T5 encoders "
-            r"(LaTa, PhilTa, mT5-base). " + CAP_TASKA_METHOD
-            + _selected_layer_caption("ABTT", "taskA")
+            CAP_TASKA_MAIN + CAP_BASE_ABTT + _selected_layer_caption("ABTT", "taskA")
         ),
         label="tab:taskA_main",
         banner=r"Ranking (T5 encoders)",
@@ -651,11 +650,9 @@ def main() -> None:
         metrics=["aucroc", "gap"],
         out_tex=tex_dir / "taskA_appendix.tex",
         out_audit=audit_dir / "taskA_appendix.csv",
-        caption=(
-            r"Per-layer ranking metrics for the embedding-trained models "
-            r"(LaBSE, Qwen3-0.6B, KaLM-mini), under the same two-method comparison as "
-            r"Table~\ref{tab:taskA_main}. "
-            + CAP_TASKA_METHOD + _selected_layer_caption("ABTT", "taskA")
+        caption=_sibling_caption(
+            rf"Per-layer test ranking AUROC and cosine gap for {CAP_APPENDIX_MODELS}.",
+            "tab:taskA_main",
         ),
         label="tab:taskA_appendix",
         banner=r"Ranking (embedding-trained models)",
@@ -669,13 +666,11 @@ def main() -> None:
         out_tex=tex_dir / "taskA_appendix_sif.tex",
         out_audit=audit_dir / "taskA_appendix_sif.csv",
         caption=(
-            r"Per-layer ranking AUROC across the SIF-conditioned post-processing suite for all six "
-            r"models. SIF replaces mean pooling with SIF-weighted pooling; "
-            r"SIF+ABTT$_{10}$ adds ABTT with fixed $D{=}10$; SIF+ABTT "
-            r"tunes $D$ per layer on the training split. Gap is omitted to keep the table narrow; the "
-            r"pure-ABTT comparison (not SIF-conditioned) is in "
-            r"Tables~\ref{tab:taskA_main} and~\ref{tab:taskA_appendix}. "
-            + _selected_layer_caption("SIF+ABTT", "taskA")
+            r"Per-layer test ranking AUROC under the SIF variants for the six panel models. "
+            r"SIF: frequency-weighted pooling; SIF+ABTT$_{10}$: SIF, then ABTT with $D{=}10$; "
+            r"SIF+ABTT: $D$ tuned per layer on the training split. "
+            r"Base and markers as in Table~\ref{tab:taskA_main}, with bold layers selected "
+            r"under SIF+ABTT."
         ),
         label="tab:taskA_appendix_sif",
         banner=r"Ranking: SIF-suite AUROC (six models)",
@@ -691,12 +686,10 @@ def main() -> None:
         out_tex=tex_dir / "taskB_routing_main.tex",
         out_audit=audit_dir / "taskB_routing_main.csv",
         caption=(
-            r"Per-layer routing accuracy for the three T5 encoders. "
-            + CAP_ROUTING_METHOD
-            + _selected_layer_caption("ABTT", "taskB")
+            CAP_ROUTING_MAIN + CAP_BASE_ABTT + _selected_layer_caption("ABTT", "taskB")
         ),
         label="tab:taskB_routing_main",
-        banner=r"Routing (T5 encoders, file-level, $\tau$-thresholded)",
+        banner=r"Routing (T5 encoders, witness-level, $\tau$-thresholded)",
         select_method="abtt_optimal",
         float_table=True,
     )
@@ -707,10 +700,10 @@ def main() -> None:
         metrics=["existing_acc", "new_acc", "overall_assignment_acc"],
         out_tex=tex_dir / "taskB_routing_appendix.tex",
         out_audit=audit_dir / "taskB_routing_appendix.csv",
-        caption=(
-            r"Per-layer routing accuracy for the embedding-trained models. "
-            + CAP_ROUTING_METHOD
-            + _selected_layer_caption("ABTT", "taskB")
+        caption=_sibling_caption(
+            rf"Per-layer test routing assignment accuracy, {CAP_FRACTION}, for "
+            rf"{CAP_APPENDIX_MODELS}.",
+            "tab:taskB_routing_main",
         ),
         label="tab:taskB_routing_appendix",
         banner=r"Routing (embedding-trained models)",
@@ -724,12 +717,9 @@ def main() -> None:
         out_tex=tex_dir / "taskB_routing_appendix_sif.tex",
         out_audit=audit_dir / "taskB_routing_appendix_sif.csv",
         caption=(
-            r"Per-layer routing assignment accuracy across the SIF-conditioned suite for all "
-            r"six models. Restricted to overall routing accuracy (existing/new decomposition omitted) "
-            r"to keep the table compact; see Tables~\ref{tab:taskB_routing_main} and~"
-            r"\ref{tab:taskB_routing_appendix} for the pure-ABTT pairwise comparison with existing/new "
-            r"broken out. " + CAP_FRACTION
-            + _selected_layer_caption("SIF+ABTT", "taskB")
+            rf"Per-layer test routing assignment accuracy, {CAP_FRACTION}, for the six panel "
+            r"models. Variants and markers as in Table~\ref{tab:taskA_appendix_sif}, with bold "
+            r"layers selected by training DirAcc@1."
         ),
         label="tab:taskB_routing_appendix_sif",
         banner=r"Routing: SIF-suite assignment accuracy (six models)",
@@ -745,9 +735,7 @@ def main() -> None:
         out_tex=tex_dir / "taskB_ranking_main.tex",
         out_audit=audit_dir / "taskB_ranking_main.csv",
         caption=(
-            r"Per-layer routing DirAcc@1, overall and for existing and new witnesses, for the three T5 encoders. "
-            + CAP_RANK_SINGLE_METHOD
-            + _selected_layer_caption("ABTT", "taskB")
+            CAP_RANK_SINGLE_MAIN + CAP_BASE_ABTT + _selected_layer_caption("ABTT", "taskB")
         ),
         label="tab:taskB_ranking_main",
         banner=r"Routing: DirAcc@1 (T5 encoders, single seed)",
@@ -761,10 +749,10 @@ def main() -> None:
         metrics=["dir_acc_at_1", "existing_acc", "new_acc"],
         out_tex=tex_dir / "taskB_ranking_appendix.tex",
         out_audit=audit_dir / "taskB_ranking_appendix.csv",
-        caption=(
-            r"Per-layer routing DirAcc@1, overall and for existing and new witnesses, for the embedding-trained models. "
-            + CAP_RANK_SINGLE_METHOD
-            + _selected_layer_caption("ABTT", "taskB")
+        caption=_sibling_caption(
+            rf"Per-layer test routing DirAcc@1, {CAP_FRACTION}, for {CAP_APPENDIX_MODELS}, "
+            rf"{CAP_SINGLE_RUN}.",
+            "tab:taskB_ranking_main",
         ),
         label="tab:taskB_ranking_appendix",
         banner=r"Routing: DirAcc@1 (embedding-trained models, single seed)",
@@ -784,17 +772,9 @@ def main() -> None:
         out_tex=tex_dir / "taskB_ranking_appendix_mseed.tex",
         out_audit=audit_dir / "taskB_ranking_appendix_mseed.csv",
         caption=(
-            r"Per-layer routing DirAcc@1, overall and for existing and new witnesses, across all six models, averaged over five "
-            r"reseedings of the query and reference files, with the training/test split fixed "
-            r"(mean $\pm$ std). "
-            r"SIF+ABTT applies SIF weighting plus ABTT with $D$ tuned per layer on "
-            r"the training split. " + CAP_FRACTION + r"This table covers SIF+ABTT; five-reseeding ABTT-only values for LaTa, "
-            r"Qwen3-0.6B and KaLM-mini, at their train-selected layers, are in "
-            r"Table~\ref{tab:finetune_ceiling} (Appendix~\ref{app:reference_systems}). "
-            r"Overall assignment accuracy coincides with DirAcc@1 under the "
-            r"five reseedings, so we report the existing/new decomposition instead. "
-            r"Bold marks the layer reported per model and its SIF+ABTT values, the row printed in "
-            r"Table~\ref{tab:taskb}; the Base values in that row stay plain. "
+            rf"Per-layer test routing DirAcc@1 for the six panel models, overall and on existing "
+            rf"or new witnesses, {CAP_FRACTION} (mean $\pm$ std over five reseedings). "
+            r"Bold: the reported layer and its SIF+ABTT values. "
             + SELECTION_RULE_CAPTION
         ),
         label="tab:taskB_ranking_appendix_mseed",

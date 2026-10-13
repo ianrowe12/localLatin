@@ -436,16 +436,13 @@ SELECTED_LAYERS_BANNER = (
 
 
 def selected_layers_caption() -> str:
+    # Caption rewrite of 2026-10-12: the selection rule in one clause, plus the
+    # two caption-only reading aids. "No layer is chosen on test" is Section 3.
     return (
-        "Train-selected layer behind every headline cell (Tables~\\ref{tab:headline} "
-        "and~\\ref{tab:headline_ci}). For each model and post-processing setting, "
-        "the ranking layer has the highest training-set AUROC and the routing layer "
-        "the highest training-set DirAcc@1; the test scores in "
-        "those tables are read at these layers, so no layer is chosen on test. "
-        "Layer 1 is the first transformer block. The fine-tuned rows below the rule "
-        "have no SIF setting. Table~\\ref{tab:finetune_ceiling} reads its zero-shot "
-        "rows at the Base and ABTT layers above the rule and its fine-tuned rows at "
-        "the layers below it."
+        "Train-selected layer behind each encoder cell of Tables~\\ref{tab:headline}, "
+        "\\ref{tab:headline_ci} and~\\ref{tab:finetune_ceiling}: the layer of highest "
+        "training AUROC (ranking) or training DirAcc@1 (routing). Layer 1 is the first "
+        "transformer block. Fine-tuned rows have no SIF setting."
     )
 
 

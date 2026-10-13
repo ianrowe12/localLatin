@@ -1746,27 +1746,14 @@ def caption(gates: Optional[pd.DataFrame] = None) -> str:
     ``sif_only`` cells (the comparison stays in the facts file, gate 2a)."""
     del gates
     return (
-        r"\caption{Token audit at each model's lowest-AUROC baseline layer (L). Pooling: test "
-        r"ranking AUROC of mean pooling (Mean); mean pooling without special tokens (No spec.); SIF "
-        r"frequency weights with special tokens kept (SIF+spec.); SIF pooling with "
-        r"training-only token frequencies, which also drops special tokens (SIF); and mean "
-        r"pooling without "
-        r"the 100 most frequent training tokens (No freq.). Token ablation: test AUROC of "
-        r"mean pooling after dropping the $m$ token types that contribute most to the top "
-        r"principal components (Drop), with $m$ (1 to 100) and the ranking (one of two) "
-        r"chosen by training AUROC, and the mean test AUROC of five random sets of other "
-        r"token types, sampled in proportion to training count, that hold at least as many "
-        r"training tokens as the dropped types (Rand.). Token-mix EV: the share of the variance "
-        r"of the first principal component's score across test passages that is explained by "
-        r"which token types a passage contains, with one mean per token type fit on training "
-        r"tokens (PC1), next to the mean of the same quantity over 20 random directions "
-        r"orthogonal to the top ten principal components (Rand.). Share by token group: the "
-        r"covariance share of that variance contributed by special tokens, by the 100 most "
-        r"frequent tokens and by all other tokens; the three sum to one, but a single share "
-        r"can fall below zero or exceed one. $|\rho|$: absolute Spearman correlation between "
-        r"the PC1 score and the log token count of test passages (the sign of a principal "
-        r"component is a convention). Components, token frequencies and token rankings are "
-        r"fit on training passages only.}")
+        r"\caption{Token audit (test ranking AUROC) at each model's lowest-AUROC baseline "
+        r"layer (L). No spec.: no special tokens; SIF+spec.: SIF keeping special tokens; No "
+        r"freq.: no 100 most frequent tokens; Drop: no top $m$ token types, $m$ and ranking "
+        r"chosen on training AUROC; Rand.: "
+        r"mass-matched random types. Token-mix EV: PC1 score variance explained by token "
+        r"mix; Rand.: random directions. Group shares split it and sum to one, "
+        r"but can fall outside [0, 1]. $|\rho|$: Spearman correlation with log token "
+        r"count.}")
 
 
 def write_table(w: pd.DataFrame, path: Path, gates: Optional[pd.DataFrame] = None

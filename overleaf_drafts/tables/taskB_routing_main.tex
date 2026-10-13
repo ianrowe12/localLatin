@@ -4,7 +4,7 @@
 \setlength{\tabcolsep}{3pt}
 \begin{tabular}{llcccccc}
 \toprule
-\multicolumn{2}{c}{} & \multicolumn{6}{c}{\textbf{Routing (T5 encoders, file-level, $\tau$-thresholded)}} \\
+\multicolumn{2}{c}{} & \multicolumn{6}{c}{\textbf{Routing (T5 encoders, witness-level, $\tau$-thresholded)}} \\
 \cmidrule(lr){3-8}
 \textbf{Model} & \textbf{Layer} & \makecell{Existing\\(Base)} & \makecell{Existing\\(ABTT)} & \makecell{New\\(Base)} & \makecell{New\\(ABTT)} & \makecell{Overall\\(Base)} & \makecell{Overall\\(ABTT)} \\
 \midrule
@@ -48,6 +48,6 @@ mT5-base & \textbf{1} & 0.135 & \textbf{0.877} & 0.981 & \textbf{0.947} & 0.453 
  & 12 & 0.198 & 0.834 & 0.926 & 0.799 & 0.472 & 0.821 \\
 \bottomrule
 \end{tabular}
-\caption{Per-layer routing accuracy for the three T5 encoders. Base is mean pooling without correction; ABTT is applied without SIF weighting, with $D$ tuned per layer on the training split. For every test file we compute $s_i = \max_{j \neq i} \cos(e_i, e_j)$ against the rest of the test set and compare to the learned threshold $\tau$ (fit on the training split via an $F_1$-optimal cut on same-directory vs.\ different-directory pairs). The decision is binary first (existing if $s_i \geq \tau$, else new); only files predicted existing are then routed to their top-1 neighbor's directory. We report \textbf{existing accuracy} (restricted to files whose true partner is in the test set), \textbf{new accuracy} (files that should be flagged as novel), and \textbf{overall assignment accuracy}. Accuracies are fractions (0.885 is 88.5\%). Bold marks the layer chosen on the training split, the layer with the highest training-set DirAcc@1 under ABTT, and its ABTT values; the other columns of that row stay plain, because the layer is selected for ABTT only. It is the layer behind the ABTT cell of Table~\ref{tab:headline_ci} (listed in Table~\ref{tab:selected_layers}), and not always the layer with the highest test score in this table.}
+\caption{Per-layer test routing assignment accuracy for LaTa, PhilTa and mT5-base, overall and among existing and new witnesses, as fractions. Base: mean pooling; ABTT: fit on the training split, $D$ tuned per layer. Bold: the layer behind the ABTT cell of Table~\ref{tab:headline_ci} (best training DirAcc@1 under ABTT) and its ABTT values, not always the best test layer.}
 \label{tab:taskB_routing_main}
 \end{table*}

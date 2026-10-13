@@ -683,22 +683,20 @@ def test_table_renders_from_a_fixture_and_omits_absent_models(tmp_path):
     share = [c.strip() for c in rows[2].rstrip("\\ ").split("&")][2:]
     assert share == [f"{raw.loc[(int(base.idxmin()), t), 'pc1_share_train']:.3f}"
                      for t in e1.TABLE_TAGS]
-    # the caption defines "collapsed" where it uses it, with the count read from the data,
-    # and its takeaway sentence quotes the cells of the T5 rows shown
+    # the takeaway sentence quotes the cells of the T5 rows shown; the D-ablation result
+    # belongs to tab:d_ablation and Appendix E prose, not to this caption
     cap = next(ln for ln in tex.splitlines() if ln.startswith(r"\caption{"))
     assert cap.endswith("}") and "--" not in cap and chr(0x2014) not in cap
-    n_coll = int(w["collapsed"].sum())
-    assert n_coll == 2
-    assert (f"At the collapsed T5 layers (baseline AUROC below 0.70, {n_coll} layers), one "
-            "component recovers a median 45 percent of the AUROC gain of $D{=}10$, and three "
-            r"recover at least 80 percent at every layer (Table~\ref{tab:d_ablation}).") in cap
+    assert int(w["collapsed"].sum()) == 2
+    assert "tab:d_ablation" not in cap and "percent" not in cap
+    assert "fit on training embeddings" in cap and r"\ref{fig:e1_k_sweep}" in cap
     zeroed = max(float(cells[2 + e1.TABLE_TAGS.index(e1.zero_tag(r, 10))])
                  for r in e1.RANKINGS)
     std = cells[2 + e1.TABLE_TAGS.index("standardize")]
     d3 = cells[2 + e1.TABLE_TAGS.index("abtt_D3")]
-    assert (f"In the one T5 row, AUROC stays at or below {zeroed:.3f} after zeroing ten "
-            f"coordinates under either ranking, while standardization reaches {std} and ABTT "
-            f"with three components {d3}. ") in cap
+    assert (f"In the one T5-family row, zeroing ten coordinates leaves AUROC at or below "
+            f"{zeroed:.3f}, while standardization reaches {std} and ABTT$_{{D=3}}$ {d3}.}}"
+            ) == cap[cap.index("In the one"):]
     # without a T5 model neither sentence is printed
     e1.write_table(w[w.m == "LaBSE"].reset_index(drop=True), out)
     assert "T5" not in out.read_text()

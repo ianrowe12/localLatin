@@ -97,13 +97,6 @@ def _boot_clause(info: Dict, n_dirs: int) -> str:
     )
 
 
-FIXED_CLAUSE = (
-    "The threshold $\\tau$, the ABTT components and $D$, the SIF weights and the "
-    "layer stay fit on the fixed training split; only the test evaluation is "
-    "resampled, so the intervals cover test-set sampling and not the choice of "
-    "split."
-)
-
 
 # --------------------------------------------------------------------------- #
 # Appendix table: every cell
@@ -151,13 +144,11 @@ def render_appendix(ci: pd.DataFrame, info: Dict) -> str:
             lines.append(row(LEX_CI_TEX.get(csv, tex), csv, "ref", True, "--"))
     n_dirs = _n_dirs(info)
     caption = (
-        "Every headline cell, those of Table~\\ref{tab:headline} and the SIF and SIF+ABTT "
-        "cells, with its " + _boot_clause(info, n_dirs) + ". A replicate keeps every file and pair of a drawn "
-        "directory; a directory drawn twice counts twice, and pairs between its two copies are "
-        "not formed. " + FIXED_CLAUSE + " Each cell is read at its train-selected layer "
-        "(Table~\\ref{tab:selected_layers}); routing in percent. The lexical rows are the "
-        "lexical reference systems of Table~\\ref{tab:lexical_baselines}; Char.\\ n-grams is "
-        "TF-IDF over character 3--5-grams."
+        "Every headline cell (Table~\\ref{tab:headline}, plus SIF, SIF+ABTT, BM25 and "
+        "Levenshtein) at its "
+        "train-selected layer, with 95\\% intervals from a bootstrap over the "
+        f"{n_dirs} test directories in brackets. Routing in percent. The intervals cover "
+        "test sampling, not the choice of split."
     )
     lines += [r"\bottomrule", r"\end{tabular}", f"\\caption{{{caption}}}",
               r"\label{tab:headline_ci}", r"\end{table*}"]
@@ -230,19 +221,12 @@ def render_diffs(diffs: pd.DataFrame, info: Dict) -> str:
                              f"{_ci(sub.iloc[0]['ci_lo'], sub.iloc[0]['ci_hi'], metric)}")
             lines.append(" & ".join(["Spread over six models" if k == 0 else "", setting]
                                     + cells) + r" \\")
-    n_dirs = _n_dirs(info)
     caption = (
-        "Paired differences between headline cells, with 95\\% intervals from the same "
-        f"directory-level bootstrap replicates as Table~\\ref{{tab:headline_ci}} ($B={_B(info)}$, "
-        f"{n_dirs} test directories, seed {info['seed']}). Both cells of a contrast are "
-        "recomputed on each replicate, so the interval reflects their correlation. Each cell "
-        "sits at its own train-selected layer. The two centering contrasts compare baseline, "
-        "centering alone ($D=0$) and ABTT at the layer of the ABTT cell, the ranking ABTT layer "
-        "for $\\Delta$ AUROC and the routing ABTT layer for the two routing columns. Spread: the largest "
-        "minus the smallest of the six zero-shot models. Routing in points. Spreads and "
-        "differences are computed before rounding, so they can differ by one unit in the last "
-        "digit from the difference of the rounded cells. "
-        + FIXED_CLAUSE
+        "Paired differences between headline cells at train-selected layers, with "
+        "95\\% intervals from the bootstrap of Table~\\ref{tab:headline_ci}. Centering rows "
+        "use each column's ABTT layer. Spread: largest minus smallest of the six zero-shot "
+        "models. Routing in points. Differences use unrounded cells, so they can differ by one "
+        "last digit from printed-cell differences."
     )
     lines += [r"\bottomrule", r"\end{tabular}", f"\\caption{{{caption}}}",
               r"\label{tab:headline_ci_diffs}", r"\end{table*}"]
@@ -255,6 +239,7 @@ def render_diffs(diffs: pd.DataFrame, info: Dict) -> str:
 
 
 def render_pq(pq: pd.DataFrame, info: Dict, sweep: Optional[pd.DataFrame]) -> str:
+    del sweep  # its counts moved from the caption to Appendix F prose (see _moved_clause)
     lines = [
         HEADER.rstrip("\n"),
         r"\begin{table*}[t]",
@@ -308,19 +293,15 @@ def render_pq(pq: pd.DataFrame, info: Dict, sweep: Optional[pd.DataFrame]) -> st
             lines.append(" & ".join(cells) + r" \\")
         lines.append(r"\addlinespace")
     lines[-1] = r"\bottomrule"
-    moved = _moved_clause(pq, sweep)
     caption = (
-        "Routing checks at the headline routing cells (Table~\\ref{tab:headline}) of the six "
-        "zero-shot models: the Base and ABTT cells at their train-selected layers (L), and "
-        "baseline and centering alone ($D=0$, subtract the training mean) at the ABTT cell's "
-        "layer (a second baseline row only where that layer differs). Cos.\\ SD: standard deviation of all test pairwise cosines. Exist./new AUROC: "
-        "threshold-free AUROC of each test file's maximum cosine for existing against new "
-        "files. Assign.: assignment accuracy at the train-fit $\\tau$ (the printed cell). "
-        "Oracle gap: best assignment accuracy over every test threshold minus Assign. "
-        "Exact: assignment accuracy with $\\tau$ re-fit as the exact best-F1 cut over "
-        "all training pair scores instead of the 200-point grid. Skew: skewness of the "
-        "$k$-occurrence distribution $N_{10}$ over test files \\citep{radovanovic2010hubs}. "
-        + f"Brackets: 95\\% directory-bootstrap intervals ($B={_B(info)}$). " + moved
+        "Routing checks at the headline routing cells: Base and ABTT at their train-selected "
+        "layers (L), baseline and centering ($D=0$) at the ABTT layer. Cos.\\ SD: SD of test "
+        "pairwise cosines; $\\tau$: threshold fit on training pairs. Exist./new AUROC: "
+        "threshold-free, from each witness's maximum cosine. Assign.: assignment accuracy (\\%) "
+        "at the training $\\tau$. Oracle gap: accuracy at the best test threshold minus "
+        "Assign. Exact: Assign. with $\\tau$ at the exact training best-F1 cut. Skew: "
+        "skewness of the 10-occurrence distribution "
+        "\\citep{radovanovic2010hubs}. Brackets: 95\\% bootstrap intervals."
     )
     lines += [r"\end{tabular}", f"\\caption{{{caption}}}", r"\label{tab:pq_routing}",
               r"\end{table*}"]
@@ -328,6 +309,8 @@ def render_pq(pq: pd.DataFrame, info: Dict, sweep: Optional[pd.DataFrame]) -> st
 
 
 def _moved_clause(pq: pd.DataFrame, sweep: Optional[pd.DataFrame]) -> str:
+    """How many printed routing numbers a finer threshold grid moves. No longer in the
+    pq_routing caption; Appendix F quotes these counts in its threshold-grid paragraph."""
     head = pq[pq["headline"].astype(bool)]
     n = len(head)
     fixed = {g: int(head[f"assign_moves_{g}"].astype(bool).sum()

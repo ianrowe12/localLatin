@@ -303,8 +303,8 @@ def compute_collapsed_layer(
 
     ``last`` is the deepest layer with a baseline row. The collapsed layer is the
     baseline layer with the *highest training-set* AUROC in the 30-70% depth
-    band (layers 4 to 8 of a 12-layer encoder; the paper's fig:density caption
-    quotes this window and must keep agreeing with it), which reads backwards until you see the profile: on the T5 encoders
+    band (layers 4 to 8 of a 12-layer encoder; Appendix C's prose next to
+    fig:density quotes this window and must keep agreeing with it), which reads backwards until you see the profile: on the T5 encoders
     every layer in that band sits near chance, so taking the strongest of them
     makes the before-and-after panels a conservative illustration rather than a
     best-case one. Selection is on ``train_aucroc`` rather than the test column

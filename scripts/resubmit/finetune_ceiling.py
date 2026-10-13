@@ -807,6 +807,8 @@ class CeilingFacts:
         return r"\{" + ",".join(str(d) for d in self.D_values) + r"\}"
 
     def abtt_caption_sentence(self) -> str:
+        """The $D$-sweep fact as a sentence. Not in the caption since 2026-10-12
+        (Appendix H prose states it); kept so the fact stays derived and tested."""
         if not self.n_optimal_rows:
             return ""
         if self.n_optimal_at_max_D == self.n_optimal_rows:
@@ -827,6 +829,8 @@ class CeilingFacts:
         )
 
     def epoch_caption_sentence(self) -> str:
+        """The checkpoint-epoch fact as a sentence. Not in the caption since
+        2026-10-12 (Appendix H prose states it); kept so it stays derived."""
         if self.selected_epoch is None:
             return ""
         if self.selected_epoch == 0:
@@ -1085,25 +1089,25 @@ def takeaway_sentence(sections: Sequence["CeilingSection"]) -> str:
                              _level(m_ft[0] - m_pre[0], max(m_ft[1], m_pre[1]))))
         else:
             verdicts.append(None)
-    every = "every model" if len(sections) > 1 else "the model"
+    fine_tuned = "every fine-tuned encoder" if len(sections) > 1 else "the fine-tuned encoder"
     if all(raises):
-        parts.append(f"Fine-tuning raises ranking AUROC for {every}")
+        parts.append("Fine-tuning raises ranking AUROC")
         if all(lowers):
-            parts[-1] += ", and ABTT on top of it lowers AUROC again in point estimate"
+            parts[-1] += " and ABTT lowers it in point estimate"
     elif all(lowers):
-        parts.append(f"ABTT lowers the ranking AUROC of the fine-tuned encoder for {every}")
+        parts.append(f"ABTT lowers the ranking AUROC of {fine_tuned}")
     if all(v is not None for v in verdicts):
+        verbs = {"level with": "ties", "above": "exceeds", "below": "falls below"}
         groups: Dict[str, List[str]] = {}
         for name, word in verdicts:
             groups.setdefault(word, []).append(name or "this model")
         clauses = []
         for i, (word, names) in enumerate(groups.items()):
             who = names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
-            target = "its zero-shot ABTT row" if i == 0 else "it"
-            clauses.append(f"{word} {target} for {who}")
+            target = "zero-shot ABTT" if i == 0 else "it"
+            clauses.append(f"{verbs[word]} {target} for {who}")
         parts.append(
-            "on routing over the five reseedings, the fine-tuned encoder with ABTT is "
-            + " and ".join(clauses)
+            "on reseeded routing, fine-tuned ABTT " + " and ".join(clauses)
         )
     if not parts:
         return ""
@@ -1123,11 +1127,12 @@ def _pairs_clause(sections: Sequence[CeilingSection]) -> str:
         for sec in sections if sec.facts is not None
     }
     if len(counts) != 1:
-        return "positive pairs available in the training split "
-    n_fit, n_all = counts.pop()
-    # The headline captions say "499 of the 565 positive train pairs"; this
-    # table says the same thing in the same words (review of 2026-09-15).
-    return f"{n_fit} of the {n_all} positive training pairs "
+        return "positive pairs from the training split"
+    n_fit, _ = counts.pop()
+    # Section 7 says "on 499 training pairs"; the caption says the same
+    # (caption rewrite of 2026-10-12). The 565 they are drawn from, the dev
+    # carve, the epochs and the $D$ sweeps are in the Appendix H prose.
+    return f"{n_fit} training pairs"
 
 
 def load_extra_section(spec: str, results_dir: Path) -> CeilingSection:
@@ -1205,19 +1210,15 @@ def write_tex(sections: Sequence[CeilingSection], path: Path,
         for _, row in sec.comparison.iterrows():
             lines.append(_row_tex(row, mseed_for_row(row, sec.mseed_agg), with_mseed))
 
-    encoder = "encoder is" if len(sections) == 1 else "encoders are"
+    # Caption rewrite of 2026-10-12: what the table shows, the column units and
+    # the one takeaway. The per-model epoch and $D$-sweep facts are stated in
+    # the Appendix H prose, not here; ``CeilingFacts.abtt_caption_sentence`` and
+    # ``epoch_caption_sentence`` still derive them from the run but no longer
+    # feed the caption (the run notes come from ``CeilingFacts.notes``).
     caption = (
-        r"\caption{Supervised fine-tuning reference ceiling on " + subject + "."
-        + takeaway_sentence(sections)
-        + r" The fine-tuned " + encoder + r" trained contrastively on "
-        + _pairs_clause(sections) +
-        r"(in-batch negatives, symmetric InfoNCE), with a dev slice carved "
-        r"out of the training split by directory for model selection; the test split is untouched "
-        r"until this evaluation. Ranking columns are test AUROC and cosine gap at the "
-        r"layer chosen by training AUROC; routing columns are test assignment accuracy and "
-        r"DirAcc@1, in percent, at the layer chosen by training "
-        r"DirAcc@1, with $\tau$ learned on the training split. The selected layers "
-        r"are listed in Table~\ref{tab:selected_layers}."
+        r"\caption{Fine-tuning ceiling for " + subject
+        + r" on " + _pairs_clause(sections)
+        + r"; layers as in Table~\ref{tab:selected_layers}. Test scores; routing in percent"
     )
     if with_mseed:
         seeds = {
@@ -1226,18 +1227,9 @@ def write_tex(sections: Sequence[CeilingSection], path: Path,
         n_words = {3: "three", 5: "five", 10: "ten"}
         n_seeds = n_words.get(seeds.pop(), "several") if len(seeds) == 1 else "several"
         caption += (
-            r" The last column repeats DirAcc@1 at the same "
-            rf"layer as a mean $\pm$ standard deviation over {n_seeds} "
-            r"reseedings of the query and reference files, with the training/test split fixed."
+            rf"; last column: mean $\pm$ s.d.\ over {n_seeds} reseedings"
         )
-    for sec in sections:
-        if sec.facts is not None:
-            caption += sec.facts.abtt_caption_sentence()
-            caption += sec.facts.epoch_caption_sentence()
-    caption += (
-        r" This is a reference ceiling, not a proposed method: it consumes supervision "
-        r"the zero-shot pipeline never sees.}"
-    )
+    caption += "." + takeaway_sentence(sections) + "}"
 
     lines += [
         r"\bottomrule",

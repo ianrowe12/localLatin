@@ -398,9 +398,11 @@ def test_render_layerwise_table_holds_the_encoder_only_siblings(tmp_path):
     x = by.loc[("PhilBERTa", 6)]
     assert body[5].endswith(rf"{x.aucroc:.3f} & {x.pc1:.3f} & {x.erank:.2f} \\")
     caption = [x for x in lines if x.startswith(r"\caption{")][0]
-    for phrase in ("encoder-only siblings", "every space as its own token",
-                   "no sequence-boundary tokens", "changes no AUROC by more than 0.0003."):
-        assert phrase in caption, phrase   # 0.00025 rounds up to the printed bound
+    for phrase in ("encoder-only siblings", "Both siblings stay above 0.80 AUROC at every layer."):
+        assert phrase in caption, phrase
+    # The two tokenizer facts moved to Appendix D's prose (caption rewrite, 2026-10-12).
+    for phrase in ("every space as its own token", "no sequence-boundary tokens", "0.0003"):
+        assert phrase not in caption, phrase
     for name in NOT_IN_PAPER + ("LaTa &", "PhilTa &"):
         assert name not in tex, name
     assert "—" not in tex
@@ -491,3 +493,9 @@ def test_published_cells_recompute_from_caches(monkeypatch):
     problems, records, _ = p2.reproduction_gate(df, REPO / p2.RES_CSV, REPO / p2.GEO_CSV, None)
     assert [p for p in problems if not p.startswith("gate d")] == [] and len(records) == 3
     assert round(df["aucroc"].item(), 3) == 0.496
+
+
+def test_floor_sentence_only_when_supported():
+    assert p2.floor_sentence(pd.DataFrame({"aucroc": [0.826, 0.9]})) == \
+        " Both siblings stay above 0.80 AUROC at every layer."
+    assert p2.floor_sentence(pd.DataFrame({"aucroc": [0.79, 0.9]})) == ""

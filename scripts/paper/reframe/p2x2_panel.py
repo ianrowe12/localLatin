@@ -445,9 +445,21 @@ def write_panel_table(summ: pd.DataFrame, path: Path) -> None:
 
 def zero_row_bound(df: pd.DataFrame) -> str:
     """The largest |AUROC - AUROC without the all-zero rows| over the rows of ``df``, rounded
-    up to four decimals so the printed bound is never below the true value."""
+    up to four decimals so the printed bound is never below the true value (the bound that
+    Appendix D's prose quotes for PhilBERTa's whitespace-only files)."""
     shift = float((df["aucroc"] - df["aucroc_nozero"]).abs().max())
     return f"{math.ceil(shift * 1e4) / 1e4:.4f}"
+
+
+SIBLING_FLOOR = 0.80  # the floor App. D's prose states for both encoder-only siblings
+
+
+def floor_sentence(df: pd.DataFrame) -> str:
+    """The layerwise caption's takeaway, written only when the data support it: both siblings
+    stay above SIBLING_FLOOR AUROC at every layer."""
+    if len(df) and float(df["aucroc"].min()) > SIBLING_FLOOR:
+        return f" Both siblings stay above {SIBLING_FLOOR:.2f} AUROC at every layer."
+    return ""
 
 
 def write_layerwise_table(df: pd.DataFrame, path: Path) -> bool:
@@ -455,7 +467,6 @@ def write_layerwise_table(df: pd.DataFrame, path: Path) -> bool:
     names = [n for n in LAYERWISE_MODELS if n in set(df["model"])]
     if not names:
         return False
-    shift = zero_row_bound(df[df["model"].isin(names)])
     by = df.set_index(["model", "layer"]).sort_index()
     layers = sorted(df.loc[df["model"].isin(names), "layer"].unique())
     n = f"{int(df.loc[df['model'].isin(names), 'n_train'].iloc[0]):,}".replace(",", "{,}")
@@ -475,16 +486,9 @@ def write_layerwise_table(df: pd.DataFrame, path: Path) -> bool:
         lines.append(f"{layer} & " + " & ".join(cells) + r" \\")
     lines += [r"\bottomrule", r"\end{tabular}",
               r"\caption{Per-layer readouts of LaBERTa and PhilBERTa, the encoder-only siblings "
-              r"of LaTa and PhilTa in the matched pairs of Table~\ref{tab:models}, on the Latin "
-              r"corpus with no post-hoc correction. AUROC: test ranking AUROC of cosine "
-              r"on mean-pooled vectors. PC1: top-PC share, the share of centered variance on the "
-              r"first principal component of the " + n + r" training passages. Rank: entropy "
-              r"effective rank of the same passages. Two facts about the inputs: LaBERTa's "
-              r"tokenizer encodes every space as its own token, so the indentation of the corpus "
-              r"files becomes tokens, which the pooling filter drops from the mean; PhilBERTa's "
-              r"published tokenizer adds no sequence-boundary tokens, so the two whitespace-only "
-              r"files of the corpus pool to zero vectors, and scoring without those two files "
-              r"changes no AUROC by more than " + shift + r".}",
+              r"of LaTa and PhilTa in Table~\ref{tab:models}, with no post-hoc correction. "
+              r"AUROC: test ranking AUROC. PC1 and Rank: top-PC share and effective rank of the "
+              + n + r" training passages." + floor_sentence(df[df["model"].isin(names)]) + r"}",
               r"\label{tab:p2x2_layerwise}", r"\end{table}"]
     path.write_text("\n".join(lines) + "\n")
     return True

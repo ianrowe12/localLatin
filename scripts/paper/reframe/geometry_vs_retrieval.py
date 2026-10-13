@@ -51,13 +51,13 @@ SEL_TEX = TAB_DIR / "selected_layers.tex"
 HEADER = "% generated table"
 
 MODELS = [  # id, display, type label, is_t5, colour (Okabe-Ito), marker
-    ("bowphs/LaTa", "LaTa", "T5 raw", True, "#0072B2", "o"),
-    ("bowphs/PhilTa", "PhilTa", "T5 raw", True, "#E69F00", "s"),
-    ("google/mt5-base", "mT5-base", "T5 raw", True, "#009E73", "^"),
-    ("sentence-transformers/LaBSE", "LaBSE", "BERT emb.", False, "#CC79A7", "D"),
-    ("Qwen/Qwen3-Embedding-0.6B", "Qwen3-0.6B", "Decoder emb.", False, "#D55E00", "v"),
+    ("bowphs/LaTa", "LaTa", "T5", True, "#0072B2", "o"),
+    ("bowphs/PhilTa", "PhilTa", "T5", True, "#E69F00", "s"),
+    ("google/mt5-base", "mT5-base", "T5", True, "#009E73", "^"),
+    ("sentence-transformers/LaBSE", "LaBSE", "Enc.", False, "#CC79A7", "D"),
+    ("Qwen/Qwen3-Embedding-0.6B", "Qwen3-0.6B", "Dec.", False, "#D55E00", "v"),
     ("KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5", "KaLM-mini",
-     "Decoder emb.", False, "#56B4E9", "P"),
+     "Dec.", False, "#56B4E9", "P"),
 ]
 DISP = {m[0]: m[1] for m in MODELS}
 ORDER = [m[1] for m in MODELS]
@@ -168,7 +168,7 @@ def write_regimes(rows, path):
              r"& & & \multicolumn{4}{c}{\textbf{Geometry (baseline)}} & "
              r"\multicolumn{3}{c}{\textbf{Baseline test AUROC}} \\",
              r"\cmidrule(lr){4-7}\cmidrule(lr){8-10}",
-             r"\textbf{Model} & \textbf{Type} & $L$ & Mean cos. & Cos.\ SD & Max PC1 & Min rank & "
+             r"\textbf{Model} & \textbf{Type} & $L$ & Mean cos. & Cos.\ SD & PC1$_{\max}$ & Rank$_{\min}$ & "
              r"$\ell^{*}$ & at $\ell^{*}$ & Min (layer) \\",
              r"\midrule"]
     for i, x in enumerate(rows):
@@ -180,18 +180,11 @@ def write_regimes(rows, path):
             f"{f3(x['pc1_max'])} & {x['erank_min']:.2f} & {x['peak_layer']} & "
             f"{f3(x['auc_peak'])} & {f3(x['auc_min'])} ({x['auc_min_layer']}) \\\\")
     lines += [r"\bottomrule", r"\end{tabular}",
-              r"\caption{Geometry and retrieval regimes of the six encoders under baseline mean "
-              r"pooling (no post-hoc correction). Type: T5 raw is a T5 "
-              r"encoder pretrained without a sentence-embedding objective; emb.\ marks a BERT encoder "
-              r"or a decoder trained with one. $L$: number of transformer layers. Mean cos.\ and "
-              r"Cos.\ SD: range over layers of the mean and the standard deviation of the cosine "
-              r"over all pairs of test passages. Max PC1: peak top-PC share over layers, the largest "
-              r"share of variance on the first principal component of the centered training embeddings. "
-              r"Min rank: smallest entropy effective rank of the same centered training embeddings over "
-              r"layers. All four geometry columns are label-free. $\ell^{*}$: "
-              r"layer where the PC1 share peaks. The last two columns give the baseline test "
-              r"pairwise AUROC of cosine at $\ell^{*}$ and its minimum over layers, with the layer "
-              r"in parentheses. Layer 1 is the first transformer block.}",
+              r"\caption{Geometry and baseline test ranking AUROC of the six panel models, raw "
+              r"above the rule and embedding-trained below. Type, PC1$_{\max}$ and Rank$_{\min}$ "
+              r"as in Table~\ref{tab:all_models}. Mean cos.\ and Cos.\ SD: range over layers of "
+              r"the mean and SD of test pairwise cosines. $\ell^{*}$: layer of PC1$_{\max}$; "
+              r"layer 1 is the first transformer block.}",
               r"\label{tab:geometry_regimes}", r"\end{table*}"]
     path.write_text("\n".join(lines) + "\n")
 
@@ -218,21 +211,12 @@ def write_correlations(rows_auc, rows_gain, path):
     lines += [r"\midrule", r"\multicolumn{9}{l}{\emph{Target: ABTT AUROC gain}} \\"]
     lines += block(rows_gain)
     lines += [r"\bottomrule", r"\end{tabular}",
-              r"\caption{Correlation between per-layer geometry and retrieval, one observation per "
-              r"model-layer, baseline mean pooling. $r$: Pearson; $\rho$: Spearman. Columns pool all 100 "
-              r"model-layers, the 36 layers of the three T5 encoders, or the 64 layers of the three "
-              r"embedding-trained models; LOMO gives the minimum and maximum Spearman over the six "
-              r"leave-one-model-out subsets. Mean pairwise cosine is on test passages; top-PC share and "
-              r"effective rank are on centered training embeddings. These three statistics are label-free. "
-              r"The two gaps are label-based separation indices. Raw cosine gap is the mean test cosine "
-              r"of same-directory pairs minus that of different-directory pairs; standardized gap "
-              r"divides it by the standard deviation of all test pairwise cosines at that layer. "
-              r"Targets are the baseline test AUROC and the ABTT gain (AUROC with ABTT at its "
-              r"train-selected $D$ minus baseline AUROC). The standardized gap is a signal-to-noise "
-              r"ratio of the kind AUROC summarizes, so it tracks AUROC by construction. ABTT AUROC "
-              r"varies little (0.962--0.987), so the gain correlations mirror the baseline ones. The "
-              r"pooled Pearson and Spearman values are both inflated by the two clusters of collapsed "
-              r"and healthy layers, and layers within a model are not independent.}",
+              r"\caption{Correlation of per-layer statistics with baseline test ranking AUROC and "
+              r"with ABTT gain (ABTT AUROC at the train-selected $D$ minus baseline), over panel "
+              r"layers. $r$: Pearson; $\rho$: Spearman. T5: three raw T5-family encoders; Non-T5: "
+              r"three embedding-trained models. LOMO: range of $\rho$ over leave-one-model-out "
+              r"subsets. Top-PC share and effective rank use training passages, the rest test "
+              r"passages.}",
               r"\label{tab:geometry_correlations}", r"\end{table*}"]
     path.write_text("\n".join(lines) + "\n")
 

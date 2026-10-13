@@ -676,34 +676,22 @@ def _span(values: Sequence[float]) -> str:
 def caption(w: pd.DataFrame, rows: Sequence[Tuple[str, pd.Series]]) -> str:
     """Caption of tab:e1_coordinate_ablation; its counts and ranges are read from the data."""
     text = (
-        r"\caption{Coordinate ablation at each model's lowest-AUROC baseline layer (L). Top block: "
-        r"test ranking AUROC for the unmodified mean-pooled vectors (Base); after zeroing the "
-        r"$k$ residual coordinates with the largest mean absolute training value, or with the "
-        r"largest variance across training passages; after per-coordinate standardization "
-        r"with training statistics (Std.); after centering alone ($D{=}0$); and after ABTT "
-        r"with one or three components (ABTT$_{D=1}$, ABTT$_{D=3}$), the two reference "
-        r"repairs. Bottom block: top-PC share of the training vectors after the same "
-        r"interventions, the share of their centered variance on the first principal "
-        r"component; centering leaves it unchanged by definition. ")
+        r"\caption{Coordinate ablation at each model's lowest-AUROC baseline layer (L), fit on "
+        r"training embeddings. Std.: per-coordinate standardization; "
+        r"$D{=}0$: centering alone, which leaves top-PC share unchanged by definition. "
+        r"Figure~\ref{fig:e1_k_sweep} extends the zeroing to 400 coordinates. ")
     t5_rows = [x for name, x in rows if name in T5]
     if t5_rows:
         zeroed = [x[f"auc_{zero_tag(r, KS[-1])}"] for x in t5_rows for r in RANKINGS]
         n = _COUNT_WORD.get(len(t5_rows), str(len(t5_rows)))
         k_word = _COUNT_WORD.get(KS[-1], str(KS[-1]))
         text += (
-            f"In the {n} T5 row{'s' if len(t5_rows) > 1 else ''}, AUROC stays at or below "
-            f"{f3(max(zeroed))} after zeroing {k_word} coordinates under either ranking, while "
-            f"standardization reaches {_span([x['auc_standardize'] for x in t5_rows])} and "
-            f"ABTT with three components {_span([x['auc_abtt_D3'] for x in t5_rows])}. ")
-    n_coll = int(w["collapsed"].sum())
-    if n_coll:
-        text += (
-            f"At the collapsed T5 layers (baseline AUROC below {COLLAPSE_AUROC:.2f}, {n_coll} "
-            r"layers), one component recovers a median 45 percent of the AUROC gain of "
-            r"$D{=}10$, and three recover at least 80 percent at every layer "
-            r"(Table~\ref{tab:d_ablation}). ")
-    return text + ("All statistics are fit on training embeddings only. "
-                   "Figure~\\ref{fig:e1_k_sweep} extends the zeroing to $k = 400$.}")
+            f"In the {n} T5-family row{'s' if len(t5_rows) > 1 else ''}, zeroing {k_word} "
+            f"coordinates leaves AUROC at or below "
+            f"{f3(max(zeroed))}, while standardization reaches "
+            f"{_span([x['auc_standardize'] for x in t5_rows])} and ABTT$_{{D=3}}$ "
+            f"{_span([x['auc_abtt_D3'] for x in t5_rows])}.")
+    return text.rstrip() + "}"
 
 
 def write_table(w: pd.DataFrame, path: Path) -> List[str]:
