@@ -259,3 +259,141 @@ def test_cluster_figures_take_the_train_selected_abtt_layer():
     with pytest.raises(SystemExit):
         vc.select_layers(frame, names, metric="overall_assignment_acc")
     assert vc.HIGHLIGHT_K == 6
+
+
+# ------------------- merged per-layer record and SIF summary (appendix trim) ---------------
+
+
+def _route_best(i: int, j: int) -> int:
+    """Routing train argmax: differs from both the ranking train argmax and the test argmax."""
+    return LAYERS[(i + j + 2) % 3]
+
+
+def _two_task_frame() -> pd.DataFrame:
+    frame = _results_frame()
+    for i, model in enumerate(MODELS):
+        for j, method in enumerate(METHODS):
+            sel = (frame["model"] == model) & (frame["method"] == method)
+            frame.loc[sel, "train_dir_acc_at_1"] = [
+                0.90 if layer == _route_best(i, j) else 0.60 for layer in frame.loc[sel, "layer"]
+            ]
+    return frame
+
+
+def _marked_rows(tex: str) -> dict[str, dict[str, int]]:
+    """model display -> {"rank": layer, "route": layer} read off the layer marks."""
+    out: dict[str, dict[str, int]] = {}
+    current = None
+    for line in tex.splitlines():
+        if "&" not in line or not line.rstrip().endswith(r"\\"):
+            continue
+        cells = [c.strip() for c in line.split("&")]
+        if cells[0] and "\\" not in cells[0]:
+            current = cells[0]
+        m = re.fullmatch(r"(\d+)(\$\^\{(\\ast)?(\\dagger)?\}\$)?", cells[1])
+        if not m or not m.group(2):
+            continue
+        marks = out.setdefault(current, {})
+        if m.group(3):
+            assert "rank" not in marks, f"two ranking marks for {current}"
+            marks["rank"] = int(m.group(1))
+        if m.group(4):
+            assert "route" not in marks, f"two routing marks for {current}"
+            marks["route"] = int(m.group(1))
+    return out
+
+
+def test_merged_per_layer_table_marks_both_train_selected_layers(tmp_path: Path):
+    frame = _two_task_frame()
+    out = tmp_path / "per_layer.tex"
+    bplt.emit_per_layer_combined(
+        frame,
+        models=MODELS,
+        out_tex=out,
+        out_audit=tmp_path / "audit.csv",
+        caption=bplt._per_layer_caption("x"),
+        label="tab:x",
+    )
+    tex = out.read_text()
+    assert tex.startswith("% generated table\n% python scripts/resubmit/build_per_layer_tables.py\n")
+    marks = _marked_rows(tex)
+    rank = _headline_layers(frame, "abtt_optimal", "train_aucroc")
+    route = _headline_layers(frame, "abtt_optimal", "train_dir_acc_at_1")
+    j = METHODS.index("abtt_optimal")
+    for i, model in enumerate(MODELS):
+        name = bplt.MODEL_DISPLAY[model]
+        assert marks[name] == {"rank": rank[name], "route": route[name]}
+        assert rank[name] != route[name]  # the rig keeps the two marks on different rows
+        assert _test_best(i, j) not in marks[name].values()  # never a test argmax
+
+    # Bold: only ABTT cells, only in the marked task's block (4 ranking, 8 routing columns).
+    for line in tex.splitlines():
+        cells = [c.strip() for c in line.split("&")]
+        if len(cells) != 14 or not re.match(r"\d", cells[1]):
+            continue
+        is_rank, is_route = r"\ast" in cells[1], r"\dagger" in cells[1]
+        for k, cell in enumerate(cells[2:]):
+            abtt = k % 2 == 1
+            selected = is_rank if k < 4 else is_route
+            assert cell.startswith(r"\textbf{") == (abtt and selected), line
+
+    audit = pd.read_csv(tmp_path / "audit.csv")
+    assert audit["rank_selected"].sum() == len(MODELS)
+    assert audit["route_selected"].sum() == len(MODELS)
+    # E1: the Existing/New columns are decision accuracies, not a DirAcc@1 split.
+    assert "Existing dec." in tex and "New dec." in tex
+    assert "existing-versus-new decision" in tex
+    assert r"Table~\ref{tab:selected_layers}" in tex
+
+
+def test_sif_collapsed_summary_uses_the_collapsed_layers_only():
+    rows = []
+    for model in bplt.MAIN_MODELS:
+        for layer, base in ((1, 0.95), (2, 0.50), (3, 0.60)):
+            for method, value in (
+                ("baseline", base),
+                ("sif_only", base + 0.8 * (0.97 - base) if base < 0.7 else 0.99),
+                ("abtt_optimal", 0.97),
+            ):
+                rows.append({"model": model, "method": method, "layer": layer, "aucroc": value})
+    summary = bplt.sif_collapsed_summary(pd.DataFrame(rows), bplt.MAIN_MODELS)
+    assert list(summary["n_collapsed"]) == [2, 2, 2]  # layer 1 (0.95) is not collapsed
+    assert summary["baseline_max"].max() == pytest.approx(0.60)
+    assert summary["sif_share_median"].tolist() == pytest.approx([0.8] * 3)
+    assert summary["sif_below_abtt_all"].all()
+
+
+REAL_RESULTS = REPO_ROOT / "runs/active/resubmit/results/phase_resubmit_results.csv"
+REAL_MSEED = REPO_ROOT / "runs/active/resubmit/taskb_mseed/aggregated_results.csv"
+
+
+@pytest.mark.skipif(
+    not (REAL_RESULTS.exists() and REAL_MSEED.exists()),
+    reason="the result CSVs are tracked but ci.yml sparse-checkouts without runs/",
+)
+def test_committed_per_layer_and_sif_tables_regenerate_byte_identically(tmp_path, monkeypatch):
+    monkeypatch.chdir(REPO_ROOT)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["build_per_layer_tables.py", "--out_tex_dir", str(tmp_path / "tex"),
+         "--out_dir_audit", str(tmp_path / "audit")],
+    )
+    bplt.main()
+    committed = REPO_ROOT / "overleaf_drafts" / "tables"
+    for name in ("per_layer_t5.tex", "per_layer_emb.tex", "sif_collapsed_summary.tex",
+                 "taskA_main.tex", "taskB_routing_main.tex", "taskB_ranking_main.tex"):
+        assert (tmp_path / "tex" / name).read_text() == (committed / name).read_text(), name
+
+
+@pytest.mark.skipif(not REAL_RESULTS.exists(), reason="result CSV not checked out")
+def test_sif_summary_backs_the_paper_sentences():
+    """Appendix C quotes "about 80 percent of the ABTT gain in LaTa and PhilTa, under 10
+    percent in mT5-base", and Appendix K "SIF stays below ABTT at every collapsed layer"."""
+    summary = bplt.sif_collapsed_summary(pd.read_csv(REAL_RESULTS), bplt.MAIN_MODELS)
+    by = summary.set_index("model_display")
+    assert by["n_collapsed"].to_dict() == {"LaTa": 10, "PhilTa": 9, "mT5-base": 7}
+    assert 0.75 <= by.loc["LaTa", "sif_share_median"] <= 0.85
+    assert 0.75 <= by.loc["PhilTa", "sif_share_median"] <= 0.85
+    assert by.loc["mT5-base", "sif_share_median"] < 0.10
+    assert summary["sif_below_abtt_all"].all()

@@ -1,29 +1,29 @@
 % generated table
 % python scripts/paper/reframe/d2_controls.py --stage render
-\begin{table}[t]
+\begin{table*}[t]
 \centering
 \footnotesize
-\setlength{\tabcolsep}{2.5pt}
-\begin{tabular}{@{}rcccccccc@{}}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}rcccccccccc@{}}
 \toprule
-& \multicolumn{2}{c}{LaBERTa} & \multicolumn{2}{c}{PhilBERTa} & \multicolumn{2}{c}{T5-base} & \multicolumn{2}{c}{T5-v1.1-base} \\
-\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}\cmidrule(lr){8-9}
-Layer & Base & ABTT & Base & ABTT & Base & ABTT & Base & ABTT \\
+& \multicolumn{2}{c}{LaBERTa} & \multicolumn{2}{c}{PhilBERTa} & \multicolumn{2}{c}{T5-base} & \multicolumn{2}{c}{T5-v1.1-base} & \multicolumn{2}{c}{T5-efficient-base} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}\cmidrule(lr){8-9}\cmidrule(lr){10-11}
+Layer & Base & ABTT & Base & ABTT & Base & ABTT & Base & ABTT & Base & ABTT \\
 \midrule
-1 & 0.826 & 0.974 & 0.893 & 0.976 & 0.855 & 0.981 & 0.848 & 0.970 \\
-2 & 0.832 & 0.977 & 0.905 & 0.977 & 0.864 & 0.981 & 0.489 & 0.969 \\
-3 & 0.839 & 0.972 & 0.913 & 0.978 & 0.864 & 0.974 & 0.493 & 0.965 \\
-4 & 0.830 & 0.969 & 0.903 & 0.974 & 0.849 & 0.971 & 0.505 & 0.963 \\
-5 & 0.828 & 0.967 & 0.885 & 0.976 & 0.848 & 0.969 & 0.515 & 0.963 \\
-6 & 0.834 & 0.963 & 0.883 & 0.974 & 0.843 & 0.967 & 0.523 & 0.959 \\
-7 & 0.836 & 0.964 & 0.896 & 0.974 & 0.849 & 0.962 & 0.533 & 0.952 \\
-8 & 0.844 & 0.963 & 0.905 & 0.975 & 0.847 & 0.966 & 0.536 & 0.945 \\
-9 & 0.857 & 0.965 & 0.911 & 0.979 & 0.836 & 0.969 & 0.533 & 0.934 \\
-10 & 0.873 & 0.968 & 0.919 & 0.978 & 0.826 & 0.962 & 0.531 & 0.930 \\
-11 & 0.892 & 0.966 & 0.913 & 0.980 & 0.816 & 0.959 & 0.522 & 0.927 \\
-12 & 0.910 & 0.967 & 0.923 & 0.976 & 0.843 & 0.973 & 0.772 & 0.959 \\
+1 & 0.826 & 0.974 & 0.893 & 0.976 & 0.855 & 0.981 & 0.848 & 0.970 & 0.820 & 0.975 \\
+2 & 0.832 & 0.977 & 0.905 & 0.977 & 0.864 & 0.981 & 0.489 & 0.969 & 0.822 & 0.968 \\
+3 & 0.839 & 0.972 & 0.913 & 0.978 & 0.864 & 0.974 & 0.493 & 0.965 & 0.812 & 0.973 \\
+4 & 0.830 & 0.969 & 0.903 & 0.974 & 0.849 & 0.971 & 0.505 & 0.963 & 0.798 & 0.974 \\
+5 & 0.828 & 0.967 & 0.885 & 0.976 & 0.848 & 0.969 & 0.515 & 0.963 & 0.794 & 0.971 \\
+6 & 0.834 & 0.963 & 0.883 & 0.974 & 0.843 & 0.967 & 0.523 & 0.959 & 0.803 & 0.967 \\
+7 & 0.836 & 0.964 & 0.896 & 0.974 & 0.849 & 0.962 & 0.533 & 0.952 & 0.809 & 0.969 \\
+8 & 0.844 & 0.963 & 0.905 & 0.975 & 0.847 & 0.966 & 0.536 & 0.945 & 0.812 & 0.970 \\
+9 & 0.857 & 0.965 & 0.911 & 0.979 & 0.836 & 0.969 & 0.533 & 0.934 & 0.794 & 0.964 \\
+10 & 0.873 & 0.968 & 0.919 & 0.978 & 0.826 & 0.962 & 0.531 & 0.930 & 0.782 & 0.962 \\
+11 & 0.892 & 0.966 & 0.913 & 0.980 & 0.816 & 0.959 & 0.522 & 0.927 & 0.736 & 0.959 \\
+12 & 0.910 & 0.967 & 0.923 & 0.976 & 0.843 & 0.973 & 0.772 & 0.959 & 0.827 & 0.964 \\
 \bottomrule
 \end{tabular}
-\caption{Test ranking AUROC of the four controls before (Base) and after ABTT fit on training passages, with $D$ chosen per layer on training DirAcc@1 as for the panel. Seven layers of T5-v1.1-base and one of T5-base stay below the panel's band (0.962 to 0.987).}
+\caption{Test ranking AUROC of the four controls (LaBERTa, PhilBERTa, T5-base and T5-v1.1-base) and of T5-efficient-base, an added checkpoint rather than a fifth control. Base: mean-pooled hidden states without correction. ABTT: fit on training passages, with $D$ chosen per layer on training DirAcc@1 as for the panel. Nine of these 60 layers stay below the panel's band (0.962 to 0.987): seven of T5-v1.1-base, one of T5-base and one of T5-efficient-base.}
 \label{tab:d2_controls_abtt}
-\end{table}
+\end{table*}

@@ -32,6 +32,17 @@ Outputs (tex + audit CSVs):
   tables/taskB_ranking_main.tex              — 3 models, base vs ABTT (single-seed)
   tables/taskB_ranking_appendix.tex          — 3 remaining models (single-seed)
   tables/taskB_ranking_appendix_mseed.tex    — all 6 models, base vs SIF+ABTT (mseed)
+  tables/per_layer_t5.tex                    — LaTa, PhilTa, mT5-base: both tasks, base vs ABTT
+  tables/per_layer_emb.tex                   — LaBSE, Qwen3-0.6B, KaLM-mini: same layout
+  tables/sif_collapsed_summary.tex           — SIF over the collapsed layers (3 rows)
+
+Appendix trim (12 October 2026): the paper inputs only the last three. The two
+``per_layer_*`` tables merge the six base-vs-ABTT tables above (ranking AUROC and
+cosine gap, routing DirAcc@1, assignment accuracy and the existing- and
+new-decision accuracies) into one record per model group, marking the
+train-selected ranking and routing layers separately. The SIF summary replaces
+the two SIF-suite grids. The nine older tables are still written because tests
+and ``taskb_mseed_selection.py`` read them; the paper no longer inputs them.
 """
 from __future__ import annotations
 
@@ -556,6 +567,197 @@ def emit_taskB_ranking_mseed(
     return wide
 
 
+# --------------------------- merged per-layer record --------------------------
+# Appendix trim B1 (12 October 2026): one table per model group with both tasks.
+
+GENERATED_HEADER = (
+    "% generated table\n"
+    "% python scripts/resubmit/build_per_layer_tables.py\n"
+)
+PER_LAYER_METHODS = ["baseline", "abtt_optimal"]
+# (metric column, header, task) in printed order. The Existing/New columns are
+# accuracies of the existing-versus-new decision on the existing and on the new
+# test witnesses (their witness-weighted mean is the assignment accuracy), not a
+# split of DirAcc@1 (review item E1).
+PER_LAYER_COLUMNS = [
+    ("aucroc", r"AUROC", "taskA"),
+    ("gap", r"Cos.\ gap", "taskA"),
+    ("dir_acc_at_1", r"DirAcc@1", "taskB"),
+    ("overall_assignment_acc", r"Assign.", "taskB"),
+    ("existing_acc", r"Existing dec.", "taskB"),
+    ("new_acc", r"New dec.", "taskB"),
+]
+RANK_MARK = r"$^{\ast}$"
+ROUTE_MARK = r"$^{\dagger}$"
+
+
+def emit_per_layer_combined(
+    df: pd.DataFrame,
+    models: Sequence[str],
+    out_tex: Path,
+    out_audit: Path,
+    caption: str,
+    label: str,
+    placement: str = "t",
+) -> pd.DataFrame:
+    """Emit the merged Base-vs-ABTT per-layer record for one model group.
+
+    ``placement`` is the float specifier; the 64-row group uses ``p`` because it
+    is too tall for a top float (appendix trim review).
+
+    Two marks on the layer: ``RANK_MARK`` on the train-selected ranking layer
+    (argmax of training AUROC under ABTT) and ``ROUTE_MARK`` on the
+    train-selected routing layer (argmax of training DirAcc@1 under ABTT), the
+    ABTT layers of ``tab:selected_layers``. On a marked row the ABTT cells of
+    that task's columns are bold; Base cells never are.
+    """
+    metrics = [m for m, _, _ in PER_LAYER_COLUMNS]
+    wide = _pivot(df, models, PER_LAYER_METHODS, metrics)
+    rank = train_selected_layers(
+        df, list(models), method="abtt_optimal", metric=TASKA_SELECT_METRIC
+    )
+    route = train_selected_layers(
+        df, list(models), method="abtt_optimal", metric=TASKB_SELECT_METRIC
+    )
+    rank_rows = _mark_train_selected(wide, rank)
+    wide = wide.rename(columns={"train_selected": "rank_selected"})
+    route_rows = _mark_train_selected(wide, route)
+    wide = wide.rename(columns={"train_selected": "route_selected"})
+    wide.to_csv(out_audit, index=False)
+
+    ncols = 2 + 2 * len(PER_LAYER_COLUMNS)
+    n_rank = sum(1 for _, _, t in PER_LAYER_COLUMNS if t == "taskA")
+    rank_end = 2 + 2 * n_rank
+    lines: list[str] = [r"\begin{table*}[" + placement + "]", r"\centering", r"\scriptsize",
+                        r"\setlength{\tabcolsep}{3pt}",
+                        r"\begin{tabular}{ll" + "c" * (ncols - 2) + r"}", r"\toprule"]
+    lines.append(
+        r"\multicolumn{2}{c}{}"
+        + rf" & \multicolumn{{{rank_end - 2}}}{{c}}{{\textbf{{Ranking}}}}"
+        + rf" & \multicolumn{{{ncols - rank_end}}}{{c}}{{\textbf{{Routing}}}} \\"
+    )
+    lines.append(rf"\cmidrule(lr){{3-{rank_end}}}\cmidrule(lr){{{rank_end + 1}-{ncols}}}")
+    lines.append(
+        " & ".join(["", ""] + [rf"\multicolumn{{2}}{{c}}{{{h}}}" for _, h, _ in PER_LAYER_COLUMNS])
+        + r" \\"
+    )
+    lines.append(
+        "".join(
+            rf"\cmidrule(lr){{{3 + 2 * k}-{4 + 2 * k}}}" for k in range(len(PER_LAYER_COLUMNS))
+        )
+    )
+    lines.append(
+        " & ".join([r"\textbf{Model}", r"\textbf{Layer}"] + ["Base", "ABTT"] * len(PER_LAYER_COLUMNS))
+        + r" \\"
+    )
+    lines.append(r"\midrule")
+
+    prev_model = None
+    for i, row in wide.iterrows():
+        if prev_model is not None and row["model"] != prev_model:
+            lines.append(r"\midrule")
+        is_rank, is_route = i in rank_rows, i in route_rows
+        marks = (RANK_MARK if is_rank else "") + (ROUTE_MARK if is_route else "")
+        if is_rank and is_route:
+            marks = r"$^{\ast\dagger}$"
+        cells = [
+            "" if prev_model == row["model"] else row["model_display"],
+            str(int(row["layer"])) + marks,
+        ]
+        for metric, _, task in PER_LAYER_COLUMNS:
+            selected = is_rank if task == "taskA" else is_route
+            for method in PER_LAYER_METHODS:
+                bold = selected and method == "abtt_optimal"
+                cells.append(_bold(_fmt3(row[f"{metric}__{method}"]), bold))
+        lines.append(" & ".join(cells) + r" \\")
+        prev_model = row["model"]
+
+    lines += [r"\bottomrule", r"\end{tabular}", r"\caption{" + caption + r"}",
+              r"\label{" + label + r"}", r"\end{table*}"]
+    out_tex.parent.mkdir(parents=True, exist_ok=True)
+    out_tex.write_text(GENERATED_HEADER + "\n".join(lines) + "\n")
+    return wide
+
+
+# ---------------------------- SIF at collapsed layers -------------------------
+# Appendix trim B2 (12 October 2026): replaces the two SIF-suite grids.
+
+COLLAPSE_THRESHOLD = 0.70  # a collapsed layer has baseline test AUROC below this
+
+
+def sif_collapsed_summary(
+    df: pd.DataFrame, models: Sequence[str], threshold: float = COLLAPSE_THRESHOLD
+) -> pd.DataFrame:
+    """Per model: the collapsed layers (baseline test AUROC < ``threshold``), the
+    median and range of Base, SIF and ABTT test AUROC over them, and the median
+    over those layers of the share of the Base-to-ABTT gain that SIF recovers."""
+    rows = []
+    for model in models:
+        wide = _pivot(df, [model], ["baseline", "sif_only", "abtt_optimal"], ["aucroc"])
+        wide = wide[wide["aucroc__baseline"] < threshold]
+        if wide.empty:
+            continue
+        gain = wide["aucroc__abtt_optimal"] - wide["aucroc__baseline"]
+        share = (wide["aucroc__sif_only"] - wide["aucroc__baseline"]) / gain
+        row = {
+            "model": model,
+            "model_display": MODEL_DISPLAY[model],
+            "n_collapsed": len(wide),
+            "layers": " ".join(str(int(l)) for l in wide["layer"]),
+            "sif_share_median": float(share.median()),
+            "sif_below_abtt_all": bool(
+                (wide["aucroc__sif_only"] < wide["aucroc__abtt_optimal"]).all()
+            ),
+        }
+        for method in ("baseline", "sif_only", "abtt_optimal"):
+            col = wide[f"aucroc__{method}"]
+            row[f"{method}_median"] = float(col.median())
+            row[f"{method}_min"] = float(col.min())
+            row[f"{method}_max"] = float(col.max())
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def emit_sif_collapsed(
+    df: pd.DataFrame,
+    models: Sequence[str],
+    out_tex: Path,
+    out_audit: Path,
+    caption: str,
+    label: str,
+) -> pd.DataFrame:
+    summary = sif_collapsed_summary(df, models)
+    if len(summary) != len(models):
+        missing = set(models) - set(summary["model"])
+        raise SystemExit(f"no collapsed layer for: {sorted(missing)}")
+    summary.to_csv(out_audit, index=False)
+
+    def cell(r: pd.Series, method: str) -> str:
+        return (
+            rf"\makecell{{{r[f'{method}_median']:.3f}\\"
+            rf"{r[f'{method}_min']:.3f}--{r[f'{method}_max']:.3f}}}"
+        )
+
+    lines = [r"\begin{table}[t]", r"\centering", r"\scriptsize",
+             r"\setlength{\tabcolsep}{3pt}", r"\begin{tabular}{lrcccr}", r"\toprule",
+             r"\textbf{Model} & $n$ & Base & SIF & ABTT & \makecell{SIF\\share (\%)} \\",
+             r"\midrule"]
+    for _, r in summary.iterrows():
+        lines.append(
+            " & ".join(
+                [r["model_display"], str(int(r["n_collapsed"]))]
+                + [cell(r, m) for m in ("baseline", "sif_only", "abtt_optimal")]
+                + [f"{100 * r['sif_share_median']:.1f}"]
+            )
+            + r" \\"
+        )
+    lines += [r"\bottomrule", r"\end{tabular}", r"\caption{" + caption + r"}",
+              r"\label{" + label + r"}", r"\end{table}"]
+    out_tex.parent.mkdir(parents=True, exist_ok=True)
+    out_tex.write_text(GENERATED_HEADER + "\n".join(lines) + "\n")
+    return summary
+
+
 # --------------------------------- captions ----------------------------------
 # Caption pass (12 October 2026): the first table of each kind (taskA_main,
 # taskB_routing_main, taskB_ranking_main) carries the compact key; its siblings
@@ -584,6 +786,32 @@ CAP_ROUTING_MAIN = (
 CAP_RANK_SINGLE_MAIN = (
     rf"Per-layer test routing DirAcc@1 for {CAP_MAIN_MODELS}, {CAP_FRACTION}, "
     rf"{CAP_SINGLE_RUN}. Existing, New: assignment accuracy on existing or new witnesses. "
+)
+
+
+def _per_layer_caption(models: str) -> str:
+    """Self-contained caption of a merged per-layer table (appendix trim B1, E1)."""
+    return (
+        rf"Per-layer test results for {models}, accuracies as fractions. "
+        r"Base: mean-pooled hidden states without correction; ABTT: fit on training "
+        r"embeddings, with $D$ chosen per layer on the training split, as is the routing "
+        r"threshold $\tau$. "
+        r"Existing dec., New dec.: accuracy of the existing-versus-new decision on "
+        r"existing and on new test witnesses, which Assign.\ pools. "
+        rf"{RANK_MARK}, {ROUTE_MARK}: the ABTT train-selected ranking and routing layers "
+        r"(Table~\ref{tab:selected_layers} also lists the Base layers), with that task's "
+        r"ABTT cells in bold."
+    )
+
+
+CAP_SIF_COLLAPSED = (
+    r"Test ranking AUROC over the collapsed layers ($n$; baseline AUROC below 0.70) "
+    r"of LaTa, PhilTa and mT5-base: median, with the range below. "
+    r"SIF only reweights tokens before mean pooling and removes no direction; "
+    r"ABTT ($D$ chosen per layer on the training split) is the per-layer record of "
+    r"Table~\ref{tab:per_layer_t5}. "
+    r"SIF share: median over the collapsed layers of the percentage of the Base-to-ABTT "
+    r"gain that SIF recovers."
 )
 
 
@@ -780,6 +1008,36 @@ def main() -> None:
         label="tab:taskB_ranking_appendix_mseed",
         banner=r"Routing: DirAcc@1 (five reseedings, mean $\pm$ std, SIF+ABTT)",
         selected_layers=mseed_layers,
+    )
+
+    # -------- Appendix trim (12 October 2026): the tables the paper inputs --------
+    emit_per_layer_combined(
+        taskA_df,
+        models=MAIN_MODELS,
+        out_tex=tex_dir / "per_layer_t5.tex",
+        out_audit=audit_dir / "per_layer_t5.csv",
+        caption=_per_layer_caption(CAP_MAIN_MODELS),
+        label="tab:per_layer_t5",
+    )
+    emit_per_layer_combined(
+        taskA_df,
+        models=APPENDIX_MODELS,
+        out_tex=tex_dir / "per_layer_emb.tex",
+        out_audit=audit_dir / "per_layer_emb.csv",
+        caption=(
+            rf"Per-layer test results for {CAP_APPENDIX_MODELS}. Columns, marks and bold "
+            r"as in Table~\ref{tab:per_layer_t5}."
+        ),
+        label="tab:per_layer_emb",
+        placement="p",
+    )
+    emit_sif_collapsed(
+        taskA_df,
+        models=MAIN_MODELS,
+        out_tex=tex_dir / "sif_collapsed_summary.tex",
+        out_audit=audit_dir / "sif_collapsed_summary.csv",
+        caption=CAP_SIF_COLLAPSED,
+        label="tab:sif_collapsed",
     )
 
     print("wrote audit CSVs to", audit_dir)

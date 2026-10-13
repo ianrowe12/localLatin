@@ -228,9 +228,20 @@ def test_committed_facts_and_tables_rerender(tmp_path):
     assert "524{,}288 steps of 65{,}536 tokens" in cap
     assert "for about 30 times as many tokens" in cap
     assert "T5-efficient-base does not collapse (lowest AUROC 0.736, layer 11)." in cap
-    cap = (tab / "d2_controls_abtt.tex").read_text()
-    assert ("Seven layers of T5-v1.1-base and one of T5-base stay below the panel's band "
-            "(0.962 to 0.987).") in cap
+    # The ABTT table carries the four controls and T5-efficient-base (appendix trim B5): five
+    # Base/ABTT column pairs, and the below-band count matches Limitations' "nine of 60".
+    tex = (tab / "d2_controls_abtt.tex").read_text()
+    assert r"\begin{tabular}{@{}r" + "cc" * 5 + "@{}}" in tex
+    for m in (*d2.CONTROLS, d2.NEW):
+        assert r"\multicolumn{2}{c}{" + m + "}" in tex
+    rows = [ln for ln in tex.splitlines() if ln.split(" & ")[0].isdigit()]
+    assert [int(ln.split(" & ")[0]) for ln in rows] == list(d2.LAYERS)
+    assert all(len(ln.split(" & ")) == 11 for ln in rows)
+    assert "added checkpoint rather than a fifth control" in tex
+    assert "Base: mean-pooled hidden states without correction." in tex
+    assert ("Nine of these 60 layers stay below the panel's band (0.962 to 0.987): seven of "
+            "T5-v1.1-base, one of T5-base and one of T5-efficient-base.") in tex
+    assert "tab:d2_t5_efficient" not in tex and "tab:p2x2_layerwise" not in tex
 
 
 def _auc_rows(name, aucs):
@@ -253,4 +264,10 @@ def test_below_band_sentence_branches():
     assert d2.below_band_sentence(one, ["A", "B"]) == \
         "One layer of A stays below the panel's band (0.962 to 0.987)."
     two = opt([("A", 1, 0.959), ("B", 1, 0.950), ("B", 2, 0.940)])
-    assert d2.below_band_sentence(two, ["A", "B"]).startswith("Two layers of B and one of A stay")
+    assert d2.below_band_sentence(two, ["A", "B"]) == \
+        "Three of these 3 layers stay below the panel's band (0.962 to 0.987): two of B and one of A."
+    many = opt([("A", 1, 0.961), ("A", 2, 0.970), ("B", 1, 0.950), ("B", 2, 0.940)])
+    assert d2.below_band_sentence(many, ["A", "B"]).startswith("Three of these 4 layers stay")
+    two_one = opt([("A", 1, 0.950), ("A", 2, 0.940), ("B", 1, 0.980)])
+    assert d2.below_band_sentence(two_one, ["A", "B"]) == \
+        "Two layers of A stay below the panel's band (0.962 to 0.987)."
