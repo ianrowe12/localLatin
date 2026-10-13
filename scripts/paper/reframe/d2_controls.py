@@ -31,8 +31,10 @@ Stages (each reads the previous stage's outputs; run from the repo root):
   projection  baseline, abtt_fixed and abtt_optimal at layers 1-12 of the gate models and the
               D2 caches; hard gate against the published cells.
               -> <out_dir>/d2_projection.csv (d2_projection.rejected.csv on a gate failure)
-  render      <out_dir>/d2_facts.md and two appendix tables (not \\input anywhere):
-              overleaf_drafts/tables/d2_t5_efficient.tex, d2_controls_abtt.tex
+  render      <out_dir>/d2_facts.md and two appendix tables:
+              overleaf_drafts/tables/d2_controls_abtt.tex (the four controls and
+              T5-efficient-base, Base and ABTT; Appendix D) and d2_t5_efficient.tex (no longer
+              \\input in the paper; kept for the record)
 
   python scripts/paper/reframe/d2_controls.py --stage config
   python scripts/paper/reframe/d2_controls.py --stage extract --threads 16
@@ -511,9 +513,11 @@ def lowest_sentence(layers_df: pd.DataFrame) -> str:
 
 
 def below_band_sentence(opt: pd.DataFrame, models: Sequence[str]) -> str:
-    """Takeaway of the controls caption: which controls keep layers below the panel's band
-    after ABTT (counts at the paper's three decimals)."""
+    """Takeaway of the controls caption: which models keep layers below the panel's band
+    after ABTT (counts at the paper's three decimals). When more than one model does, the
+    sentence leads with the total over all layers of ``models`` (Limitations' "nine of 60")."""
     lo = BAND[0]
+    band = f"the panel's band ({BAND[0]:.3f} to {BAND[1]:.3f})"
     parts = []
     for m in sorted(models, key=lambda m: -sum(round(float(x), 3) < lo
                                                for x in opt.loc[m, "aucroc"])):
@@ -521,13 +525,19 @@ def below_band_sentence(opt: pd.DataFrame, models: Sequence[str]) -> str:
         if k:
             parts.append((m, k))
     if not parts:
-        return f"After ABTT every layer lies in the panel's band ({BAND[0]:.3f} to {BAND[1]:.3f})."
-    phrase = [f"{_WORDS[k]} layer{'s' if k > 1 else ''} of {m}" if i == 0
-              else f"{_WORDS[k]} of {m}" for i, (m, k) in enumerate(parts)]
-    joined = phrase[0] if len(phrase) == 1 else ", ".join(phrase[:-1]) + " and " + phrase[-1]
-    verb = "stays" if len(parts) == 1 and parts[0][1] == 1 else "stay"
-    return (joined[0].upper() + joined[1:] + f" {verb} below the panel's band "
-            f"({BAND[0]:.3f} to {BAND[1]:.3f}).")
+        return f"After ABTT every layer lies in {band}."
+    if len(parts) == 1:
+        m, k = parts[0]
+        phrase = f"{_WORDS[k]} layer{'s' if k > 1 else ''} of {m}"
+        verb = "stays" if k == 1 else "stay"
+        return phrase[0].upper() + phrase[1:] + f" {verb} below {band}."
+    total = sum(k for _, k in parts)
+    n_all = sum(len(opt.loc[m, "aucroc"]) for m in models)
+    word = _WORDS[total] if total < len(_WORDS) else str(total)
+    phrase = [f"{_WORDS[k]} of {m}" for m, k in parts]
+    joined = ", ".join(phrase[:-1]) + " and " + phrase[-1]
+    return (word[0].upper() + word[1:] + f" of these {n_all} layers stay below {band}: "
+            + joined + ".")
 
 
 def panel_band(res_csv: Path, method: str) -> pd.DataFrame:
@@ -565,13 +575,16 @@ def write_t5_efficient_table(layers_df: pd.DataFrame, proj: pd.DataFrame, path: 
 
 
 def write_abtt_table(proj: pd.DataFrame, path: Path) -> None:
-    models = list(CONTROLS)
+    """The four controls, then T5-efficient-base (an added checkpoint, not a fifth control),
+    as Base/ABTT column pairs. Eleven columns do not fit one ACL column: full width."""
+    models = [*CONTROLS, NEW]
     base = proj[proj["method"] == "baseline"].set_index(["model", "layer"])
     opt = proj[proj["method"] == "abtt_optimal"].set_index(["model", "layer"])
     head = " & ".join(r"\multicolumn{2}{c}{" + m + "}" for m in models)
     rules = "".join(rf"\cmidrule(lr){{{2 + 2 * i}-{3 + 2 * i}}}" for i in range(len(models)))
+    controls = ", ".join(CONTROLS[:-1]) + " and " + CONTROLS[-1]
     lines = [HEADER, "% python scripts/paper/reframe/d2_controls.py --stage render",
-             r"\begin{table}[t]", r"\centering", r"\footnotesize", r"\setlength{\tabcolsep}{2.5pt}",
+             r"\begin{table*}[t]", r"\centering", r"\footnotesize", r"\setlength{\tabcolsep}{4pt}",
              r"\begin{tabular}{@{}r" + "cc" * len(models) + r"@{}}", r"\toprule",
              "& " + head + r" \\", rules,
              "Layer & " + " & ".join(["Base & ABTT"] * len(models)) + r" \\", r"\midrule"]
@@ -580,10 +593,12 @@ def write_abtt_table(proj: pd.DataFrame, path: Path) -> None:
                  for m in models]
         lines.append(f"{layer} & " + " & ".join(cells) + r" \\")
     lines += [r"\bottomrule", r"\end{tabular}",
-              r"\caption{Test ranking AUROC of the four controls before (Base) and after ABTT fit "
-              r"on training passages, with $D$ chosen per layer on training DirAcc@1 as for the "
-              r"panel. " + below_band_sentence(opt, models) + r"}",
-              r"\label{tab:d2_controls_abtt}", r"\end{table}"]
+              r"\caption{Test ranking AUROC of the four controls (" + controls + r") and of "
+              + NEW + r", an added checkpoint rather than a fifth control. Base: mean-pooled "
+              r"hidden states without correction. ABTT: fit on training passages, with $D$ "
+              r"chosen per layer on training DirAcc@1 as for the panel. "
+              + below_band_sentence(opt, models) + r"}",
+              r"\label{tab:d2_controls_abtt}", r"\end{table*}"]
     path.write_text("\n".join(lines) + "\n")
 
 

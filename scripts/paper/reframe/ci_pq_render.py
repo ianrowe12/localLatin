@@ -8,8 +8,10 @@ Inputs (committed, ``docs/research/data/reframe_ci_pq/``): ``headline_ci.csv``,
 Outputs (``overleaf_drafts/tables/``):
 
 ``headline_ci.tex``           appendix table, every headline cell with its interval
+                              (AUROC, assignment accuracy, DirAcc@1; no cosine gap)
 ``headline_ci_diffs.tex``     paired differences the prose relies on
-``pq_routing.tex``            the five routing checks at the Task B cells
+``pq_routing.tex``            routing checks at the Task B cells of the three
+                              embedding-trained encoders (``PQ_ROWS``)
 ``taskA_headline_ci.tex``     compact drop-in for ``taskA_headline.tex``
 ``taskB_headline_ci.tex``     compact drop-in for ``taskB_headline.tex``
 
@@ -33,6 +35,8 @@ import pandas as pd
 HEADER = "% generated table\n"
 SETTINGS = ["Base", "SIF", "ABTT", "SIF+ABTT"]
 ZS_ROWS = ["LaTa", "PhilTa", "mT5-base", "LaBSE", "Qwen3-0.6B", "KaLM-mini"]
+# pq_routing keeps the encoders Section 7's threshold-free claims are scoped to.
+PQ_ROWS = ["LaBSE", "Qwen3-0.6B", "KaLM-mini"]
 FT_ROWS = [f"{m} (fine-tuned)" for m in ("LaTa", "Qwen3-0.6B", "KaLM-mini")]
 LEX_ROWS = [("BM25 (word)", "BM25 (word)"), ("TF-IDF char 3-5", "TF-IDF char 3--5"),
             ("Levenshtein", "Levenshtein")]
@@ -89,6 +93,12 @@ def _B(info: Dict) -> str:
     return f"{int(info['B']):,}".replace(",", "{,}")
 
 
+def _boot_pointer(info: Dict) -> str:
+    """Short bootstrap pointer for the appendix captions; the protocol is in Appendix F."""
+    return (f"Directory bootstrap, {_B(info)} replicates, 95\\% percentile intervals; "
+            "protocol in Appendix~\\ref{app:ci_pq}.")
+
+
 def _boot_clause(info: Dict, n_dirs: int) -> str:
     return (
         f"95\\% percentile intervals from a directory-level bootstrap "
@@ -110,18 +120,17 @@ def render_appendix(ci: pd.DataFrame, info: Dict) -> str:
         r"\centering",
         r"\scriptsize",
         r"\setlength{\tabcolsep}{3pt}",
-        r"\begin{tabular}{llllll}",
+        r"\begin{tabular}{lllll}",
         r"\toprule",
-        r"& & \multicolumn{2}{c}{\textbf{Ranking}} & \multicolumn{2}{c}{\textbf{Routing}} \\",
-        r"\cmidrule(lr){3-4}\cmidrule(lr){5-6}",
-        r"\textbf{Model} & \textbf{Setting} & AUROC & Cosine gap & Assignment acc. "
-        r"& DirAcc@1 \\",
+        r"& & \textbf{Ranking} & \multicolumn{2}{c}{\textbf{Routing}} \\",
+        r"\cmidrule(lr){3-3}\cmidrule(lr){4-5}",
+        r"\textbf{Model} & \textbf{Setting} & AUROC & Assignment acc. & DirAcc@1 \\",
         r"\midrule",
     ]
 
     def row(label: str, key: str, setting: str, show_label: bool, set_label: str) -> str:
         cells = []
-        for task, metric in (("A", "auroc"), ("A", "gap"), ("B", "assign"), ("B", "dir1")):
+        for task, metric in (("A", "auroc"), ("B", "assign"), ("B", "dir1")):
             r = _lookup(ci, task, key, setting, metric)
             cells.append("--" if r is None else
                          f"{_num(r['estimate'], metric)} {_ci(r['ci_lo'], r['ci_hi'], metric)}")
@@ -142,13 +151,12 @@ def render_appendix(ci: pd.DataFrame, info: Dict) -> str:
         lines.append(r"\midrule")
         for csv, tex in lex:
             lines.append(row(LEX_CI_TEX.get(csv, tex), csv, "ref", True, "--"))
-    n_dirs = _n_dirs(info)
     caption = (
-        "Every headline cell (Table~\\ref{tab:headline}, plus SIF, SIF+ABTT, BM25 and "
-        "Levenshtein) at its "
-        "train-selected layer, with 95\\% intervals from a bootstrap over the "
-        f"{n_dirs} test directories in brackets. Routing in percent. The intervals cover "
-        "test sampling, not the choice of split."
+        "Every headline cell of Table~\\ref{tab:headline}, plus SIF and SIF+ABTT, at its "
+        "train-selected layer, with intervals in brackets. The last block gives the three "
+        "lexical reference systems: BM25 over words, TF-IDF over character 3--5-grams "
+        "(Char.\\ n-grams), and Levenshtein similarity. Routing in percent. "
+        + _boot_pointer(info)
     )
     lines += [r"\bottomrule", r"\end{tabular}", f"\\caption{{{caption}}}",
               r"\label{tab:headline_ci}", r"\end{table*}"]
@@ -168,7 +176,6 @@ DIFF_GROUPS: List[Tuple[str, str]] = [
     ("ft_abtt_minus_ft_base", "Fine-tuned: ABTT $-$ Base"),
     ("ft_abtt_minus_zs_abtt", "Fine-tuned ABTT $-$ zero-shot ABTT"),
     ("tfidf_minus_abtt", r"Char.\ n-grams $-$ ABTT"),
-    ("center_minus_base_at_abtt_layer", "Centering $-$ Base (ABTT layer)"),
     ("abtt_minus_center_at_abtt_layer", "ABTT $-$ centering (ABTT layer)"),
 ]
 
@@ -222,11 +229,11 @@ def render_diffs(diffs: pd.DataFrame, info: Dict) -> str:
             lines.append(" & ".join(["Spread over six models" if k == 0 else "", setting]
                                     + cells) + r" \\")
     caption = (
-        "Paired differences between headline cells at train-selected layers, with "
-        "95\\% intervals from the bootstrap of Table~\\ref{tab:headline_ci}. Centering rows "
-        "use each column's ABTT layer. Spread: largest minus smallest of the six zero-shot "
-        "models. Routing in points. Differences use unrounded cells, so they can differ by one "
-        "last digit from printed-cell differences."
+        "Paired differences between headline cells at train-selected layers, with intervals "
+        "in brackets. Centering rows use each column's ABTT layer. Spread: largest minus "
+        "smallest of the six zero-shot models. Routing in points. Differences use unrounded "
+        "cells, so they can differ by one last digit from printed-cell differences. "
+        + _boot_pointer(info)
     )
     lines += [r"\bottomrule", r"\end{tabular}", f"\\caption{{{caption}}}",
               r"\label{tab:headline_ci_diffs}", r"\end{table*}"]
@@ -246,15 +253,15 @@ def render_pq(pq: pd.DataFrame, info: Dict, sweep: Optional[pd.DataFrame]) -> st
         r"\centering",
         r"\scriptsize",
         r"\setlength{\tabcolsep}{2.5pt}",
-        r"\begin{tabular}{llrrlrlrrr}",
+        r"\begin{tabular}{llrlrlrr}",
         r"\toprule",
-        r"\textbf{Model} & \textbf{Setting} & \textbf{L} & Cos.\ SD & Exist./new AUROC "
-        r"& Assign. & Oracle gap & $\tau$ & Exact & Skew \\",
+        r"\textbf{Model} & \textbf{Setting} & \textbf{L} & Exist./new AUROC "
+        r"& Assign. & Oracle gap & Exact & Skew \\",
         r"\midrule",
     ]
     order = [("Base", "baseline"), ("Base @ ABTT L", "baseline"),
              ("Centering @ ABTT L", "center"), ("ABTT", "abtt_optimal")]
-    for m in ZS_ROWS:
+    for m in PQ_ROWS:
         rows = pq[pq["row"] == m]
         head = rows[rows["headline"].astype(bool)]
         abtt = head[head["setting"] == "ABTT"]
@@ -281,12 +288,10 @@ def render_pq(pq: pd.DataFrame, info: Dict, sweep: Optional[pd.DataFrame]) -> st
         for k, (name, r) in enumerate(picked):
             cells = [
                 m if k == 0 else "", name, str(int(r["layer"])),
-                format(r["pair_cos_sd"], ".3f"),
                 f"{r['ev_auroc']:.3f} {_ci(r['ev_auroc_lo'], r['ev_auroc_hi'], 'auroc')}",
                 _num(r["assign"], "assign"),
                 f"{_signed(r['oracle_gap_assign'], 'assign')} "
                 f"{_ci(r['oracle_gap_assign_lo'], r['oracle_gap_assign_hi'], 'assign')}",
-                format(r["tau_paper"], ".3f"),
                 _num(r["assign_exact"], "assign"),
                 format(r["hub_skew"], ".2f"),
             ]
@@ -294,12 +299,12 @@ def render_pq(pq: pd.DataFrame, info: Dict, sweep: Optional[pd.DataFrame]) -> st
         lines.append(r"\addlinespace")
     lines[-1] = r"\bottomrule"
     caption = (
-        "Routing checks at the headline routing cells: Base and ABTT at their train-selected "
-        "layers (L), baseline and centering ($D=0$) at the ABTT layer. Cos.\\ SD: SD of test "
-        "pairwise cosines; $\\tau$: threshold fit on training pairs. Exist./new AUROC: "
-        "threshold-free, from each witness's maximum cosine. Assign.: assignment accuracy (\\%) "
-        "at the training $\\tau$. Oracle gap: accuracy at the best test threshold minus "
-        "Assign. Exact: Assign. with $\\tau$ at the exact training best-F1 cut. Skew: "
+        "Routing checks at the headline routing cells of the three embedding-trained "
+        "encoders: Base and ABTT at their train-selected layers (L), baseline and centering "
+        "($D=0$) at the ABTT layer. Exist./new AUROC: threshold-free, from each witness's "
+        "maximum cosine. Assign.: assignment accuracy (\\%) at the threshold $\\tau$ fit on "
+        "training pairs. Oracle gap: accuracy at the best test threshold minus Assign. "
+        "Exact: Assign. with $\\tau$ at the exact training best-F1 cut. Skew: "
         "skewness of the 10-occurrence distribution "
         "\\citep{radovanovic2010hubs}. Brackets: 95\\% bootstrap intervals."
     )

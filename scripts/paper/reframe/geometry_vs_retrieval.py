@@ -8,10 +8,12 @@ Reads (all local CSVs, no embeddings are loaded, CPU only):
       per model/layer/method retrieval scores (test) and train-side selection scores
 
 Writes:
-  overleaf_drafts/tables/geometry_regimes.tex        (label tab:geometry_regimes)
-  overleaf_drafts/tables/geometry_correlations.tex   (label tab:geometry_correlations)
-  overleaf_drafts/figures/fig_geometry_vs_auroc.{pdf,png}
-  overleaf_drafts/figures/fig_standardized_gap.{pdf,png}
+  <tab_dir>/geometry_regimes.tex        (label tab:geometry_regimes; no longer \\input)
+  <tab_dir>/geometry_correlations.tex   (label tab:geometry_correlations; Appendix C):
+      baseline AUROC against each statistic over all, collapsed and healthy panel layers
+  <fig_dir>/fig_geometry_vs_auroc.{pdf,png}
+  <fig_dir>/fig_standardized_gap.{pdf,png}   (neither figure is in the paper any more)
+  (tab_dir defaults to overleaf_drafts/tables, fig_dir to overleaf_drafts/figures)
   <facts_md> (default: z1_numbers.md next to this run, pass --facts_md) facts for prose drafters
 
 Conventions: label-free geometry (top-PC share, effective rank) is read on the train
@@ -23,7 +25,7 @@ Standardized gap = baseline test gap (same_avg - diff_avg) / SD of all test pair
 cosines at that layer (raw view).
 
 Run from the repo root:
-  python scripts/paper/reframe/geometry_vs_retrieval.py --facts_md <path>
+  python scripts/paper/reframe/geometry_vs_retrieval.py --facts_md <path> [--fig_dir <scratch>]
 Python 3.10, pandas / numpy / matplotlib / scipy only.
 """
 from __future__ import annotations
@@ -130,12 +132,21 @@ def corr(x, y):
     return stats.pearsonr(x, y)[0], stats.spearmanr(x, y)[0]
 
 
+COLLAPSE_AUROC = 0.70  # the paper's collapsed layer: baseline test AUROC below 0.70
+
+
 def corr_rows(df, target):
+    """Pearson r and Spearman rho of each statistic with ``target``: over all panel layers,
+    within the raw T5-family / embedding-trained models (facts only), within the collapsed
+    (baseline AUROC < 0.70) and healthy layers, and leave-one-model-out over all layers."""
+    col_mask = df.aucroc < COLLAPSE_AUROC
     rows = []
     for col, label in STATS:
         out = {"stat": label, "col": col}
-        for grp, sub in [("all", df), ("t5", df[df.is_t5]), ("nont5", df[~df.is_t5])]:
+        for grp, sub in [("all", df), ("t5", df[df.is_t5]), ("nont5", df[~df.is_t5]),
+                         ("col", df[col_mask]), ("hea", df[~col_mask])]:
             out[f"{grp}_r"], out[f"{grp}_rho"] = corr(sub[col], sub[target])
+            out[f"{grp}_rho_p"] = stats.spearmanr(sub[col], sub[target])[1]
             out[f"{grp}_n"] = len(sub)
         lomo = {m: stats.spearmanr(df[df.m != m][col], df[df.m != m][target])[0] for m in ORDER}
         out["lomo"] = lomo
@@ -189,34 +200,39 @@ def write_regimes(rows, path):
     path.write_text("\n".join(lines) + "\n")
 
 
-def write_correlations(rows_auc, rows_gain, path):
-    def block(rows):
-        out = []
-        for x in rows:
-            vals = [x["all_r"], x["all_rho"], x["t5_r"], x["t5_rho"], x["nont5_r"],
-                    x["nont5_rho"], x["lomo_min"], x["lomo_max"]]
-            out.append(x["stat"] + " & " + " & ".join(f"${v:+.2f}$".replace("+", "\\phantom{-}") for v in vals) + r" \\")
-        return out
-
+def write_correlations(rows_auc, path):
+    """Baseline AUROC only: the ABTT-gain block was dropped (appendix trim B8; the gain is
+    nearly the negative of baseline AUROC, so it adds no separate evidence). It stays in the
+    facts file."""
+    n_all, n_col, n_hea = (rows_auc[0][k] for k in ("all_n", "col_n", "hea_n"))
+    pc1 = next(x for x in rows_auc if x["col"] == "pc1_tr")
     lines = [HEADER, r"\begin{table*}[t]", r"\centering", r"\small",
              r"\setlength{\tabcolsep}{5pt}",
              r"\begin{tabular}{lrrrrrrrr}", r"\toprule",
-             r"& \multicolumn{2}{c}{\textbf{All} (100)} & \multicolumn{2}{c}{\textbf{T5} (36)} & "
-             r"\multicolumn{2}{c}{\textbf{Non-T5} (64)} & \multicolumn{2}{c}{\textbf{LOMO} $\rho$} \\",
+             rf"& \multicolumn{{2}}{{c}}{{\textbf{{All}} ({n_all})}} & "
+             rf"\multicolumn{{2}}{{c}}{{\textbf{{Collapsed}} ({n_col})}} & "
+             rf"\multicolumn{{2}}{{c}}{{\textbf{{Healthy}} ({n_hea})}} & "
+             r"\multicolumn{2}{c}{\textbf{LOMO} $\rho$} \\",
              r"\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}\cmidrule(lr){8-9}",
              r"\textbf{Statistic} & $r$ & $\rho$ & $r$ & $\rho$ & $r$ & $\rho$ & min & max \\",
-             r"\midrule",
-             r"\multicolumn{9}{l}{\emph{Target: baseline AUROC}} \\"]
-    lines += block(rows_auc)
-    lines += [r"\midrule", r"\multicolumn{9}{l}{\emph{Target: ABTT AUROC gain}} \\"]
-    lines += block(rows_gain)
+             r"\midrule"]
+    for x in rows_auc:
+        vals = [x["all_r"], x["all_rho"], x["col_r"], x["col_rho"], x["hea_r"], x["hea_rho"],
+                x["lomo_min"], x["lomo_max"]]
+        lines.append(x["stat"] + " & " + " & ".join(
+            f"${v:+.2f}$".replace("+", "\\phantom{-}") for v in vals) + r" \\")
     lines += [r"\bottomrule", r"\end{tabular}",
-              r"\caption{Correlation of per-layer statistics with baseline test ranking AUROC and "
-              r"with ABTT gain (ABTT AUROC at the train-selected $D$ minus baseline), over panel "
-              r"layers. $r$: Pearson; $\rho$: Spearman. T5: three raw T5-family encoders; Non-T5: "
-              r"three embedding-trained models. LOMO: range of $\rho$ over leave-one-model-out "
-              r"subsets. Top-PC share and effective rank use training passages, the rest test "
-              r"passages.}",
+              rf"\caption{{Pearson ($r$) and Spearman ($\rho$) correlation of per-layer "
+              rf"statistics with baseline test ranking AUROC, over the {n_all} panel layers "
+              rf"(All), the {n_col} collapsed layers (baseline AUROC below 0.70) and the "
+              rf"{n_hea} healthy ones. LOMO: range of $\rho$ over all layers with one model "
+              r"left out. Mean pairwise cosine, top-PC share and effective rank are label-free; "
+              r"top-PC share and effective rank use training passages, the rest test passages. "
+              r"Raw cosine gap: mean same-source minus mean different-source cosine; "
+              r"standardized gap: raw gap over the standard deviation of test cosines. "
+              rf"Within the collapsed layers top-PC share has $\rho={pc1['col_rho']:+.2f}$ "
+              rf"($p={pc1['col_rho_p']:.2f}$); layers within a model are not independent, "
+              r"so the $p$-values overstate the evidence.}",
               r"\label{tab:geometry_correlations}", r"\end{table*}"]
     path.write_text("\n".join(lines) + "\n")
 
@@ -347,11 +363,14 @@ def facts(df, r, reg, ca, cg, path):
     w("")
     for title, rows in [("baseline test AUROC", ca), ("ABTT AUROC gain (abtt_optimal - baseline)", cg)]:
         w(f"## Table: geometry_correlations, target = {title}")
-        w("| statistic | all r | all rho | T5 r | T5 rho | non-T5 r | non-T5 rho | LOMO rho min | LOMO rho max |")
-        w("|---|---|---|---|---|---|---|---|---|")
+        w("| statistic | all r | all rho | T5 r | T5 rho | non-T5 r | non-T5 rho | collapsed r | "
+          "collapsed rho (p) | healthy r | healthy rho (p) | LOMO rho min | LOMO rho max |")
+        w("|---|---|---|---|---|---|---|---|---|---|---|---|---|")
         for x in rows:
             w(f"| {x['stat']} | {x['all_r']:+.3f} | {x['all_rho']:+.3f} | {x['t5_r']:+.3f} | "
               f"{x['t5_rho']:+.3f} | {x['nont5_r']:+.3f} | {x['nont5_rho']:+.3f} | "
+              f"{x['col_r']:+.3f} | {x['col_rho']:+.3f} ({x['col_rho_p']:.3g}) | "
+              f"{x['hea_r']:+.3f} | {x['hea_rho']:+.3f} ({x['hea_rho_p']:.3g}) | "
               f"{x['lomo_min']:+.3f} | {x['lomo_max']:+.3f} |")
         w("")
         w("LOMO Spearman per held-out model:")
@@ -477,22 +496,26 @@ def facts(df, r, reg, ca, cg, path):
     return L
 
 
-def main():
+def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--facts_md", type=Path, default=Path("z1_numbers.md"))
-    args = ap.parse_args()
+    ap.add_argument("--tab_dir", type=Path, default=TAB_DIR)
+    ap.add_argument("--fig_dir", type=Path, default=FIG_DIR,
+                    help="where the two figures go (neither is in the paper any more)")
+    args = ap.parse_args(argv)
+    tab_dir, fig_dir = Path(args.tab_dir), Path(args.fig_dir)
     df, g, r = load()
     assert len(df) == 100, len(df)
-    TAB_DIR.mkdir(parents=True, exist_ok=True)
-    FIG_DIR.mkdir(parents=True, exist_ok=True)
+    tab_dir.mkdir(parents=True, exist_ok=True)
+    fig_dir.mkdir(parents=True, exist_ok=True)
     reg = regime_rows(df)
     ca = corr_rows(df, "aucroc")
     cg = corr_rows(df, "abtt_gain")
-    write_regimes(reg, TAB_DIR / "geometry_regimes.tex")
-    write_correlations(ca, cg, TAB_DIR / "geometry_correlations.tex")
+    write_regimes(reg, tab_dir / "geometry_regimes.tex")
+    write_correlations(ca, tab_dir / "geometry_correlations.tex")
     style()
-    fig_scatter(df, FIG_DIR / "fig_geometry_vs_auroc")
-    fig_sgap(df, FIG_DIR / "fig_standardized_gap")
+    fig_scatter(df, fig_dir / "fig_geometry_vs_auroc")
+    fig_sgap(df, fig_dir / "fig_standardized_gap")
     facts(df, r, reg, ca, cg, args.facts_md)
     print("wrote tables, figures and", args.facts_md)
 

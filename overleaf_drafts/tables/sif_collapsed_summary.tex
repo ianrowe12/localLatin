@@ -1,0 +1,18 @@
+% generated table
+% python scripts/resubmit/build_per_layer_tables.py
+\begin{table}[t]
+\centering
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{lrcccr}
+\toprule
+\textbf{Model} & $n$ & Base & SIF & ABTT & \makecell{SIF\\share (\%)} \\
+\midrule
+LaTa & 10 & \makecell{0.502\\0.496--0.563} & \makecell{0.866\\0.842--0.938} & \makecell{0.970\\0.962--0.973} & 78.3 \\
+PhilTa & 9 & \makecell{0.542\\0.538--0.601} & \makecell{0.891\\0.872--0.928} & \makecell{0.981\\0.973--0.984} & 79.8 \\
+mT5-base & 7 & \makecell{0.657\\0.654--0.660} & \makecell{0.681\\0.672--0.689} & \makecell{0.978\\0.974--0.982} & 7.7 \\
+\bottomrule
+\end{tabular}
+\caption{Test ranking AUROC over the collapsed layers ($n$; baseline AUROC below 0.70) of LaTa, PhilTa and mT5-base: median, with the range below. SIF only reweights tokens before mean pooling and removes no direction; ABTT ($D$ chosen per layer on the training split) is the per-layer record of Table~\ref{tab:per_layer_t5}. SIF share: median over the collapsed layers of the percentage of the Base-to-ABTT gain that SIF recovers.}
+\label{tab:sif_collapsed}
+\end{table}
