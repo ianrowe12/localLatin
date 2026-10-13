@@ -19,7 +19,7 @@
 \endfoot
 \bottomrule
 \noalign{\vskip 8pt}
-\caption{Per-layer ranking AUROC across the SIF-conditioned post-processing suite for all six models. SIF replaces mean pooling with SIF-weighted pooling; SIF+ABTT$_{10}$ adds ABTT with fixed $D{=}10$; SIF+ABTT tunes $D$ per layer on the training split. Gap is omitted to keep the table narrow; the pure-ABTT comparison (not SIF-conditioned) is in Tables~\ref{tab:taskA_main} and~\ref{tab:taskA_appendix}. Bold marks the layer chosen on the training split, the layer with the highest training-set AUROC under SIF+ABTT, and its SIF+ABTT values; the other columns of that row stay plain, because the layer is selected for SIF+ABTT only. It is the layer behind the SIF+ABTT cell of Table~\ref{tab:headline_ci} (listed in Table~\ref{tab:selected_layers}), and not always the layer with the highest test score in this table.}
+\caption{Per-layer test ranking AUROC under the SIF variants for the six panel models. SIF: frequency-weighted pooling; SIF+ABTT$_{10}$: SIF, then ABTT with $D{=}10$; SIF+ABTT: $D$ tuned per layer on the training split. Base and markers as in Table~\ref{tab:taskA_main}, with bold layers selected under SIF+ABTT.}
 \label{tab:taskA_appendix_sif} \\
 \endlastfoot
 LaTa & 1 & 0.934 & 0.948 & 0.972 & 0.976 \\

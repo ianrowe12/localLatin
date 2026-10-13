@@ -29,12 +29,9 @@ DEFAULT_REPR = "hidden"
 
 # Shared caption sentence so the two tables state the rule in the same words.
 SELECTION_RULE_CAPTION = (
-    r"For each model the reported layer is chosen on the training split: the layer with the "
-    r"highest training-set DirAcc@1 for SIF+ABTT in the single-seed run, "
-    r"the layer behind the SIF+ABTT cell of Table~\ref{tab:headline_ci}, listed in "
-    r"Table~\ref{tab:selected_layers}. "
-    r"$D$ is tuned per layer on the training split. "
-    r"This is not always the layer with the highest mean over the five reseedings."
+    r"Each model's layer is its best by training DirAcc@1 under SIF+ABTT in the single run "
+    r"(bold in Table~\ref{tab:taskB_routing_appendix_sif}), not always the best over the "
+    r"five reseedings."
 )
 
 

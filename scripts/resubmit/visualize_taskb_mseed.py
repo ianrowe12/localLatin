@@ -148,16 +148,22 @@ PAPER_MODEL_ORDER = [
 ]
 
 TASKB_TOPK_CAPTION = (
-    "Routing shortlist accuracy under SIF+ABTT: DirAcc@$K$, as mean $\\pm$ standard "
-    "deviation over five reseedings of the query and reference files, with the "
-    "training/test split fixed. "
+    "Test routing shortlist accuracy DirAcc@$K$ (\\%) under SIF+ABTT, mean $\\pm$ std "
+    "over five reseedings. "
     + SELECTION_RULE_CAPTION
-    + " Each row is the bold row of Table~\\ref{tab:taskB_ranking_appendix_mseed}. "
-    "Each cell is the percentage of test queries whose labeled directory appears "
-    "within the top $K$ options. Per-layer shortlist accuracy: "
-    "Tables~\\ref{tab:taskB_ranking_main}, \\ref{tab:taskB_ranking_appendix}, "
-    "and~\\ref{tab:taskB_ranking_appendix_mseed}."
 )
+
+_NUMBER_WORD = {5: "five", 6: "six"}
+
+
+def topk_takeaway(best_df: pd.DataFrame) -> str:
+    """Closing sentence of the paper table, computed from the printed rows (App. K prose)."""
+    acc2 = best_df["dir_acc_at_2_mean"] * 100
+    n = len(best_df)
+    return (
+        f"DirAcc@2 is {acc2.min():.1f} to {acc2.max():.1f} for all "
+        f"{_NUMBER_WORD.get(n, str(n))} models, with little gain after DirAcc@3."
+    )
 
 
 def write_paper_topk_table(best_df: pd.DataFrame, out_path: Path) -> None:
@@ -182,6 +188,7 @@ def write_paper_topk_table(best_df: pd.DataFrame, out_path: Path) -> None:
         r"\midrule",
     ]
     by_model = {row["model"]: row for _, row in best_df.iterrows()}
+    printed = best_df[best_df["model"].isin(PAPER_MODEL_ORDER)]
     width = max(len(SHORT[m]) for m in PAPER_MODEL_ORDER if m in by_model)
     for model in PAPER_MODEL_ORDER:
         if model not in by_model:
@@ -197,7 +204,7 @@ def write_paper_topk_table(best_df: pd.DataFrame, out_path: Path) -> None:
     lines += [
         r"\bottomrule",
         r"\end{tabular}",
-        f"\\caption{{{TASKB_TOPK_CAPTION}}}",
+        f"\\caption{{{TASKB_TOPK_CAPTION} {topk_takeaway(printed)}}}",
         r"\label{tab:taskb}",
         r"\end{table*}",
     ]

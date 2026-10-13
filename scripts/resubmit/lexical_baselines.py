@@ -446,10 +446,6 @@ def _fmt(value: float, digits: int = 3) -> str:
     return f"{value:.{digits}f}"
 
 
-_SEED_WORD = {2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven",
-              8: "eight", 9: "nine", 10: "ten"}
-
-
 def render_latex_table(results: pd.DataFrame, mseed: Optional[pd.DataFrame]) -> str:
     """Render the lexical rows in the headline tables' metric columns."""
     lines = [
@@ -474,50 +470,23 @@ def render_latex_table(results: pd.DataFrame, mseed: Optional[pd.DataFrame]) -> 
     lines += [r"\bottomrule", r"\end{tabular}"]
 
     best = results.loc[results["dir_acc_at_1"].idxmax()]
+    # Caption rewrite of 2026-10-12: the BM25 parameters, the min-max
+    # rescaling rationale, why BM25 routes poorly and the five-reseeding
+    # DirAcc@1 results are stated in the Appendix H prose, not here. ``mseed``
+    # is unused: it stays in the signature for callers, and main() still saves
+    # the five-reseeding results to --mseed_csv.
     caption = (
-        "Lexical reference systems on the same 50/50 split, the same held-out test set and "
-        "the same evaluation code as the embedding models, so the numbers are "
-        "directly comparable to the headline ranking and routing tables. Ranking is "
-        "measured over the test $n \\times n$ score matrix: AUROC treats "
-        "same-directory test pairs as positives, and Gap is the mean same-directory "
-        "minus the mean different-directory score. Routing is reported in percent: "
-        "Assign.\\ is the existing-versus-new decision against a threshold $\\tau$ "
-        "fitted on the training split, and DirAcc@1 additionally requires the correct directory. "
-        f"{LATEX_LABELS.get(best['model'], best['model'])} is the strongest of the "
-        f"three at {_fmt(100 * best['dir_acc_at_1'], 1)} percent DirAcc@1; on this corpus of "
-        "hand-copied witnesses the best projected encoder configurations at best tie it. "
-        "BM25 separates "
-        "pairs well but routes poorly: a raw BM25 score grows with query length, so "
-        "each file's maximum score tracks document length as much as relatedness, "
-        "and the $\\tau$ fitted on the training split transfers badly. BM25 uses $k_1=1.5$, "
-        "$b=0.75$ with document frequencies, vocabulary and average document length "
-        "taken from training files only; the character TF-IDF vectorizer is likewise "
-        "fitted on training files only, and normalized Levenshtein has nothing to fit. Every "
-        "score matrix is min-max rescaled using the training block; the map is monotone, so "
-        "AUROC is unchanged, while the threshold $\\tau$ is fitted on a fixed grid "
-        "afterwards, which matters for BM25 (unrescaled, $\\tau$ pins at the grid "
-        "ceiling) and is the identity for char TF-IDF, whose training scores already span "
-        "[0, 1]."
+        "Test scores of lexical reference systems on the same training/test split (847/858 witnesses) "
+        "and evaluation code as the encoders of Table~\\ref{tab:headline}. "
+        "Gap: mean same-source minus mean different-source score. Routing in percent; "
+        "Assign.: existing-versus-new accuracy, with $\\tau$ fit on the training split. "
+        f"{LATEX_LABELS.get(best['model'], best['model'])} routes best"
     )
-    if mseed is not None and len(mseed):
-        by_model = mseed.set_index("model")
-        parts = []
-        for name in results["model"]:  # table order, not groupby order
-            if name not in by_model.index:
-                continue
-            row = by_model.loc[name]
-            parts.append(
-                f"{LATEX_LABELS.get(name, name)} "
-                f"{_fmt(100 * row['dir_acc_at_1_mean'], 1)} "
-                f"$\\pm$ {_fmt(100 * row['dir_acc_at_1_std'], 1)}"
-            )
-        n_seeds = int(mseed["n_seeds"].max())
-        caption += (
-            f" Under {_SEED_WORD.get(n_seeds, str(n_seeds))} reseedings of the query and "
-            "reference files, in which only the query/reference partition of the test half "
-            "is redrawn and the training/test split stays fixed, DirAcc@1 is "
-            + "; ".join(parts) + "."
-        )
+    # The BM25 clause describes the committed run (best routing, worst
+    # DirAcc@1 for BM25); it is emitted only while BM25 is not the best router.
+    caption += "." if str(best["model"]).startswith("BM25") else (
+        "; BM25 ranks pairs well but routes poorly."
+    )
 
     lines += [
         f"\\caption{{{caption}}}",

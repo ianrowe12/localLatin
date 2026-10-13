@@ -5,7 +5,14 @@ terminal epoch". Benchmark v1 changed the dev carve underneath them, so a
 re-run would have shipped a table whose numbers were new and whose prose was
 old, with nothing to signal the mismatch. ``CeilingFacts`` derives every one of
 those statements from the run, and these tests are what keep them derived: each
-one changes an input and asserts the caption follows.
+one changes an input and asserts the output follows.
+
+Since the caption rewrite of 2026-10-12 the caption is short: what the table
+shows, the pair count, the units and one takeaway. The per-model epoch and
+$D$-sweep sentences left it (Appendix H prose states them). ``CeilingFacts``
+still derives them (``epoch_caption_sentence``, ``abtt_caption_sentence``) and
+writes its own wording of them to the run notes (``notes``); these tests pin
+that they are derived and that they stay out of the caption.
 
 The header check guards a separate rule (#117): ``overleaf_drafts/tables/``
 ships to Overleaf, so a generated file there must not name a repository path.
@@ -94,6 +101,11 @@ def write_and_read(sections, out) -> str:
     return tex + ("\n" + notes.read_text(encoding="utf-8") if notes.exists() else "")
 
 
+def caption_of(tex: str) -> str:
+    """The caption text, from the opening brace to the end of its line."""
+    return tex.split(r"\caption{", 1)[1].split("\n", 1)[0]
+
+
 def render(tmp_path, facts, display_name: str = "LaTa") -> str:
     out = tmp_path / "finetune_ceiling.tex"
     return write_and_read(
@@ -117,30 +129,35 @@ def unwrapped(tex: str) -> str:
 def test_caption_quotes_the_runs_own_pair_count(tmp_path):
     facts, pair_data, _ = build_facts({"selected_epoch": 3, "epochs_run": 5})
     tex = render(tmp_path, facts)
-    assert (f"on {len(pair_data.train_pairs)} of the {pair_data.n_all_train_pairs} "
-            "positive training pairs") in tex
+    assert f"ceiling for LaTa on {len(pair_data.train_pairs)} training pairs;" in tex
     # The literal the caption used to hardcode must not survive a different run.
     assert "565" not in tex
 
 
 def test_terminal_epoch_is_flagged_as_a_budget_ceiling(tmp_path):
     facts, _, _ = build_facts({"selected_epoch": 7, "epochs_run": 7}, epoch_budget=8)
+    assert ("epoch 7, the terminal epoch of the sweep under the 8-epoch budget"
+            in facts.epoch_caption_sentence())
+    assert "ceiling at this training budget" in facts.epoch_caption_sentence()
     tex = render(tmp_path, facts)
-    assert "epoch 7, the terminal epoch of the sweep under the 8-epoch budget" in tex
-    assert "ceiling at this training budget" in tex
+    assert "Epoch 7 is the LAST epoch run under the 8-epoch budget" in unwrapped(tex)
+    # The epoch sentence is Appendix H prose now, not caption text.
+    assert "epoch" not in caption_of(tex)
 
 
 def test_mid_run_epoch_is_not_called_terminal(tmp_path):
     facts, _, _ = build_facts({"selected_epoch": 4, "epochs_run": 8}, epoch_budget=8)
+    assert "terminal" not in facts.epoch_caption_sentence()
+    assert "epoch 4 of 8 run" in facts.epoch_caption_sentence()
     tex = render(tmp_path, facts)
     assert "terminal" not in tex
-    assert "epoch 4 of 8 run" in tex
+    assert "Epoch 4 of 8 run was selected" in unwrapped(tex)
 
 
 def test_epoch_zero_says_training_bought_nothing(tmp_path):
     facts, _, _ = build_facts({"selected_epoch": 0, "epochs_run": 8})
+    assert "kept the pretrained encoder (epoch 0)" in facts.epoch_caption_sentence()
     tex = render(tmp_path, facts)
-    assert "kept the pretrained encoder (epoch 0)" in tex
     assert "PRE-TRAINED encoder" in unwrapped(tex)
 
 
@@ -151,8 +168,9 @@ def test_boundary_hit_is_reported_as_a_boundary_hit(tmp_path):
     )
     assert facts.n_optimal_at_max_D == facts.n_optimal_rows == 12
     assert facts.optimal_matches_fixed is True
+    assert "select $D=10$ everywhere" in facts.abtt_caption_sentence()
     tex = render(tmp_path, facts)
-    assert "select $D=10$ everywhere" in tex
+    assert "$D" not in caption_of(tex)
     assert "Boundary hit, not a tuned optimum" in unwrapped(tex)
     assert "equals abtt_fixed in every row" in unwrapped(tex)
 
@@ -163,8 +181,8 @@ def test_a_genuine_sweep_is_not_reported_as_a_boundary_hit(tmp_path):
         {"selected_epoch": 7, "epochs_run": 7}, ft_results=make_ft_results(D_by_layer)
     )
     assert facts.n_optimal_at_max_D == 6
+    assert "6 of 12 layer rows select the top of the grid" in facts.abtt_caption_sentence()
     tex = render(tmp_path, facts)
-    assert "6 of 12 layer rows select the top of the grid" in tex
     assert "selects its top value in 6 of 12 layer rows" in unwrapped(tex)
     assert "Boundary hit" not in unwrapped(tex)
     assert "everywhere" not in tex
@@ -235,16 +253,26 @@ def test_two_model_table_carries_both_models_rows(tmp_path):
 
 
 def test_each_model_keeps_its_own_epoch_and_sweep_claims(tmp_path):
-    """The second model must not inherit the first model's prose."""
-    tex = two_sections(tmp_path)
-    assert "The selected checkpoint for LaTa is epoch 7, the terminal epoch" in tex
-    assert "The selected checkpoint for Qwen3-0.6B is epoch 4 of 8 run" in tex
+    """The second model must not inherit the first model's facts."""
+    lata, _, _ = build_facts({"selected_epoch": 7, "epochs_run": 7},
+                             display_name="LaTa")
+    qwen, _, _ = build_facts(
+        {"selected_epoch": 4, "epochs_run": 8},
+        ft_results=make_ft_results({l: (10 if l > 6 else 3) for l in range(1, 13)}),
+        display_name="Qwen3-0.6B",
+    )
+    assert ("The selected checkpoint for LaTa is epoch 7, the terminal epoch"
+            in lata.epoch_caption_sentence())
+    assert ("The selected checkpoint for Qwen3-0.6B is epoch 4 of 8 run"
+            in qwen.epoch_caption_sentence())
     assert ("ABTT rows for LaTa sweep $D$ per layer on the training split and select "
-            "$D=10$ everywhere") in tex
-    assert "ABTT rows for Qwen3-0.6B sweep $D$ per layer on the training split over the grid" in tex
+            "$D=10$ everywhere") in lata.abtt_caption_sentence()
+    assert ("ABTT rows for Qwen3-0.6B sweep $D$ per layer on the training split over the grid"
+            in qwen.abtt_caption_sentence())
+    tex = two_sections(tmp_path)
     # Both models are named in the lead sentence, and neither owns the table.
-    assert "reference ceiling on LaTa and Qwen3-0.6B" in tex
-    assert "The fine-tuned encoders are trained contrastively" in tex
+    assert "Fine-tuning ceiling for LaTa and Qwen3-0.6B on " in tex
+    assert "checkpoint" not in caption_of(tex)
 
 
 def test_notes_say_which_model_each_bullet_is_about(tmp_path):
@@ -260,7 +288,7 @@ def test_shared_pair_count_is_stated_once_and_dropped_when_runs_disagree(tmp_pat
     """Both ceilings use one split and one seed, so the count is theirs jointly."""
     tex = two_sections(tmp_path)
     facts, _, _ = build_facts({"selected_epoch": 7, "epochs_run": 7})
-    assert f"on {facts.n_fit_pairs} of the {facts.n_all_train_pairs} positive training pairs" in tex
+    assert f"Qwen3-0.6B on {facts.n_fit_pairs} training pairs;" in tex
 
     disagreeing = ceiling.CeilingFacts.from_dict(
         {**{k: v for k, v in vars(facts).items() if k != "display_name"},
@@ -276,7 +304,7 @@ def test_shared_pair_count_is_stated_once_and_dropped_when_runs_disagree(tmp_pat
         out,
     )
     mixed = out.read_text(encoding="utf-8")
-    assert "trained contrastively on positive pairs available" in mixed
+    assert "Qwen3-0.6B on positive pairs from the training split;" in mixed
 
 
 # --- three ceilings in one table (#210) ------------------------------------
@@ -327,12 +355,13 @@ def test_three_model_table_carries_every_models_rows(tmp_path):
 
 def test_three_model_caption_names_and_separates_every_model(tmp_path):
     tex = three_sections(tmp_path)
-    assert "reference ceiling on LaTa, Qwen3-0.6B and KaLM-mini" in tex
-    assert "The selected checkpoint for LaTa is epoch 7, the terminal epoch" in tex
-    assert "The selected checkpoint for Qwen3-0.6B is epoch 4 of 8 run" in tex
-    assert "The selected checkpoint for KaLM-mini is epoch 2 of 6 run" in tex
-    assert "ABTT rows for KaLM-mini sweep $D$ per layer on the training split over the grid" in tex
+    assert "Fine-tuning ceiling for LaTa, Qwen3-0.6B and KaLM-mini" in tex
+    caption = caption_of(tex)
+    for gone in ("selected checkpoint", "ABTT rows for", "reference ceiling, not a proposed"):
+        assert gone not in caption, gone
     notes = unwrapped(tex)
+    assert "LaTa: Epoch 7 is the LAST epoch run" in notes
+    assert "Qwen3-0.6B: Epoch 4 of 8 run was selected" in notes
     assert "KaLM-mini: Epoch 2 of 6 run was selected" in notes
     assert tex.count("Notes for whoever moves these rows into the paper") == 1
 
@@ -387,7 +416,7 @@ def test_cells_are_plain_and_the_caption_points_at_the_selected_layers_table(tmp
     row = next(line for line in tex.splitlines() if line.startswith("LaTa (fine-tuned) &"))
     assert row == r"LaTa (fine-tuned) & 0.984 & 0.384 & 82.6 & 80.8 \\"
     caption = tex.split(r"\caption{", 1)[1]
-    assert "The selected layers are listed in Table~\\ref{tab:selected_layers}." in caption
+    assert "; layers as in Table~\\ref{tab:selected_layers}." in caption
 
 
 # --- five-seed column and caption takeaway (#235 items 4 and 13) ------------
@@ -438,8 +467,8 @@ def test_five_seed_values_are_printed_cells_not_comments(tmp_path):
     # The CSV's "(pre-trained)" rows print as "(zero-shot)" (consistency review C18).
     row = next(l for l in tex.splitlines() if l.startswith("LaTa (zero-shot) &"))
     assert row.endswith(r"& 73.1 $\pm$ 1.0 \\")
-    assert ("over five reseedings of the query and reference files, with the training/test "
-            "split fixed") in tex
+    assert ("Test scores; routing in percent; last column: mean $\\pm$ s.d.\\ over five "
+            "reseedings.") in tex
     assert "(pre-trained)" not in tex
 
 
@@ -461,10 +490,9 @@ def test_takeaway_gives_each_model_its_own_five_seed_verdict(tmp_path):
                                _mseed("Qwen/Qwen3-Embedding-0.6B", 0.923)),
     ])
     assert (
-        "Fine-tuning raises ranking AUROC for every model, and ABTT on top of it "
-        "lowers AUROC again in point estimate; on routing over the five reseedings, the "
-        "fine-tuned encoder with ABTT is level with its zero-shot ABTT row for LaTa and above "
-        "it for Qwen3-0.6B."
+        "Fine-tuning raises ranking AUROC and ABTT lowers it in point estimate; "
+        "on reseeded routing, fine-tuned ABTT ties zero-shot ABTT for LaTa and "
+        "exceeds it for Qwen3-0.6B.}"
     ) in tex
 
 
@@ -473,8 +501,8 @@ def test_takeaway_drops_the_abtt_clause_when_abtt_helps_a_fine_tuned_row(tmp_pat
         ceiling.CeilingSection("LaTa", _four_row_comparison("LaTa", ft_abtt_auc=0.99),
                                None, None),
     ])
-    assert "Fine-tuning raises ranking AUROC for the model." in tex
-    assert "lowers AUROC again" not in tex
+    assert "Fine-tuning raises ranking AUROC.}" in tex
+    assert "lowers it" not in tex
 
 
 def test_bare_rebuild_reproduces_the_committed_table(tmp_path, monkeypatch):
@@ -493,3 +521,47 @@ def test_bare_rebuild_reproduces_the_committed_table(tmp_path, monkeypatch):
     rebuild.main()
     committed = REPO_ROOT / "overleaf_drafts" / "tables" / "finetune_ceiling.tex"
     assert (tmp_path / "ft.tex").read_bytes() == committed.read_bytes()
+
+
+# --- the committed caption (caption rewrite of 2026-10-12) -----------------
+
+
+COMMITTED_CAPTION = (
+    r"\caption{Fine-tuning ceiling for LaTa, Qwen3-0.6B and KaLM-mini on 499 training "
+    r"pairs; layers as in Table~\ref{tab:selected_layers}. Test scores; routing in percent; "
+    r"last column: mean $\pm$ s.d.\ over five reseedings. Fine-tuning raises ranking "
+    r"AUROC and ABTT lowers it in point estimate; on reseeded routing, fine-tuned ABTT "
+    r"ties zero-shot ABTT for LaTa and exceeds it for Qwen3-0.6B and KaLM-mini.}"
+)
+
+
+def test_generator_emits_the_committed_caption_for_the_papers_three_ceilings(tmp_path):
+    """Three sections shaped like the paper's runs (499 fit pairs; LaTa level,
+    the other two above on five-seed routing) render the committed caption
+    exactly, so the hand-applied caption and the generator cannot drift."""
+    base, _, _ = build_facts({"selected_epoch": 7, "epochs_run": 7})
+    facts = {**{k: v for k, v in vars(base).items() if k != "display_name"},
+             "n_fit_pairs": 499, "n_all_train_pairs": 565}
+    means = {"LaTa": 0.877, "Qwen3-0.6B": 0.923, "KaLM-mini": 0.930}
+    sections = [
+        ceiling.CeilingSection(
+            name, _four_row_comparison(name),
+            ceiling.CeilingFacts.from_dict(dict(facts), name),
+            _mseed(name, means[name]),
+        )
+        for name in ("LaTa", "Qwen3-0.6B", "KaLM-mini")
+    ]
+    out = tmp_path / "finetune_ceiling.tex"
+    ceiling.write_tex(sections, out)
+    tex = out.read_text(encoding="utf-8")
+    assert COMMITTED_CAPTION in tex.splitlines()
+    committed = (REPO_ROOT / "overleaf_drafts" / "tables" / "finetune_ceiling.tex").read_text(
+        encoding="utf-8")
+    assert COMMITTED_CAPTION in committed.splitlines()
+
+
+def test_committed_caption_is_short_and_keeps_to_the_vocabulary():
+    words = COMMITTED_CAPTION.split()
+    assert len(words) <= 56, len(words)  # 55 words plus the "\\ " of "s.d.\\ "
+    for banned in ("hurts", "interval", "epoch", "InfoNCE", "$D"):
+        assert banned not in COMMITTED_CAPTION, banned

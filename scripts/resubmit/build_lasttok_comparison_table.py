@@ -48,16 +48,13 @@ ALLOWED_POOLINGS = {"mean", "lasttok"}
 DEFAULT_SELECT_ON = "train_dir_acc_at_1"
 DEFAULT_SELECT_METHOD = "abtt_optimal"
 
+# Caption rewrite of 2026-10-12: the Appendix J prose names the selection rule's
+# link to Table 2 and that mT5-base was not part of this run.
 CAPTION = (
-    "Mean versus last-token pooling under ABTT with $D$ tuned per layer on the training "
-    "split, for the five models whose last-token embeddings were extracted "
-    "(mT5-base was not part of this run). For each model and pooling the layer is the "
-    "one with the highest training-set DirAcc@1, the rule behind the "
-    "routing cells of Table~\\ref{tab:headline} (their layers are listed in "
-    "Table~\\ref{tab:selected_layers}); $D$ is the number of principal "
-    "components removed at that layer. The three score columns are test-set routing "
-    "assignment accuracy, routing DirAcc@1, and ranking cosine gap at "
-    "that layer; the two accuracies are fractions (0.885 is 88.5\\%)."
+    "Mean versus last-token pooling under ABTT for five models; test scores, "
+    "accuracies as fractions. $D$ (components removed) and the layer (highest "
+    "training DirAcc@1) are chosen on the training split. Mean pooling routes "
+    "better for all five."
 )
 LABEL = "tab:lasttok_comparison"
 COLUMN_FORMAT = "llrrccc"

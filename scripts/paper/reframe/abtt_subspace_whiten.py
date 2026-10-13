@@ -574,14 +574,11 @@ def write_d_table(w: pd.DataFrame, path: Path) -> None:
         lines.append(f"{name} & {len(s)} & {f3(s.auc_raw.median())} & "
                      + " & ".join(f3(s[f'auc_D{D}'].median()) for D in Ds) + r" \\")
     lines += [r"\bottomrule", r"\end{tabular}",
-              r"\caption{Test ranking AUROC against the number $D$ of top principal components "
-              r"that ABTT removes, fit on training embeddings only. Raw: mean-pooled vectors with no "
-              r"correction; $D=0$: centering on the training mean alone. The top block reads each "
-              r"model at its lowest-AUROC baseline layer (layer in parentheses); the bottom block "
-              r"gives medians over the 26 collapsed T5 layers (baseline AUROC below 0.70), also "
-              r"split by model, the "
-              r"other 10 T5 layers, the 64 layers of the embedding-trained models, and all 100 "
-              r"model-layers. The paper's selection grid for $D$ stops at 10.}",
+              r"\caption{Test ranking AUROC against the number $D$ of components ABTT removes, fit "
+              r"on training embeddings ($D=0$: centering alone). Top: each model at its "
+              r"lowest-AUROC baseline layer (in parentheses). Bottom: medians over each group's $n$ "
+              r"model-layers. Three components bring every collapsed layer to 0.91 or above; "
+              r"mT5-base keeps improving to ten.}",
               r"\label{tab:d_ablation}", r"\end{table*}"]
     path.write_text("\n".join(lines) + "\n")
 
@@ -648,21 +645,12 @@ def write_e3_table(block1: List[Dict], block2: List[Dict], coll: pd.DataFrame, p
                   rf"\multicolumn{{{ncol}}}{{l}}{{\emph{{Fine-tuning contrast, same layer, $D=10$}}}} \\"]
         lines += [row(x) for x in block2]
     lines += [r"\bottomrule", r"\end{tabular}",
-              r"\caption{Test ranking AUROC of cosine within parts of the pooled vector. ABTT "
-              r"removes the top $D$ principal components of the centered training embeddings; Var.\ "
-              r"is their share of the centered training variance. Raw: uncorrected vector; Cent.: "
-              r"centered on the training mean; PC1: projection onto the first component alone, "
-              r"where cosine reduces to a sign match; PCs 2--$D$ and PCs 1--$D$: projections onto "
-              r"the rest of the removed subspace and onto all of it. Retained subspace, a "
-              r"dimension-matched control: Next $D$, PCs $D{+}1$ to $2D$; Rand.\ $D$, "
-              r"random $D$-dimensional projections of the retained vectors (mean over five seeds); "
-              r"All, the ABTT output. "
-              r"Top block: each pretrained model at its train-selected ABTT layer $\ell$ with $D$ "
-              r"chosen on training DirAcc@1, and the median over the 26 collapsed T5 layers "
-              r"(baseline AUROC below 0.70), each at its own layer and $D$. Bottom block: each "
-              r"contrastively fine-tuned encoder at its train-selected ABTT layer, next to its "
-              r"pretrained model at the same layer, both with $D=10$. All components are fit on "
-              r"training embeddings only.}",
+              r"\caption{Test ranking AUROC of cosine within parts of the pooled vector, with "
+              r"components fit on training embeddings. Var.: share of centered training variance "
+              r"removed; PC1: first component alone (cosine is a sign match); Next $D$: PCs "
+              r"$D{+}1$ to $2D$; Rand.\ $D$: random $D$-dimensional projections of the retained "
+              r"vectors (mean of five seeds). At collapsed layers the signal lies outside the "
+              r"removed directions.}",
               r"\label{tab:e3_subspace_split}", r"\end{table*}"]
     path.write_text("\n".join(lines) + "\n")
 
@@ -734,17 +722,11 @@ def write_whiten_table(rows: List[Dict], path: Path) -> None:
                      + " & " + f"{pct(x['abtt_assign'])} & "
                      + " & ".join(pct(x[f'w{k}_assign']) for k in ks) + r" \\")
     lines += [r"\bottomrule", r"\end{tabular}",
-              r"\caption{PCA whitening to $r$ components against the baseline and ABTT. Whitening "
-              r"keeps the top $r$ principal components of the centered training embeddings and "
-              r"rescales each to unit variance. Full keeps every component: 768 for the T5 encoders "
-              r"and LaBSE, and 847, the number of training passages, for Qwen3-0.6B and KaLM-mini, "
-              r"whose last component then has numerically zero variance. Ranking cells are read at "
-              r"each setting's train-selected layer (highest training AUROC), routing cells at the "
-              r"layer with the highest training DirAcc@1. Routing values are single-split test "
-              r"DirAcc@1 and assignment accuracy in percent, with the threshold learned on training "
-              r"pairs. Every "
-              r"transform is fit on training embeddings only. Whitening ranks on par with ABTT, but "
-              r"routes below it.}",
+              r"\caption{PCA whitening to $r$ components against the baseline and ABTT, fit on "
+              r"training embeddings, at each setting's train-selected layer. Whitening keeps the "
+              r"top $r$ principal components, rescaled to unit variance; full keeps all, at most 847 (the "
+              r"number of training passages). Routing in percent. "
+              r"Whitening ranks on par with ABTT, but routes below it.}",
               r"\label{tab:whiten_reduced}", r"\end{table*}"]
     path.write_text("\n".join(lines) + "\n")
 

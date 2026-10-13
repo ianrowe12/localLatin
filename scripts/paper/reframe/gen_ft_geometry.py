@@ -265,16 +265,11 @@ def write_gen_table(summ: pd.DataFrame, path: Path) -> None:
         prev = x.model
     n = int(summ.n.iloc[0]) if len(summ) else 0
     lines += [r"\bottomrule", r"\end{tabular}",
-              r"\caption{Label-free layer geometry crossed by model and text. Each cell reads the "
-              r"mean-pooled hidden states of " + f"{n:,}".replace(",", "{,}") + r" passages: the Latin "
-              r"training passages, or the English passages paired with them one to one and matched "
-              r"in mT5 token length (US court opinions, Caselaw Access Project). PC1$_{\max}$: peak "
-              r"top-PC share over the 12 layers, the share of centered variance on the first "
-              r"principal component, with its layer $\ell$. The last three columns cover the layers "
-              r"whose top-PC share is at least " + f"{COLLAPSE_PC1:.2f}" + r", a share that every "
-              r"collapsed Latin layer of the pretrained models reaches, and give the "
-              r"range of top-PC share and of entropy effective rank over them. No labels are used, so the "
-              r"English rows say nothing about retrieval.}",
+              r"\caption{Label-free geometry of three raw T5-family encoders on the "
+              + f"{n:,}".replace(",", "{,}") + r" Latin training passages and on as many English "
+              r"passages matched to them in mT5 token length (Figure~\ref{fig:gen_geometry}). "
+              r"PC1: top-PC share. PC1$_{\max}$ ($\ell$): peak PC1 over the 12 layers, at layer "
+              r"$\ell$.}",
               r"\label{tab:gen_geometry}", r"\end{table}"]
     path.write_text("\n".join(lines) + "\n")
 
@@ -294,10 +289,10 @@ def write_ft_table(ft: pd.DataFrame, path: Path) -> None:
                      f"{a.erank:.2f} & {b.erank:.2f} \\\\")
     lines += [r"\bottomrule", r"\end{tabular}",
               r"\caption{LaTa before and after contrastive fine-tuning on training pairs, "
-              r"per layer, with no post-hoc correction. AUROC: test ranking AUROC of cosine on "
-              r"mean-pooled vectors. Top-PC share and effective rank: label-free geometry of the "
-              r"centered training vectors, which include the passages of the fine-tuning pairs. Fine-tuning lifts the last layer and leaves the middle "
-              r"layers collapsed.}",
+              r"with no post-hoc correction. AUROC: test ranking AUROC. Top-PC share "
+              r"and effective rank are read on the training passages, which include those of the "
+              r"fine-tuning pairs. Fine-tuning lifts the last layer and leaves the middle layers "
+              r"collapsed.}",
               r"\label{tab:ft_lata_layerwise}", r"\end{table}"]
     path.write_text("\n".join(lines) + "\n")
 

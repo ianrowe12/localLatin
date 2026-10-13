@@ -34,6 +34,6 @@ Char.\ n-grams & \multicolumn{2}{c}{0.987} & \multicolumn{2}{c}{89.9} \\
  & \multicolumn{2}{c}{\scriptsize [.976,.996]} & \multicolumn{2}{c}{\scriptsize [87.3,92.3]} \\
 \bottomrule
 \end{tabular}
-\caption{Ranking (test AUROC) and routing (test DirAcc@1, \%) without correction (Base) and after ABTT, each at its train-selected layer (Table~\ref{tab:selected_layers}); ABTT is fit on training embeddings only. Fine-tuned: contrastive fine-tuning on 499 training pairs (intervals in Table~\ref{tab:headline_ci}). Char.\ n-grams: TF-IDF over character 3--5-grams. Brackets: 95\% bootstrap intervals over the 514 test directories. Spread: largest minus smallest printed value across the six encoders. $\downarrow$: below the n-gram reference, paired interval excluding zero (Table~\ref{tab:headline_ci_diffs}); overlapping brackets do not imply a tie.}
+\caption{Test ranking (AUROC) and routing (DirAcc@1, \%), uncorrected (Base) and after ABTT, each at its train-selected layer (Table~\ref{tab:selected_layers}). Fine-tuned: contrastively fine-tuned encoders, intervals in Table~\ref{tab:headline_ci}. Char.\ n-grams: character 3--5-gram TF-IDF. Brackets: 95\% bootstrap intervals over the 514 test directories. Spread: range over the six encoders. $\downarrow$: below the n-gram reference, paired interval excluding zero (Table~\ref{tab:headline_ci_diffs}); overlapping brackets do not imply a tie. ABTT cuts the routing spread from 39.3 to 3.3 points; no frozen encoder beats the reference.}
 \label{tab:headline}
 \end{table}

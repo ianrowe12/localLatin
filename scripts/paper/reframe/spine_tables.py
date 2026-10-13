@@ -245,12 +245,12 @@ def render_models_main(summ: pd.DataFrame) -> str:
     lines += [r"\bottomrule", r"\end{tabular}",
               r"\caption{The " + _WORDS[len(MAIN_MODELS)] + r" main-text models, read as "
               r"mean-pooled hidden states with no "
-              r"correction. Type: T5 encoder (T5), encoder-only (Enc.) or decoder (Dec.; "
-              r"KaLM-mini with bidirectional attention). L: blocks read. AUROC$_{\min}$: "
+              r"correction. Type: T5 encoder (T5), encoder-only (Enc.) or decoder (Dec.). "
+              r"L: blocks read. AUROC$_{\min}$: "
               r"lowest test ranking AUROC over layers, at layer $\ell$. PC1$_{\max}$: peak "
-              r"top-PC share of training embeddings. Coll.: collapsed layers (AUROC below "
-              r"0.70). Only the " + _WORDS[len(v11)] + r" raw T5 encoders with the T5 v1.1 layout "
-              r"(gated-GELU feed-forward, untied embeddings) collapse.}",
+              r"top-PC share of training embeddings. Coll.: number of collapsed layers. "
+              r"Only the " + _WORDS[len(v11)] + r" raw T5 encoders with the T5 v1.1 layout "
+              r"collapse.}",
               r"\label{tab:models}", r"\end{table}"]
     return "\n".join(lines) + "\n"
 
@@ -285,34 +285,20 @@ def render_all_models(summ: pd.DataFrame) -> str:
         t = hf_id.replace("_", r"\_").replace("/", r"/\allowbreak{}")
         return r"\texttt{" + t.replace("-", r"-\allowbreak{}") + "}"
     ids = "; ".join(f"{m}, {tt(MODELS[m][0])}" for m in ALL_MODELS)
-    coll = summ.loc[[m for m in ALL_MODELS if summ.loc[m, "n_collapsed"]]]
-    n_coll = int(coll["n_collapsed"].sum())
-    n_panel = int(sum(summ.loc[m, "n_collapsed"] for m in PANEL))
-    rest = [m for m in coll.index if m not in PANEL]
-    coll_split = f"{n_panel} in the panel, " + ", ".join(
-        f"{int(summ.loc[m, 'n_collapsed'])} in {m}" for m in rest)
     floor = float(summ["pc1_min_collapsed"].min())
     if floor < HIGH_PC1:
         raise SystemExit(f"a collapsed layer has top-PC share {floor:.3f} < {HIGH_PC1}")
     lines += [r"\bottomrule", r"\end{tabular}",
               r"\caption{All thirteen models, read on the Latin corpus as mean-pooled hidden "
-              r"states with no post-hoc correction. Type: the encoder of a T5 encoder-decoder "
-              r"(T5), an encoder-only model (Enc.), or a decoder (Dec.). Emb.\ obj.: the "
-              r"embedding objective trained after pretraining, if any. Checkpoint: the "
-              r"feed-forward activation and inner width $d_\mathrm{ff}$, and whether input and "
-              r"output embeddings are tied, as the checkpoint's configuration file states them "
-              r"(T5-base, T5-efficient-base, LaBERTa and PhilBERTa leave tying at the library "
-              r"default, tied; n/a: "
-              r"the checkpoint has no output head). Over layers: the lowest test ranking AUROC, "
-              r"the peak top-PC share and the lowest entropy effective rank, each with its "
-              r"layer, and the range of mean pairwise cosine; top-PC share, effective rank and "
-              r"mean cosine are computed on the training embeddings. Layers: the collapsed layers "
-              r"(Coll.), with AUROC below 0.70, and those with top-PC share of at least "
-              + f"{HIGH_PC1:.2f}" + r". "
-              r"Every one of the " + f"{n_coll}" + r" collapsed layers (" + coll_split
-              + r") has a top-PC share of "
-              r"at least " + f"{floor:.2f}" + r", but a high share also occurs without collapse "
-              r"(mT5-base layer 4, Sentence-T5). Checkpoints: " + ids + r".}",
+              r"states with no correction; Type, AUROC$_{\min}$ and PC1$_{\max}$ as in "
+              r"Table~\ref{tab:models}, each extreme followed by its layer. Emb.\ obj.: "
+              r"embedding objective trained after pretraining, if any. Checkpoint columns follow "
+              r"each configuration file (T5-base, T5-efficient-base, LaBERTa and PhilBERTa leave "
+              r"tying at the library default, tied; n/a: no output head). Rank$_{\min}$ and Mean "
+              r"cos.: lowest entropy effective rank and range of mean pairwise cosine, on "
+              r"training embeddings. Layers: the "
+              r"layers collapsed or with top-PC share of at least " + f"{HIGH_PC1:.2f}" + r". "
+              r"Checkpoints: " + ids + r".}",
               r"\label{tab:all_models}", r"\end{table*}"]
     return "\n".join(lines) + "\n"
 
@@ -611,16 +597,18 @@ def render_headline(ci: pd.DataFrame, info: Dict, diffs: pd.DataFrame) -> str:
                  + r"} & \multicolumn{2}{c}{\scriptsize " + _int(cb["ci_lo"], cb["ci_hi"], "dir1")
                  + r"} \\")
     lines += [r"\bottomrule", r"\end{tabular}",
-              r"\caption{Ranking (test AUROC) and routing (test DirAcc@1, \%) without "
-              r"correction (Base) and after ABTT, each at its train-selected layer "
-              r"(Table~\ref{tab:selected_layers}); ABTT is fit on training embeddings only. "
-              r"Fine-tuned: contrastive fine-tuning on 499 training pairs (intervals in "
-              r"Table~\ref{tab:headline_ci}). Char.\ n-grams: TF-IDF over character "
-              r"3--5-grams. Brackets: 95\% bootstrap intervals over the "
-              + f"{int(info['n_test_dirs'])}" + r" test directories. Spread: largest minus "
-              r"smallest printed value across the six encoders. $\downarrow$: below the "
+              r"\caption{Test ranking (AUROC) and routing (DirAcc@1, \%), uncorrected "
+              r"(Base) and after ABTT, each at its train-selected layer "
+              r"(Table~\ref{tab:selected_layers}). Fine-tuned: contrastively fine-tuned "
+              r"encoders, intervals in Table~\ref{tab:headline_ci}. Char.\ n-grams: character "
+              r"3--5-gram TF-IDF. Brackets: 95\% bootstrap intervals over the "
+              + f"{int(info['n_test_dirs'])}" + r" test directories. Spread: range over the six "
+              r"encoders. $\downarrow$: below the "
               r"n-gram reference, paired interval excluding zero "
-              r"(Table~\ref{tab:headline_ci_diffs}); overlapping brackets do not imply a tie.}",
+              r"(Table~\ref{tab:headline_ci_diffs}); overlapping brackets do not imply a tie. "
+              r"ABTT cuts the routing spread from " + f"{x['dir1_Base_spread']:.1f}"
+              + r" to " + f"{x['dir1_ABTT_spread']:.1f}" + r" points; no frozen encoder "
+              r"beats the reference.}",
               r"\label{tab:headline}", r"\end{table}"]
     return "\n".join(lines) + "\n"
 

@@ -496,6 +496,40 @@ def band_readout(proj: pd.DataFrame, method: str) -> pd.DataFrame:
     return pd.DataFrame(out)
 
 
+_WORDS = ("no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+          "eleven", "twelve")
+
+
+def lowest_sentence(layers_df: pd.DataFrame) -> str:
+    """Takeaway of the T5-efficient-base caption: its lowest AUROC and layer, and whether
+    that clears the paper's collapse threshold."""
+    s = layers_df[layers_df["model"] == NEW].set_index("layer").sort_index()
+    lo, at = float(s["aucroc"].min()), int(s["aucroc"].idxmin())
+    if lo >= COLLAPSE_AUROC:   # unrounded, as in collapse_readout
+        return f"{NEW} does not collapse (lowest AUROC {lo:.3f}, layer {at})."
+    return f"Lowest AUROC of {NEW}: {lo:.3f}, layer {at}."
+
+
+def below_band_sentence(opt: pd.DataFrame, models: Sequence[str]) -> str:
+    """Takeaway of the controls caption: which controls keep layers below the panel's band
+    after ABTT (counts at the paper's three decimals)."""
+    lo = BAND[0]
+    parts = []
+    for m in sorted(models, key=lambda m: -sum(round(float(x), 3) < lo
+                                               for x in opt.loc[m, "aucroc"])):
+        k = int(sum(round(float(x), 3) < lo for x in opt.loc[m, "aucroc"]))
+        if k:
+            parts.append((m, k))
+    if not parts:
+        return f"After ABTT every layer lies in the panel's band ({BAND[0]:.3f} to {BAND[1]:.3f})."
+    phrase = [f"{_WORDS[k]} layer{'s' if k > 1 else ''} of {m}" if i == 0
+              else f"{_WORDS[k]} of {m}" for i, (m, k) in enumerate(parts)]
+    joined = phrase[0] if len(phrase) == 1 else ", ".join(phrase[:-1]) + " and " + phrase[-1]
+    verb = "stays" if len(parts) == 1 and parts[0][1] == 1 else "stay"
+    return (joined[0].upper() + joined[1:] + f" {verb} below the panel's band "
+            f"({BAND[0]:.3f} to {BAND[1]:.3f}).")
+
+
 def panel_band(res_csv: Path, method: str) -> pd.DataFrame:
     """The six panel models' published ABTT cells (100 layers)."""
     pub = pd.read_csv(res_csv)
@@ -509,7 +543,6 @@ def panel_band(res_csv: Path, method: str) -> pd.DataFrame:
 def write_t5_efficient_table(layers_df: pd.DataFrame, proj: pd.DataFrame, path: Path) -> None:
     by = layers_df.set_index(["model", "layer"])
     pj = proj[proj["method"] == "abtt_optimal"].set_index(["model", "layer"])
-    n = f"{int(layers_df['n_train'].iloc[0]):,}".replace(",", "{,}")
     lines = [HEADER, "% python scripts/paper/reframe/d2_controls.py --stage render",
              r"\begin{table}[t]", r"\centering", r"\footnotesize", r"\setlength{\tabcolsep}{3pt}",
              r"\begin{tabular}{@{}rcccccc@{}}", r"\toprule",
@@ -522,18 +555,11 @@ def write_t5_efficient_table(layers_df: pd.DataFrame, proj: pd.DataFrame, path: 
                      f"{x['mean_cos']:.3f} & {pj.loc[(NEW, layer), 'aucroc']:.3f} & "
                      f"{t['aucroc']:.3f} \\\\")
     lines += [r"\bottomrule", r"\end{tabular}",
-              r"\caption{T5-efficient-base, the original T5 layout (ReLU feed-forward, tied "
-              r"embeddings) pretrained on C4 alone without dropout for 524{,}288 steps of "
-              r"65{,}536 tokens, on the Latin corpus. "
-              r"AUROC: test ranking "
-              r"AUROC of cosine on unmodified mean-pooled vectors. PC1: top-PC share, the share "
-              r"of centered variance on the first principal component of the " + n +
-              r" training passages. Rank: their entropy effective rank. Cos: their mean "
-              r"pairwise cosine. ABTT: test AUROC after ABTT fit on the training passages, "
-              r"with $D$ chosen on training DirAcc@1. Last column: T5-base, which has the same "
-              r"layout and pools the same tokens of every passage and was pretrained on C4 "
-              r"mixed with supervised tasks, with dropout, for about 30 times as many tokens; "
-              r"its vectors come from the same extraction run.}",
+              r"\caption{Test ranking AUROC and geometry of T5-efficient-base (T5-base's layout, "
+              r"C4 alone, no dropout, 524{,}288 steps of 65{,}536 tokens) and AUROC of T5-base "
+              r"(pretrained for about 30 times as many tokens). PC1, Rank, Cos: top-PC share, effective "
+              r"rank, mean pairwise cosine of training passages. ABTT: "
+              r"AUROC after ABTT fit on them. " + lowest_sentence(layers_df) + r"}",
               r"\label{tab:d2_t5_efficient}", r"\end{table}"]
     path.write_text("\n".join(lines) + "\n")
 
@@ -554,10 +580,9 @@ def write_abtt_table(proj: pd.DataFrame, path: Path) -> None:
                  for m in models]
         lines.append(f"{layer} & " + " & ".join(cells) + r" \\")
     lines += [r"\bottomrule", r"\end{tabular}",
-              r"\caption{Test ranking AUROC of the four control models on the Latin corpus, "
-              r"before (Base: unmodified mean-pooled vectors) and after ABTT fit on the training "
-              r"passages, with $D$ chosen per layer on training DirAcc@1 from 1, 2, 3, 5, 7 and "
-              r"10, as for the panel.}",
+              r"\caption{Test ranking AUROC of the four controls before (Base) and after ABTT fit "
+              r"on training passages, with $D$ chosen per layer on training DirAcc@1 as for the "
+              r"panel. " + below_band_sentence(opt, models) + r"}",
               r"\label{tab:d2_controls_abtt}", r"\end{table}"]
     path.write_text("\n".join(lines) + "\n")
 

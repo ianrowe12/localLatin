@@ -15,6 +15,6 @@ Qwen3-0.6B & 89.3 $\pm$ 0.7 & 95.7 $\pm$ 0.4 & 97.1 $\pm$ 0.3 & 97.5 $\pm$ 0.4 &
 KaLM-mini  & 89.3 $\pm$ 0.5 & 95.1 $\pm$ 0.4 & 96.6 $\pm$ 0.7 & 97.2 $\pm$ 0.7 & 97.6 $\pm$ 0.5 \\
 \bottomrule
 \end{tabular}
-\caption{Routing shortlist accuracy under SIF+ABTT: DirAcc@$K$, as mean $\pm$ standard deviation over five reseedings of the query and reference files, with the training/test split fixed. For each model the reported layer is chosen on the training split: the layer with the highest training-set DirAcc@1 for SIF+ABTT in the single-seed run, the layer behind the SIF+ABTT cell of Table~\ref{tab:headline_ci}, listed in Table~\ref{tab:selected_layers}. $D$ is tuned per layer on the training split. This is not always the layer with the highest mean over the five reseedings. Each row is the bold row of Table~\ref{tab:taskB_ranking_appendix_mseed}. Each cell is the percentage of test queries whose labeled directory appears within the top $K$ options. Per-layer shortlist accuracy: Tables~\ref{tab:taskB_ranking_main}, \ref{tab:taskB_ranking_appendix}, and~\ref{tab:taskB_ranking_appendix_mseed}.}
+\caption{Test routing shortlist accuracy DirAcc@$K$ (\%) under SIF+ABTT, mean $\pm$ std over five reseedings. Each model's layer is its best by training DirAcc@1 under SIF+ABTT in the single run (bold in Table~\ref{tab:taskB_routing_appendix_sif}), not always the best over the five reseedings. DirAcc@2 is 95.1 to 96.1 for all six models, with little gain after DirAcc@3.}
 \label{tab:taskb}
 \end{table*}

@@ -1011,14 +1011,14 @@ def test_table_renders_from_the_fixture_and_omits_absent_models(tmp_path):
     e2.write_table(w, out, gates)
     cap = next(ln for ln in tex.splitlines() if ln.startswith(r"\caption{"))
     assert cap.endswith("}") and "--" not in cap and chr(0x2014) not in cap
-    for phrase in ("lowest-AUROC baseline layer", "special tokens", "100 most frequent",
-                   "five random sets", "20 random directions", "training passages only",
-                   "SIF pooling with training-only token frequencies, which also drops "
-                   "special tokens (SIF)",
-                   "chosen by training AUROC", "hold at least as many training tokens",
-                   "orthogonal to the top ten principal components",
-                   "the three sum to one, but a single share can fall below zero or exceed one",
-                   r"$|\rho|$: absolute Spearman correlation"):
+    # a compact column key; the full column semantics are in the Appendix E prose
+    for phrase in ("lowest-AUROC baseline layer", "No spec.: no special tokens",
+                   "SIF+spec.: SIF keeping special tokens", "100 most frequent",
+                   "Drop: no top $m$ token types, $m$ and ranking chosen on training AUROC",
+                   "Token-mix EV: PC1 score variance",
+                   "Group shares split it and sum to one, but can fall outside [0, 1]",
+                   "Rand.: mass-matched random types", "Rand.: random directions",
+                   r"$|\rho|$: Spearman correlation"):
         assert phrase in cap
     assert "as published" not in cap and "published" not in cap and "highest" not in cap
     # a negative cell has a math minus sign; the LaBSE shares of -0.01 are the fixture's
@@ -1033,7 +1033,7 @@ def test_table_renders_from_the_fixture_and_omits_absent_models(tmp_path):
     e2.write_table(w, out, _gt(frames, worse))
     cap = next(ln for ln in out.read_text().splitlines() if ln.startswith(r"\caption{"))
     assert "sec:geometry" not in cap and "differs" not in cap and "0.015" not in cap
-    assert "reproduces" not in cap and "(SIF)" in cap
+    assert "reproduces" not in cap and "SIF keeping special tokens" in cap
     assert e2.sif_reference_gap(_gt(frames, worse)) == pytest.approx(0.0150072, abs=1e-9)
     # without gates (no published cells) the caption makes no claim about them
     e2.write_table(w, out)

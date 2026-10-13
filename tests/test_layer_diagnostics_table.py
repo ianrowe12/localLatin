@@ -34,7 +34,9 @@ def _geom_rows():
 def test_peak_is_the_test_split_argmax_and_rows_follow_it():
     tex = ldt.render(_geom_rows())
     assert r"LaTa & 5 & 0.900 & 0.045 & 2.00$\rightarrow$150.00 \\" in tex
-    assert "where LaTa peaks at layer 4 instead of 5" in tex
+    # The training-split caveat moved to Appendix C's prose (caption rewrite, 2026-10-12).
+    assert "ABTT with $D=10$, fit on training passages" in tex
+    assert "ABTT-D10" not in tex and "instead of" not in tex
     assert tex.splitlines()[0] == "% generated table"
     assert r"\label{tab:layer_diagnostics_main}" in tex
 

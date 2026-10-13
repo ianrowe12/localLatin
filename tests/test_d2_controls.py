@@ -227,3 +227,30 @@ def test_committed_facts_and_tables_rerender(tmp_path):
     cap = (tab / "d2_t5_efficient.tex").read_text()
     assert "524{,}288 steps of 65{,}536 tokens" in cap
     assert "for about 30 times as many tokens" in cap
+    assert "T5-efficient-base does not collapse (lowest AUROC 0.736, layer 11)." in cap
+    cap = (tab / "d2_controls_abtt.tex").read_text()
+    assert ("Seven layers of T5-v1.1-base and one of T5-base stay below the panel's band "
+            "(0.962 to 0.987).") in cap
+
+
+def _auc_rows(name, aucs):
+    return pd.DataFrame({"model": name, "layer": range(1, len(aucs) + 1), "aucroc": aucs})
+
+
+def test_lowest_sentence_branches():
+    ok = d2.lowest_sentence(_auc_rows(d2.NEW, [0.80, 0.736, 0.79]))
+    assert ok == "T5-efficient-base does not collapse (lowest AUROC 0.736, layer 2)."
+    low = d2.lowest_sentence(_auc_rows(d2.NEW, [0.80, 0.6996]))
+    assert "does not collapse" not in low and "0.700, layer 2" in low
+
+
+def test_below_band_sentence_branches():
+    def opt(rows):
+        return pd.DataFrame(rows, columns=["model", "layer", "aucroc"]).set_index(["model", "layer"])
+    inside = opt([("A", 1, 0.970), ("B", 1, 0.980)])
+    assert d2.below_band_sentence(inside, ["A", "B"]).startswith("After ABTT every layer lies")
+    one = opt([("A", 1, 0.959), ("A", 2, 0.970), ("B", 1, 0.980)])
+    assert d2.below_band_sentence(one, ["A", "B"]) == \
+        "One layer of A stays below the panel's band (0.962 to 0.987)."
+    two = opt([("A", 1, 0.959), ("B", 1, 0.950), ("B", 2, 0.940)])
+    assert d2.below_band_sentence(two, ["A", "B"]).startswith("Two layers of B and one of A stay")
