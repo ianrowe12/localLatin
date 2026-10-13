@@ -15,6 +15,10 @@ import pytest
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "scripts" / "paper" / "reframe"))
 
+# The generator draws two figures with matplotlib, which the CI requirement
+# files deliberately leave out; skip the module there, as the figure tests do.
+pytest.importorskip("matplotlib")
+
 import geometry_vs_retrieval as gvr  # noqa: E402
 
 needs_inputs = pytest.mark.skipif(
