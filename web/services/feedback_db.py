@@ -12,6 +12,7 @@ import sqlite3
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Awaitable, Callable, Iterable
 
 import aiosqlite
 
@@ -21,10 +22,13 @@ from web.exceptions import (
     ReviewerDirSeedExistsError,
     UnscorableSeedError,
 )
-from web.services import ccl_keys
+from web.services import ccl_key_export, ccl_keys
 from web.variants import DEFAULT_VARIANT
 
 logger = logging.getLogger(__name__)
+
+#: `(query_id, model_slug, variant, rank) -> directory name or None`.
+RankDirResolver = Callable[[int, str, "str | None", int], Awaitable["str | None"]]
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS feedback (
@@ -1662,6 +1666,71 @@ class FeedbackDB:
             )
             writer.writerow({column: row.get(column) for column in _EXPORT_COLUMNS})
         return output.getvalue()
+
+    async def ccl_key_assignments(
+        self,
+        *,
+        filename_by_query: dict[int, str],
+        labelled_dir_names: Iterable[str],
+        rank_dir: RankDirResolver | None = None,
+        data_release: str = "",
+        exported_at: str | None = None,
+        status: str | None = None,
+    ) -> list[dict]:
+        """One resolved row per reviewed query, for CCL's import (issue #270).
+
+        The rule is stated in `services/ccl_key_export.py`; this method only
+        reads what it needs. `rank_dir(query_id, model_slug, variant, rank)`
+        names the directory at a rank in the ranking the app serves. It is
+        consulted only for a selected rank whose directory the row did not
+        store: `correct_dir` holds the FIRST selection of a multi-rank pick
+        (the router writes only that one), so every later selection is
+        resolved through it. Without a resolver those picks name nothing.
+
+        Reads only. Reviewer names reach the returned rows and nothing else:
+        the one log line here carries a count.
+        """
+        assert self._db is not None
+        # Every row, unfiltered: which outcomes count is the export module's
+        # rule (`current_decisions`), stated and tested in one place.
+        rows = await (
+            await self._db.execute("SELECT * FROM feedback ORDER BY timestamp, id")
+        ).fetchall()
+        dir_rows = await (
+            await self._db.execute("SELECT dir_id, ccl_key FROM reviewer_dirs")
+        ).fetchall()
+        reviewer_dir_keys = {r["dir_id"]: r["ccl_key"] or "" for r in dir_rows}
+
+        decisions = []
+        for row in ccl_key_export.current_decisions(_feedback_row(r) for r in rows):
+            picked: list[tuple[int, str | None]] = []
+            if row["outcome"] == "matched_rank":
+                for index, rank in enumerate(ccl_key_export.selected_ranks(row)):
+                    directory = row.get("correct_dir") if index == 0 else None
+                    if not directory and rank_dir is not None:
+                        directory = await rank_dir(
+                            int(row["query_id"]), row["model_slug"], row["variant"], rank
+                        )
+                    picked.append((rank, directory))
+            decisions.append(
+                ccl_key_export.decision_from_row(row, picked, reviewer_dir_keys)
+            )
+
+        resolved, unknown = ccl_key_export.build_rows(
+            decisions,
+            filename_by_query=filename_by_query,
+            labelled_dir_names=labelled_dir_names,
+            data_release=data_release,
+            exported_at=exported_at or ccl_key_export.now_iso_utc(),
+            status=status,
+        )
+        if unknown:
+            logger.warning(
+                "CCL key export left out %d reviewed query id(s) the served corpus "
+                "does not know",
+                unknown,
+            )
+        return resolved
 
 
 def _utc_now() -> datetime:

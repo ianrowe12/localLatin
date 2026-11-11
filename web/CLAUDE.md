@@ -130,6 +130,62 @@ Confirming a reviewer directory as the correct answer appends that query to the 
 members (idempotent, `INSERT OR IGNORE`, and the directory must exist). That membership row is
 what flips the badge to `matched`, which is why it may only follow a server-resolved choice.
 
+## CCL key assignments export (issue #270)
+
+`GET /api/feedback/export/ccl_keys` (PI/admin only, `require_pi_admin`) is the file CCL's import
+is built on. It returns a CSV named `ccl_key_assignments_YYYY-MM-DD.csv` with one row per reviewed
+unlabelled query, sorted by `xml_id`. `/api/feedback/export` is unchanged and stays the raw log.
+The optional `status=agreed|conflict|no_key` keeps one status; the default is every reviewed query.
+The dashboard's "Download CCL key assignments" button (`ExportControls`) opens it without filters.
+Like the raw export it is a `window.open`, so the mock fetch handler never sees it.
+
+Resolution rule, implemented in `services/ccl_key_export.py` and read by
+`FeedbackDB.ccl_key_assignments`:
+
+1. Only `matched_rank` and `none_of_top_k` rows count, the same pair that makes a query
+   `reviewed` on the dashboard, so the export covers exactly the reviewed queries. Skipped and
+   legacy-unresolved rows are ignored, and a later skip does not retract an earlier decision.
+2. A reviewer's current decision is their newest decision row on each (model, variant), newest by
+   timestamp and then row id. That is the decision half of `GET /api/feedback/latest`. A save
+   under a different model does not replace one under another model, because the app still shows
+   the reviewer both.
+3. A `matched_rank` row names the directory behind every selected rank. `correct_dir` holds only
+   the first selection, so later selections are read from the ranking the server currently serves
+   for that model and variant. A labelled directory names itself, a reviewer directory names its
+   `ccl_key`, and a reviewer directory without a key names nothing. A `none_of_top_k` row names its
+   typed `ccl_key`, if any.
+4. Keys are compared with `ccl_keys.match_form`. No key named is `no_key`, one key is `agreed`, and
+   two or more are `conflict`, whether they come from two reviewers, one reviewer under two models,
+   or one multi-rank pick. A `none_of_top_k` without a key never conflicts with a named key.
+5. Each reviewer counts once, under the display name on their newest counted decision. Rows from
+   before accounts existed are told apart by that name.
+
+When reviewers typed one key in different capitalisations, the printed form is the labelled
+directory's own name if the key names one; otherwise the earliest form that is key-shaped
+(`ctou.567.16` then `CTOU.567.16` prints `CTOU.567.16`); otherwise the form on the earliest decision
+that named it. Every candidate is a form somebody stored; nothing is re-cased. A reviewed query whose id the served corpus does not know is left out (logged as a count),
+because it has no `xml_id`.
+
+Columns (`EXPORT_SCHEMA_VERSION = 1`; bump it when a column is added, removed or changes meaning):
+
+| column | value |
+|---|---|
+| `xml_id` | the query filename without `.txt`, which is the CCL `xml:id` (`scripts/data/tei_to_canon.py`) |
+| `ccl_key` | the agreed key; empty for `conflict` and `no_key` |
+| `status` | `agreed`, `conflict` or `no_key` |
+| `conflicting_keys` | for `conflict`, every distinct key, sorted, joined by ` \| ` |
+| `key_source` | `model_suggestion`, `reviewer_typed` or `both`, over the decisions that named a key |
+| `suggested_by` | `model:variant:rank` per picked ranked candidate, joined by ` \| `; in a conflict each entry is prefixed `KEY=` |
+| `key_shaped` | `true` or `false` by `ccl_keys.KEY_SHAPED`, a flag and never a filter; empty without an agreed key |
+| `reviewer_count`, `reviewers` | people with a counted decision, and their display names joined by ` \| ` |
+| `first_decided_at`, `last_decided_at` | earliest and latest counted decision, ISO 8601 UTC |
+| `export_schema_version`, `exported_at` | `1`, and the export time in ISO 8601 UTC |
+| `data_release` | the release tag `deploy/deploy.sh` recorded in `.deploy-cache/installed.state` under `data_root` (`paths.data_release_state`), read at startup; empty when there is none, as in local development |
+
+Lists are joined by ` | ` because 18 labelled directory names contain a semicolon and 103 a comma,
+and none contains `|`. Display names appear only in this download, never in a log line. Usernames
+and emails never appear.
+
 ## Data Contract
 
 The webapp reads these from `data_root`:

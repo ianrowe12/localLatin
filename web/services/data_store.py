@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -98,6 +99,9 @@ class DataStore:
     _qq_lock: threading.Lock = field(
         default_factory=threading.Lock, repr=False, compare=False
     )
+
+    # The data release tag deploy/deploy.sh installed, or "" when unknown.
+    data_release: str = ""
 
     # IG examples
     ig_examples: pd.DataFrame | None = None
@@ -277,11 +281,35 @@ def _load_variant(store: DataStore, variant: str) -> None:
     store.loaded_variants.add(variant)
 
 
+#: A release tag as `make_data_release.sh --tag` takes it (`data-YYYYMMDD`).
+#: Anything else in the state file is treated as unknown rather than echoed
+#: into an export.
+_RELEASE_TAG = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
+
+
+def read_data_release(state_path: Path) -> str:
+    """The tag deploy/deploy.sh recorded as installed, or "" when unknown.
+
+    The state file is one line, `<tag> <sha256>`, written only after a release
+    is verified onto disk. Read at startup, which is when the data it names is
+    loaded: deploy.sh syncs the release and then restarts the service.
+    """
+    try:
+        text = state_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return ""
+    parts = text.split()
+    if not parts or not _RELEASE_TAG.match(parts[0]):
+        return ""
+    return parts[0]
+
+
 def build_store(settings: Settings) -> DataStore:
     """Build the in-memory DataStore at startup."""
     store = DataStore()
     paths = settings.paths
     root = Path(paths.data_root)
+    store.data_release = read_data_release(paths.resolve(paths.data_release_state))
 
     # --- Discover per-variant predictions CSVs ---
     # There is no fallback to the pre-variant frozen unlabelled_predictions.csv:

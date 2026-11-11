@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useModels } from '../../api/models'
 import type { StatsResponse } from '../../api/models'
 import { apiUrl } from '../../api/client'
+import { exportCclKeyAssignmentsCsv } from '../../api/feedback'
 
 interface ExportControlsProps {
   stats: StatsResponse
@@ -98,6 +99,20 @@ export default function ExportControls({ stats }: ExportControlsProps) {
             Export
           </button>
         </div>
+      </div>
+
+      <div className="mt-3 pt-3 border-t border-stone-200 dark:border-stone-700 flex flex-col sm:flex-row sm:items-center gap-2 sm:justify-between">
+        <p className="text-xs text-stone-500 dark:text-stone-400 font-ui">
+          One row per reviewed document with its agreed CCL key, for CCL&apos;s
+          import. The filters above do not apply to it.
+        </p>
+        <button
+          type="button"
+          onClick={exportCclKeyAssignmentsCsv}
+          className="h-9 px-3 rounded-lg border border-accent text-accent text-sm font-ui font-medium hover:bg-accent hover:text-white transition-colors whitespace-nowrap"
+        >
+          Download CCL key assignments
+        </button>
       </div>
     </div>
   )
