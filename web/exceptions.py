@@ -76,3 +76,19 @@ class UnscorableSeedError(Exception):
             "matched."
         )
         super().__init__(self.message)
+
+
+class LastPiAdminError(Exception):
+    """Refuses a role change that would leave no approved, active PI/admin.
+
+    There is no email recovery and no other way to approve accounts, reset
+    passwords or export feedback, so the last PI/admin must stay one.
+    """
+
+    def __init__(self, account_id: int) -> None:
+        self.account_id = account_id
+        self.message = (
+            "This is the last approved PI/admin account. Make another account "
+            "a PI/admin before changing this one."
+        )
+        super().__init__(self.message)

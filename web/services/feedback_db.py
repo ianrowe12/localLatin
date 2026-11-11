@@ -16,6 +16,7 @@ from pathlib import Path
 import aiosqlite
 
 from web.exceptions import (
+    LastPiAdminError,
     ReviewerDirLimitError,
     ReviewerDirSeedExistsError,
     UnscorableSeedError,
@@ -76,6 +77,32 @@ CREATE TABLE IF NOT EXISTS account_sessions (
 CREATE INDEX IF NOT EXISTS idx_account_sessions_account ON account_sessions(account_id);
 CREATE INDEX IF NOT EXISTS idx_account_sessions_expires ON account_sessions(expires_at);
 """
+
+#: Audit trail for role changes (issue #265). Accounts are mutable and are not
+#: part of the append-only feedback log, but who promoted or demoted whom must
+#: still be recoverable. Created in _migrate() with IF NOT EXISTS, so an older
+#: database gains it on next boot without any existing row being touched.
+#: `changed_by_account_id` is NULL for a change made outside the app
+#: (scripts/webapp/set_account_role.py), whose note starts with "cli: ".
+#: scripts/webapp/set_account_role.py carries a byte-identical copy of this DDL
+#: (it must run without the web package); tests/test_set_account_role.py pins
+#: the two together.
+ACCOUNT_ROLE_CHANGES_DDL = """
+CREATE TABLE IF NOT EXISTS account_role_changes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id INTEGER NOT NULL,
+    old_role TEXT NOT NULL,
+    new_role TEXT NOT NULL,
+    changed_by_account_id INTEGER,
+    note TEXT NOT NULL DEFAULT '',
+    changed_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_account_role_changes_account
+    ON account_role_changes(account_id);
+"""
+
+#: Roles an account may hold; mirrors the CHECK constraint on accounts.role.
+ACCOUNT_ROLES = ("reviewer", "pi_admin")
 
 #: Every read of a feedback row carries the author's login name alongside the
 #: stored display name, so shared notes and review packets can attribute a note
@@ -393,6 +420,13 @@ class FeedbackDB:
         await self._db.execute(
             "CREATE INDEX IF NOT EXISTS idx_accounts_approval_status ON accounts(approval_status)"
         )
+
+        # --- account role audit (issue #265) --------------------------------
+        # Additive: one new table, no existing row touched. executescript()
+        # would COMMIT the migration transaction early, so run each statement.
+        for statement in ACCOUNT_ROLE_CHANGES_DDL.split(";"):
+            if statement.strip():
+                await self._db.execute(statement)
 
         # --- reviewer directories (issue #95) -------------------------------
         # Purely additive: two new tables, no column added to and no row
@@ -1149,6 +1183,108 @@ class FeedbackDB:
             await self._db.execute("SELECT * FROM accounts WHERE id = ?", (account_id,))
         ).fetchone()
         return _account_public(row) if row is not None else None
+
+    async def set_account_role(
+        self,
+        account_id: int,
+        role: str,
+        changed_by_account_id: int | None,
+        note: str = "",
+    ) -> tuple[dict | None, bool]:
+        """Change an account's role and record who did it.
+
+        Returns ``(account, changed)``: ``(None, False)`` for an unknown
+        account, ``(account, False)`` when it already holds ``role`` (nothing
+        is written, no audit row), ``(account, True)`` after a change.
+
+        Raises :class:`LastPiAdminError` when the change would leave no
+        approved, active PI/admin: there is no email recovery, so somebody must
+        always be able to approve accounts and reset passwords.
+
+        Sessions are NOT revoked. ``get_account_by_session`` re-reads the
+        account row (role included) on every request, so the new role applies
+        to the account's very next request without signing anybody out.
+
+        Runs on its own connection under BEGIN IMMEDIATE, like
+        create_reviewer_dir, so the last-admin count and the UPDATE cannot
+        interleave with a concurrent change (the app's or the CLI's).
+        """
+        if role not in ACCOUNT_ROLES:
+            raise ValueError(f"Unsupported role: {role}")
+        await self._ensure_auth_connection()
+        async with aiosqlite.connect(str(self.db_path)) as transaction:
+            transaction.row_factory = aiosqlite.Row
+            await transaction.execute("BEGIN IMMEDIATE")
+            row = await (
+                await transaction.execute(
+                    "SELECT * FROM accounts WHERE id = ?", (account_id,)
+                )
+            ).fetchone()
+            if row is None:
+                return None, False
+            old_role = row["role"]
+            if old_role == role:
+                return _account_public(row), False
+            # Only an account that can currently sign in as PI/admin counts:
+            # demoting a pending or rejected one cannot lock anybody out.
+            if (
+                old_role == "pi_admin"
+                and row["approval_status"] == "approved"
+                and int(row["is_active"]) == 1
+            ):
+                remaining = await (
+                    await transaction.execute(
+                        """
+                        SELECT COUNT(*) FROM accounts
+                         WHERE role = 'pi_admin'
+                           AND approval_status = 'approved'
+                           AND is_active = 1
+                           AND id != ?
+                        """,
+                        (account_id,),
+                    )
+                ).fetchone()
+                if int(remaining[0]) == 0:
+                    raise LastPiAdminError(account_id)
+            await transaction.execute(
+                """
+                UPDATE accounts
+                   SET role = ?,
+                       updated_at = datetime('now')
+                 WHERE id = ?
+                """,
+                (role, account_id),
+            )
+            await transaction.execute(
+                """
+                INSERT INTO account_role_changes
+                    (account_id, old_role, new_role, changed_by_account_id, note)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (account_id, old_role, role, changed_by_account_id, note.strip()),
+            )
+            updated = await (
+                await transaction.execute(
+                    "SELECT * FROM accounts WHERE id = ?", (account_id,)
+                )
+            ).fetchone()
+            await transaction.commit()
+            return _account_public(updated), True
+
+    async def list_account_role_changes(
+        self, account_id: int | None = None
+    ) -> list[dict]:
+        """The role audit trail, oldest first, optionally for one account."""
+        await self._ensure_auth_connection()
+        assert self._db is not None
+        query = "SELECT * FROM account_role_changes"
+        params: list[int] = []
+        if account_id is not None:
+            query += " WHERE account_id = ?"
+            params.append(account_id)
+        query += " ORDER BY id"
+        rows = await (await self._db.execute(query, params)).fetchall()
+        return [dict(row) for row in rows]
 
     async def create_session(self, account_id: int, session_days: int) -> str:
         await self._ensure_auth_connection()

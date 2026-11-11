@@ -439,6 +439,13 @@ class AccountCreateRequest(BaseModel):
     approval_note: str = Field(default="", max_length=500)
 
 
+class AccountRoleChangeRequest(BaseModel):
+    """Body of POST /api/auth/accounts/{id}/role (issue #265)."""
+
+    role: Literal["reviewer", "pi_admin"]
+    note: str = Field(default="", max_length=500)
+
+
 class AccountCreateResponse(BaseModel):
     account: AccountPublic
     temporary_password: Optional[str] = None
