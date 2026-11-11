@@ -1,0 +1,22 @@
+name: Independent Review Events
+run-name: "Independent Review PR #${{ github.event.pull_request.number }}"
+
+# Unprivileged relay. A pull_request_review event cannot hold a status-writing
+# token (and on a fork PR it runs the fork's copy of this file), so this job
+# does nothing except complete. Its completion fires `workflow_run` in
+# independent-review-gate.yml, which runs from the default branch, re-fetches
+# this run, checks its event and path, and re-evaluates the PR. No checkout,
+# no token, no output the gate reads.
+
+on:
+  pull_request_review:
+    types: [submitted, edited, dismissed]
+
+permissions: {}
+
+jobs:
+  review-event:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: echo "Reconcile the review using the default-branch Independent Review Gate."

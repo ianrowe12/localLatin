@@ -1,0 +1,81 @@
+name: Independent Review Gate
+run-name: >-
+  ${{ github.event.workflow_run.display_title || format('Independent Review PR #{0}', github.event.issue.number || github.event.pull_request.number) }}
+
+# Sets the `Independent Review` commit status on a PR's head SHA. The branch
+# ruleset on main requires it. Green only when the newest trusted verdict bound
+# to the current head is APPROVE, or when the `independent-review-exempt` label
+# is present. REQUEST CHANGES, missing, conflicting and stale verdicts stay red.
+# The protocol is docs/agents/independent-review.md; the decision logic is
+# .github/scripts/independent_review_gate.py, tested by
+# tests/test_independent_review_gate.py.
+#
+# Trust model (this repo is public, so any GitHub user can comment on a PR):
+# - Only verdicts whose author has write, maintain or admin permission count,
+#   checked live per run with GET /repos/{repo}/collaborators/{user}/permission.
+#   A verdict from anyone else neither approves nor blocks. Bot accounts are
+#   ignored. Logs print counts, never logins.
+# - Nothing from the PR is checked out or executed. pull_request_target,
+#   issue_comment and workflow_run all run this file from the default branch,
+#   and the one checkout below fetches the gate script from the default branch
+#   by name, never the PR ref, with no credentials persisted.
+# - pull_request_review has no default-branch variant: it runs the PR's copy
+#   of a workflow, read-only on forks. So reviews wake this workflow through
+#   the unprivileged relay independent-review-events.yml (`workflow_run`). The
+#   script re-fetches the relay run and checks its event and path, and uses it
+#   only to pick which PR to re-evaluate.
+#
+# Every PR comment create, edit and delete re-evaluates the status, so editing
+# or deleting a verdict cannot leave a stale green. One non-cancelling queue
+# serialises every gate job (a workflow_run event does not know its PR number
+# when the group key is computed, so the group is global, which serialises each
+# PR a fortiori), and each job re-reads the verdicts immediately before writing.
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, reopened, synchronize, labeled, unlabeled]
+  issue_comment:
+    types: [created, edited, deleted]
+  workflow_run:
+    workflows: [Independent Review Events]
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read
+  statuses: write
+  pull-requests: read
+  issues: read
+
+jobs:
+  gate:
+    # Re-evaluate every PR comment event. Filtering on the current body would
+    # miss an edit that removes the only verdict and leave a stale green.
+    if: >-
+      github.event_name == 'pull_request_target' ||
+      github.event_name == 'workflow_run' ||
+      github.event.issue.pull_request
+    concurrency:
+      group: independent-review-statuses
+      cancel-in-progress: false
+      queue: max
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out the gate script from the default branch
+        uses: actions/checkout@v6
+        with:
+          # The default branch by name, never the PR head or merge ref.
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: .github/scripts/independent_review_gate.py
+
+      - name: Evaluate independent-review status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
+        run: python3 -I .github/scripts/independent_review_gate.py
