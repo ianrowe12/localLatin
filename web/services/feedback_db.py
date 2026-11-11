@@ -1682,10 +1682,12 @@ class FeedbackDB:
         The rule is stated in `services/ccl_key_export.py`; this method only
         reads what it needs. `rank_dir(query_id, model_slug, variant, rank)`
         names the directory at a rank in the ranking the app serves. It is
-        consulted only for a selected rank whose directory the row did not
-        store: `correct_dir` holds the FIRST selection of a multi-rank pick
-        (the router writes only that one), so every later selection is
-        resolved through it. Without a resolver those picks name nothing.
+        consulted only for a row that cannot be read from what it stored:
+        `correct_dir` holds the FIRST selection of a multi-rank pick (the
+        router writes only that one), so later selections come from the
+        served ranking, and only once it is shown to still hold the stored
+        first pick at its rank (`ccl_key_export.resolve_picks`). Without a
+        resolver those picks stay unresolved and the row is `needs_check`.
 
         Reads only. Reviewer names reach the returned rows and nothing else:
         the one log line here carries a count.
@@ -1703,17 +1705,25 @@ class FeedbackDB:
 
         decisions = []
         for row in ccl_key_export.current_decisions(_feedback_row(r) for r in rows):
-            picked: list[tuple[int, str | None]] = []
+            picked: list[tuple[int, str]] = []
+            unresolved: list[int | None] = []
             if row["outcome"] == "matched_rank":
-                for index, rank in enumerate(ccl_key_export.selected_ranks(row)):
-                    directory = row.get("correct_dir") if index == 0 else None
-                    if not directory and rank_dir is not None:
-                        directory = await rank_dir(
+                served: dict[int, str | None] | None = None
+                if (
+                    ccl_key_export.needs_ranking(row)
+                    and row.get("variant")
+                    and rank_dir is not None
+                ):
+                    served = {}
+                    for rank in ccl_key_export.selected_ranks(row):
+                        served[rank] = await rank_dir(
                             int(row["query_id"]), row["model_slug"], row["variant"], rank
                         )
-                    picked.append((rank, directory))
+                picked, unresolved = ccl_key_export.resolve_picks(row, served)
             decisions.append(
-                ccl_key_export.decision_from_row(row, picked, reviewer_dir_keys)
+                ccl_key_export.decision_from_row(
+                    row, picked, reviewer_dir_keys, unresolved
+                )
             )
 
         resolved, unknown = ccl_key_export.build_rows(

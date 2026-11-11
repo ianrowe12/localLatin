@@ -217,17 +217,62 @@ def test_a_key_reached_both_ways_is_both(tmp_path: Path) -> None:
     assert row["suggested_by"] == "model_one:sif_abtt:2"
 
 
-def test_a_no_key_decision_does_not_conflict_with_a_key(tmp_path: Path) -> None:
-    """None without a key says the ranking missed, not that there is no key."""
+def test_a_no_key_none_beside_a_typed_key_is_a_conflict(tmp_path: Path) -> None:
+    """None without a key is an answer of its own, never an abstention."""
 
     async def build(db: FeedbackDB) -> None:
         await _typed(db, None)
         await _typed(db, "CTOU.567.16", reviewer="Bruno Example", account=2)
 
     row = _only(_scenario(tmp_path, build))
-    assert row["status"] == "agreed"
-    assert row["ccl_key"] == "CTOU.567.16"
+    assert row["status"] == "conflict"
+    assert row["ccl_key"] == ""
+    assert row["conflicting_keys"] == "CTOU.567.16 | (none_of_top_k)"
     assert row["reviewer_count"] == 2
+
+
+def test_every_decision_a_no_key_none_stays_no_key(tmp_path: Path) -> None:
+    async def build(db: FeedbackDB) -> None:
+        await _typed(db, None)
+        await _typed(db, None, reviewer="Bruno Example", account=2)
+
+    row = _only(_scenario(tmp_path, build))
+    assert row["status"] == "no_key"
+    assert row["conflicting_keys"] == ""
+    assert row["reviewer_count"] == 2
+
+
+# Review round 1, finding 1: the two reproduced scenarios.
+
+
+def test_a_none_reviewer_who_rejected_the_key_is_not_reported_as_agreeing(
+    tmp_path: Path,
+) -> None:
+    async def build(db: FeedbackDB) -> None:
+        await _pick(db, "CTOU.567.16", rank=2, reviewer="Alice", account=1)
+        await _typed(db, None, reviewer="Bob", account=2, ts="2026-11-02 10:00:00")
+
+    row = _only(_scenario(tmp_path, build))
+    assert row["status"] == "conflict"
+    # Nobody is credited with a key in a row that carries none.
+    assert row["ccl_key"] == ""
+    assert row["conflicting_keys"] == "CTOU.567.16 | (none_of_top_k)"
+    assert row["suggested_by"] == "CTOU.567.16=model_one:sif_abtt:2"
+    assert row["reviewers"] == "Alice | Bob"
+
+
+def test_one_reviewer_picking_a_key_then_none_under_another_model_conflicts(
+    tmp_path: Path,
+) -> None:
+    async def build(db: FeedbackDB) -> None:
+        await _pick(db, "CTOU.567.16", rank=2, model="model_one", ts="2026-11-01 08:00:00")
+        await _typed(db, None, model="model_two", ts="2026-11-02 08:00:00")
+
+    row = _only(_scenario(tmp_path, build))
+    assert row["status"] == "conflict"
+    assert row["ccl_key"] == ""
+    assert row["conflicting_keys"] == "CTOU.567.16 | (none_of_top_k)"
+    assert row["reviewer_count"] == 1
 
 
 # --- key forms ---------------------------------------------------------------
@@ -303,7 +348,9 @@ def test_an_edition_citation_with_a_semicolon_splits_back_cleanly(tmp_path: Path
     ]
 
 
-def test_a_reviewer_directory_names_its_key_or_nothing(tmp_path: Path) -> None:
+def test_a_legacy_reviewer_directory_pick_needs_a_check(tmp_path: Path) -> None:
+    """Ranks 11-15 were pre-#196 reviewer directories, scored live: a human looks."""
+
     async def build(db: FeedbackDB) -> None:
         await _reviewer_dir(db, "reviewer-dir-keyed", key="CTOU.700.2", label="CTOU.700.2")
         await _reviewer_dir(
@@ -313,11 +360,27 @@ def test_a_reviewer_directory_names_its_key_or_nothing(tmp_path: Path) -> None:
         await _pick(db, "reviewer-dir-siglum", rank=11, query_id=2)
 
     rows = {r["xml_id"]: r for r in _scenario(tmp_path, build)}
-    assert rows["BAV1341.13v.1"]["ccl_key"] == "CTOU.700.2"
-    assert rows["BAV1341.13v.1"]["key_source"] == "model_suggestion"
-    # A pre-#196 label is a siglum, not a key: nothing is invented from it.
-    assert rows["BAV1341.13v.2"]["status"] == "no_key"
-    assert rows["BAV1341.13v.2"]["ccl_key"] == ""
+    for xml_id in ("BAV1341.13v.1", "BAV1341.13v.2"):
+        assert rows[xml_id]["status"] == "needs_check"
+        assert rows[xml_id]["ccl_key"] == ""
+        assert rows[xml_id]["conflicting_keys"] == "(unresolved)"
+        assert rows[xml_id]["suggested_by"] == "(unresolved)=model_one:sif_abtt:11"
+
+
+def test_a_trusted_pick_of_a_keyless_reviewer_directory_needs_a_check(
+    tmp_path: Path,
+) -> None:
+    """A directory without a key names nothing; the other reviewer is not agreed with."""
+
+    async def build(db: FeedbackDB) -> None:
+        await _reviewer_dir(db, "reviewer-dir-siglum", key="", label="BAV1341.14r.1")
+        await _pick(db, "reviewer-dir-siglum", rank=1)
+        await _typed(db, "CTOU.567.16", reviewer="Bruno Example", account=2)
+
+    row = _only(_scenario(tmp_path, build))
+    assert row["status"] == "needs_check"
+    assert row["ccl_key"] == ""
+    assert row["conflicting_keys"] == "CTOU.567.16 | (unresolved)"
 
 
 # --- multi-rank picks --------------------------------------------------------
@@ -325,10 +388,14 @@ def test_a_reviewer_directory_names_its_key_or_nothing(tmp_path: Path) -> None:
 
 def test_a_multi_rank_pick_naming_two_keys_is_a_conflict(tmp_path: Path) -> None:
     async def build(db: FeedbackDB) -> None:
-        # correct_dir stores the first choice only; rank 4 comes from the ranking.
+        # correct_dir stores the first choice only; rank 4 comes from the ranking,
+        # which still holds the stored first choice at rank 2.
         await _pick(db, "CTOU.567.16", rank=2, selected="[2, 4]")
 
-    ranking = {(1, "model_one", "sif_abtt", 4): "CARL.501?.18"}
+    ranking = {
+        (1, "model_one", "sif_abtt", 2): "CTOU.567.16",
+        (1, "model_one", "sif_abtt", 4): "CARL.501?.18",
+    }
     row = _only(_scenario(tmp_path, build, ranking=ranking))
     assert row["status"] == "conflict"
     assert row["conflicting_keys"] == "CARL.501?.18 | CTOU.567.16"
@@ -343,11 +410,110 @@ def test_a_multi_rank_pick_of_one_key_agrees(tmp_path: Path) -> None:
         await _reviewer_dir(db, "reviewer-dir-same", key="ctou.567.16", label="ctou.567.16")
         await _pick(db, "CTOU.567.16", rank=1, selected="[1, 3]")
 
-    ranking = {(1, "model_one", "sif_abtt", 3): "reviewer-dir-same"}
+    ranking = {
+        (1, "model_one", "sif_abtt", 1): "CTOU.567.16",
+        (1, "model_one", "sif_abtt", 3): "reviewer-dir-same",
+    }
     row = _only(_scenario(tmp_path, build, ranking=ranking))
     assert row["status"] == "agreed"
     assert row["ccl_key"] == "CTOU.567.16"
     assert row["suggested_by"] == "model_one:sif_abtt:1 | model_one:sif_abtt:3"
+
+
+# Review round 1, finding 2: the four reproduced scenarios.
+
+
+def test_a_multi_rank_pick_is_not_read_from_a_ranking_that_moved(tmp_path: Path) -> None:
+    async def build(db: FeedbackDB) -> None:
+        await _put(
+            db, outcome="matched_rank", correct_rank=1, correct_dir="CTOU.567.16",
+            selected="[1, 3]",
+        )
+
+    # A release moved the stored first pick from rank 1 to rank 3, and put
+    # another directory at rank 1.
+    ranking = {
+        (1, "model_one", "sif_abtt", 1): "CARL.501?.18",
+        (1, "model_one", "sif_abtt", 3): "CTOU.567.16",
+    }
+    row = _only(_scenario(tmp_path, build, ranking=ranking))
+    assert row["status"] == "needs_check"
+    assert row["ccl_key"] == ""
+    assert row["conflicting_keys"] == "CTOU.567.16 | (unresolved)"
+    # Rank 3 is never listed as support for the first pick's key.
+    assert row["suggested_by"] == (
+        "CTOU.567.16=model_one:sif_abtt:1 | (unresolved)=model_one:sif_abtt:3"
+    )
+
+
+def test_a_multi_rank_pick_no_longer_served_needs_a_check(tmp_path: Path) -> None:
+    async def build(db: FeedbackDB) -> None:
+        await _put(
+            db, outcome="matched_rank", correct_rank=1, correct_dir="CTOU.567.16",
+            selected="[1, 3]",
+        )
+        # Pre-variant row: there is no ranking to read at all.
+        await _put(
+            db, query_id=2, outcome="matched_rank", correct_rank=1,
+            correct_dir="CTOU.567.16", selected="[1, 3]", variant=None,
+        )
+
+    rows = _scenario(tmp_path, build, ranking={})
+    assert [(r["xml_id"], r["status"], r["ccl_key"]) for r in rows] == [
+        ("BAV1341.13v.1", "needs_check", ""),
+        ("BAV1341.13v.2", "needs_check", ""),
+    ]
+
+
+def test_a_later_legacy_reviewer_directory_pick_is_not_dropped(tmp_path: Path) -> None:
+    async def build(db: FeedbackDB) -> None:
+        await _reviewer_dir(db, "reviewer-dir-aaaaaaaaaaaa", key="QXAN.512.7", label="QXAN.512.7")
+        await _put(
+            db, outcome="matched_rank", correct_rank=1, correct_dir="CTOU.567.16",
+            selected="[1, 12]",
+        )
+
+    # Even a resolver that answered for rank 12 is not believed: no served
+    # ranking has had a rank above ten since #196.
+    ranking = {
+        (1, "model_one", "sif_abtt", 1): "CTOU.567.16",
+        (1, "model_one", "sif_abtt", 12): "reviewer-dir-aaaaaaaaaaaa",
+    }
+    row = _only(_scenario(tmp_path, build, ranking=ranking))
+    assert row["status"] == "needs_check"
+    assert row["suggested_by"] == (
+        "CTOU.567.16=model_one:sif_abtt:1 | (unresolved)=model_one:sif_abtt:12"
+    )
+
+
+def test_no_key_is_taken_from_a_pick_nobody_can_be_shown_to_have_seen(
+    tmp_path: Path,
+) -> None:
+    async def build(db: FeedbackDB) -> None:
+        await _reviewer_dir(db, "reviewer-dir-bbbbbbbbbbbb", key="", label="BAV1341.13v.1")
+        await _put(
+            db, outcome="matched_rank", correct_rank=11,
+            correct_dir="reviewer-dir-bbbbbbbbbbbb", selected="[11, 2]",
+        )
+
+    ranking = {(1, "model_one", "sif_abtt", 2): "CARL.501?.18"}
+    row = _only(_scenario(tmp_path, build, ranking=ranking))
+    assert row["status"] == "needs_check"
+    assert row["ccl_key"] == ""
+    assert "CARL.501?.18" not in row["conflicting_keys"]
+    assert "CARL.501?.18" not in row["suggested_by"]
+
+
+def test_a_legacy_row_with_no_stored_directory_is_not_read_from_today(
+    tmp_path: Path,
+) -> None:
+    async def build(db: FeedbackDB) -> None:
+        await _put(db, outcome="matched_rank", correct_rank=1, correct_dir=None)
+
+    ranking = {(1, "model_one", "sif_abtt", 1): "CTOU.567.16"}
+    row = _only(_scenario(tmp_path, build, ranking=ranking))
+    assert row["status"] == "needs_check"
+    assert row["ccl_key"] == ""
 
 
 def test_the_first_pick_uses_the_stored_directory_not_the_ranking(tmp_path: Path) -> None:
@@ -636,6 +802,11 @@ def test_the_route_serves_the_resolved_csv(tmp_path: Path) -> None:
             client.get("/api/feedback/export/ccl_keys", params={"status": "bogus"}).status_code
             == 422
         )
+        needs_check = client.get(
+            "/api/feedback/export/ccl_keys", params={"status": "needs_check"}
+        )
+        assert needs_check.status_code == 200
+        assert list(csv.DictReader(io.StringIO(needs_check.text))) == []
     finally:
         client.__exit__(None, None, None)
 

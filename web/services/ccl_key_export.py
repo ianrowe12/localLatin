@@ -22,19 +22,37 @@ THE RULE, in the order it is applied:
    keyed by model and variant. A newer save on the same model and variant
    replaces an older one; a save under a different model does not, because the
    app itself still shows the reviewer both answers.
-3. Each current decision names zero or more keys. A `matched_rank` row names
-   the directory behind every selected rank (a labelled directory names itself;
-   a reviewer directory names its `ccl_key`, and one without a key names
-   nothing). A `none_of_top_k` row names its typed `ccl_key`, if any.
-4. Keys are compared by `ccl_keys.match_form` (case-folded). The query's
-   status is `no_key` when no counted decision names a key, `agreed` when they
-   all name the same key, and `conflict` when two or more different keys are
-   named, whether by different reviewers, by one reviewer under two models, or
-   by one multi-rank selection.
-5. A reviewer counts once (`reviewer_count`, `reviewers`) however many models
-   they decided under. A reviewer whose decisions name no key still counts: a
-   `none_of_top_k` without a key says the ranking missed, not that there is no
-   key, so it never conflicts with a key somebody else named.
+3. Each current decision gives an answer. A `matched_rank` row names the
+   directory behind every selected rank (a labelled directory names itself; a
+   reviewer directory names its `ccl_key`). A `none_of_top_k` row names its
+   typed `ccl_key`, and one without a key is the answer "none of these", which
+   rejects every candidate it was made against (`NONE_MARKER`).
+4. A pick is trusted only when it can be shown to be what the reviewer saw
+   (`resolve_picks`). The first selection's directory is stored on the row
+   (`correct_dir`, resolved server-side at save time), so a single pick is
+   trusted as stored. Later selections of a multi-rank pick are not stored;
+   they are read from the ranking the server serves now, and only after the
+   stored first pick is confirmed to still sit at its rank there. A pick that
+   cannot be confirmed (the anchor moved, the rank or query is no longer
+   served, the row has no variant, the row stores no directory at all, or the
+   rank is a legacy reviewer-directory rank above `MAX_MODEL_RANK`) names
+   nothing and is reported as unresolved (`UNRESOLVED_MARKER`). So is a
+   trusted pick of a reviewer directory that has no key. No key is ever taken
+   from a pick nobody can be shown to have seen.
+5. Keys are compared by `ccl_keys.match_form` (case-folded). Status, first rule
+   that applies:
+   - `needs_check`: some counted decision holds an unresolved pick. A human
+     must look before importing.
+   - `conflict`: two or more different keys are named (by different reviewers,
+     one reviewer under two models, or one multi-rank pick), or a key is named
+     and another counted decision is a no-key "none of these".
+   - `agreed`: exactly one key, and every counted decision names it.
+   - `no_key`: nobody named a key (every decision is a no-key "none of these").
+6. A reviewer counts once (`reviewer_count`, `reviewers`) however many models
+   they decided under. `reviewers` lists everyone with a counted decision,
+   whatever they answered. Only an `agreed` row carries a `ccl_key`, and in an
+   `agreed` row every listed reviewer's decisions named that key, so nobody is
+   ever credited with a key they rejected.
 
 DISPLAY FORM. Reviewers who typed `ctou.567.16` and `CTOU.567.16` agree, and one
 form has to be printed. It is the labelled directory's own name when the key
@@ -52,6 +70,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Iterable
 
+from web.models import MAX_MODEL_RANK
 from web.services import ccl_keys
 from web.services.reviewer_dirs import is_reviewer_dir_id
 
@@ -79,7 +98,16 @@ COLUMNS = [
 #: as `reviewed`; keep them together.
 DECISION_OUTCOMES = ("matched_rank", "none_of_top_k")
 
-STATUSES = ("agreed", "conflict", "no_key")
+STATUSES = ("agreed", "conflict", "no_key", "needs_check")
+
+#: In `conflicting_keys`: somebody pressed "None of the top N" without a key.
+#: Parenthesised and spelled like the stored outcome, so it cannot be mistaken
+#: for a CCL key or for any of the 840 labelled directory names.
+NONE_MARKER = "(none_of_top_k)"
+
+#: In `conflicting_keys`, and as the key of a `suggested_by` entry: a pick
+#: whose directory could not be confirmed (rule point 4).
+UNRESOLVED_MARKER = "(unresolved)"
 
 #: Separator inside a multi-valued cell. Not "; " or ", ": 18 labelled
 #: directory names contain a semicolon and 103 a comma (edition citations such
@@ -114,6 +142,10 @@ class Decision:
     decided_at: str
     row_id: int
     claims: list[KeyClaim] = field(default_factory=list)
+    #: A `none_of_top_k` with no key: "none of these".
+    rejects_all: bool = False
+    #: `(model_slug, variant, rank)` of every pick that could not be confirmed.
+    unresolved: list[tuple] = field(default_factory=list)
 
 
 def reviewer_identity(row: dict) -> tuple:
@@ -150,16 +182,63 @@ def current_decisions(rows: Iterable[dict]) -> list[dict]:
     return list(newest.values())
 
 
+def needs_ranking(row: dict) -> bool:
+    """Whether a `matched_rank` row can only be read with the served ranking.
+
+    A single pick with a stored directory cannot; every other pick can.
+    """
+    if row.get("outcome") != "matched_rank":
+        return False
+    ranks = selected_ranks(row)
+    return not (len(ranks) == 1 and row.get("correct_dir"))
+
+
+def resolve_picks(
+    row: dict, served: dict[int, str | None] | None
+) -> tuple[list[tuple[int, str]], list[int | None]]:
+    """Which picks of a `matched_rank` row are trusted (rule point 4).
+
+    `served` maps rank to the directory at that rank in the ranking the server
+    serves now for this row's query, model and variant, or is None when there
+    is no such ranking (no variant, or the variant or query is not served).
+    Returns the trusted `(rank, directory)` picks and the ranks left unresolved.
+    """
+    ranks = selected_ranks(row)
+    if not ranks:
+        return [], [None]
+    stored = row.get("correct_dir") or None
+    trusted: list[tuple[int, str]] = []
+    unresolved: list[int | None] = []
+    first, later = ranks[0], ranks[1:]
+    if first > MAX_MODEL_RANK or not stored:
+        # A legacy reviewer-directory rank, or a row with nothing stored:
+        # nothing ties it to what the reviewer saw.
+        unresolved.append(first)
+    else:
+        trusted.append((first, stored))
+    # Later picks are read from today's ranking only when that ranking still
+    # holds the stored first pick at its rank, i.e. it has not moved.
+    anchored = bool(trusted) and served is not None and served.get(first) == stored
+    for rank in later:
+        directory = served.get(rank) if anchored and served is not None else None
+        if rank <= MAX_MODEL_RANK and directory:
+            trusted.append((rank, directory))
+        else:
+            unresolved.append(rank)
+    return trusted, unresolved
+
+
 def decision_from_row(
     row: dict,
-    picked_dirs: list[tuple[int, str | None]],
+    picked_dirs: list[tuple[int, str]],
     reviewer_dir_keys: dict[str, str],
+    unresolved_ranks: Iterable[int | None] = (),
 ) -> Decision:
-    """The keys one current decision row names (rule point 3).
+    """The answer one current decision row gives (rule point 3).
 
-    `picked_dirs` is `(rank, directory)` for every rank a `matched_rank` row
-    selected, in selection order, with None where no directory could be
-    resolved. It is ignored for `none_of_top_k`, whose key is the one typed.
+    `picked_dirs` is the trusted `(rank, directory)` picks of a `matched_rank`
+    row and `unresolved_ranks` the rest, both from `resolve_picks`. Both are
+    ignored for `none_of_top_k`, whose key is the one typed.
     """
     decision = Decision(
         query_id=int(row["query_id"]),
@@ -175,16 +254,25 @@ def decision_from_row(
         "variant": row.get("variant"),
     }
     if row.get("outcome") == "matched_rank":
+        where = (common["model_slug"], common["variant"])
         for rank, directory in picked_dirs:
             key = _key_of_dir(directory, reviewer_dir_keys)
             if key:
                 decision.claims.append(
                     KeyClaim(key=key, source=MODEL_SUGGESTION, rank=rank, **common)
                 )
+            else:
+                # A reviewer directory without a key: a human has to say
+                # what it is before anything is imported.
+                decision.unresolved.append((*where, rank))
+        for rank in unresolved_ranks:
+            decision.unresolved.append((*where, rank))
     elif row.get("outcome") == "none_of_top_k":
         key = ccl_keys.normalize_ccl_key(row.get("ccl_key"))
         if key:
             decision.claims.append(KeyClaim(key=key, source=REVIEWER_TYPED, **common))
+        else:
+            decision.rejects_all = True
     return decision
 
 
@@ -269,18 +357,28 @@ def resolve_query(
             by_form.setdefault(form, []).append(claim)
     display = {form: _display_form(group, labelled) for form, group in by_form.items()}
 
-    if not by_form:
-        status = "no_key"
-    elif len(by_form) == 1:
+    rejected = any(decision.rejects_all for decision in decisions)
+    unresolved = sorted(
+        {entry for decision in decisions for entry in decision.unresolved},
+        key=lambda entry: (entry[0], entry[1] or "", entry[2] or 0),
+    )
+    if unresolved:
+        status = "needs_check"
+    elif len(by_form) >= 2 or (by_form and rejected):
+        status = "conflict"
+    elif by_form:
         status = "agreed"
     else:
-        status = "conflict"
+        status = "no_key"
 
     key = next(iter(display.values())) if status == "agreed" else ""
+    answers = sorted(display.values(), key=_sort_text)
+    if rejected:
+        answers.append(NONE_MARKER)
+    if unresolved:
+        answers.append(UNRESOLVED_MARKER)
     conflicting = (
-        LIST_SEPARATOR.join(sorted(display.values(), key=_sort_text))
-        if status == "conflict"
-        else ""
+        LIST_SEPARATOR.join(answers) if status in ("conflict", "needs_check") else ""
     )
 
     sources = {claim.source for group in by_form.values() for claim in group}
@@ -301,9 +399,16 @@ def resolve_query(
             suggestions.add(
                 (display[form], claim.model_slug or "", claim.variant or "", claim.rank)
             )
+    with_key = status in ("conflict", "needs_check")
     suggested_by = LIST_SEPARATOR.join(
-        _suggestion_text(entry, with_key=status == "conflict")
-        for entry in sorted(suggestions, key=_suggestion_order)
+        [
+            _suggestion_text(entry, with_key=with_key)
+            for entry in sorted(suggestions, key=_suggestion_order)
+        ]
+        + [
+            _suggestion_text((UNRESOLVED_MARKER, model, variant or "", rank), with_key=True)
+            for model, variant, rank in unresolved
+        ]
     )
 
     names: dict[tuple, Decision] = {}

@@ -351,7 +351,7 @@ async def export_feedback(
 async def export_ccl_key_assignments(
     status: str | None = Query(
         None,
-        pattern="^(agreed|conflict|no_key)$",
+        pattern="^(agreed|conflict|no_key|needs_check)$",
         description="Only rows with this resolved status. Default: every reviewed query.",
     ),
     store: DataStore = Depends(get_store),
