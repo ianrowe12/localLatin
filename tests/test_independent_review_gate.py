@@ -248,6 +248,9 @@ def evaluate_if(condition: str, event_name: str, event: dict) -> bool:
     Supports `||`, `&&`, parentheses, `==`/`!=` against quoted strings, bare property
     truthiness and `contains(fromJSON('[...]'), <property>)`. Anything else is left
     untranslated and makes eval fail, so the test cannot silently pass on new syntax.
+
+    GitHub ignores case when comparing strings, with `==`, `!=` and `contains()` alike, so
+    every quoted literal and every looked-up string is lowercased before evaluation.
     """
     context = {"event_name": event_name, "event": event}
 
@@ -255,10 +258,11 @@ def evaluate_if(condition: str, event_name: str, event: dict) -> bool:
         value: object = context
         for part in match.group(0).split(".")[1:]:
             value = value.get(part) if isinstance(value, dict) else None
-        return repr(value)
+        return repr(value.lower() if isinstance(value, str) else value)
 
+    expr = re.sub(r"'[^']*'", lambda m: m.group(0).lower(), condition)
     expr = re.sub(r"contains\(fromJSON\('(\[[^']*\])'\),\s*(github(?:\.\w+)+)\)",
-                  r"(\2 in \1)", condition)
+                  r"(\2 in \1)", expr)
     assert "contains(" not in expr and "fromJSON" not in expr
     expr = expr.replace("||", " or ").replace("&&", " and ")
     expr = re.sub(r"\bgithub(?:\.\w+)+", lookup, expr)
@@ -311,8 +315,20 @@ def test_pull_request_target_is_never_prefiltered(action, association):
     assert gate_runs("pull_request_target", event)
 
 
+@pytest.mark.parametrize("condition, runs", [
+    ("github.event.workflow_run.conclusion == 'Success'", True),
+    ("github.event.workflow_run.conclusion != 'Success'", False),
+    ("github.event.workflow_run.conclusion != 'SKIPPED'", True),
+    ("contains(fromJSON('[\"Success\"]'), github.event.workflow_run.conclusion)", True),
+])
+def test_translator_ignores_case_like_github(condition, runs):
+    event = {"workflow_run": {"conclusion": "success"}}
+    assert evaluate_if(condition, "workflow_run", event) is runs
+
+
 @pytest.mark.parametrize("conclusion, runs", [
-    ("success", True), ("failure", True), ("cancelled", True), ("skipped", False)])
+    ("success", True), ("failure", True), ("cancelled", True), ("skipped", False),
+    ("Success", True), ("SUCCESS", True), ("Skipped", False), ("SKIPPED", False)])
 def test_gate_ignores_only_relay_runs_the_prefilter_skipped(conclusion, runs):
     event = {"action": "completed", "workflow_run": {"id": 456, "conclusion": conclusion}}
     assert gate_runs("workflow_run", event) is runs
