@@ -89,20 +89,24 @@ The new role applies on the account's next request. Sessions are not revoked, be
 
 **Audit.** Every change adds a row to `account_role_changes` in the feedback DB: `account_id`, `old_role`, `new_role`, `changed_by_account_id` (NULL when the CLI made it), `note` (prefixed `cli: ` from the CLI) and `changed_at`. The app creates the table on boot and the CLI creates it if it is missing; existing rows are never touched.
 
-**From GitHub, on the production DB.** When no PI/admin can do it in the app, run the `Admin set account role` workflow (`.github/workflows/admin-set-account-role.yml`). It runs `scripts/webapp/set_account_role.py` on the self-hosted production runner against `$DEPLOY_PATH/data/feedback.db`, in the deploy concurrency group, only when `ENABLE_PRODUCTION_DEPLOY` is `true`. The script comes from a fresh checkout of `main` in the runner's workspace, so the deploy checkout is never modified. Without `apply` it only reads.
+**From GitHub, on the production DB.** When no PI/admin can do it in the app, run the `Admin set account role` workflow (`.github/workflows/admin-set-account-role.yml`). It runs `scripts/webapp/set_account_role.py` on the self-hosted production runner against `$DEPLOY_PATH/data/feedback.db`, in the deploy concurrency group, only when dispatched on `main` and `ENABLE_PRODUCTION_DEPLOY` is `true`. The script comes from a fresh checkout of `main` in the runner's workspace (no persisted credentials), so the deploy checkout is never modified. Without `apply` it only reads.
+
+**The workflow output is redacted.** This repository is public, so its Actions logs are world-readable, and usernames are often email addresses. The workflow always passes `--redact`: an account appears only as its id, role, approval status, `is_active`, creation date, display-name initials and the username's first character followed by `***`, and error messages name accounts by id. A `find` needs at least 3 characters, and one that matches more than 5 accounts fails without listing anything. The inputs themselves appear in the step's env block, so search with a short fragment and change an account by `account_id` rather than by full username.
 
 ```bash
-# 1. Find the account (prints id, username, display name, role, approval status, created_at)
-gh workflow run admin-set-account-role.yml -f find=noah
+# 1. Find the account: prints redacted rows with their ids
+gh workflow run admin-set-account-role.yml -f find=noa
 # 2. Dry run: what would change
-gh workflow run admin-set-account-role.yml -f username=<login> -f role=pi_admin \
+gh workflow run admin-set-account-role.yml -f account_id=<id> -f role=pi_admin \
     -f approve_if_pending=true -f note="issue #265"
 # 3. Apply: backs the DB up first, then makes the change in one transaction
-gh workflow run admin-set-account-role.yml -f username=<login> -f role=pi_admin \
+gh workflow run admin-set-account-role.yml -f account_id=<id> -f role=pi_admin \
     -f approve_if_pending=true -f note="issue #265" -f apply=true
 ```
 
-With `apply`, the script first writes `data/feedback.db.pre-role-change-<UTC timestamp>` with SQLite's online backup API (mode 0600, integrity-checked) and prints its path and size. That file is a full copy of the reviewer DB, password hashes included: keep the most recent and remove older ones only once another good copy exists (`scripts/webapp/backup_feedback_db.py`). `approve_if_pending` also approves a pending account; without it a pending account keeps its pending status.
+With `apply`, the script first writes `data/feedback.db.pre-role-change-<UTC timestamp>` with SQLite's online backup API (mode 0600, integrity-checked) and prints its path and size; a failed backup is deleted and nothing changes. That file is a full copy of the reviewer DB, password hashes included: keep the most recent and remove older ones only once another good copy exists (`scripts/webapp/backup_feedback_db.py`). `approve_if_pending` also approves a pending account; without it a pending account keeps its pending status. A database locked by the service for more than 30 seconds, or a file that is not SQLite, is reported as an error with nothing changed.
+
+Dispatching this workflow while a deploy is running and another deploy is queued can cancel the queued deploy, because they share one concurrency group (one running run, one pending). Re-run the deploy afterwards if that happens.
 
 ## Smoke Checks
 
