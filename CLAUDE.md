@@ -136,9 +136,19 @@ branch resolves, so merging closes them automatically.
 **Merge gate**: a PR may only be merged once both of these hold.
 
 1. **CI is green** on the head commit (workflow added in issue #54).
-2. **An independent code-review agent has passed the PR** — a fresh-context reviewer, never the
-   agent that wrote the code. The implementer marks the PR ready; the reviewer approves or
-   requests changes. Enable auto-merge only after both conditions hold.
+2. **The `Independent Review` status is green** on the head commit. A fresh Opus reviewer agent
+   (`model: "opus"`), never the agent that wrote the code, posts its findings and verdict in one
+   PR comment ending with `Reviewed head: <full 40-char SHA>` and
+   `Independent review verdict: APPROVE` (or `REQUEST CHANGES`) as the last line.
+   `.github/workflows/independent-review-gate.yml` turns the status green only when the newest
+   verdict bound to the current head is APPROVE and its author has write access to the repo
+   (the repo is public, so other accounts' comments are ignored). Any push needs a new verdict.
+   Enable auto-merge only after both conditions hold.
+
+The full protocol is `docs/agents/independent-review.md`: BLOCKING/ADVISORY findings, the stop
+rule after APPROVE, the round cap and arbiter, CI-fix re-verdicts, and paste-ready reviewer and
+arbiter prompts. The `independent-review-exempt` label bypasses the gate and needs Ian's explicit
+approval for that PR.
 
 **Commit messages**: NEVER add a `Co-Authored-By:` trailer (standing preference from Ian). This
 applies to every commit in this repo, agent-authored or not. Use conventional-commit style
