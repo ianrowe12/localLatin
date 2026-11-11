@@ -129,3 +129,25 @@ export function rejectAccount(id: number): Promise<AccountPublic> {
     method: 'POST',
   })
 }
+
+export type AccountRole = AuthUser['role']
+
+export interface AccountRoleChangePayload {
+  role: AccountRole
+  note?: string
+}
+
+/**
+ * Promote or demote another account (issue #265). The server refuses your own
+ * account (400) and leaving no approved PI/admin (409); the rejected promise is
+ * an `ApiError` whose `message` is the server's explanation.
+ */
+export function setAccountRole(
+  id: number,
+  payload: AccountRoleChangePayload,
+): Promise<AccountPublic> {
+  return apiFetch<AccountPublic>(`/api/auth/accounts/${id}/role`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}

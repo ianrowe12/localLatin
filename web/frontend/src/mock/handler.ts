@@ -153,6 +153,49 @@ async function handleAuth(url: string, init?: RequestInit): Promise<Response | n
         temporary_password: 'temporary-password-456',
       })
     }
+    if (/accounts\/\d+\/role/.test(url)) {
+      // Mirrors POST /api/auth/accounts/{id}/role (issue #265), guards included.
+      const accountId = Number(url.match(/accounts\/(\d+)\/role/)?.[1])
+      const body = init?.body ? JSON.parse(String(init.body)) : {}
+      const index = approvedAccounts.findIndex((item) => item.id === accountId)
+      if (mockUser && accountId === mockUser.id) {
+        return mockResponse(
+          { detail: 'You cannot change your own role. Another PI/admin must do it.' },
+          400,
+        )
+      }
+      if (index < 0) {
+        return mockResponse({ detail: 'Account not found' }, 404)
+      }
+      const current = approvedAccounts[index]
+      if (
+        current.role === 'pi_admin' &&
+        body.role === 'reviewer' &&
+        approvedAccounts.filter((item) => item.role === 'pi_admin').length <= 1
+      ) {
+        return mockResponse(
+          {
+            detail:
+              'This is the last approved PI/admin account. Make another account a PI/admin before changing this one.',
+          },
+          409,
+        )
+      }
+      if (body.role === 'reviewer' || body.role === 'pi_admin') {
+        approvedAccounts[index] = { ...current, role: body.role }
+      }
+      return mockResponse({
+        ...approvedAccounts[index],
+        is_active: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        last_login_at: null,
+        approved_at: new Date().toISOString(),
+        approved_by_account_id: 1,
+        rejected_at: null,
+        approval_note: '',
+      })
+    }
     if (url.includes('/approve')) {
       const accountId = Number(url.match(/accounts\/(\d+)\/approve/)?.[1])
       const account = pendingAccounts.find((item) => item.id === accountId)

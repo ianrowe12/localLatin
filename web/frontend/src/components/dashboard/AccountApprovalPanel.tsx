@@ -6,9 +6,28 @@ import {
   listAccounts,
   rejectAccount,
   resetAccountPassword,
+  setAccountRole,
   type AccountCreateResponse,
   type AccountPublic,
+  type AccountRole,
 } from '../../api/auth'
+
+function roleLabel(role: AccountRole): string {
+  return role === 'pi_admin' ? 'PI/admin' : 'Reviewer'
+}
+
+/** What the confirm step says before a role change is sent (issue #265). */
+function roleChangeWarning(
+  account: Pick<AccountPublic, 'display_name'>,
+  role: AccountRole,
+): string {
+  return role === 'pi_admin'
+    ? `Make ${account.display_name} a PI/admin? PI/admins can approve accounts, reset passwords and export all feedback.`
+    : `Make ${account.display_name} a reviewer? They lose PI/admin access on their next request.`
+}
+
+const OWN_ROLE_REASON =
+  'You cannot change your own role. Another PI/admin must do it.'
 
 function formatCreatedAt(value: string): string {
   const date = new Date(`${value.replace(' ', 'T')}Z`)
@@ -41,6 +60,13 @@ export default function AccountApprovalPanel() {
   const [newPassword, setNewPassword] = useState('')
   const [createdAccount, setCreatedAccount] =
     useState<AccountCreateResponse | null>(null)
+  const [roleConfirm, setRoleConfirm] = useState<{
+    id: number
+    role: AccountRole
+  } | null>(null)
+  const [roleChangingId, setRoleChangingId] = useState<number | null>(null)
+  const [roleError, setRoleError] = useState<string | null>(null)
+  const [roleNotice, setRoleNotice] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -111,6 +137,32 @@ export default function AccountApprovalPanel() {
       setError(err instanceof Error ? err.message : 'Password reset failed')
     } finally {
       setResettingId(null)
+    }
+  }
+
+  // Two steps on purpose: a PI/admin can approve accounts, reset passwords and
+  // export all feedback, so a promotion is never one stray click. The server
+  // owns the guards (own role 400, last PI/admin 409) and its text is shown.
+  const changeRole = async (account: AccountPublic, role: AccountRole) => {
+    if (roleChangingId !== null) return
+    setRoleChangingId(account.id)
+    setRoleError(null)
+    setRoleNotice(null)
+    try {
+      const updated = await setAccountRole(account.id, { role })
+      setApproved((current) =>
+        current.map((item) => (item.id === account.id ? updated : item)),
+      )
+      setRoleNotice(
+        `${updated.display_name} is now ${
+          updated.role === 'pi_admin' ? 'a PI/admin' : 'a reviewer'
+        }.`,
+      )
+      setRoleConfirm(null)
+    } catch (err) {
+      setRoleError(err instanceof Error ? err.message : 'Role change failed')
+    } finally {
+      setRoleChangingId(null)
     }
   }
 
@@ -413,6 +465,135 @@ export default function AccountApprovalPanel() {
                 </button>
               </div>
             ))}
+          </div>
+        )}
+      </div>
+
+      <div
+        className="border-t border-stone-100 dark:border-stone-700/70"
+        data-testid="account-roles"
+      >
+        <div className="px-4 py-3">
+          <h4 className="font-ui text-sm font-semibold text-stone-700 dark:text-stone-200">
+            Roles
+          </h4>
+          <p className="font-ui text-xs text-stone-500 dark:text-stone-400">
+            PI/admins can approve accounts, reset passwords and export all
+            feedback. A change applies on the account&apos;s next request.
+          </p>
+        </div>
+
+        {roleError && (
+          <div
+            role="alert"
+            className="mx-4 mb-3 font-ui text-sm text-red-600 dark:text-red-400"
+          >
+            {roleError}
+          </div>
+        )}
+        {roleNotice && (
+          <div
+            role="status"
+            className="mx-4 mb-3 rounded-md bg-accent/10 dark:bg-accent/15 px-3 py-2 font-ui text-sm text-stone-700 dark:text-stone-200"
+          >
+            {roleNotice}
+          </div>
+        )}
+
+        {approved.length === 0 ? (
+          <div className="px-4 pb-5 font-ui text-sm text-stone-500 dark:text-stone-400">
+            No approved accounts.
+          </div>
+        ) : (
+          <div className="divide-y divide-stone-100 dark:divide-stone-700/70">
+            {approved.map((account) => {
+              const isSelf = account.id === user?.id
+              const target: AccountRole =
+                account.role === 'pi_admin' ? 'reviewer' : 'pi_admin'
+              const confirming = roleConfirm?.id === account.id
+              const busy = roleChangingId === account.id
+              return (
+                <div
+                  key={account.id}
+                  data-testid={`role-row-${account.id}`}
+                  className="flex flex-col gap-2 px-4 py-3"
+                >
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                        <span className="font-ui text-sm font-semibold text-stone-800 dark:text-stone-100">
+                          {account.display_name}
+                        </span>
+                        <span className="font-ui text-xs text-stone-500 dark:text-stone-400">
+                          @{account.username}
+                        </span>
+                      </div>
+                      <p className="font-ui text-xs text-stone-400 dark:text-stone-500">
+                        {roleLabel(account.role)}
+                        {isSelf ? ' (you)' : ''}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRoleError(null)
+                        setRoleNotice(null)
+                        setRoleConfirm({ id: account.id, role: target })
+                      }}
+                      disabled={isSelf || busy || confirming}
+                      title={isSelf ? OWN_ROLE_REASON : undefined}
+                      className="h-8 px-3 rounded-md font-ui text-xs font-medium
+                                 text-stone-600 dark:text-stone-300
+                                 bg-stone-100 dark:bg-surface-900
+                                 hover:bg-stone-200 dark:hover:bg-stone-700 transition-colors
+                                 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {target === 'pi_admin' ? 'Make PI/admin' : 'Make reviewer'}
+                    </button>
+                  </div>
+                  {isSelf && (
+                    <p className="font-ui text-xs text-stone-500 dark:text-stone-400">
+                      {OWN_ROLE_REASON}
+                    </p>
+                  )}
+                  {confirming && roleConfirm && (
+                    <div className="rounded-md border border-amber-300/70 dark:border-amber-600/50 bg-amber-50 dark:bg-amber-900/20 px-3 py-2">
+                      <p className="font-ui text-sm text-stone-700 dark:text-stone-200">
+                        {roleChangeWarning(account, roleConfirm.role)}
+                      </p>
+                      <div className="mt-2 flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setRoleConfirm(null)}
+                          disabled={busy}
+                          className="h-7 px-2 rounded-md font-ui text-xs font-medium
+                                     bg-white dark:bg-surface-900 text-stone-600 dark:text-stone-300
+                                     border border-stone-200 dark:border-stone-700
+                                     hover:bg-stone-100 dark:hover:bg-stone-700 transition-colors
+                                     disabled:opacity-50"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void changeRole(account, roleConfirm.role)}
+                          disabled={busy}
+                          className="h-7 px-2 rounded-md font-ui text-xs font-medium
+                                     text-white bg-accent hover:bg-accent-dark transition-colors
+                                     disabled:opacity-50"
+                        >
+                          {busy
+                            ? 'Saving...'
+                            : roleConfirm.role === 'pi_admin'
+                              ? 'Confirm: make PI/admin'
+                              : 'Confirm: make reviewer'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         )}
       </div>
