@@ -10,10 +10,13 @@ Python 3.10 CI leg, where the web package cannot import (enum.StrEnum).
 from __future__ import annotations
 
 import ast
+import importlib.util
+import os
 import sqlite3
 import subprocess
 import sys
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
@@ -90,12 +93,23 @@ def db(request: pytest.FixtureRequest, tmp_path: Path) -> Path:
     return path
 
 
-def run(db: Path, *args: str) -> subprocess.CompletedProcess:
+def run(db: Path, *args: str, umask: int | None = None) -> subprocess.CompletedProcess:
     return subprocess.run(
         [sys.executable, str(SCRIPT), "--db", str(db), *args],
         capture_output=True,
         text=True,
+        # A permissive umask makes the 0600 check stand on its own: the mode
+        # must come from the script, not from the test runner's umask.
+        preexec_fn=(lambda: os.umask(umask)) if umask is not None else None,
     )
+
+
+def load_script() -> ModuleType:
+    spec = importlib.util.spec_from_file_location("set_account_role_under_test", SCRIPT)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def account(db: Path, username: str) -> sqlite3.Row:
@@ -173,6 +187,7 @@ def test_apply_backs_up_then_promotes_approves_and_audits(db: Path) -> None:
         "--approve-if-pending",
         "--note", "issue #265",
         "--apply",
+        umask=0o022,
     )
     assert result.returncode == 0, result.stderr
 
@@ -314,6 +329,12 @@ def test_append_only_tables_are_untouched(db: Path) -> None:
         ["--username", "pi"],
         ["--role", "pi_admin"],
         ["--username", "pi", "--role", "owner"],
+        ["--username", "pi", "--account-id", "1", "--role", "pi_admin"],
+        ["--account-id", "0", "--role", "pi_admin"],
+        ["--account-id", "x", "--role", "pi_admin"],
+        ["--find", "noah", "--account-id", "1"],
+        ["--username", "pi", "--role", "pi_admin", "--max-matches", "5"],
+        ["--find", "noah", "--max-matches", "0"],
     ],
 )
 def test_inconsistent_arguments_are_refused(db: Path, args: list[str]) -> None:
@@ -327,3 +348,163 @@ def test_missing_database_is_a_readable_error(tmp_path: Path) -> None:
     assert result.returncode == 1
     assert "no database at" in result.stderr
     assert not (tmp_path / "absent.db").exists()
+
+
+# --- issue #265 review round: public logs, --account-id, robustness ----------
+
+FULL_IDENTIFIERS = ("noah.adler", "uky.edu", "Noah", "Adler", "PI Scholar", "External Reviewer")
+
+
+def assert_redacted(text: str) -> None:
+    for secret in FULL_IDENTIFIERS:
+        assert secret.lower() not in text.lower(), f"{secret!r} leaked: {text}"
+
+
+def test_redacted_find_shows_only_masked_identifiers(db: Path) -> None:
+    result = run(db, "--find", "noah", "--redact")
+    assert result.returncode == 0, result.stderr
+    assert_redacted(result.stdout + result.stderr)
+    assert "n***" in result.stdout
+    assert "N.A." in result.stdout
+    for header in ("id", "user", "name", "role", "approval_status", "is_active", "created"):
+        assert header in result.stdout
+    assert "pending" in result.stdout
+    # The creation DATE only, never the time of day.
+    line = result.stdout.splitlines()[1]
+    assert line.split()[-1].count("-") == 2 and ":" not in line
+
+
+def test_redacted_dry_run_and_apply_name_nobody(db: Path) -> None:
+    dry = run(db, "--username", "noah.adler@uky.edu", "--role", "pi_admin",
+              "--approve-if-pending", "--redact")
+    assert dry.returncode == 0, dry.stderr
+    assert "Current:" in dry.stdout
+    assert_redacted(dry.stdout + dry.stderr)
+
+    applied = run(db, "--username", "noah.adler@uky.edu", "--role", "pi_admin",
+                  "--approve-if-pending", "--redact", "--apply")
+    assert applied.returncode == 0, applied.stderr
+    assert "Applied:" in applied.stdout
+    assert "Backup:" in applied.stdout  # the path is fine to print
+    assert_redacted(applied.stdout + applied.stderr)
+    assert account(db, "noah.adler@uky.edu")["role"] == "pi_admin"
+
+    again = run(db, "--username", "noah.adler@uky.edu", "--role", "pi_admin", "--redact")
+    assert "Nothing to do: account id 2" in again.stdout
+    assert_redacted(again.stdout + again.stderr)
+
+
+def test_redacted_errors_name_accounts_by_id(db: Path) -> None:
+    unknown = run(db, "--username", "noah.adler@other.edu", "--role", "pi_admin", "--redact")
+    assert unknown.returncode == 1
+    assert "no account with that username" in unknown.stderr
+    assert_redacted(unknown.stdout + unknown.stderr)
+
+    last = run(db, "--username", "pi", "--role", "reviewer", "--redact")
+    assert last.returncode == 1
+    assert "account id 1 is the last approved PI/admin" in last.stderr
+    assert_redacted(last.stdout + last.stderr)
+
+
+def test_account_id_selects_the_same_way_as_username(db: Path) -> None:
+    noah_id = account(db, "noah.adler@uky.edu")["id"]
+    result = run(db, "--account-id", str(noah_id), "--role", "pi_admin",
+                 "--approve-if-pending", "--note", "by id", "--apply", "--redact")
+    assert result.returncode == 0, result.stderr
+    row = account(db, "noah.adler@uky.edu")
+    assert (row["role"], row["approval_status"]) == ("pi_admin", "approved")
+    rows = audit_rows(db)
+    assert [(r["account_id"], r["note"]) for r in rows] == [(noah_id, "cli: by id")]
+    assert len(backups(db)) == 1
+
+    # Same guards: the last admin by id, and an unknown id.
+    last = run(db, "--account-id", "1", "--role", "reviewer", "--apply")
+    # Noah is now a second approved admin, so demoting id 1 is allowed...
+    assert last.returncode == 0, last.stderr
+    # ...and Noah is now the last one.
+    refused = run(db, "--account-id", str(noah_id), "--role", "reviewer", "--apply")
+    assert refused.returncode == 1
+    assert "last approved PI/admin" in refused.stderr
+
+    missing = run(db, "--account-id", "999", "--role", "pi_admin", "--apply")
+    assert missing.returncode == 1
+    assert "no account with id 999" in missing.stderr
+
+
+def test_find_refuses_and_lists_nothing_beyond_max_matches(db: Path) -> None:
+    # Count what "r" matches unredacted first, then cap just below and at it.
+    every = run(db, "--find", "r")
+    matched = len(every.stdout.splitlines()) - 1
+    assert matched >= 2
+
+    over = run(db, "--find", "r", "--max-matches", str(matched - 1), "--redact")
+    assert over.returncode == 1
+    assert over.stdout == ""
+    assert f"{matched} accounts match" in over.stderr
+    assert_redacted(over.stderr)
+
+    at_cap = run(db, "--find", "r", "--max-matches", str(matched), "--redact")
+    assert at_cap.returncode == 0
+    assert len(at_cap.stdout.splitlines()) == matched + 1
+
+
+def test_a_file_that_is_not_a_database_is_a_clean_error(tmp_path: Path) -> None:
+    junk = tmp_path / "feedback.db"
+    junk.write_bytes(b"this is not sqlite" * 200)
+    for args in (["--find", "abc"], ["--username", "pi", "--role", "pi_admin", "--apply"]):
+        result = run(junk, *args)
+        assert result.returncode == 1
+        assert "SQLite refused the operation" in result.stderr
+        assert "Traceback" not in result.stderr
+    assert backups(junk) == []
+
+
+def test_a_locked_database_is_a_clean_error(
+    db: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    script = load_script()
+    monkeypatch.setattr(script, "SQLITE_TIMEOUT", 0.2)
+    holder = sqlite3.connect(db, isolation_level=None)
+    holder.execute("BEGIN EXCLUSIVE")
+    try:
+        code = script.main(["--db", str(db), "--username", "noah.adler@uky.edu",
+                            "--role", "pi_admin", "--apply"])
+    finally:
+        holder.execute("ROLLBACK")
+        holder.close()
+    assert code == 1
+    err = capsys.readouterr().err
+    assert "locked" in err and "Nothing was changed" in err
+    assert backups(db) == []
+    assert account(db, "noah.adler@uky.edu")["role"] == "reviewer"
+
+
+def test_a_failed_backup_leaves_no_file_and_changes_nothing(
+    db: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    script = load_script()
+    real_connect = sqlite3.connect
+
+    class FailingSource:
+        def __init__(self, conn: sqlite3.Connection) -> None:
+            self._conn = conn
+
+        def backup(self, target: sqlite3.Connection) -> None:
+            raise sqlite3.OperationalError("disk I/O error")
+
+        def close(self) -> None:
+            self._conn.close()
+
+    def connect(database, *args, **kwargs):  # type: ignore[no-untyped-def]
+        conn = real_connect(database, *args, **kwargs)
+        return FailingSource(conn) if "mode=ro" in str(database) else conn
+
+    monkeypatch.setattr(script.sqlite3, "connect", connect)
+    code = script.main(["--db", str(db), "--username", "noah.adler@uky.edu",
+                        "--role", "pi_admin", "--apply"])
+    monkeypatch.undo()
+    assert code == 1
+    assert "disk I/O error" in capsys.readouterr().err
+    assert backups(db) == []  # the 0-byte file created first was removed
+    assert account(db, "noah.adler@uky.edu")["role"] == "reviewer"
+    assert audit_rows(db) == []
