@@ -7,6 +7,13 @@ run-name: "Independent Review PR #${{ github.event.pull_request.number }}"
 # independent-review-gate.yml, which runs from the default branch, re-fetches
 # this run, checks its event and path, and re-evaluates the PR. No checkout,
 # no token, no output the gate reads.
+#
+# Flood prefilter: the job is skipped unless the review author's
+# author_association is OWNER, MEMBER or COLLABORATOR. A run whose only job is
+# skipped concludes `skipped`, and the gate ignores those runs. The gate's live
+# permission check stays the real trust filter. On a fork PR this file is the
+# fork's copy, so an outsider can drop the prefilter for reviews on their own
+# fork PR; it still blocks review floods on PRs whose head is in this repo.
 
 on:
   pull_request_review:
@@ -16,6 +23,9 @@ permissions: {}
 
 jobs:
   review-event:
+    if: >-
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'),
+      github.event.review.author_association)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
