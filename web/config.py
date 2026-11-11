@@ -40,6 +40,11 @@ class PathsConfig(BaseModel):
     ig_artifacts_dir: str = "runs/active/ig_examples/artifacts"
     ig_examples_csv: str = "runs/active/ig_examples/phase12f_examples.csv"
     feedback_db: str = "runs/active/resubmit/webapp/feedback.db"
+    # Where deploy/deploy.sh records the data release it installed
+    # (`<tag> <sha256>`, under its default DATA_CACHE_DIR). Read once at
+    # startup so exports can say which release the server is serving; absent
+    # (local development, a host that never synced a release) means unknown.
+    data_release_state: str = ".deploy-cache/installed.state"
 
     @field_validator("variants")
     @classmethod

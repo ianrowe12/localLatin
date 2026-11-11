@@ -26,8 +26,8 @@ from web.models import (
     PredictionVariant,
     UserPublic,
 )
-from web.routers.predictions import get_predictions, resolve_variant
-from web.services import ccl_keys
+from web.routers.predictions import _get_prediction_row, get_predictions, resolve_variant
+from web.services import ccl_key_export, ccl_keys
 from web.services import reviewer_dirs as reviewer_dirs_svc
 from web.services.data_store import DataStore, normalize_slug
 from web.services.feedback_db import FeedbackDB
@@ -344,6 +344,59 @@ async def export_feedback(
         content=csv_data,
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=feedback_export.csv"},
+    )
+
+
+@router.get("/feedback/export/ccl_keys")
+async def export_ccl_key_assignments(
+    status: str | None = Query(
+        None,
+        pattern="^(agreed|conflict|no_key|needs_check)$",
+        description="Only rows with this resolved status. Default: every reviewed query.",
+    ),
+    store: DataStore = Depends(get_store),
+    db: FeedbackDB = Depends(get_db),
+    current_user: UserPublic = Depends(require_pi_admin),
+) -> PlainTextResponse:
+    """CCL key assignments: one resolved row per reviewed query (issue #270).
+
+    Built for CCL's import, unlike `/feedback/export`, which is the raw log.
+    The resolution rule and the columns are in `services/ccl_key_export.py`
+    and `web/CLAUDE.md`. Carries reviewer display names, so PI/admin only.
+    """
+
+    async def rank_dir(
+        query_id: int, slug: str, variant: str | None, rank: int
+    ) -> str | None:
+        # The ranking the app serves for this model and variant, which is the
+        # one a rank was pressed against unless the data release has changed
+        # since. Only reached for the second and later picks of a multi-rank
+        # selection, whose directories the feedback row does not store.
+        if not variant or not await store.ensure_variant_async(variant):
+            return None
+        rows = store.predictions.get((slug, variant))
+        if rows is None:
+            return None
+        row = _get_prediction_row(rows, query_id)
+        if row is None:
+            return None
+        match = next((p for p in row["predictions"] if p["rank"] == rank), None)
+        return match["dir_name"] if match is not None else None
+
+    exported_at = ccl_key_export.now_iso_utc()
+    rows = await db.ccl_key_assignments(
+        filename_by_query=store.file_id_to_filename,
+        labelled_dir_names=store.labelled_dir_files.keys(),
+        rank_dir=rank_dir,
+        data_release=store.data_release,
+        exported_at=exported_at,
+        status=status,
+    )
+    filename = f"ccl_key_assignments_{exported_at[:10]}.csv"
+    return PlainTextResponse(
+        content=ccl_key_export.to_csv(rows),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
 
 

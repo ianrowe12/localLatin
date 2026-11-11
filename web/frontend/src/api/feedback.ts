@@ -85,3 +85,14 @@ export async function fetchLatestFeedback(
 export function exportFeedbackCsv(): void {
   window.open(apiUrl('/api/feedback/export'), '_blank')
 }
+
+/**
+ * CCL key assignments (issue #270): one resolved row per reviewed document,
+ * for CCL's import. Unlike the raw export it takes no filters; the server
+ * resolves every reviewer's newest decisions into one row per `xml_id`.
+ */
+export const CCL_KEY_EXPORT_PATH = '/api/feedback/export/ccl_keys'
+
+export function exportCclKeyAssignmentsCsv(): void {
+  window.open(apiUrl(CCL_KEY_EXPORT_PATH), '_blank')
+}

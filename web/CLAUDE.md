@@ -130,6 +130,75 @@ Confirming a reviewer directory as the correct answer appends that query to the 
 members (idempotent, `INSERT OR IGNORE`, and the directory must exist). That membership row is
 what flips the badge to `matched`, which is why it may only follow a server-resolved choice.
 
+## CCL key assignments export (issue #270)
+
+`GET /api/feedback/export/ccl_keys` (PI/admin only, `require_pi_admin`) is the file CCL's import
+is built on. It returns a CSV named `ccl_key_assignments_YYYY-MM-DD.csv` with one row per reviewed
+unlabelled query, sorted by `xml_id`. `/api/feedback/export` is unchanged and stays the raw log.
+The optional `status=agreed|conflict|no_key|needs_check` keeps one status; the default is every reviewed query.
+The dashboard's "Download CCL key assignments" button (`ExportControls`) opens it without filters.
+Like the raw export it is a `window.open`, so the mock fetch handler never sees it.
+
+Resolution rule, implemented in `services/ccl_key_export.py` and read by
+`FeedbackDB.ccl_key_assignments`:
+
+1. Only `matched_rank` and `none_of_top_k` rows count, the same pair that makes a query
+   `reviewed` on the dashboard, so the export covers exactly the reviewed queries. Skipped and
+   legacy-unresolved rows are ignored, and a later skip does not retract an earlier decision.
+2. A reviewer's current decision is their newest decision row on each (model, variant), newest by
+   timestamp and then row id. That is the decision half of `GET /api/feedback/latest`. A save
+   under a different model does not replace one under another model, because the app still shows
+   the reviewer both.
+3. Each current decision is an answer. A `matched_rank` row names the directory behind every
+   selected rank: a labelled directory names itself and a reviewer directory names its `ccl_key`. A
+   `none_of_top_k` row names its typed `ccl_key`; one without a key is the answer "none of these"
+   and rejects every candidate it was made against. It is a dissent, not an abstention.
+4. A pick is used only when it can be shown to be what the reviewer saw. A single pick is trusted
+   as stored in `correct_dir`, which the server resolved at save time. `correct_dir` holds only the
+   first selection, so the later selections of a multi-rank pick are read from the ranking the
+   server serves now for that model and variant, and only after that ranking is shown to still hold
+   the stored first pick at its rank. A pick is unresolved when the anchor moved, the rank or the
+   query is no longer served, the row needs the ranking but has no variant, the row stores no
+   directory at all, the rank is above 10 (a legacy reviewer-directory pick from before #196), or it
+   names a reviewer directory that has no key. An unresolved pick never supplies a key.
+5. Keys are compared with `ccl_keys.match_form`. The status is the first of these that applies:
+   `needs_check` when any counted decision holds an unresolved pick (a human must look before
+   importing); `conflict` when two or more different keys are named (by two reviewers, one reviewer
+   under two models, or one multi-rank pick) or when a key is named and another counted decision is
+   a no-key "none of these"; `agreed` when exactly one key is named and every counted decision
+   names it; `no_key` when every counted decision is a no-key "none of these".
+6. Each reviewer counts once, under the display name on their newest counted decision. Rows from
+   before accounts existed are told apart by that name. `reviewers` lists everyone with a counted
+   decision, whatever they answered, so in a `conflict` or `needs_check` row it includes people who
+   rejected a key. Only an `agreed` row has a `ccl_key`, and there every listed reviewer named it, so
+   nobody is credited with a key they rejected.
+
+When reviewers typed one key in different capitalisations, the printed form is the labelled
+directory's own name if the key names one; otherwise the earliest form that is key-shaped
+(`ctou.567.16` then `CTOU.567.16` prints `CTOU.567.16`); otherwise the form on the earliest decision
+that named it. Every candidate is a form somebody stored; nothing is re-cased. A reviewed query whose id the served corpus does not know is left out (logged as a count),
+because it has no `xml_id`.
+
+Columns (`EXPORT_SCHEMA_VERSION = 1`; bump it when a column is added, removed or changes meaning):
+
+| column | value |
+|---|---|
+| `xml_id` | the query filename without `.txt`, which is the CCL `xml:id` (`scripts/data/tei_to_canon.py`) |
+| `ccl_key` | the agreed key; empty for every other status |
+| `status` | `agreed`, `conflict`, `no_key` or `needs_check` (a human must look before importing) |
+| `conflicting_keys` | for `conflict` and `needs_check`, every distinct key, sorted, then `(none_of_top_k)` if anyone answered None without a key, then `(unresolved)` if any pick is unresolved, joined by ` \| ` |
+| `key_source` | `model_suggestion`, `reviewer_typed` or `both`, over the decisions that named a key |
+| `suggested_by` | `model:variant:rank` per picked ranked candidate, joined by ` \| `; in `conflict` and `needs_check` rows each entry is prefixed `KEY=`, and an unresolved pick is listed as `(unresolved)=model:variant:rank` |
+| `key_shaped` | `true` or `false` by `ccl_keys.KEY_SHAPED`, a flag and never a filter; empty without an agreed key |
+| `reviewer_count`, `reviewers` | people with a counted decision, and their display names joined by ` \| ` |
+| `first_decided_at`, `last_decided_at` | earliest and latest counted decision, ISO 8601 UTC |
+| `export_schema_version`, `exported_at` | `1`, and the export time in ISO 8601 UTC |
+| `data_release` | the release tag `deploy/deploy.sh` recorded in `.deploy-cache/installed.state` under `data_root` (`paths.data_release_state`), read at startup; empty when there is none, as in local development |
+
+Lists are joined by ` | ` because 18 labelled directory names contain a semicolon and 103 a comma,
+and none contains `|`. Display names appear only in this download, never in a log line. Usernames
+and emails never appear.
+
 ## Data Contract
 
 The webapp reads these from `data_root`:
