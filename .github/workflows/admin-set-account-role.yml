@@ -1,0 +1,171 @@
+name: Admin set account role
+
+# Manually dispatched maintenance job (issue #265). Finds an account in the
+# production reviewer database, or promotes / demotes one, by running
+# scripts/webapp/set_account_role.py on the self-hosted production runner. The
+# database lives only on the deploy host, which nothing else can reach.
+#
+# Default run reads only. Typical use:
+#   1. find=<part of name>                        -> list matching accounts
+#   2. username=<login> role=pi_admin             -> dry run: what would change
+#   3. the same with apply=true                   -> backup, then the change
+#
+# From the CLI:
+#   gh workflow run admin-set-account-role.yml -f find=noah
+#   gh workflow run admin-set-account-role.yml -f username=<login> -f role=pi_admin \
+#       -f approve_if_pending=true -f note="issue #265"
+#   ... then the same with -f apply=true
+#
+# No secrets are involved. Inputs are recorded in the run metadata, which is
+# fine: they are a login name, a role and a note.
+
+on:
+  workflow_dispatch:
+    inputs:
+      find:
+        description: "List accounts whose username or display name contains this text (read-only). Leave empty to change a role."
+        required: false
+        type: string
+        default: ""
+      username:
+        description: "Exact login name of the account to change (ignored when find is set)"
+        required: false
+        type: string
+        default: ""
+      role:
+        description: "Role to set"
+        required: true
+        type: choice
+        default: pi_admin
+        options:
+          - pi_admin
+          - reviewer
+      approve_if_pending:
+        description: "Also approve the account if it is still pending"
+        required: false
+        type: boolean
+        default: false
+      apply:
+        description: "Write the change (backs the DB up first). Unchecked = dry run."
+        required: false
+        type: boolean
+        default: false
+      note:
+        description: "Recorded in the audit row as 'cli: <note>'"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+# The same group as the deploy job in deploy.yml (production-deploy-<ref> on
+# main) and provision-smoke-account.yml, so this never runs while deploy.sh is
+# restarting the service or pulling the checkout.
+concurrency:
+  group: production-deploy-refs/heads/main
+  cancel-in-progress: false
+
+jobs:
+  set-role:
+    name: Find or change an account role on the production host
+    runs-on:
+      - self-hosted
+      - locallatin
+      - production
+    if: vars.ENABLE_PRODUCTION_DEPLOY == 'true'
+
+    steps:
+      # The script is taken from a fresh checkout of main in the runner's own
+      # workspace, NOT from $DEPLOY_PATH:
+      #   - this job must not move or modify the deploy checkout, which
+      #     deploy.yml fast-forwards and whose tracked files deploy.sh rewrites;
+      #   - it does not depend on a deploy having already landed the script
+      #     (the first use follows the merge that adds it, and a deploy can fail
+      #     after the merge);
+      #   - pinned to main, so a write to the production database always runs
+      #     reviewed code, never a version proposed on another branch.
+      - name: Check out the script
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          filter: blob:none
+          sparse-checkout: scripts/webapp
+
+      # Every input reaches the shell through env, never through ${{ }} inside
+      # run: — that substitution is textual, so an input with shell
+      # metacharacters would execute on this runner, next to the live database.
+      - name: Validate inputs
+        env:
+          FIND: ${{ inputs.find }}
+          USERNAME: ${{ inputs.username }}
+          ROLE: ${{ inputs.role }}
+          NOTE: ${{ inputs.note }}
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$*"; exit 1; }
+          find_re='^[A-Za-z0-9._@+ -]{1,64}$'
+          username_re='^[A-Za-z0-9._@+-]{2,128}$'
+          if [[ -n "${FIND}" ]]; then
+            [[ "${FIND}" =~ ${find_re} ]] \
+              || fail "find may only contain letters, digits, space and . _ @ + - (max 64)"
+          else
+            [[ -n "${USERNAME}" ]] || fail "set either find or username"
+            [[ "${USERNAME}" =~ ${username_re} ]] \
+              || fail "username may only contain letters, digits and . _ @ + - (2-128 chars)"
+          fi
+          [[ "${ROLE}" == "pi_admin" || "${ROLE}" == "reviewer" ]] || fail "role must be pi_admin or reviewer"
+          (( ${#NOTE} <= 200 )) || fail "note is limited to 200 characters"
+          [[ "${NOTE}" != *[[:cntrl:]]* ]] || fail "note may not contain control characters"
+          echo "Inputs valid."
+
+      - name: Run set_account_role.py
+        env:
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          FIND: ${{ inputs.find }}
+          USERNAME: ${{ inputs.username }}
+          ROLE: ${{ inputs.role }}
+          APPROVE_IF_PENDING: ${{ inputs.approve_if_pending }}
+          APPLY: ${{ inputs.apply }}
+          NOTE: ${{ inputs.note }}
+        run: |
+          set -euo pipefail
+          DEPLOY_PATH="${DEPLOY_PATH:-/homes/ipro222/localLatin}"
+          # Where the service keeps it: web/config.production.yaml resolves
+          # paths.feedback_db ("data/feedback.db") against data_root, the same
+          # path deploy/deploy.sh fingerprints as FEEDBACK_DB.
+          DB="${DEPLOY_PATH}/data/feedback.db"
+          CONFIG="${DEPLOY_PATH}/web/config.production.yaml"
+          if [[ -f "${CONFIG}" ]] && ! grep -Eq '^[[:space:]]*feedback_db:[[:space:]]*"?data/feedback\.db"?[[:space:]]*$' "${CONFIG}"; then
+            echo "::error::${CONFIG} no longer sets feedback_db to data/feedback.db; update this workflow." >&2
+            exit 1
+          fi
+          if [[ ! -f "${DB}" ]]; then
+            echo "::error::No database at ${DB}. Deploy and start the service once first." >&2
+            exit 1
+          fi
+          echo "Database: ${DB}"
+
+          args=(--db "${DB}")
+          if [[ -n "${FIND}" ]]; then
+            args+=(--find "${FIND}")
+          else
+            args+=(--username "${USERNAME}" --role "${ROLE}")
+            if [[ "${APPROVE_IF_PENDING}" == "true" ]]; then
+              args+=(--approve-if-pending)
+            fi
+            if [[ -n "${NOTE}" ]]; then
+              args+=(--note "${NOTE}")
+            fi
+            if [[ "${APPLY}" == "true" ]]; then
+              args+=(--apply)
+            fi
+          fi
+          python3 scripts/webapp/set_account_role.py "${args[@]}"
+
+          if [[ -z "${FIND}" && "${APPLY}" == "true" ]]; then
+            echo ""
+            echo "The backup above is a full copy of the reviewer DB, password hashes"
+            echo "included (mode 0600). Keep the most recent; remove older ones only"
+            echo "once another good copy exists (scripts/webapp/backup_feedback_db.py)."
+          fi
