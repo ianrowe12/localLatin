@@ -19,6 +19,7 @@ from web.models import (
     AccountCreateRequest,
     AccountCreateResponse,
     AccountPublic,
+    AccountRoleChangeRequest,
     ApprovalDecisionRequest,
     PasswordChangeRequest,
     PasswordResetResponse,
@@ -27,6 +28,7 @@ from web.models import (
     SignInRequest,
     UserPublic,
 )
+from web.exceptions import LastPiAdminError
 from web.services.feedback_db import FeedbackDB
 from web.services.rate_limit import RateLimiter
 
@@ -230,6 +232,47 @@ async def reject_account(
     )
     if account is None:
         raise HTTPException(status_code=404, detail="Account not found")
+    return AccountPublic(**account)
+
+
+@router.post("/accounts/{account_id}/role", response_model=AccountPublic)
+async def change_account_role(
+    account_id: int,
+    body: AccountRoleChangeRequest,
+    db: FeedbackDB = Depends(get_db),
+    current_user: UserPublic = Depends(require_pi_admin),
+) -> AccountPublic:
+    """Promote or demote an account (issue #265).
+
+    The role is re-read from the database on every request
+    (`get_account_by_session` joins `accounts`), so the change applies to the
+    account's next request and no session needs revoking.
+    """
+    if account_id == current_user.id:
+        # Same rule as self-reset: a PI/admin who demotes themselves cannot
+        # undo it, and there is no email recovery. A second PI/admin decides.
+        raise HTTPException(
+            status_code=400,
+            detail="You cannot change your own role. Another PI/admin must do it.",
+        )
+    try:
+        account, changed = await db.set_account_role(
+            account_id=account_id,
+            role=body.role,
+            changed_by_account_id=current_user.id,
+            note=body.note,
+        )
+    except LastPiAdminError as exc:
+        raise HTTPException(status_code=409, detail=exc.message) from exc
+    if account is None:
+        raise HTTPException(status_code=404, detail="Account not found")
+    if changed:
+        logger.info(
+            "Role changed actor_account_id=%s target_account_id=%s new_role=%s",
+            current_user.id,
+            account_id,
+            body.role,
+        )
     return AccountPublic(**account)
 
 

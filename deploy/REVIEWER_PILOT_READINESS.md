@@ -73,6 +73,41 @@ The canon text corpora are deliberately *not* in the payload: keeping `data/` ou
 
 After the sync, `deploy.sh` runs `scripts/webapp/export_webapp_data.sh <root> --strict`, which exits non-zero if any required path is absent **or present but empty**: a predictions CSV must be non-zero bytes and carry at least one data row, and `artifacts/` must contain at least one non-empty `.npz`. Existence alone is not a useful check, because what a truncated sync leaves behind is a zero-byte file that `[ -e ]` accepts and the CSV parser then rejects at startup. Without this gate a missing or empty CSV surfaces as an opaque uvicorn traceback behind the health check. Set `DEPLOY_SKIP_DATA_CHECK=1` to bypass.
 
+## Account Roles (issue #265)
+
+An account is a `reviewer` or a `pi_admin`. PI/admins can approve accounts, reset passwords, see `/api/stats` and export all feedback, so a promotion is a data-release decision.
+
+**From the site.** A signed-in PI/admin uses the Roles section of the account panel ("Make PI/admin" / "Make reviewer", then a confirm step). It calls `POST /api/auth/accounts/{id}/role`.
+
+**Guards**, enforced by the server and by the CLI below:
+
+- nobody changes their own role (400 in the app); a second PI/admin does it, as with password resets;
+- a change that would leave no approved, active PI/admin is refused (409), because there is no email recovery;
+- an unknown account is 404, and setting the role it already has writes nothing.
+
+The new role applies on the account's next request. Sessions are not revoked, because the app reads the role from the database on every request.
+
+**Audit.** Every change adds a row to `account_role_changes` in the feedback DB: `account_id`, `old_role`, `new_role`, `changed_by_account_id` (NULL when the CLI made it), `note` (prefixed `cli: ` from the CLI) and `changed_at`. The app creates the table on boot and the CLI creates it if it is missing; existing rows are never touched.
+
+**From GitHub, on the production DB.** When no PI/admin can do it in the app, run the `Admin set account role` workflow (`.github/workflows/admin-set-account-role.yml`). It runs `scripts/webapp/set_account_role.py` on the self-hosted production runner against `$DEPLOY_PATH/data/feedback.db`, in the deploy concurrency group, only when dispatched on `main` and `ENABLE_PRODUCTION_DEPLOY` is `true`. The script comes from a fresh checkout of `main` in the runner's workspace (no persisted credentials), so the deploy checkout is never modified. Without `apply` it only reads.
+
+**The workflow output is redacted.** This repository is public, so its Actions logs are world-readable, and usernames are often email addresses. The workflow always passes `--redact`: an account appears only as its id, role, approval status, `is_active`, creation date, display-name initials and the username's first character followed by `***`, and error messages name accounts by id. A `find` needs at least 3 characters, and one that matches more than 5 accounts fails without listing anything. The inputs themselves appear in the step's env block, so search with a short fragment and change an account by `account_id` rather than by full username.
+
+```bash
+# 1. Find the account: prints redacted rows with their ids
+gh workflow run admin-set-account-role.yml -f find=noa
+# 2. Dry run: what would change
+gh workflow run admin-set-account-role.yml -f account_id=<id> -f role=pi_admin \
+    -f approve_if_pending=true -f note="issue #265"
+# 3. Apply: backs the DB up first, then makes the change in one transaction
+gh workflow run admin-set-account-role.yml -f account_id=<id> -f role=pi_admin \
+    -f approve_if_pending=true -f note="issue #265" -f apply=true
+```
+
+With `apply`, the script first writes `data/feedback.db.pre-role-change-<UTC timestamp>` with SQLite's online backup API (mode 0600, integrity-checked) and prints its path and size; a failed backup is deleted and nothing changes. That file is a full copy of the reviewer DB, password hashes included: keep the most recent and remove older ones only once another good copy exists (`scripts/webapp/backup_feedback_db.py`). `approve_if_pending` also approves a pending account; without it a pending account keeps its pending status. A database locked by the service for more than 30 seconds, or a file that is not SQLite, is reported as an error with nothing changed.
+
+Dispatching this workflow while a deploy is running and another deploy is queued can cancel the queued deploy, because they share one concurrency group (one running run, one pending). Re-run the deploy afterwards if that happens.
+
 ## Smoke Checks
 
 After deployment, run:

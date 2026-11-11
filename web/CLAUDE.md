@@ -65,6 +65,21 @@ Scholar review web application for the localLatin Latin manuscript retrieval pro
   one who is locked out. Sign-in and change-password verify the password *before* consulting the
   rate-limit window and record a hit only on a failed verification, so a correct password always
   gets through and a stranger cannot lock a reviewer out. 429s carry `Retry-After`.
+- Roles (issue #265): `POST /api/auth/accounts/{id}/role {role, note?}` (PI/admin only) calls
+  `FeedbackDB.set_account_role` and returns the updated `AccountPublic`. Guards: your own role is
+  400 (same rule as self-reset), a change that would leave no approved, active PI/admin is 409
+  (`LastPiAdminError`; pending, rejected and deactivated admins do not count), unknown account
+  404, an unchanged role a 200 that writes nothing. Each change writes one row to
+  `account_role_changes` (`account_id, old_role, new_role, changed_by_account_id, note,
+  changed_at`), created in `_migrate()` from `ACCOUNT_ROLE_CHANGES_DDL`. No session is revoked:
+  `get_account_by_session` re-reads the account row on every request, so the new role applies to
+  the account's next request. `scripts/webapp/set_account_role.py` (stdlib, deploy host) writes
+  the same audit row with `changed_by_account_id` NULL and a `cli: ` note, and carries a copy of
+  the DDL that `tests/test_set_account_role.py` keeps byte-identical. It selects by
+  `--username` or `--account-id`; `.github/workflows/admin-set-account-role.yml` always runs it
+  with `--redact` (masked identifiers only) and `--find ... --max-matches=5`, because the repo is
+  public and its Actions logs are world-readable. `AccountApprovalPanel`'s Roles section is the
+  UI: a confirm step, disabled on your own row.
 - Sign-in throttle keying: `(client address, username)`, where the address comes from `X-Real-IP`,
   falling back to the **rightmost** `X-Forwarded-For` hop and then the socket peer. `deploy/nginx.conf`
   sets `X-Real-IP $remote_addr` (overwritten per request) but `X-Forwarded-For $proxy_add_x_forwarded_for`,
