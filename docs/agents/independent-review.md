@@ -234,9 +234,10 @@ the PR head. The `main` ruleset requires it. It is green only when:
 
 Everything else is red: no verdict, `REQUEST CHANGES`, a verdict for an older head, conflicting
 markers, or two verdicts that disagree at the same timestamp. A push moves the head, so the
-status goes red until a fresh verdict names the new head. Creating, editing or deleting any PR
-comment, and submitting, editing or dismissing a review, re-runs the gate, so removing a verdict
-cannot leave a stale green. Gate jobs run one at a time and re-read the verdicts just before
+status goes red until a fresh verdict names the new head. Creating, editing or deleting a PR
+comment, and submitting, editing or dismissing a review, re-runs the gate when the comment or
+review was written by an `OWNER`, `MEMBER` or `COLLABORATOR` (see the flood prefilter below), so
+removing a trusted verdict cannot leave a stale green. Gate jobs run one at a time and re-read the verdicts just before
 writing. If a run fails after reading the head, it writes a red status rather than leave an
 older green one standing.
 
@@ -245,6 +246,15 @@ a verdict only if its author has write, maintain or admin permission on the repo
 per run (`GET /repos/{repo}/collaborators/{user}/permission`). A verdict from any other account
 neither approves nor blocks. Bot accounts and deleted accounts are ignored. The gate's log prints
 how many verdicts it ignored, never whose.
+
+**Flood prefilter.** So that outsiders cannot fill the gate's shared queue or spend the token's
+API quota, the gate job's `if:` skips a comment event unless the comment's `author_association`
+is `OWNER`, `MEMBER` or `COLLABORATOR`, and the review relay skips reviews the same way. The gate
+also skips a relay run that concluded `skipped`. The prefilter never applies to
+`pull_request_target` events. Skipping is safe because an outsider's comment never counts, an
+outsider cannot edit or delete a trusted comment, and edit and delete events carry the comment
+author's association rather than the actor's, so a trusted author's edit or delete still
+re-evaluates.
 
 **Safety of the workflow itself.** The gate runs from the default branch on every trigger, checks
 out only its own script from the default branch, and reads everything else from the REST API.
@@ -257,6 +267,23 @@ review's substance or the reviewer's independence. Reviewer agents post through 
 from a real one. An author that posts its own `APPROVE` turns the gate green; that is a protocol
 violation that leaves a permanent audit trail, not something the gate prevents. Other limits:
 
+- The gate assumes trusted writers. The `main` ruleset accepts an `Independent Review` status
+  from any GitHub Actions workflow, so anyone with write access can push a branch with a
+  workflow that requests `statuses: write` and posts its own passing status. Only the repo owner
+  and trusted agents have write access.
+- The flood prefilter is a cheap first cut, not the trust filter. `author_association` admits
+  read and triage collaborators too, so the live permission check in the script stays
+  authoritative. The prefilter is also incomplete: on a fork PR the relay is the fork's copy, so
+  an outsider can remove it for reviews on their own PR, and pushes to a fork PR
+  (`pull_request_target`) are never prefiltered. Either can still fill the queue or spend the
+  quota: gate runs then fail red, and an overflowing queue can drop a real event's job, which
+  leaves that PR's status out of date until its next event. Neither produces a new green. If
+  GitHub ever reported a trusted writer's association outside the three
+  values, that writer's comment events would be skipped too, so their status would update only
+  on the PR's next qualifying event.
+- Commit statuses belong to a SHA, not a PR. A fork PR whose head is the same commit as a real
+  PR can turn that commit's status red until the real PR's next event. It can never turn it
+  green.
 - The trust filter keeps outsiders out. It does not check who applied the exemption label;
   only accounts with triage access or higher can label, and this repo has no triage-only
   collaborators.

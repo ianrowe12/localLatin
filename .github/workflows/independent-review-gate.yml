@@ -25,8 +25,22 @@ run-name: >-
 #   script re-fetches the relay run and checks its event and path, and uses it
 #   only to pick which PR to re-evaluate.
 #
-# Every PR comment create, edit and delete re-evaluates the status, so editing
-# or deleting a verdict cannot leave a stale green. One non-cancelling queue
+# Every trusted PR comment create, edit and delete re-evaluates the status, so
+# editing or deleting a verdict cannot leave a stale green.
+#
+# Flood prefilter: the job `if:` skips comment events whose comment author's
+# author_association is not OWNER, MEMBER or COLLABORATOR, and the relay skips
+# reviews the same way (a relay run whose only job was skipped concludes
+# `skipped`, which this job ignores). Skipped jobs take no queue slot and spend
+# no API quota, so outsiders cannot crowd out real events. It is only a cheap
+# prefilter: the set is a superset of write access, and the live permission
+# check in the script stays the authoritative trust filter. Skipping is safe
+# because an outsider's comment never counts, an outsider cannot edit or delete
+# a trusted comment, and edits and deletes carry the comment author's
+# association, not the actor's, so a trusted author's delete still re-evaluates.
+# pull_request_target events are never prefiltered.
+#
+# One non-cancelling queue
 # serialises every gate job (a workflow_run event does not know its PR number
 # when the group key is computed, so the group is global, which serialises each
 # PR a fortiori), and each job re-reads the verdicts immediately before writing.
@@ -50,12 +64,17 @@ permissions:
 
 jobs:
   gate:
-    # Re-evaluate every PR comment event. Filtering on the current body would
-    # miss an edit that removes the only verdict and leave a stale green.
+    # Re-evaluate every trusted PR comment event, whatever its body. Filtering on
+    # the current body would miss an edit that removes the only verdict and
+    # leave a stale green. The author_association test is the flood prefilter
+    # described above; pull_request_target always runs.
     if: >-
       github.event_name == 'pull_request_target' ||
-      github.event_name == 'workflow_run' ||
-      github.event.issue.pull_request
+      (github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion != 'skipped') ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'),
+      github.event.comment.author_association))
     concurrency:
       group: independent-review-statuses
       cancel-in-progress: false
@@ -64,7 +83,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Check out the gate script from the default branch
-        uses: actions/checkout@v6
+        # Pinned by commit SHA: this job holds statuses: write.
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           # The default branch by name, never the PR head or merge ref.
           ref: ${{ github.event.repository.default_branch }}

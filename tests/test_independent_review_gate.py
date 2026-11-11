@@ -236,12 +236,111 @@ def test_gate_triggers_and_relay_are_wired_as_designed():
     assert all("uses" not in step for step in relay_steps), "the relay must not check anything out"
 
 
-def test_every_pr_comment_event_reaches_the_gate():
-    gate_job = load_workflow(WORKFLOW)["jobs"]["gate"]
-    condition = gate_job["if"]
-    assert "github.event.issue.pull_request" in condition
-    assert "github.event_name == 'workflow_run'" in condition
-    assert "contains(" not in condition
+TRUSTED_ASSOCIATIONS = ["OWNER", "MEMBER", "COLLABORATOR"]
+UNTRUSTED_ASSOCIATIONS = ["CONTRIBUTOR", "FIRST_TIME_CONTRIBUTOR", "FIRST_TIMER", "MANNEQUIN",
+                          "NONE"]
+PREFILTER = """contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'),"""
+
+
+def evaluate_if(condition: str, event_name: str, event: dict) -> bool:
+    """Evaluate a job `if:` by translating the few expression forms the gate uses to Python.
+
+    Supports `||`, `&&`, parentheses, `==`/`!=` against quoted strings, bare property
+    truthiness and `contains(fromJSON('[...]'), <property>)`. Anything else is left
+    untranslated and makes eval fail, so the test cannot silently pass on new syntax.
+
+    GitHub ignores case when comparing strings, with `==`, `!=` and `contains()` alike, so
+    every quoted literal and every looked-up string is lowercased before evaluation.
+    """
+    context = {"event_name": event_name, "event": event}
+
+    def lookup(match: re.Match) -> str:
+        value: object = context
+        for part in match.group(0).split(".")[1:]:
+            value = value.get(part) if isinstance(value, dict) else None
+        return repr(value.lower() if isinstance(value, str) else value)
+
+    expr = re.sub(r"'[^']*'", lambda m: m.group(0).lower(), condition)
+    expr = re.sub(r"contains\(fromJSON\('(\[[^']*\])'\),\s*(github(?:\.\w+)+)\)",
+                  r"(\2 in \1)", expr)
+    assert "contains(" not in expr and "fromJSON" not in expr
+    expr = expr.replace("||", " or ").replace("&&", " and ")
+    expr = re.sub(r"\bgithub(?:\.\w+)+", lookup, expr)
+    return bool(eval(expr, {"__builtins__": {}}, {}))  # noqa: S307 - our own workflow text
+
+
+def comment_event(action: str, association: str, on_pr: bool = True) -> dict:
+    issue = {"number": PR, **({"pull_request": {"url": "u"}} if on_pr else {})}
+    return {"action": action, "issue": issue,
+            "comment": {"id": 1, "body": "", "author_association": association}}
+
+
+def gate_runs(event_name: str, event: dict) -> bool:
+    return evaluate_if(load_workflow(WORKFLOW)["jobs"]["gate"]["if"], event_name, event)
+
+
+def test_gate_condition_names_the_prefilter_and_never_the_body():
+    condition = load_workflow(WORKFLOW)["jobs"]["gate"]["if"]
+    assert PREFILTER in condition
+    assert "github.event.comment.author_association" in condition
+    assert "body" not in condition
+    relay_condition = load_workflow(RELAY)["jobs"]["review-event"]["if"]
+    assert PREFILTER in relay_condition
+    assert "github.event.review.author_association" in relay_condition
+
+
+@pytest.mark.parametrize("action", ["created", "edited", "deleted"])
+@pytest.mark.parametrize("association", TRUSTED_ASSOCIATIONS)
+def test_every_trusted_pr_comment_event_reaches_the_gate(action, association):
+    # Edits and deletes carry the comment author's association, so a trusted author
+    # deleting or editing a verdict still re-evaluates and cannot leave a stale green.
+    assert gate_runs("issue_comment", comment_event(action, association))
+
+
+@pytest.mark.parametrize("action", ["created", "edited", "deleted"])
+@pytest.mark.parametrize("association", UNTRUSTED_ASSOCIATIONS + [None])
+def test_untrusted_comment_events_are_skipped(action, association):
+    assert not gate_runs("issue_comment", comment_event(action, association))
+
+
+def test_comments_on_plain_issues_are_skipped():
+    assert not gate_runs("issue_comment", comment_event("created", "OWNER", on_pr=False))
+
+
+@pytest.mark.parametrize("association", TRUSTED_ASSOCIATIONS + UNTRUSTED_ASSOCIATIONS)
+@pytest.mark.parametrize("action", ["opened", "reopened", "synchronize", "labeled", "unlabeled"])
+def test_pull_request_target_is_never_prefiltered(action, association):
+    event = {"action": action, "pull_request": {"number": PR, "author_association": association},
+             "sender": {"login": "anyone"}}
+    assert gate_runs("pull_request_target", event)
+
+
+@pytest.mark.parametrize("condition, runs", [
+    ("github.event.workflow_run.conclusion == 'Success'", True),
+    ("github.event.workflow_run.conclusion != 'Success'", False),
+    ("github.event.workflow_run.conclusion != 'SKIPPED'", True),
+    ("contains(fromJSON('[\"Success\"]'), github.event.workflow_run.conclusion)", True),
+])
+def test_translator_ignores_case_like_github(condition, runs):
+    event = {"workflow_run": {"conclusion": "success"}}
+    assert evaluate_if(condition, "workflow_run", event) is runs
+
+
+@pytest.mark.parametrize("conclusion, runs", [
+    ("success", True), ("failure", True), ("cancelled", True), ("skipped", False),
+    ("Success", True), ("SUCCESS", True), ("Skipped", False), ("SKIPPED", False)])
+def test_gate_ignores_only_relay_runs_the_prefilter_skipped(conclusion, runs):
+    event = {"action": "completed", "workflow_run": {"id": 456, "conclusion": conclusion}}
+    assert gate_runs("workflow_run", event) is runs
+
+
+@pytest.mark.parametrize("action", ["submitted", "edited", "dismissed"])
+@pytest.mark.parametrize("association, runs", [
+    *[(a, True) for a in TRUSTED_ASSOCIATIONS], *[(a, False) for a in UNTRUSTED_ASSOCIATIONS]])
+def test_relay_runs_only_for_trusted_review_authors(action, association, runs):
+    condition = load_workflow(RELAY)["jobs"]["review-event"]["if"]
+    event = {"action": action, "review": {"id": 1, "author_association": association}}
+    assert evaluate_if(condition, "pull_request_review", event) is runs
 
 
 def test_gate_jobs_are_serialised_without_cancelling_pending_events():
@@ -256,6 +355,8 @@ def test_gate_checks_out_only_its_script_from_the_default_branch():
     steps = workflow["jobs"]["gate"]["steps"]
     checkouts = [step for step in steps if str(step.get("uses", "")).startswith("actions/checkout")]
     assert len(checkouts) == 1
+    # This job holds statuses: write, so the action is pinned to a full commit SHA.
+    assert re.fullmatch(r"actions/checkout@[0-9a-f]{40}", checkouts[0]["uses"])
     options = checkouts[0]["with"]
     assert options["ref"] == "${{ github.event.repository.default_branch }}"
     assert options["persist-credentials"] is False
@@ -668,10 +769,27 @@ def test_logs_name_no_accounts(tmp_path, monkeypatch, capsys):
     assert "stranger" not in out and OWNER not in out
 
 
-def test_permission_lookup_error_fails_closed(tmp_path, monkeypatch):
+@pytest.mark.parametrize("code", [401, 403, 422, 500])
+def test_permission_lookup_error_fails_closed(tmp_path, monkeypatch, code):
     url = f"https://api.github.com/repos/{REPO}/collaborators/{OWNER}/permission"
     fake = FakeGitHub(comments=[(T0, verdict("APPROVE"))], failures={
-        f"GET /repos/{REPO}/collaborators/{OWNER}/permission": [http_error(url, 500)]})
+        f"GET /repos/{REPO}/collaborators/{OWNER}/permission": [http_error(url, code)]})
+    with pytest.raises(urllib.error.HTTPError):
+        run_gate(fake, tmp_path, monkeypatch)
+    assert [(s["state"], s["description"]) for s in fake.statuses] == [ERROR]
+
+
+@pytest.mark.parametrize("code", [401, 403, 422, 500])
+def test_permission_error_on_a_later_rejection_is_not_read_as_untrusted(
+        tmp_path, monkeypatch, code):
+    # A 403 (rate limit) on a second trusted author's later REQUEST CHANGES must not
+    # drop that verdict and leave the earlier approval green.
+    url = f"https://api.github.com/repos/{REPO}/collaborators/agent-account/permission"
+    fake = FakeGitHub(
+        comments=[(T0, verdict("APPROVE")), (T1, verdict("REQUEST CHANGES"), "agent-account")],
+        permissions={"agent-account": "write"},
+        failures={f"GET /repos/{REPO}/collaborators/agent-account/permission":
+                  [http_error(url, code)]})
     with pytest.raises(urllib.error.HTTPError):
         run_gate(fake, tmp_path, monkeypatch)
     assert [(s["state"], s["description"]) for s in fake.statuses] == [ERROR]
