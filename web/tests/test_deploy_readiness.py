@@ -465,6 +465,41 @@ def test_provision_workflow_never_takes_a_plaintext_password() -> None:
     assert "pre-provision-" in source
 
 
+def test_set_role_workflow_is_wired_like_the_deploy_job() -> None:
+    """Issue #265: the role workflow touches the live DB, so pin its safety wiring."""
+    import yaml
+
+    workflows = ROOT / ".github" / "workflows"
+    role = yaml.safe_load((workflows / "admin-set-account-role.yml").read_text(encoding="utf-8"))
+    deploy = yaml.safe_load((workflows / "deploy.yml").read_text(encoding="utf-8"))
+
+    # PyYAML parses the bare `on:` key as True.
+    inputs = role[True]["workflow_dispatch"]["inputs"]
+    assert set(inputs) == {"find", "username", "role", "approve_if_pending", "apply", "note"}
+    assert inputs["apply"]["default"] is False, "the default run must only read"
+    assert inputs["role"]["options"] == ["pi_admin", "reviewer"]
+
+    job = role["jobs"]["set-role"]
+    assert job["runs-on"] == deploy["jobs"]["deploy"]["runs-on"]
+    assert job["if"] == "vars.ENABLE_PRODUCTION_DEPLOY == 'true'"
+    # Same group the deploy job resolves to on main, so the two never overlap.
+    assert deploy["concurrency"]["group"] == "production-deploy-${{ github.ref }}"
+    assert role["concurrency"]["group"] == "production-deploy-refs/heads/main"
+    assert role["concurrency"]["cancel-in-progress"] is False
+
+    steps = job["steps"]
+    checkout = next(s for s in steps if str(s.get("uses", "")).startswith("actions/checkout"))
+    assert checkout["with"]["ref"] == "main", "the production write must run main's script"
+    offenders = [
+        s.get("name") for s in steps if "${{" in (s.get("run") or "") and "inputs." in s["run"]
+    ]
+    assert not offenders, f"steps interpolate a dispatch input into shell: {offenders}"
+    body = "\n".join(s.get("run") or "" for s in steps)
+    assert "git pull" not in body and "git checkout" not in body
+    assert '"${DEPLOY_PATH}/data/feedback.db"' in body
+    assert "python3 scripts/webapp/set_account_role.py" in body
+
+
 def test_feedback_backup_script_is_valid_and_change_aware() -> None:
     script = ROOT / "scripts" / "webapp" / "backup_feedback_db.py"
     source = script.read_text(encoding="utf-8")
