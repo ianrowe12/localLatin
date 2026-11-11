@@ -475,13 +475,23 @@ def test_set_role_workflow_is_wired_like_the_deploy_job() -> None:
 
     # PyYAML parses the bare `on:` key as True.
     inputs = role[True]["workflow_dispatch"]["inputs"]
-    assert set(inputs) == {"find", "username", "role", "approve_if_pending", "apply", "note"}
+    assert set(inputs) == {
+        "find",
+        "account_id",
+        "username",
+        "role",
+        "approve_if_pending",
+        "apply",
+        "note",
+    }
     assert inputs["apply"]["default"] is False, "the default run must only read"
     assert inputs["role"]["options"] == ["pi_admin", "reviewer"]
 
     job = role["jobs"]["set-role"]
     assert job["runs-on"] == deploy["jobs"]["deploy"]["runs-on"]
-    assert job["if"] == "vars.ENABLE_PRODUCTION_DEPLOY == 'true'"
+    assert job["if"] == (
+        "github.ref == 'refs/heads/main' && vars.ENABLE_PRODUCTION_DEPLOY == 'true'"
+    )
     # Same group the deploy job resolves to on main, so the two never overlap.
     assert deploy["concurrency"]["group"] == "production-deploy-${{ github.ref }}"
     assert role["concurrency"]["group"] == "production-deploy-refs/heads/main"
@@ -490,6 +500,7 @@ def test_set_role_workflow_is_wired_like_the_deploy_job() -> None:
     steps = job["steps"]
     checkout = next(s for s in steps if str(s.get("uses", "")).startswith("actions/checkout"))
     assert checkout["with"]["ref"] == "main", "the production write must run main's script"
+    assert checkout["with"]["persist-credentials"] is False
     offenders = [
         s.get("name") for s in steps if "${{" in (s.get("run") or "") and "inputs." in s["run"]
     ]
@@ -498,6 +509,58 @@ def test_set_role_workflow_is_wired_like_the_deploy_job() -> None:
     assert "git pull" not in body and "git checkout" not in body
     assert '"${DEPLOY_PATH}/data/feedback.db"' in body
     assert "python3 scripts/webapp/set_account_role.py" in body
+
+
+def test_set_role_workflow_output_is_redacted_and_bounded() -> None:
+    """The repo is public, so its Actions logs are world-readable.
+
+    Every invocation must pass --redact, a find must be at least 3 characters
+    and list nothing beyond 5 matches, account_id must be digits only, and
+    each value goes in as --opt=value so it can never be parsed as an option.
+    """
+    import re
+    import subprocess
+
+    import yaml
+
+    workflow = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "admin-set-account-role.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    steps = workflow["jobs"]["set-role"]["steps"]
+    validate = next(s for s in steps if s.get("name") == "Validate inputs")["run"]
+    invoke = next(s for s in steps if s.get("name") == "Run set_account_role.py")["run"]
+
+    assert 'args=("--db=${DB}" --redact)' in invoke
+    assert '"--find=${FIND}" --max-matches=5' in invoke
+    for option in ("--account-id=${ACCOUNT_ID}", "--username=${USERNAME}",
+                   "--role=${ROLE}", "--note=${NOTE}"):
+        assert f'"{option}"' in invoke, option
+    # No space-separated value form survives.
+    assert not re.search(r'--(find|username|note|account-id) "\$', invoke)
+
+    def validates(**env: str) -> bool:
+        full = {"FIND": "", "ACCOUNT_ID": "", "USERNAME": "", "ROLE": "pi_admin", "NOTE": ""}
+        full.update(env)
+        result = subprocess.run(
+            ["bash", "-c", validate], env={"PATH": "/usr/bin:/bin", **full},
+            capture_output=True, text=True,
+        )
+        return result.returncode == 0
+
+    assert validates(FIND="noa")
+    assert not validates(FIND="no"), "a 2-character find lists too much"
+    assert not validates(FIND="$(id)")
+    assert not validates(FIND="noa", ACCOUNT_ID="2")
+    assert validates(ACCOUNT_ID="2")
+    assert not validates(ACCOUNT_ID="2x")
+    assert not validates(ACCOUNT_ID="1234567890")
+    assert not validates(ACCOUNT_ID="2", USERNAME="noah")
+    assert validates(USERNAME="noah.adler@uky.edu")
+    assert not validates(USERNAME="a;rm -rf /")
+    assert not validates()
+    assert not validates(USERNAME="noah", NOTE="a\tb")
 
 
 def test_feedback_backup_script_is_valid_and_change_aware() -> None:

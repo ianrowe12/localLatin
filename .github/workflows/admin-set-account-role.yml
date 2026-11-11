@@ -6,18 +6,29 @@ name: Admin set account role
 # database lives only on the deploy host, which nothing else can reach.
 #
 # Default run reads only. Typical use:
-#   1. find=<part of name>                        -> list matching accounts
-#   2. username=<login> role=pi_admin             -> dry run: what would change
+#   1. find=<3+ characters of a name>             -> list matching accounts (ids)
+#   2. account_id=<id> role=pi_admin              -> dry run: what would change
 #   3. the same with apply=true                   -> backup, then the change
 #
 # From the CLI:
-#   gh workflow run admin-set-account-role.yml -f find=noah
-#   gh workflow run admin-set-account-role.yml -f username=<login> -f role=pi_admin \
+#   gh workflow run admin-set-account-role.yml -f find=noa
+#   gh workflow run admin-set-account-role.yml -f account_id=<id> -f role=pi_admin \
 #       -f approve_if_pending=true -f note="issue #265"
 #   ... then the same with -f apply=true
 #
-# No secrets are involved. Inputs are recorded in the run metadata, which is
-# fine: they are a login name, a role and a note.
+# THE OUTPUT IS REDACTED. This repository is public, so Actions logs are
+# world-readable, and usernames are often email addresses. The script always
+# runs with --redact: accounts appear as id, role, approval status, is_active,
+# creation date, display-name initials and the username's first character.
+# A find that matches more than 5 accounts lists nothing. The inputs
+# themselves are echoed in the step's env block, so prefer a short find
+# fragment and account_id over a full username.
+#
+# Dispatching while a deploy is running AND another deploy is queued can cancel
+# the queued deploy: this job shares the deploy concurrency group, which holds
+# one running and one pending run. Re-run the deploy afterwards if that happens.
+#
+# No secrets are involved.
 
 on:
   workflow_dispatch:
@@ -27,8 +38,13 @@ on:
         required: false
         type: string
         default: ""
+      account_id:
+        description: "Id of the account to change, from a find run (preferred over username)"
+        required: false
+        type: string
+        default: ""
       username:
-        description: "Exact login name of the account to change (ignored when find is set)"
+        description: "Exact login name of the account to change (prefer account_id; this input is visible in the log)"
         required: false
         type: string
         default: ""
@@ -73,7 +89,7 @@ jobs:
       - self-hosted
       - locallatin
       - production
-    if: vars.ENABLE_PRODUCTION_DEPLOY == 'true'
+    if: github.ref == 'refs/heads/main' && vars.ENABLE_PRODUCTION_DEPLOY == 'true'
 
     steps:
       # The script is taken from a fresh checkout of main in the runner's own
@@ -89,6 +105,8 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: main
+          # Nothing here pushes, so no token is left in the checkout's config.
+          persist-credentials: false
           filter: blob:none
           sparse-checkout: scripts/webapp
 
@@ -98,19 +116,26 @@ jobs:
       - name: Validate inputs
         env:
           FIND: ${{ inputs.find }}
+          ACCOUNT_ID: ${{ inputs.account_id }}
           USERNAME: ${{ inputs.username }}
           ROLE: ${{ inputs.role }}
           NOTE: ${{ inputs.note }}
         run: |
           set -euo pipefail
           fail() { echo "::error::$*"; exit 1; }
-          find_re='^[A-Za-z0-9._@+ -]{1,64}$'
+          find_re='^[A-Za-z0-9._@+ -]{3,64}$'
+          account_id_re='^[0-9]{1,9}$'
           username_re='^[A-Za-z0-9._@+-]{2,128}$'
           if [[ -n "${FIND}" ]]; then
+            [[ -z "${ACCOUNT_ID}" && -z "${USERNAME}" ]] \
+              || fail "find cannot be combined with account_id or username"
             [[ "${FIND}" =~ ${find_re} ]] \
-              || fail "find may only contain letters, digits, space and . _ @ + - (max 64)"
+              || fail "find needs 3-64 letters, digits, spaces or . _ @ + -"
+          elif [[ -n "${ACCOUNT_ID}" ]]; then
+            [[ -z "${USERNAME}" ]] || fail "set account_id or username, not both"
+            [[ "${ACCOUNT_ID}" =~ ${account_id_re} ]] || fail "account_id must be 1-9 digits"
           else
-            [[ -n "${USERNAME}" ]] || fail "set either find or username"
+            [[ -n "${USERNAME}" ]] || fail "set find, account_id or username"
             [[ "${USERNAME}" =~ ${username_re} ]] \
               || fail "username may only contain letters, digits and . _ @ + - (2-128 chars)"
           fi
@@ -123,6 +148,7 @@ jobs:
         env:
           DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
           FIND: ${{ inputs.find }}
+          ACCOUNT_ID: ${{ inputs.account_id }}
           USERNAME: ${{ inputs.username }}
           ROLE: ${{ inputs.role }}
           APPROVE_IF_PENDING: ${{ inputs.approve_if_pending }}
@@ -146,16 +172,23 @@ jobs:
           fi
           echo "Database: ${DB}"
 
-          args=(--db "${DB}")
+          # Always redacted: the log is public. --opt=value so that no value
+          # can ever be read as an option of its own.
+          args=("--db=${DB}" --redact)
           if [[ -n "${FIND}" ]]; then
-            args+=(--find "${FIND}")
+            args+=("--find=${FIND}" --max-matches=5)
           else
-            args+=(--username "${USERNAME}" --role "${ROLE}")
+            if [[ -n "${ACCOUNT_ID}" ]]; then
+              args+=("--account-id=${ACCOUNT_ID}")
+            else
+              args+=("--username=${USERNAME}")
+            fi
+            args+=("--role=${ROLE}")
             if [[ "${APPROVE_IF_PENDING}" == "true" ]]; then
               args+=(--approve-if-pending)
             fi
             if [[ -n "${NOTE}" ]]; then
-              args+=(--note "${NOTE}")
+              args+=("--note=${NOTE}")
             fi
             if [[ "${APPLY}" == "true" ]]; then
               args+=(--apply)
