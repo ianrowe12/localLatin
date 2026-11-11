@@ -45,9 +45,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           filter: blob:none
+          # docs/agents: tests/test_independent_review_gate.py runs the review
+          # protocol's closing blocks through the gate.
           sparse-checkout: |
             .github
             deploy
+            docs/agents
             scripts
             slurm/ig
             src
