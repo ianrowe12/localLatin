@@ -142,3 +142,47 @@ python scripts/data/tei_to_canon.py <export.xml> --dry-run --types canon
 `changed`, `moved`, `moved+changed`, `new` or `absent_from_export`. Scope for
 `absent_from_export` is limited to the sigla the export covers, so running it on one
 manuscript never reports the rest of the corpus as missing.
+
+## Importing a CCL plain-text export (issue #282)
+
+Since 2026-11 CCL also sends plain-text exports of the whole corpus
+(`cclexport/keyed/<type>/<key>/<xml_id>.txt`, `cclexport/unkeyed/<type>/<xml_id>.txt`).
+`scripts/data/import_ccl_export.py` turns one into a **webapp** corpus, never into
+`data/canon_labelled` (benchmark v1 stays frozen), and reports what changed against a
+baseline (default: the repo's `data/`). Tests: `tests/test_import_ccl_export.py`.
+
+```bash
+python scripts/data/import_ccl_export.py <export.zip or cclexport/> \
+    --types canon --out-dir /scratch/ccl_import_YYYYMMDD
+```
+
+It writes `canon_labelled/<key>/<xml_id>.txt`, a flat `canon_unlabelled/`,
+`witnesses.csv` (xml_id, type, status, directory, sha256) and `import_report.{json,md}`.
+`--out-dir` must be new or empty and outside every git working tree. The report lists
+witnesses added and removed (per type and status), text changes (byte-wise and after
+whitespace normalisation), key changes, moves between keyed and unkeyed, key-name
+normalisations, the query-corpus digest the webapp would compute
+(`feedback_db.corpus_digest`, pinned by `web/tests/test_ccl_import_digest.py`) and what
+the webapp's startup checks from #278 would do with the new listing. It holds ids, keys,
+counts and digests only: no witness text and no reviewer data.
+
+Directory names. Keys are matched whitespace-insensitively (NFC, all whitespace removed).
+A key that matches a baseline directory keeps the baseline's name verbatim; 19 long
+citation keys in `data/canon_labelled` contain a line break, which the macOS-unzipped
+2026-11-12 export drops without a space, and those keep our form. A key the baseline
+does not hold keeps the export's form, except that a whitespace run containing a line
+break or tab becomes one space and the ends are trimmed. A key is refused when it is
+blank, starts with `.`, holds a backslash, NUL or another control character, or exceeds
+255 bytes; `/` is the path separator, so a key containing it fails the layout check.
+
+The export is treated as untrusted: zip entry names are read from the zip (as UTF-8,
+whatever the archiver's flag says), folders are walked without following symlinks,
+names are NFC-normalised, and duplicate xml_ids, case-only collisions, unexpected
+nesting and non-UTF-8 text are refused.
+
+Result on the 2026-11-12 export, `--types canon`, against benchmark v1: 1,705 keyed
+witnesses in 840 directories and 2,238 unkeyed, with 0 added, 0 removed, 0 text changes,
+0 key changes and no moves between keyed and unkeyed. The query-corpus digest is
+`23e913f5...88af`, the `PRE_XML_ID_CORPUS_SHA256` the webapp already serves. The zip
+keeps the 19 line breaks; the macOS-unzipped folder matches them only by whitespace.
+Both hold 8 key directories in NFD, which the import normalises.

@@ -48,7 +48,7 @@ Grouped by purpose:
 - **`scripts/ig/`**: IG artifact regeneration for the webapp (`run_ig_examples_pipeline.sh`, `run_phase12f_select_pair_examples.py`, `run_phase12f_visualize.py`).
 - **`scripts/webapp/`**: Webapp data export (`export_webapp_data.sh`), deploy data packaging (`make_data_release.sh`), deployment smoke checks (`smoke_reviewer_pilot.py`).
 - **`scripts/common/`**: Shared helpers (`create_canon_split.py`, `data_prep.py`).
-- **`scripts/data/`**: Corpus provenance tools (`tei_to_canon.py` converts a CCL TEI-P5 export to the plain-text layout and diffs it against `data/`; `benchmark_manifest.py` writes and checks the benchmark v1 sha256 manifest).
+- **`scripts/data/`**: Corpus provenance tools (`tei_to_canon.py` converts a CCL TEI-P5 export to the plain-text layout and diffs it against `data/`; `benchmark_manifest.py` writes and checks the benchmark v1 sha256 manifest; `import_ccl_export.py` turns a CCL plain-text export into a webapp corpus outside git, never into benchmark v1, and reports what changed, see `docs/research/data_derivation.md`).
 - **`scripts/paper/`**: Overleaf mirror sync (`sync_paper_repo.sh`).
 - **`scripts/_archive/`**: Stale phase 3-12 pipelines preserved for reproducibility.
 
