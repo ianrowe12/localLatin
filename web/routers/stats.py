@@ -72,6 +72,8 @@ async def get_stats(
         recent_reviews=recent_reviews,
         needs_attention=needs_attention,
         next_unreviewed_ids=next_unreviewed_ids,
+        unserved_witness_count=db_stats["unserved_witness_count"],
+        unserved_reviewed_count=db_stats["unserved_reviewed_count"],
     )
 
 

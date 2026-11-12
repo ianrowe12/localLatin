@@ -50,6 +50,33 @@ class CorpusMismatchError(RuntimeError):
     """
 
 
+class UnkeyedRowsError(CorpusMismatchError):
+    """A changed corpus was served while some stored row has no xml_id.
+
+    Such a row is known only by its position in the corpus it was saved
+    against, which the new corpus may give to another witness (issue #278).
+    """
+
+
+class MissingWitnessThresholdError(CorpusMismatchError):
+    """Too many reviewed witnesses disappeared in one corpus change (#278).
+
+    Usually a broken release rather than a real removal. Overridden only for
+    one exact corpus, by `corpus_change.accept_missing_reviewed_sha256`.
+    """
+
+
+#: Default for `corpus_change.max_missing_reviewed_share`: a corpus change may
+#: drop at most this share of the reviewed witnesses the previous corpus served
+#: before startup refuses it (issue #278).
+DEFAULT_MAX_MISSING_REVIEWED_SHARE = 0.05
+
+#: The id reads report for a witness the served corpus does not hold, where a
+#: field must carry some integer (`ReviewerDir.seed_query_id`). Never a real
+#: file id, so it can never name another witness.
+UNSERVED_QUERY_ID = -1
+
+
 def corpus_digest(filename_by_query: Mapping[int, str]) -> str:
     """sha256 over `"<file_id>\\t<filename>\\n"` in file_id order.
 
@@ -189,6 +216,10 @@ _EXPORT_COLUMNS = [
     # The directory behind every selected rank, as the reviewer saw it at save
     # time. Empty on every row written before issue #273.
     "selected_dirs_json",
+    # Appended (issue #278): the id the served corpus gives this row's witness
+    # now. Equal to `query_id` until a corpus change moves the witness, and
+    # empty when the served corpus no longer holds it.
+    "served_query_id",
 ]
 
 #: Tables that reference an unlabelled query, as (table, query id column,
@@ -215,6 +246,63 @@ CREATE TABLE IF NOT EXISTS xml_id_backfills (
     reviewer_dir_member_rows INTEGER NOT NULL DEFAULT 0
 )
 """
+
+#: Audit trail of corpus changes (issue #278): one row per startup that adopted
+#: a query corpus different from the one the database was last bound to. Every
+#: count is over distinct witnesses (xml_ids) that have at least one stored
+#: row, never over reviewer names. `old_corpus_sha256` is '' when no earlier
+#: corpus was ever recorded. `backup_name` is the file name of the copy taken
+#: just before. Additive like every table here.
+CORPUS_CHANGES_DDL = """
+CREATE TABLE IF NOT EXISTS corpus_changes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    changed_at TEXT NOT NULL DEFAULT (datetime('now')),
+    old_corpus_sha256 TEXT NOT NULL DEFAULT '',
+    old_corpus_size INTEGER,
+    new_corpus_sha256 TEXT NOT NULL,
+    new_corpus_size INTEGER NOT NULL,
+    data_release TEXT NOT NULL DEFAULT '',
+    backup_name TEXT NOT NULL DEFAULT '',
+    witnesses_unchanged INTEGER NOT NULL DEFAULT 0,
+    witnesses_moved INTEGER NOT NULL DEFAULT 0,
+    witnesses_missing INTEGER NOT NULL DEFAULT 0,
+    witnesses_newly_missing INTEGER NOT NULL DEFAULT 0,
+    witnesses_restored INTEGER NOT NULL DEFAULT 0,
+    reviewed_witnesses INTEGER NOT NULL DEFAULT 0,
+    reviewed_witnesses_newly_missing INTEGER NOT NULL DEFAULT 0,
+    missing_override_used INTEGER NOT NULL DEFAULT 0,
+    members_table_rebuilt INTEGER NOT NULL DEFAULT 0
+)
+"""
+
+#: The id map of each corpus change (issue #278): where every stored witness
+#: sat before the change and where the new corpus serves it (NULL: not
+#: served). Reads never need it, because they translate a stored xml_id
+#: through the corpus in memory; it is the record of the re-keying, and the
+#: next change reads it to know each witness's previous position, since the
+#: append-only tables keep the position a row was SAVED at.
+CORPUS_CHANGE_WITNESSES_DDL = """
+CREATE TABLE IF NOT EXISTS corpus_change_witnesses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    change_id INTEGER NOT NULL,
+    xml_id TEXT NOT NULL,
+    old_query_id INTEGER,
+    new_query_id INTEGER
+)
+"""
+
+#: `reviewer_dir_members` as `_migrate()` creates it plus the #273 column, in
+#: table order. The corpus-change rebuild refuses any other shape.
+_MEMBER_COLUMNS = (
+    "id",
+    "dir_id",
+    "query_id",
+    "role",
+    "added_at",
+    "added_by",
+    "added_by_account_id",
+    "xml_id",
+)
 
 
 class FeedbackDB:
@@ -608,6 +696,46 @@ class FeedbackDB:
             await self._db.execute(
                 f"CREATE INDEX IF NOT EXISTS idx_{table}_{column} ON {table}({column})"
             )
+        await self._ensure_member_witness_index()
+
+        # --- corpus changes (issue #278) --------------------------------------
+        await self._db.execute(CORPUS_CHANGES_DDL)
+        await self._db.execute(CORPUS_CHANGE_WITNESSES_DDL)
+        await self._db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_corpus_change_witnesses_xml "
+            "ON corpus_change_witnesses(xml_id, change_id)"
+        )
+
+    async def _ensure_member_witness_index(self) -> None:
+        """One membership per (directory, witness), enforced by the database.
+
+        `UNIQUE (dir_id, query_id)` is positional: after a corpus change it
+        would let a witness join twice under its old and new ids, and would
+        refuse a different witness that now sits at an old member's id. This
+        partial unique index is the witness-based rule (issue #278); the
+        positional one is removed by the corpus-change rebuild. Created only
+        when no stored pair already repeats, because a unique index that fails
+        to build would stop startup; reads de-duplicate by witness either way
+        and the write paths check by witness before inserting.
+        """
+        assert self._db is not None
+        repeated = await (
+            await self._db.execute(
+                "SELECT COUNT(*) FROM (SELECT 1 FROM reviewer_dir_members "
+                "WHERE xml_id IS NOT NULL GROUP BY dir_id, xml_id HAVING COUNT(*) > 1)"
+            )
+        ).fetchone()
+        if repeated[0]:
+            logger.warning(
+                "%d reviewer directory membership(s) repeat a witness; not adding "
+                "the witness-unique index",
+                repeated[0],
+            )
+            return
+        await self._db.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_reviewer_dir_members_witness "
+            "ON reviewer_dir_members(dir_id, xml_id) WHERE xml_id IS NOT NULL"
+        )
 
     async def _migrate_reviewer_dir_keys(self) -> None:
         """Give reviewer directories a `ccl_key`, keeping every existing name.
@@ -685,28 +813,47 @@ class FeedbackDB:
     # --- witness identity (issue #273) ----------------------------------------
 
     async def adopt_corpus(
-        self, filename_by_query: Mapping[int, str], *, data_release: str = ""
+        self,
+        filename_by_query: Mapping[int, str],
+        *,
+        data_release: str = "",
+        max_missing_reviewed_share: float = DEFAULT_MAX_MISSING_REVIEWED_SHARE,
+        accept_missing_reviewed_sha256: str = "",
     ) -> dict:
-        """Check the served corpus against the stored witness ids, then bind it.
+        """Bind the served corpus, re-keying stored witnesses when it changed.
 
         Called once at startup, after `connect()`, with the corpus the app is
-        about to serve (`DataStore.file_id_to_filename`). In order:
+        about to serve (`DataStore.file_id_to_filename`). No stored `query_id`
+        is ever rewritten (the tables are append-only): the stored `xml_id` says
+        which witness a row is about, and reads translate it through the
+        corpus bound here. In order:
 
-        1. GUARD. Every stored `(query id, xml_id)` pair must agree with the
-           served corpus: the id must name that witness, and the witness must
-           sit at that id. Any disagreement raises `CorpusMismatchError`, so
-           the app refuses to start instead of serving reviews against the
-           wrong text. A pair whose id and witness are both absent from the
-           corpus is only logged: nothing is shown against another witness.
-        2. BACKFILL. Rows written before xml_id existed get it from the served
-           corpus. Only the NULL xml_id column is written; nothing else on any
-           row changes, so the append-only log keeps every original value. On a
-           deployment (`data_release` set) the served corpus must be the one
-           those rows were saved against, `PRE_XML_ID_CORPUS_SHA256`, or the
-           app refuses to start rather than guess. Once every row carries an
-           id, later boots backfill nothing and this check never runs again.
-        3. BIND. Later writes record the xml_id of the query they name, and
-           reads translate a stored xml_id to the id the corpus serves it at.
+        1. DETECT. The corpus changed when its digest differs from the one this
+           database was last bound to (the newest `corpus_changes` row, else
+           the newest `xml_id_backfills` row). A database that never recorded a
+           digest saved every keyed row against the corpus it last served, so
+           there the stored ids decide: the corpus changed when any stored
+           witness now sits at another id or is gone.
+        2. CHANGED (issue #278). Refuses, writing nothing, when any stored row
+           has no xml_id (`UnkeyedRowsError`), or when more than
+           `max_missing_reviewed_share` of the reviewed witnesses the previous
+           corpus served are gone (`MissingWitnessThresholdError`), unless
+           `accept_missing_reviewed_sha256` names exactly this corpus. Then it
+           backs the database up (`<db>.pre-corpus-change-<stamp>`) and, in
+           one transaction, removes the positional `UNIQUE (dir_id, query_id)`
+           from `reviewer_dir_members` (a verified rebuild, done once), writes
+           one `corpus_changes` audit row and one `corpus_change_witnesses` row
+           per stored witness.
+        3. UNCHANGED (issue #273). Rows written before xml_id existed get it
+           from the served corpus; only that NULL column is written. On a
+           deployment (`data_release` set) the corpus must be
+           `PRE_XML_ID_CORPUS_SHA256`, the listing those rows were saved
+           against, or startup refuses rather than guess. Once every row has
+           an xml_id this check never runs, so it cannot block a later change.
+        4. BIND. Later writes record the witness of the id they name, and reads
+           translate a stored xml_id to the id the corpus serves it at. A
+           witness the corpus no longer holds keeps every row and is shown
+           against no other text.
 
         Returns counts for the startup log. No reviewer name is read here.
         """
@@ -716,107 +863,509 @@ class FeedbackDB:
             for query_id, filename in filename_by_query.items()
         }
         xml_to_qid = {xml_id: query_id for query_id, xml_id in qid_to_xml.items()}
-
-        mismatches, unserved = await self._stored_pairs_against(qid_to_xml, xml_to_qid)
-        if mismatches:
-            shown = "; ".join(
-                f"{table} query_id {query_id} stores {stored!r} but the corpus serves "
-                f"{served!r} there"
-                for table, query_id, stored, served in mismatches[:5]
-            )
+        if len(xml_to_qid) != len(qid_to_xml):
             raise CorpusMismatchError(
-                f"The served query corpus disagrees with {len(mismatches)} stored "
-                f"witness id(s) in {self.db_path.name}: {shown}. Refusing to start, "
-                "because every review would be shown against the wrong witness. "
-                "Serve the data release these reviews were saved against, or re-key "
-                "the stored query ids by xml_id before importing a corpus that adds "
-                "or removes query files (issue #273)."
+                "The served query corpus lists the same witness under two file "
+                "ids, so a stored xml_id could not name one query. Refusing to "
+                "start (issue #278)."
             )
+        digest = corpus_digest(filename_by_query)
+
+        previous = await self._previous_corpus()
+        positions = await self._stored_witness_positions()
+        if previous is None:
+            changed = any(
+                old != xml_to_qid.get(xml_id) for xml_id, old in positions.items()
+            )
+        else:
+            changed = previous[0] != digest
+
+        result: dict = {
+            "corpus_sha256": digest,
+            "changed": changed,
+            "change": None,
+            "backfilled": {table: 0 for table, _, _ in _QUERY_REFERENCES},
+        }
+        if changed:
+            result["change"] = await self._adopt_changed_corpus(
+                positions=positions,
+                xml_to_qid=xml_to_qid,
+                digest=digest,
+                previous=previous,
+                data_release=data_release,
+                max_missing_reviewed_share=max_missing_reviewed_share,
+                accept_missing_reviewed_sha256=accept_missing_reviewed_sha256,
+            )
+        else:
+            result["backfilled"] = await self._backfill_xml_ids(
+                qid_to_xml, digest=digest, data_release=data_release
+            )
+
+        unserved = len(await self._stored_xml_ids() - xml_to_qid.keys())
+        result["unserved"] = unserved
         if unserved:
             logger.warning(
-                "%d stored witness id(s) are not in the served corpus; their reviews "
-                "are kept but not shown",
+                "%d stored witness id(s) are not in the served corpus; their rows "
+                "are kept, counted on the stats page and in the CCL key export, "
+                "and shown against no query",
                 unserved,
             )
-
-        pending = await self._rows_awaiting_xml_id(qid_to_xml)
-        pending_rows = sum(count for count, _ in pending.values())
-        digest = corpus_digest(filename_by_query)
-        filled = {table: 0 for table, _, _ in _QUERY_REFERENCES}
-        if pending_rows:
-            if data_release and digest != PRE_XML_ID_CORPUS_SHA256:
-                raise CorpusMismatchError(
-                    f"{pending_rows} stored row(s) predate witness ids and "
-                    f"the served corpus (release {data_release!r}, sha256 {digest}) "
-                    "is not the one they were saved against "
-                    f"(sha256 {PRE_XML_ID_CORPUS_SHA256}). Refusing to start rather "
-                    "than guess their witnesses: boot once on the earlier release so "
-                    "the backfill runs, then deploy this one (issue #273)."
-                )
-            for table, id_column, xml_column in _QUERY_REFERENCES:
-                for query_id in sorted(pending[table][1]):
-                    # Writes the NULL witness id and nothing else; the
-                    # `IS NULL` makes a rerun a no-op.
-                    cursor = await self._db.execute(
-                        f"UPDATE {table} SET {xml_column} = ? "
-                        f"WHERE {id_column} = ? AND {xml_column} IS NULL",
-                        (qid_to_xml[query_id], query_id),
-                    )
-                    filled[table] += max(cursor.rowcount, 0)
-            await self._db.execute(
-                """
-                INSERT INTO xml_id_backfills
-                    (corpus_sha256, corpus_size, data_release, feedback_rows,
-                     reviewer_dir_rows, reviewer_dir_member_rows)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    digest,
-                    len(qid_to_xml),
-                    data_release,
-                    filled["feedback"],
-                    filled["reviewer_dirs"],
-                    filled["reviewer_dir_members"],
-                ),
-            )
-            await self._db.commit()
-            logger.info(
-                "Backfilled witness ids from corpus sha256 %s: %d feedback, %d "
-                "reviewer directory and %d membership row(s)",
-                digest,
-                filled["feedback"],
-                filled["reviewer_dirs"],
-                filled["reviewer_dir_members"],
-            )
-
         self._qid_to_xml = qid_to_xml
         self._xml_to_qid = xml_to_qid
-        return {"backfilled": filled, "unserved": unserved, "corpus_sha256": digest}
+        return result
 
-    async def _stored_pairs_against(
-        self, qid_to_xml: dict[int, str], xml_to_qid: dict[str, int]
-    ) -> tuple[list[tuple[str, int, str, str | None]], int]:
-        """Stored pairs the served corpus contradicts, and how many it lacks."""
+    async def _previous_corpus(self) -> tuple[str, int | None] | None:
+        """`(sha256, size)` of the corpus this database was last bound to.
+
+        The newest corpus change, else the newest xml_id backfill, else None
+        when neither was ever recorded.
+        """
         assert self._db is not None
-        mismatches: list[tuple[str, int, str, str | None]] = []
-        unserved = 0
+        row = await (
+            await self._db.execute(
+                "SELECT new_corpus_sha256 AS sha, new_corpus_size AS size "
+                "FROM corpus_changes ORDER BY id DESC LIMIT 1"
+            )
+        ).fetchone()
+        if row is None:
+            row = await (
+                await self._db.execute(
+                    "SELECT corpus_sha256 AS sha, corpus_size AS size "
+                    "FROM xml_id_backfills ORDER BY id DESC LIMIT 1"
+                )
+            ).fetchone()
+        if row is None:
+            return None
+        return str(row["sha"]), (int(row["size"]) if row["size"] is not None else None)
+
+    async def _stored_xml_ids(self) -> set[str]:
+        """Every witness at least one stored row names."""
+        assert self._db is not None
+        found: set[str] = set()
+        for table, _, xml_column in _QUERY_REFERENCES:
+            rows = await (
+                await self._db.execute(
+                    f"SELECT DISTINCT {xml_column} AS xml_id FROM {table} "
+                    f"WHERE {xml_column} IS NOT NULL"
+                )
+            ).fetchall()
+            found.update(str(row["xml_id"]) for row in rows)
+        return found
+
+    async def _stored_witness_positions(self) -> dict[str, int | None]:
+        """Where the corpus the database was last bound to served each witness.
+
+        A witness the last corpus change mapped takes that change's new id
+        (None: that corpus did not hold it). Any other witness has only rows
+        saved since, all against the current corpus, so its stored id is its
+        position; two different stored ids for such a witness mean the database
+        contradicts itself, and startup refuses.
+        """
+        assert self._db is not None
+        stored: dict[str, set[int]] = {}
         for table, id_column, xml_column in _QUERY_REFERENCES:
             rows = await (
                 await self._db.execute(
                     f"SELECT DISTINCT {id_column} AS query_id, {xml_column} AS xml_id "
-                    f"FROM {table} WHERE {xml_column} IS NOT NULL "
-                    f"ORDER BY {id_column}"
+                    f"FROM {table} WHERE {xml_column} IS NOT NULL"
                 )
             ).fetchall()
             for row in rows:
-                query_id, xml_id = int(row["query_id"]), str(row["xml_id"])
-                served_xml = qid_to_xml.get(query_id)
-                served_qid = xml_to_qid.get(xml_id)
-                if served_xml is None and served_qid is None:
-                    unserved += 1
-                elif served_xml != xml_id or served_qid != query_id:
-                    mismatches.append((table, query_id, xml_id, served_xml))
-        return mismatches, unserved
+                stored.setdefault(str(row["xml_id"]), set()).add(int(row["query_id"]))
+        mapped_rows = await (
+            await self._db.execute(
+                """
+                SELECT w.xml_id, w.new_query_id
+                  FROM corpus_change_witnesses AS w
+                  JOIN (SELECT xml_id, MAX(change_id) AS change_id
+                          FROM corpus_change_witnesses GROUP BY xml_id) AS last
+                    ON last.xml_id = w.xml_id AND last.change_id = w.change_id
+                """
+            )
+        ).fetchall()
+        mapped = {
+            str(row["xml_id"]): (
+                int(row["new_query_id"]) if row["new_query_id"] is not None else None
+            )
+            for row in mapped_rows
+        }
+        positions: dict[str, int | None] = {}
+        conflicts: list[str] = []
+        for xml_id, ids in sorted(stored.items()):
+            if xml_id in mapped:
+                positions[xml_id] = mapped[xml_id]
+            elif len(ids) == 1:
+                positions[xml_id] = next(iter(ids))
+            else:
+                conflicts.append(f"{xml_id!r} at query ids {sorted(ids)}")
+        if conflicts:
+            raise CorpusMismatchError(
+                f"{len(conflicts)} witness(es) in {self.db_path.name} are stored at "
+                f"more than one query id with no corpus change recorded between "
+                f"them: {'; '.join(conflicts[:5])}. Refusing to start, because "
+                "their previous position is unknown (issue #278)."
+            )
+        return positions
+
+    async def _reviewed_witnesses(self) -> set[str]:
+        """Witnesses with a stored decision or a reviewer-directory row.
+
+        The ones the missing-witness threshold protects: a `matched_rank` or
+        `none_of_top_k` row, a directory seed or a directory membership.
+        """
+        assert self._db is not None
+        rows = await (
+            await self._db.execute(
+                """
+                SELECT xml_id FROM feedback
+                 WHERE outcome IN ('matched_rank', 'none_of_top_k') AND xml_id IS NOT NULL
+                UNION
+                SELECT seed_xml_id FROM reviewer_dirs WHERE seed_xml_id IS NOT NULL
+                UNION
+                SELECT xml_id FROM reviewer_dir_members WHERE xml_id IS NOT NULL
+                """
+            )
+        ).fetchall()
+        return {str(row[0]) for row in rows}
+
+    async def _adopt_changed_corpus(
+        self,
+        *,
+        positions: dict[str, int | None],
+        xml_to_qid: dict[str, int],
+        digest: str,
+        previous: tuple[str, int | None] | None,
+        data_release: str,
+        max_missing_reviewed_share: float,
+        accept_missing_reviewed_sha256: str,
+    ) -> dict:
+        """Step 2 of `adopt_corpus`: refuse, or back up and record the change."""
+        assert self._db is not None
+        unkeyed: dict[str, int] = {}
+        for table, _, xml_column in _QUERY_REFERENCES:
+            row = await (
+                await self._db.execute(
+                    f"SELECT COUNT(*) FROM {table} WHERE {xml_column} IS NULL"
+                )
+            ).fetchone()
+            if row[0]:
+                unkeyed[table] = int(row[0])
+        if unkeyed:
+            detail = ", ".join(f"{count} in {table}" for table, count in unkeyed.items())
+            raise UnkeyedRowsError(
+                f"The served query corpus (sha256 {digest}) is not the one "
+                f"{self.db_path.name} was last bound to, and {sum(unkeyed.values())} "
+                f"stored row(s) have no xml_id ({detail}). Such a row is known only "
+                "by its position in the corpus it was saved against, which this "
+                "corpus may give to another witness. Refusing to start; nothing "
+                "was written. Serve the data release those rows were saved against "
+                "once, so startup fills their witness ids, then deploy this one. "
+                "A row whose query id that corpus does not hold cannot be filled "
+                "and needs a manual decision (issue #278)."
+            )
+
+        counts = {"unchanged": 0, "moved": 0, "missing": 0, "newly_missing": 0,
+                  "restored": 0}
+        mapping: list[tuple[str, int | None, int | None]] = []
+        for xml_id, old in sorted(positions.items()):
+            new = xml_to_qid.get(xml_id)
+            mapping.append((xml_id, old, new))
+            if new is None:
+                counts["missing"] += 1
+                if old is not None:
+                    counts["newly_missing"] += 1
+            elif old is None:
+                counts["restored"] += 1
+            elif old == new:
+                counts["unchanged"] += 1
+            else:
+                counts["moved"] += 1
+
+        reviewed_before = sorted(
+            xml_id
+            for xml_id in await self._reviewed_witnesses()
+            if positions.get(xml_id) is not None
+        )
+        reviewed_gone = [x for x in reviewed_before if x not in xml_to_qid]
+        share = len(reviewed_gone) / len(reviewed_before) if reviewed_before else 0.0
+        override_used = False
+        if share > max_missing_reviewed_share:
+            if accept_missing_reviewed_sha256 and accept_missing_reviewed_sha256 == digest:
+                override_used = True
+                logger.warning(
+                    "%d of %d reviewed witnesses are not in the served corpus "
+                    "(%.1f%%, above the %.1f%% limit); accepted because "
+                    "corpus_change.accept_missing_reviewed_sha256 names this corpus",
+                    len(reviewed_gone),
+                    len(reviewed_before),
+                    100 * share,
+                    100 * max_missing_reviewed_share,
+                )
+            else:
+                raise MissingWitnessThresholdError(
+                    f"{len(reviewed_gone)} of the {len(reviewed_before)} reviewed "
+                    f"witnesses the previous corpus served ({share:.1%}) are not in "
+                    f"the served corpus (sha256 {digest}), above the limit of "
+                    f"{max_missing_reviewed_share:.1%} "
+                    "(corpus_change.max_missing_reviewed_share). This is usually a "
+                    "broken data release. Refusing to start; nothing was written. "
+                    f"First missing: {', '.join(reviewed_gone[:5])}. If the removal "
+                    "is intended, set corpus_change.accept_missing_reviewed_sha256 "
+                    f"to {digest} and restart: their rows are kept, hidden from the "
+                    "review queue and still in the CCL key export (issue #278)."
+                )
+
+        backup = await asyncio.to_thread(
+            _backup_database, self.db_path, "pre-corpus-change"
+        )
+        logger.info(
+            "Corpus changed (sha256 %s -> %s); backed up %s to %s",
+            previous[0] if previous else "unrecorded",
+            digest,
+            self.db_path.name,
+            backup.name,
+        )
+        try:
+            await self._db.execute("BEGIN IMMEDIATE")
+            rebuilt = await self._drop_positional_member_constraint()
+            cursor = await self._db.execute(
+                """
+                INSERT INTO corpus_changes
+                    (old_corpus_sha256, old_corpus_size, new_corpus_sha256,
+                     new_corpus_size, data_release, backup_name,
+                     witnesses_unchanged, witnesses_moved, witnesses_missing,
+                     witnesses_newly_missing, witnesses_restored,
+                     reviewed_witnesses, reviewed_witnesses_newly_missing,
+                     missing_override_used, members_table_rebuilt)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    previous[0] if previous else "",
+                    previous[1] if previous else None,
+                    digest,
+                    len(xml_to_qid),
+                    data_release,
+                    backup.name,
+                    counts["unchanged"],
+                    counts["moved"],
+                    counts["missing"],
+                    counts["newly_missing"],
+                    counts["restored"],
+                    len(reviewed_before),
+                    len(reviewed_gone),
+                    int(override_used),
+                    int(rebuilt),
+                ),
+            )
+            change_id = cursor.lastrowid
+            await self._db.executemany(
+                "INSERT INTO corpus_change_witnesses "
+                "(change_id, xml_id, old_query_id, new_query_id) VALUES (?, ?, ?, ?)",
+                [(change_id, xml_id, old, new) for xml_id, old, new in mapping],
+            )
+            await self._db.commit()
+        except BaseException:
+            await self._db.rollback()
+            raise
+        logger.info(
+            "Recorded corpus change %d: %d witness(es) unchanged, %d moved, %d "
+            "missing (%d newly, %d of them reviewed), %d restored",
+            change_id,
+            counts["unchanged"],
+            counts["moved"],
+            counts["missing"],
+            counts["newly_missing"],
+            len(reviewed_gone),
+            counts["restored"],
+        )
+        return {
+            **counts,
+            "change_id": change_id,
+            "backup": backup,
+            "reviewed_witnesses": len(reviewed_before),
+            "reviewed_newly_missing": len(reviewed_gone),
+            "missing_override_used": override_used,
+            "members_table_rebuilt": rebuilt,
+        }
+
+    async def _has_positional_member_constraint(self) -> bool:
+        """Does `reviewer_dir_members` still carry `UNIQUE (dir_id, query_id)`?"""
+        assert self._db is not None
+        indexes = await (
+            await self._db.execute("PRAGMA index_list(reviewer_dir_members)")
+        ).fetchall()
+        for index in indexes:
+            if not index["unique"] or index["origin"] != "u":
+                continue
+            columns = await (
+                await self._db.execute(f"PRAGMA index_info('{index['name']}')")
+            ).fetchall()
+            if [c["name"] for c in columns] == ["dir_id", "query_id"]:
+                return True
+        return False
+
+    async def _drop_positional_member_constraint(self) -> bool:
+        """Rebuild `reviewer_dir_members` without its positional UNIQUE.
+
+        Runs inside the caller's transaction, right after the corpus-change
+        backup, and only while the constraint exists, so once per database.
+        SQLite cannot drop a table constraint, so the table is copied: same
+        columns in the same order, every row with its original id and values,
+        checked equal to the original before the original is dropped and the
+        copy renamed into its place. The AUTOINCREMENT counter is carried over
+        and the indexes are recreated, with the witness-unique index taking
+        the positional constraint's place. Any surprise (another column set, a
+        trigger the rebuild would drop, a copy that differs) raises, and the
+        caller rolls the whole transaction back.
+        """
+        assert self._db is not None
+        if not await self._has_positional_member_constraint():
+            return False
+        columns = tuple(
+            row["name"]
+            for row in await (
+                await self._db.execute("PRAGMA table_info(reviewer_dir_members)")
+            ).fetchall()
+        )
+        if columns != _MEMBER_COLUMNS:
+            raise CorpusMismatchError(
+                f"reviewer_dir_members has columns {columns}, not {_MEMBER_COLUMNS}; "
+                "refusing to rebuild it (issue #278)."
+            )
+        triggers = await (
+            await self._db.execute(
+                "SELECT name FROM sqlite_master "
+                "WHERE type = 'trigger' AND tbl_name = 'reviewer_dir_members'"
+            )
+        ).fetchall()
+        if triggers:
+            raise CorpusMismatchError(
+                "reviewer_dir_members has trigger(s) a rebuild would drop: "
+                f"{', '.join(str(t['name']) for t in triggers)} (issue #278)."
+            )
+        column_list = ", ".join(_MEMBER_COLUMNS)
+        select = f"SELECT {column_list} FROM {{table}} ORDER BY id"
+        before = [
+            tuple(row)
+            for row in await (
+                await self._db.execute(select.format(table="reviewer_dir_members"))
+            ).fetchall()
+        ]
+        sequence = await (
+            await self._db.execute(
+                "SELECT seq FROM sqlite_sequence WHERE name = 'reviewer_dir_members'"
+            )
+        ).fetchone()
+        await self._db.execute(
+            """
+            CREATE TABLE reviewer_dir_members_rekey (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                dir_id TEXT NOT NULL,
+                query_id INTEGER NOT NULL,
+                role TEXT NOT NULL DEFAULT 'member',
+                added_at TEXT NOT NULL DEFAULT (datetime('now')),
+                added_by TEXT NOT NULL DEFAULT '',
+                added_by_account_id INTEGER,
+                xml_id TEXT
+            )
+            """
+        )
+        await self._db.execute(
+            f"INSERT INTO reviewer_dir_members_rekey ({column_list}) "
+            f"SELECT {column_list} FROM reviewer_dir_members ORDER BY id"
+        )
+        copied = [
+            tuple(row)
+            for row in await (
+                await self._db.execute(select.format(table="reviewer_dir_members_rekey"))
+            ).fetchall()
+        ]
+        if copied != before:
+            raise RuntimeError(
+                "reviewer_dir_members rebuild copied different rows; rolled back"
+            )
+        await self._db.execute("DROP TABLE reviewer_dir_members")
+        await self._db.execute(
+            "ALTER TABLE reviewer_dir_members_rekey RENAME TO reviewer_dir_members"
+        )
+        # Keep AUTOINCREMENT monotonic across the rebuild: never reuse an id.
+        highest = max(
+            [0, *(int(row[0]) for row in before)]
+            + ([int(sequence[0])] if sequence is not None else [])
+        )
+        await self._db.execute(
+            "DELETE FROM sqlite_sequence "
+            "WHERE name IN ('reviewer_dir_members', 'reviewer_dir_members_rekey')"
+        )
+        await self._db.execute(
+            "INSERT INTO sqlite_sequence (name, seq) VALUES ('reviewer_dir_members', ?)",
+            (highest,),
+        )
+        for name, column in (("dir", "dir_id"), ("query", "query_id"), ("xml_id", "xml_id")):
+            await self._db.execute(
+                f"CREATE INDEX IF NOT EXISTS idx_reviewer_dir_members_{name} "
+                f"ON reviewer_dir_members({column})"
+            )
+        await self._ensure_member_witness_index()
+        if await self._has_positional_member_constraint():
+            raise RuntimeError("reviewer_dir_members still has its positional UNIQUE")
+        return True
+
+    async def _backfill_xml_ids(
+        self, qid_to_xml: dict[int, str], *, digest: str, data_release: str
+    ) -> dict[str, int]:
+        """Step 3 of `adopt_corpus`: fill NULL witness ids (issue #273)."""
+        assert self._db is not None
+        pending = await self._rows_awaiting_xml_id(qid_to_xml)
+        pending_rows = sum(count for count, _ in pending.values())
+        filled = {table: 0 for table, _, _ in _QUERY_REFERENCES}
+        if not pending_rows:
+            return filled
+        if data_release and digest != PRE_XML_ID_CORPUS_SHA256:
+            raise CorpusMismatchError(
+                f"{pending_rows} stored row(s) predate witness ids and "
+                f"the served corpus (release {data_release!r}, sha256 {digest}) "
+                "is not the one they were saved against "
+                f"(sha256 {PRE_XML_ID_CORPUS_SHA256}). Refusing to start rather "
+                "than guess their witnesses: boot once on the earlier release so "
+                "the backfill runs, then deploy this one (issue #273)."
+            )
+        for table, id_column, xml_column in _QUERY_REFERENCES:
+            for query_id in sorted(pending[table][1]):
+                # Writes the NULL witness id and nothing else; the
+                # `IS NULL` makes a rerun a no-op.
+                cursor = await self._db.execute(
+                    f"UPDATE {table} SET {xml_column} = ? "
+                    f"WHERE {id_column} = ? AND {xml_column} IS NULL",
+                    (qid_to_xml[query_id], query_id),
+                )
+                filled[table] += max(cursor.rowcount, 0)
+        await self._db.execute(
+            """
+            INSERT INTO xml_id_backfills
+                (corpus_sha256, corpus_size, data_release, feedback_rows,
+                 reviewer_dir_rows, reviewer_dir_member_rows)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                digest,
+                len(qid_to_xml),
+                data_release,
+                filled["feedback"],
+                filled["reviewer_dirs"],
+                filled["reviewer_dir_members"],
+            ),
+        )
+        await self._db.commit()
+        logger.info(
+            "Backfilled witness ids from corpus sha256 %s: %d feedback, %d "
+            "reviewer directory and %d membership row(s)",
+            digest,
+            filled["feedback"],
+            filled["reviewer_dirs"],
+            filled["reviewer_dir_members"],
+        )
+        return filled
 
     async def _rows_awaiting_xml_id(
         self, qid_to_xml: dict[int, str]
@@ -825,7 +1374,8 @@ class FeedbackDB:
 
         Returns `{table: (row count, query ids)}`. A row whose id the corpus
         does not know stays NULL and is not counted: there is nothing to fill
-        it from, and reads keep using its stored id.
+        it from, it is shown against no query, and a later corpus change
+        refuses to start until someone decides what it was.
         """
         assert self._db is not None
         pending: dict[str, tuple[int, set[int]]] = {}
@@ -850,29 +1400,34 @@ class FeedbackDB:
         return self._qid_to_xml.get(int(query_id))
 
     def _served_query_id(self, query_id: int, xml_id: str | None) -> int | None:
-        """Where a stored reference is served now: by xml_id when it has one.
+        """Where a stored reference is served now, read through its xml_id.
 
-        None when the witness is not in the served corpus. A row without an
-        xml_id (or a DB with no bound corpus) keeps its stored id.
+        None when the bound corpus does not hold that witness, whatever id the
+        row stored: after a corpus change (issue #278) that stored id may serve
+        another witness. A row without an xml_id is one whose id the bound
+        corpus could not name at backfill (a changed corpus refuses to start
+        while one exists), so it is served only if its id is. With no corpus
+        bound (a bare FeedbackDB, as in unit tests) the stored id is kept.
         """
-        if xml_id and self._xml_to_qid is not None:
+        if self._xml_to_qid is None or self._qid_to_xml is None:
+            return int(query_id)
+        if xml_id:
             return self._xml_to_qid.get(xml_id)
-        return int(query_id)
-
-    def _shown_query_id(self, query_id: int, xml_id: str | None) -> int:
-        """`_served_query_id`, or the stored id for a witness no longer served.
-
-        For lists that must name some id. The startup guard refuses a corpus
-        that serves another witness at that stored id, so it names nothing
-        else; the stats page shows it as `unknown-<id>`.
-        """
-        served = self._served_query_id(query_id, xml_id)
-        return int(query_id) if served is None else served
+        return int(query_id) if int(query_id) in self._qid_to_xml else None
 
     def _match_query(
         self, query_id: int, *, id_column: str, xml_column: str
     ) -> tuple[str, list]:
-        """SQL predicate for "this row is about this query", xml_id first."""
+        """SQL predicate for "this row is about this query", xml_id first.
+
+        A row with an xml_id matches by witness only, so a stored id from
+        before a corpus change (issue #278) never decides. A row WITHOUT one
+        matches by its stored id, which is safe because such a row can only
+        have been saved against the corpus served now: startup backfills every
+        NULL the corpus can name, and refuses a changed corpus while any NULL
+        is left. (Only a writer outside the app, such as a test inserting
+        directly, ever adds one after startup.)
+        """
         xml_id = self._xml_id_for(query_id)
         if xml_id is None:
             return f"{id_column} = ?", [query_id]
@@ -880,6 +1435,18 @@ class FeedbackDB:
             f"({xml_column} = ? OR ({xml_column} IS NULL AND {id_column} = ?))",
             [xml_id, query_id],
         )
+
+    def _as_served(self, row: dict) -> dict:
+        """A feedback row as the API shows it: `query_id` is the served id.
+
+        Callers ask about a served query id, and a row saved before a corpus
+        change stores the id its witness had then. The row in the database is
+        untouched; only the returned copy names the id the client can use.
+        """
+        served = self._served_query_id(row["query_id"], row.get("xml_id"))
+        if served is not None and served != row["query_id"]:
+            row = {**row, "query_id": served}
+        return row
 
     # --- reviewer directories -------------------------------------------------
 
@@ -1031,30 +1598,50 @@ class FeedbackDB:
                 "SELECT dir_id, query_id, xml_id, role FROM reviewer_dir_members ORDER BY id"
             )
         ).fetchall()
-        members: dict[str, list[int]] = {}
+        grouped: dict[str, list[aiosqlite.Row]] = {}
         for row in member_rows:
-            served = self._served_query_id(row["query_id"], row["xml_id"])
-            if served is not None:
-                members.setdefault(row["dir_id"], []).append(served)
+            grouped.setdefault(row["dir_id"], []).append(row)
         return [
             {
                 **self._served_dir_record(row),
-                "member_query_ids": members.get(row["dir_id"], []),
+                **self._served_members(grouped.get(row["dir_id"], [])),
             }
             for row in dir_rows
         ]
 
+    def _served_members(self, member_rows: list[aiosqlite.Row]) -> dict:
+        """A directory's members as served ids, plus how many witnesses it has.
+
+        `member_query_ids` lists each member the served corpus holds, once, at
+        the id it is served at now (issue #278). `member_witness_count` counts
+        every distinct member witness, served or not: a confirmation is a
+        scholarly fact, so a directory a human filed a second witness into
+        stays `matched` when a later release drops that witness.
+        """
+        served_ids: list[int] = []
+        witnesses: set[str] = set()
+        for row in member_rows:
+            witnesses.add(
+                row["xml_id"]
+                or self._xml_id_for(row["query_id"])
+                or f"#{row['query_id']}"
+            )
+            served = self._served_query_id(row["query_id"], row["xml_id"])
+            if served is not None and served not in served_ids:
+                served_ids.append(served)
+        return {"member_query_ids": served_ids, "member_witness_count": len(witnesses)}
+
     def _served_dir_record(self, row: aiosqlite.Row) -> dict:
         """A reviewer_dirs row with its seed id read through its xml_id.
 
-        A seed the served corpus lacks keeps its stored id, which the corpus
-        does not serve either (the startup guard refuses any other case), so
-        nothing is ever shown against another witness.
+        A seed the served corpus no longer holds is reported as
+        `UNSERVED_QUERY_ID` with `seed_served` False, never as its stored id,
+        which after a corpus change may serve another witness (issue #278).
         """
         record = dict(row)
         served = self._served_query_id(record["seed_query_id"], record.get("seed_xml_id"))
-        if served is not None:
-            record["seed_query_id"] = served
+        record["seed_served"] = served is not None
+        record["seed_query_id"] = UNSERVED_QUERY_ID if served is None else served
         return record
 
     async def get_reviewer_dir(self, dir_id: str) -> dict | None:
@@ -1072,11 +1659,7 @@ class FeedbackDB:
                 (dir_id,),
             )
         ).fetchall()
-        served = (self._served_query_id(r["query_id"], r["xml_id"]) for r in member_rows)
-        return {
-            **self._served_dir_record(row),
-            "member_query_ids": [query_id for query_id in served if query_id is not None],
-        }
+        return {**self._served_dir_record(row), **self._served_members(list(member_rows))}
 
     async def add_reviewer_dir_member(
         self,
@@ -1088,9 +1671,12 @@ class FeedbackDB:
     ) -> bool:
         """Append a query to a reviewer directory. Idempotent, never updates.
 
-        Returns True when a new membership row was written. The UNIQUE
-        constraint plus INSERT OR IGNORE means re-submitting the same feedback
-        adds nothing rather than duplicating or overwriting.
+        Returns True when a new membership row was written. Membership is by
+        WITNESS (issue #278): a witness already in the directory, under
+        whatever id it was saved at, is not added again, and the
+        witness-unique index plus INSERT OR IGNORE back that up, so
+        re-submitting the same feedback adds nothing rather than duplicating or
+        overwriting.
 
         The directory must already exist. Without this check an unknown
         ``dir_id`` wrote an orphan membership row that nothing could ever read
@@ -1105,6 +1691,17 @@ class FeedbackDB:
         ).fetchone()
         if exists is None:
             raise KeyError(dir_id)
+        member_match, member_params = self._match_query(
+            query_id, id_column="query_id", xml_column="xml_id"
+        )
+        already = await (
+            await self._db.execute(
+                f"SELECT 1 FROM reviewer_dir_members WHERE dir_id = ? AND {member_match}",
+                (dir_id, *member_params),
+            )
+        ).fetchone()
+        if already is not None:
+            return False
         cursor = await self._db.execute(
             """
             INSERT OR IGNORE INTO reviewer_dir_members
@@ -1236,28 +1833,39 @@ class FeedbackDB:
                 # Read-only transaction: commit releases the write lock it took
                 # without having written a thing.
                 await transaction.commit()
-                return _feedback_row(row), False
+                return self._as_served(_feedback_row(row)), False
 
             if key and labelled_dir is not None:
                 action, key_dir = "matched_labelled_dir", labelled_dir
             elif key:
                 existing = await _reviewer_dir_for_key(transaction, key)
                 if existing is not None:
-                    # Idempotent by the UNIQUE (dir_id, query_id) constraint,
-                    # and reported as what it was: a join or a no-op.
-                    cursor = await transaction.execute(
-                        """
-                        INSERT OR IGNORE INTO reviewer_dir_members
-                            (dir_id, query_id, xml_id, role, added_by, added_by_account_id)
-                        VALUES (?, ?, ?, 'member', ?, ?)
-                        """,
-                        (existing, query_id, xml_id, reviewer, reviewer_account_id),
+                    # Idempotent by WITNESS (issue #278), and reported as what
+                    # it was: a join or a no-op. The check runs inside this
+                    # BEGIN IMMEDIATE, so nothing can join in between; the
+                    # witness-unique index backs it up.
+                    member_match, member_params = self._match_query(
+                        query_id, id_column="query_id", xml_column="xml_id"
                     )
-                    action = (
-                        "joined_reviewer_dir"
-                        if cursor.rowcount > 0
-                        else "already_joined"
-                    )
+                    already = await (
+                        await transaction.execute(
+                            "SELECT 1 FROM reviewer_dir_members "
+                            f"WHERE dir_id = ? AND {member_match}",
+                            (existing, *member_params),
+                        )
+                    ).fetchone()
+                    joined = False
+                    if already is None:
+                        cursor = await transaction.execute(
+                            """
+                            INSERT OR IGNORE INTO reviewer_dir_members
+                                (dir_id, query_id, xml_id, role, added_by, added_by_account_id)
+                            VALUES (?, ?, ?, 'member', ?, ?)
+                            """,
+                            (existing, query_id, xml_id, reviewer, reviewer_account_id),
+                        )
+                        joined = cursor.rowcount > 0
+                    action = "joined_reviewer_dir" if joined else "already_joined"
                     key_dir = existing
                 else:
                     seed_match, seed_params = self._match_query(
@@ -1772,29 +2380,56 @@ class FeedbackDB:
         return statuses
 
     async def get_stats(self) -> dict:
+        """Dashboard counts. Reviewed and skipped count SERVED queries only.
+
+        A witness the served corpus no longer holds (issue #278) is not a query
+        the dashboard can send anyone to, so it is left out of the reviewed and
+        skipped counts (which the dashboard subtracts from the corpus size) and
+        counted in `unserved_witness_count` / `unserved_reviewed_count`
+        instead. The row-level totals (`feedback_count`, the model, reviewer,
+        outcome and rank distributions) still count every stored row.
+        """
         assert self._db is not None
         total = (await (await self._db.execute("SELECT COUNT(*) FROM feedback")).fetchone())[0]
 
-        status_row = await (
+        rows = await (
             await self._db.execute(
                 """
-                WITH per_query AS (
-                    SELECT
-                        MAX(CASE WHEN outcome IN ('matched_rank', 'none_of_top_k') THEN 1 ELSE 0 END) AS has_review,
-                        MAX(CASE WHEN outcome = 'skipped' THEN 1 ELSE 0 END) AS has_skip
-                    FROM feedback
-                    -- One group per witness; a row without one by its id.
-                    GROUP BY COALESCE(xml_id, '#' || query_id)
-                )
                 SELECT
-                    COALESCE(SUM(CASE WHEN has_review = 1 THEN 1 ELSE 0 END), 0) AS reviewed_count,
-                    COALESCE(SUM(CASE WHEN has_review = 0 AND has_skip = 1 THEN 1 ELSE 0 END), 0) AS skipped_count
-                FROM per_query
+                    query_id,
+                    xml_id,
+                    MAX(CASE WHEN outcome IN ('matched_rank', 'none_of_top_k') THEN 1 ELSE 0 END) AS has_review,
+                    MAX(CASE WHEN outcome = 'skipped' THEN 1 ELSE 0 END) AS has_skip
+                FROM feedback
+                GROUP BY query_id, xml_id
                 """
             )
-        ).fetchone()
-        reviewed = status_row["reviewed_count"]
-        skipped = status_row["skipped_count"]
+        ).fetchall()
+        # One entry per witness; a row without one stands for itself by its id.
+        served_status: dict[int, list[int]] = {}
+        unserved_status: dict[str, list[int]] = {}
+        for row in rows:
+            served = self._served_query_id(row["query_id"], row["xml_id"])
+            if served is None:
+                held = unserved_status.setdefault(
+                    row["xml_id"] or f"#{row['query_id']}", [0, 0]
+                )
+            else:
+                held = served_status.setdefault(served, [0, 0])
+            held[0] = max(held[0], int(row["has_review"]))
+            held[1] = max(held[1], int(row["has_skip"]))
+        reviewed = sum(1 for has_review, _ in served_status.values() if has_review)
+        skipped = sum(
+            1 for has_review, has_skip in served_status.values()
+            if not has_review and has_skip
+        )
+        # Every witness with a stored row of any table that the corpus lacks.
+        unserved_witnesses = set(unserved_status)
+        if self._xml_to_qid is not None:
+            unserved_witnesses |= await self._stored_xml_ids() - self._xml_to_qid.keys()
+        unserved_reviewed = sum(
+            1 for has_review, _ in unserved_status.values() if has_review
+        )
 
         unresolved = (
             await (
@@ -1850,58 +2485,54 @@ class FeedbackDB:
             "reviews_by_reviewer": by_reviewer,
             "outcome_distribution": outcome_dist,
             "rank_distribution": rank_dist,
+            "unserved_witness_count": len(unserved_witnesses),
+            "unserved_reviewed_count": unserved_reviewed,
         }
 
-    async def get_recent_reviews(self, limit: int = 10) -> list[dict]:
+    async def _newest_served_rows(
+        self, sql: str, limit: int, fields: tuple[str, ...]
+    ) -> list[dict]:
+        """The newest `limit` rows whose witness is served, at its served id.
+
+        These lists link to the review page, so a row about a witness the
+        corpus no longer holds is skipped rather than shown at its stored id,
+        which may now name another witness (issue #278). The stats page
+        counts those witnesses instead.
+        """
         assert self._db is not None
-        rows = await (
-            await self._db.execute(
-                """
-                SELECT query_id, xml_id, timestamp, model_slug, outcome, reviewer, correct_rank
-                FROM feedback
-                ORDER BY timestamp DESC, id DESC
-                LIMIT ?
-                """,
-                (limit,),
-            )
-        ).fetchall()
-        return [
-            {
-                "file_id": self._shown_query_id(r["query_id"], r["xml_id"]),
-                "timestamp": r["timestamp"],
-                "model_slug": r["model_slug"],
-                "outcome": r["outcome"],
-                "reviewer": r["reviewer"],
-                "correct_rank": r["correct_rank"],
-            }
-            for r in rows
-        ]
+        found: list[dict] = []
+        async with self._db.execute(sql) as cursor:
+            async for row in cursor:
+                served = self._served_query_id(row["query_id"], row["xml_id"])
+                if served is None:
+                    continue
+                found.append({"file_id": served, **{f: row[f] for f in fields}})
+                if len(found) >= limit:
+                    break
+        return found
+
+    async def get_recent_reviews(self, limit: int = 10) -> list[dict]:
+        return await self._newest_served_rows(
+            """
+            SELECT query_id, xml_id, timestamp, model_slug, outcome, reviewer, correct_rank
+            FROM feedback
+            ORDER BY timestamp DESC, id DESC
+            """,
+            limit,
+            ("timestamp", "model_slug", "outcome", "reviewer", "correct_rank"),
+        )
 
     async def get_needs_attention(self, limit: int = 10) -> list[dict]:
-        assert self._db is not None
-        rows = await (
-            await self._db.execute(
-                """
-                SELECT query_id, xml_id, timestamp, model_slug, outcome, notes, reviewer
-                FROM feedback
-                WHERE outcome IN ('skipped', 'none_of_top_k')
-                ORDER BY timestamp DESC, id DESC
-                LIMIT ?
-                """,
-                (limit,),
-            )
-        ).fetchall()
-        return [
-            {
-                "file_id": self._shown_query_id(r["query_id"], r["xml_id"]),
-                "timestamp": r["timestamp"],
-                "model_slug": r["model_slug"],
-                "outcome": r["outcome"],
-                "notes": r["notes"],
-                "reviewer": r["reviewer"],
-            }
-            for r in rows
-        ]
+        return await self._newest_served_rows(
+            """
+            SELECT query_id, xml_id, timestamp, model_slug, outcome, notes, reviewer
+            FROM feedback
+            WHERE outcome IN ('skipped', 'none_of_top_k')
+            ORDER BY timestamp DESC, id DESC
+            """,
+            limit,
+            ("timestamp", "model_slug", "outcome", "notes", "reviewer"),
+        )
 
     async def get_feedback_for_query(
         self,
@@ -1924,7 +2555,7 @@ class FeedbackDB:
         query += " ORDER BY feedback.timestamp DESC, feedback.id DESC LIMIT ?"
         params.append(limit)
         rows = await (await self._db.execute(query, params)).fetchall()
-        return [_feedback_row(row) for row in rows]
+        return [self._as_served(_feedback_row(row)) for row in rows]
 
     async def get_latest_feedback(
         self,
@@ -1979,7 +2610,7 @@ class FeedbackDB:
             query += " AND TRIM(COALESCE(feedback.notes, '')) != ''"
         query += " ORDER BY feedback.timestamp DESC, feedback.id DESC LIMIT 1"
         row = await (await self._db.execute(query, params)).fetchone()
-        return _feedback_row(row) if row is not None else None
+        return self._as_served(_feedback_row(row)) if row is not None else None
 
     async def get_next_unreviewed(self, all_file_ids: list[int], limit: int = 5) -> list[int]:
         statuses = await self.get_query_statuses()
@@ -2046,6 +2677,11 @@ class FeedbackDB:
                 if row.get("xml_id")
                 else filename_lookup.get(row["query_id"], f"unknown-{row['query_id']}")
             )
+            # `query_id` stays the id the row was saved at (the log is
+            # append-only); after a corpus change (issue #278) the witness may
+            # be served at another id, or not at all (empty).
+            served = self._served_query_id(row["query_id"], row.get("xml_id"))
+            row["served_query_id"] = "" if served is None else served
             writer.writerow({column: row.get(column) for column in _EXPORT_COLUMNS})
         return output.getvalue()
 
@@ -2312,8 +2948,26 @@ def _backup_before_xml_id_migration(db_path: Path) -> Path | None:
     finally:
         probe.close()
 
+    dest = _backup_database(db_path, "pre-xml-id")
+    logger.info(
+        "Backed up %s to %s before adding witness ids", db_path.name, dest.name
+    )
+    return dest
+
+
+def _backup_database(db_path: Path, tag: str) -> Path:
+    """Write `<name>.<tag>-<UTC stamp>` beside the database and return it.
+
+    SQLite's online backup API (a file copy can miss committed state still in
+    the journal), mode 0600 (the copy holds every password hash), O_EXCL so an
+    earlier copy is never overwritten (a numeric suffix is added instead), then
+    `PRAGMA integrity_check`. A failed copy is deleted and the error raised, so
+    the caller stops before writing anything: the same rule as
+    `scripts/webapp/set_account_role.py`. The source connection is an ordinary
+    read-write one, which rolls back a hot journal and writes nothing else.
+    """
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    dest = db_path.with_name(f"{db_path.name}.pre-xml-id-{stamp}")
+    dest = db_path.with_name(f"{db_path.name}.{tag}-{stamp}")
     suffix = 1
     while True:
         try:
@@ -2321,7 +2975,7 @@ def _backup_before_xml_id_migration(db_path: Path) -> Path | None:
             break
         except FileExistsError:
             suffix += 1
-            dest = db_path.with_name(f"{db_path.name}.pre-xml-id-{stamp}-{suffix}")
+            dest = db_path.with_name(f"{db_path.name}.{tag}-{stamp}-{suffix}")
     try:
         source = sqlite3.connect(str(db_path), timeout=30)
         try:
@@ -2334,16 +2988,13 @@ def _backup_before_xml_id_migration(db_path: Path) -> Path | None:
         finally:
             source.close()
         if status != "ok":
-            raise RuntimeError(f"pre-migration backup failed integrity_check: {status}")
+            raise RuntimeError(f"{tag} backup failed integrity_check: {status}")
     except BaseException:
         try:
             dest.unlink()
         except OSError:
             pass
         raise
-    logger.info(
-        "Backed up %s to %s before adding witness ids", db_path.name, dest.name
-    )
     return dest
 
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import re
 import threading
+import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -238,6 +239,159 @@ def _parse_row_status(row: pd.Series) -> str | None:
     return text or None
 
 
+class ReleaseCorpusMismatchError(RuntimeError):
+    """The data release and the served unlabelled corpus disagree (#278).
+
+    Prediction CSVs and q-q matrices address queries by position, so a release
+    built against another listing would serve every ranking and every
+    reviewer-directory score against the wrong witness. Raised at startup.
+    """
+
+
+#: How many disagreements a ReleaseCorpusMismatchError spells out.
+_SHOWN_PROBLEMS = 5
+
+
+def _id_name_problems(
+    source: str, pairs: list[tuple[int, str]], served: dict[int, str]
+) -> list[str]:
+    """How one source's `(file_id, filename)` rows differ from the served map."""
+    problems: list[str] = []
+    seen: dict[int, str] = {}
+    for file_id, filename in pairs:
+        if file_id in seen and seen[file_id] != filename:
+            problems.append(f"{source} names file_id {file_id} twice")
+        seen[file_id] = filename
+    if seen == served:
+        return problems
+    for file_id in sorted(set(seen) | set(served)):
+        if seen.get(file_id) != served.get(file_id):
+            problems.append(
+                f"{source} has file_id {file_id} = {seen.get(file_id)!r} where the "
+                f"served corpus has {served.get(file_id)!r}"
+            )
+            break
+    return problems
+
+
+def _qq_problems(path: Path, served_ids: set[int]) -> list[str]:
+    """How one q-q matrix's ids and shape differ from the served corpus.
+
+    Reads only the small `file_ids` / `excluded` arrays and the header of
+    `sim`, so the ~10 MB matrix itself still loads lazily on first use.
+    """
+    with np.load(path, allow_pickle=False) as data:
+        file_ids = [int(i) for i in data["file_ids"]]
+        excluded = len(data["excluded"]) if "excluded" in data.files else len(file_ids)
+    with zipfile.ZipFile(path) as archive, archive.open("sim.npy") as handle:
+        version = np.lib.format.read_magic(handle)
+        if version == (1, 0):
+            shape = np.lib.format.read_array_header_1_0(handle)[0]
+        else:
+            shape = np.lib.format.read_array_header_2_0(handle)[0]
+    n = len(served_ids)
+    problems: list[str] = []
+    if len(set(file_ids)) != len(file_ids) or set(file_ids) != served_ids:
+        unknown = sorted(set(file_ids) - served_ids)[:3]
+        absent = sorted(served_ids - set(file_ids))[:3]
+        problems.append(
+            f"q-q matrix {path.name} covers {len(file_ids)} file id(s), not the "
+            f"{n} served (unknown: {unknown}, absent: {absent})"
+        )
+    if tuple(shape) != (n, n) or excluded != n:
+        problems.append(
+            f"q-q matrix {path.name} has sim {tuple(shape)} and {excluded} "
+            f"exclusion flag(s) for {n} served queries"
+        )
+    return problems
+
+
+def verify_release_matches_corpus(store: DataStore, unlabelled_dir: Path) -> None:
+    """Refuse a release whose positional files disagree with the served corpus.
+
+    Issue #278. Every query is addressed by file_id, a position fixed when the
+    release was built (`scripts/resubmit/index_unlabelled.py`). The served
+    corpus is the default variant's first model, which `build_store` reads;
+    this checks that everything else addressing queries by id agrees with it:
+
+    * the `*.txt` files in `canon_unlabelled/`, as a set of names, so no
+      served query lacks its text and no file is silently left unserved;
+    * every model in every configured variant's predictions CSV, id for id
+      (the non-default variants read only their id and name columns here);
+    * every discovered q-q matrix: the same file ids and an n x n `sim`.
+
+    A matrix that cannot be read at all is dropped with a log line, the
+    existing rule for a corrupt matrix; one that reads but disagrees refuses.
+    """
+    served = dict(store.file_id_to_filename)
+    problems: list[str] = []
+
+    names = list(served.values())
+    if len(set(names)) != len(names):
+        problems.append("the served corpus lists one filename under two file ids")
+    listing = {p.name for p in unlabelled_dir.glob("*.txt")} if unlabelled_dir.is_dir() else set()
+    no_text = sorted(set(names) - listing)
+    unserved = sorted(listing - set(names))
+    if no_text:
+        problems.append(
+            f"{len(no_text)} served queries have no file in {unlabelled_dir} "
+            f"(first: {', '.join(no_text[:3])})"
+        )
+    if unserved:
+        problems.append(
+            f"{len(unserved)} files in {unlabelled_dir} are in no prediction row "
+            f"(first: {', '.join(unserved[:3])})"
+        )
+
+    for (slug, variant), rows in store.predictions.items():
+        problems += _id_name_problems(
+            f"{variant}/{slug}",
+            [(int(row["file_id"]), str(row["filename"])) for row in rows],
+            served,
+        )
+    for variant, path in list(store.variant_paths.items()):
+        if variant in store.loaded_variants:
+            continue
+        try:
+            frame = pd.read_csv(path, usecols=["model", "file_id", "filename"])
+        except (OSError, ValueError, pd.errors.ParserError):
+            # Unreadable is not the same as disagreeing: like a variant that
+            # fails its lazy load, it is simply not served (400 on request).
+            logger.exception(
+                "Unreadable predictions CSV for variant '%s' at %s; not served",
+                variant,
+                path,
+            )
+            del store.variant_paths[variant]
+            store.variants = [v for v in store.variants if v != variant]
+            continue
+        for hf_id, group in frame.groupby("model"):
+            problems += _id_name_problems(
+                f"{variant}/{normalize_slug(str(hf_id))}",
+                list(zip(group["file_id"].astype(int), group["filename"].astype(str))),
+                served,
+            )
+
+    for slug, path in list(store.qq_paths.items()):
+        try:
+            problems += _qq_problems(path, set(served))
+        except (OSError, KeyError, ValueError, zipfile.BadZipFile):
+            logger.exception("Unreadable q-q matrix for '%s' at %s; not served", slug, path)
+            del store.qq_paths[slug]
+
+    if problems:
+        shown = "; ".join(problems[:_SHOWN_PROBLEMS])
+        more = len(problems) - _SHOWN_PROBLEMS
+        raise ReleaseCorpusMismatchError(
+            f"The data release does not match the served unlabelled corpus: {shown}"
+            + (f" (and {more} more)" if more > 0 else "")
+            + ". Refusing to start, because rankings and reviewer-directory scores "
+            "address queries by position and would be served against the wrong "
+            "witness. Deploy the release built from this corpus listing, or the "
+            "corpus this release was built from (issue #278)."
+        )
+
+
 def _load_variant(store: DataStore, variant: str) -> None:
     """Read one variant's predictions CSV into the store. Caller holds the lock."""
     path = store.variant_paths[variant]
@@ -265,6 +419,17 @@ def _load_variant(store: DataStore, variant: str) -> None:
                 layer = int(row["layer"])
             if pooling is None and "pooling" in row:
                 pooling = str(row["pooling"])
+        if store.file_id_to_filename:
+            # A variant loaded after startup must still address the corpus the
+            # store serves (issue #278); startup checked the file then, and
+            # this catches one replaced since. ValueError: not served (400).
+            problems = _id_name_problems(
+                f"{variant}/{slug}",
+                [(row["file_id"], row["filename"]) for row in rows],
+                store.file_id_to_filename,
+            )
+            if problems:
+                raise ValueError("; ".join(problems[:_SHOWN_PROBLEMS]))
 
         # Index by file_id for O(1) lookup
         store.predictions[(slug, variant)] = sorted(rows, key=lambda r: r["file_id"])
@@ -379,8 +544,11 @@ def build_store(settings: Settings) -> DataStore:
             paths.resolve(paths.predictions_dir),
         )
 
-    # --- Cache unlabelled text files ---
+    # --- Every positional file must address the corpus served (issue #278) ---
     unlabelled_dir = paths.resolve(paths.canon_unlabelled)
+    verify_release_matches_corpus(store, unlabelled_dir)
+
+    # --- Cache unlabelled text files ---
     logger.info("Caching unlabelled texts from %s", unlabelled_dir)
     for fid in store.file_ids:
         fname = store.file_id_to_filename[fid]

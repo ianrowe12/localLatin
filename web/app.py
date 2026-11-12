@@ -53,12 +53,18 @@ async def lifespan(app: FastAPI):
     db_path = settings.paths.resolve(settings.paths.feedback_db)
     db = FeedbackDB(db_path)
     await db.connect()
-    # Issue #273: refuse to start when the served corpus would put a stored
-    # review on another witness, backfill witness ids on older rows, and bind
-    # the corpus so every later row records its witness.
+    # Issues #273 and #278: bind the served corpus. A changed corpus is
+    # re-keyed by xml_id (after a backup, with an audit row) or refused;
+    # an unchanged one backfills witness ids on older rows. Every later row
+    # records its witness either way.
     try:
         await db.adopt_corpus(
-            store.file_id_to_filename, data_release=store.data_release
+            store.file_id_to_filename,
+            data_release=store.data_release,
+            max_missing_reviewed_share=settings.corpus_change.max_missing_reviewed_share,
+            accept_missing_reviewed_sha256=(
+                settings.corpus_change.accept_missing_reviewed_sha256
+            ),
         )
     except BaseException:
         await db.close()

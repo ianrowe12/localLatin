@@ -183,29 +183,6 @@ that named it. Every candidate is a form somebody stored; nothing is re-cased. R
 by the `xml_id` stored on them (#273); a row without one is named through the served corpus, and
 one that neither names is left out (logged as a count), because it has no `xml_id`.
 
-## Witness ids (issue #273)
-
-`query_id` is a position in the sorted unlabelled corpus, so a release that adds or removes one
-query file would shift every later review onto another witness. Every table that references a
-query therefore also stores the witness `xml_id` (filename stem): `feedback.xml_id`,
-`reviewer_dirs.seed_xml_id`, `reviewer_dir_members.xml_id`. Feedback rows also store
-`selected_dirs_json`, the directory behind each selected rank as the reviewer saw it.
-
-- Migration (`_migrate`): nullable columns only. Before its first write to a populated pre-#273
-  DB, `_backup_before_xml_id_migration` writes `<db>.pre-xml-id-<UTC stamp>` beside it (online
-  backup API, 0600, integrity-checked), once per database. It holds password hashes.
-- `FeedbackDB.adopt_corpus(store.file_id_to_filename, data_release=...)` runs in the app lifespan
-  after `connect()`: (1) GUARD: any stored `(query id, xml_id)` the served corpus contradicts
-  raises `CorpusMismatchError` and the app does not start; a witness absent from the corpus is
-  only logged. (2) BACKFILL: NULL witness ids are filled from the served corpus, writing nothing
-  else; with a `data_release` set the corpus must hash (`corpus_digest`) to
-  `PRE_XML_ID_CORPUS_SHA256`, the listing every pre-#273 row was saved against, or startup
-  refuses. One `xml_id_backfills` audit row records what was filled. (3) BIND: later writes record
-  the witness, and reads (`get_query_statuses`, `get_latest_feedback`, reviewer-directory members
-  and seeds, both exports) go by `xml_id` first.
-- Before importing a corpus that adds or removes query files, the stored `query_id`s must be
-  re-keyed from `xml_id`; until then the guard refuses that corpus on purpose.
-
 Columns (`EXPORT_SCHEMA_VERSION = 1`; bump it when a column is added, removed or changes meaning):
 
 | column | value |
@@ -243,6 +220,108 @@ message}}` naming the field, never echoing the value; other validation errors ke
 shape. The frontend mirror is `frontend/src/utils/inputSafety.ts`, shown inline under the field
 with the submit disabled. Both sides test against `frontend/src/utils/inputSafetyCases.json`,
 which also holds the exact messages. Stored values are never re-checked or rewritten.
+
+## Witness ids (issue #273)
+
+`query_id` is a position in the sorted unlabelled corpus, so a release that adds or removes one
+query file would shift every later review onto another witness. Every table that references a
+query therefore also stores the witness `xml_id` (filename stem): `feedback.xml_id`,
+`reviewer_dirs.seed_xml_id`, `reviewer_dir_members.xml_id`. Feedback rows also store
+`selected_dirs_json`, the directory behind each selected rank as the reviewer saw it.
+
+- Migration (`_migrate`): nullable columns only. Before its first write to a populated pre-#273
+  DB, `_backup_before_xml_id_migration` writes `<db>.pre-xml-id-<UTC stamp>` beside it (online
+  backup API, 0600, integrity-checked), once per database. It holds password hashes.
+- `FeedbackDB.adopt_corpus(store.file_id_to_filename, data_release=..., ...)` runs in the app
+  lifespan after `connect()`. When the corpus is unchanged it BACKFILLS NULL witness ids from the
+  served corpus, writing nothing else; with a `data_release` set the corpus must hash
+  (`corpus_digest`) to `PRE_XML_ID_CORPUS_SHA256`, the listing every pre-#273 row was saved
+  against, or startup refuses (`CorpusMismatchError`). One `xml_id_backfills` audit row records
+  what was filled. Once every row has an xml_id this check never runs again, so it does not block
+  a later corpus change. When the corpus changed, see "Corpus changes (issue #278)" below. Either
+  way it then BINDS the corpus: later writes record the witness, and every read goes by `xml_id`.
+
+## Corpus changes (issue #278)
+
+A data release may add, remove or reorder unlabelled query files (new CCL material goes into the
+webapp's query corpus, never into `data/canon_labelled/`, which is benchmark v1). Every stored
+`query_id` is then a position in a listing that no longer exists. Nothing rewrites it: the
+tables are append-only, and the stored `xml_id` says which witness a row is about.
+
+**Detection.** `adopt_corpus` compares the served corpus digest with the one the DB was last
+bound to (newest `corpus_changes` row, else newest `xml_id_backfills` row). A DB that never
+recorded one saved every keyed row against the corpus it last served, so there a change means a
+stored witness now sits at another id or is gone. The production DB has its #273 backfill row,
+so an unchanged release is detected as unchanged and nothing is written or backed up.
+
+**On a change, in order** (each refusal raises before anything is written and the app does
+not start):
+
+1. Any stored row with a NULL xml_id refuses (`UnkeyedRowsError`): its stored id is the only
+   thing naming its witness, and the new corpus may give that id to another text. Recover by
+   serving the release those rows were saved against once (the backfill fills them).
+2. If more than `corpus_change.max_missing_reviewed_share` (default `0.05`) of the reviewed
+   witnesses the previous corpus served are missing, it refuses (`MissingWitnessThresholdError`),
+   because that is usually a broken release. "Reviewed" means a `matched_rank` or
+   `none_of_top_k` row, a reviewer-directory seed or a membership. The error prints the new corpus
+   digest; to accept an intended removal set `corpus_change.accept_missing_reviewed_sha256` to
+   that digest (in `config.production.yaml`, or the env var
+   `LOCALLATIN_ACCEPT_MISSING_REVIEWED_SHA256`). It applies to that exact corpus only, so leaving
+   it set cannot wave a later broken release through.
+3. Backup `<db>.pre-corpus-change-<UTC stamp>` (`_backup_database`, the #273 pattern: online
+   backup API, 0600, O_EXCL, integrity-checked; a failed copy is deleted and startup stops). It
+   holds every password hash and is gitignored.
+4. One transaction: rebuild `reviewer_dir_members` without its positional
+   `UNIQUE (dir_id, query_id)` (first change only; see below), one `corpus_changes` audit row
+   (old and new digest and size, `data_release`, backup name, counts of unchanged, moved,
+   missing, newly missing and restored witnesses, reviewed witnesses and how many of them went
+   missing, whether the override was used, whether the members table was rebuilt), and one
+   `corpus_change_witnesses` row per stored witness (`xml_id`, `old_query_id`,
+   `new_query_id`, NULL when not served). That id map is how the next change knows each
+   witness's previous position, because the rows keep the id they were saved at. Any failure
+   rolls all of it back; the backup stays.
+
+**Reads** translate a stored `xml_id` through the bound corpus (`_served_query_id`), never the
+stored id: statuses, stats, the review queue, "already reviewed", `get_latest_feedback` and
+`get_feedback_for_query` (whose returned `query_id` is the SERVED id; the DB row keeps its own),
+the identical-repeat check, reviewer-directory seeds, members and q-q scoring, both exports.
+`_match_query` falls back to the stored id only for a row with no xml_id, which can only have
+been saved against the corpus served now (a changed corpus refuses while one exists).
+
+**Membership** is unique by witness: `idx_reviewer_dir_members_witness` (a partial unique index
+on `(dir_id, xml_id)`) plus a by-witness check before every insert. The old positional
+`UNIQUE (dir_id, query_id)` is a table constraint SQLite cannot drop, and after a shift it would
+refuse a witness that now sits at an old member's id and let a moved witness join twice. The
+first corpus change therefore rebuilds the table after the backup, inside the change
+transaction: same columns in the same order (any other shape, or a trigger on the table,
+refuses), every row copied with its id and checked equal before the original is dropped, the
+AUTOINCREMENT counter carried over, indexes recreated. Before any change the constraint and the
+witness rule agree, so it is harmless there.
+
+**Witnesses missing from the served corpus** keep every row. They are hidden from the review
+queue, statuses, recent activity and needs-attention, and from `reviewed_count` /
+`skipped_count`; `/api/stats` counts them in `unserved_witness_count` and
+`unserved_reviewed_count`, and the dashboard shows a line when there are any. A reviewer
+directory whose seed is gone reports `seed_query_id = -1` (`UNSERVED_QUERY_ID`, never a real id;
+the DB record also carries `seed_served: false`, the API model only the -1), and its member list
+holds only served members; a directory stays `matched` when a member witness leaves, because
+`status_of` counts stored member witnesses (`member_witness_count`), served or not. They stay in
+the CCL key export unchanged, since the key assignment for that `xml_id` is still valid for CCL;
+no column marks them, so `EXPORT_SCHEMA_VERSION` stays 1 (an older row that needs the served
+ranking for a later pick becomes `needs_check`, as for any unserved query). The raw export keeps
+`query_id` as saved and appends `served_query_id` (empty when not served).
+
+**Release consistency.** Prediction CSVs and q-q matrices address queries by position, so
+`build_store` calls `verify_release_matches_corpus` before anything else is served and raises
+`ReleaseCorpusMismatchError` (the app does not start) unless: the served map (default variant,
+first model) has unique filenames that are exactly the `*.txt` names in `canon_unlabelled/`;
+every model of every configured variant's CSV has the same `file_id -> filename` map (the
+non-default variants read only those columns at startup, and a lazy load re-checks); and every
+discovered `qq_sim_<slug>.npz` has those file ids and an n x n `sim` (only the header is read). A
+CSV or matrix that cannot be read at all keeps the old rule: that variant or matrix is not
+served. A CCL import therefore has to ship the new `canon_unlabelled/` listing and a release
+rebuilt from it (`scripts/resubmit/index_unlabelled.py`, then predictions and
+`build_qq_matrices.py`) together.
 
 ## Data Contract
 
