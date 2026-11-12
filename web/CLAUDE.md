@@ -153,7 +153,10 @@ Resolution rule, implemented in `services/ccl_key_export.py` and read by
    selected rank: a labelled directory names itself and a reviewer directory names its `ccl_key`. A
    `none_of_top_k` row names its typed `ccl_key`; one without a key is the answer "none of these"
    and rejects every candidate it was made against. It is a dissent, not an abstention.
-4. A pick is used only when it can be shown to be what the reviewer saw. A single pick is trusted
+4. A pick is used only when it can be shown to be what the reviewer saw. A row saved since #273
+   stores the directory behind every selected rank in `selected_dirs_json`, resolved server-side
+   from the snapshot the reviewer saw, and every pick is trusted as stored; no ranking is read.
+   The rest of this point applies only to older rows. A single pick is trusted
    as stored in `correct_dir`, which the server resolved at save time. `correct_dir` holds only the
    first selection, so the later selections of a multi-rank pick are read from the ranking the
    server serves now for that model and variant, and only after that ranking is shown to still hold
@@ -176,8 +179,32 @@ Resolution rule, implemented in `services/ccl_key_export.py` and read by
 When reviewers typed one key in different capitalisations, the printed form is the labelled
 directory's own name if the key names one; otherwise the earliest form that is key-shaped
 (`ctou.567.16` then `CTOU.567.16` prints `CTOU.567.16`); otherwise the form on the earliest decision
-that named it. Every candidate is a form somebody stored; nothing is re-cased. A reviewed query whose id the served corpus does not know is left out (logged as a count),
-because it has no `xml_id`.
+that named it. Every candidate is a form somebody stored; nothing is re-cased. Rows are grouped
+by the `xml_id` stored on them (#273); a row without one is named through the served corpus, and
+one that neither names is left out (logged as a count), because it has no `xml_id`.
+
+## Witness ids (issue #273)
+
+`query_id` is a position in the sorted unlabelled corpus, so a release that adds or removes one
+query file would shift every later review onto another witness. Every table that references a
+query therefore also stores the witness `xml_id` (filename stem): `feedback.xml_id`,
+`reviewer_dirs.seed_xml_id`, `reviewer_dir_members.xml_id`. Feedback rows also store
+`selected_dirs_json`, the directory behind each selected rank as the reviewer saw it.
+
+- Migration (`_migrate`): nullable columns only. Before its first write to a populated pre-#273
+  DB, `_backup_before_xml_id_migration` writes `<db>.pre-xml-id-<UTC stamp>` beside it (online
+  backup API, 0600, integrity-checked), once per database. It holds password hashes.
+- `FeedbackDB.adopt_corpus(store.file_id_to_filename, data_release=...)` runs in the app lifespan
+  after `connect()`: (1) GUARD: any stored `(query id, xml_id)` the served corpus contradicts
+  raises `CorpusMismatchError` and the app does not start; a witness absent from the corpus is
+  only logged. (2) BACKFILL: NULL witness ids are filled from the served corpus, writing nothing
+  else; with a `data_release` set the corpus must hash (`corpus_digest`) to
+  `PRE_XML_ID_CORPUS_SHA256`, the listing every pre-#273 row was saved against, or startup
+  refuses. One `xml_id_backfills` audit row records what was filled. (3) BIND: later writes record
+  the witness, and reads (`get_query_statuses`, `get_latest_feedback`, reviewer-directory members
+  and seeds, both exports) go by `xml_id` first.
+- Before importing a corpus that adds or removes query files, the stored `query_id`s must be
+  re-keyed from `xml_id`; until then the guard refuses that corpus on purpose.
 
 Columns (`EXPORT_SCHEMA_VERSION = 1`; bump it when a column is added, removed or changes meaning):
 

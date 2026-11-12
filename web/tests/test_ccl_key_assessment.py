@@ -851,7 +851,12 @@ def test_migration_keeps_every_name_and_only_backfills_real_keys(
 
     asyncio.run(run())
     after_first = _dump(path, "reviewer_dirs")
-    assert _dump(path, "reviewer_dir_members") == members_before
+    # Issue #273 appends one nullable column (xml_id) and nothing else: every
+    # original value is unchanged, and without a corpus nothing is backfilled.
+    members_after = _dump(path, "reviewer_dir_members")
+    width = len(members_before[0])
+    assert [row[:width] for row in members_after] == members_before
+    assert [row[width:] for row in members_after] == [(None,)] * len(members_before)
 
     async def reopen() -> None:
         db = FeedbackDB(path)
@@ -861,7 +866,7 @@ def test_migration_keeps_every_name_and_only_backfills_real_keys(
     asyncio.run(reopen())
     # Idempotent: the second boot writes nothing at all.
     assert _dump(path, "reviewer_dirs") == after_first
-    assert _dump(path, "reviewer_dir_members") == members_before
+    assert _dump(path, "reviewer_dir_members") == members_after
 
 
 def test_a_fresh_database_gains_the_columns_without_any_row(tmp_path: Path) -> None:
