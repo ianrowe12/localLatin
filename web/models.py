@@ -697,6 +697,12 @@ class StatsResponse(BaseModel):
     recent_reviews: List[RecentReview] = []
     needs_attention: List[NeedsAttentionItem] = []
     next_unreviewed_ids: List[int] = []
+    #: Witnesses with stored rows that the served corpus no longer holds (issue
+    #: #278), and how many of them have a decision. Their rows are kept and
+    #: stay in the CCL key export; they are left out of every count above
+    #: that is about served queries.
+    unserved_witness_count: int = 0
+    unserved_reviewed_count: int = 0
 
 
 # --- Models ---

@@ -70,6 +70,14 @@ export interface StatsResponse {
   recent_reviews: RecentReview[]
   needs_attention: NeedsAttentionItem[]
   next_unreviewed_ids: number[]
+  /**
+   * Witnesses with stored reviews that the served corpus no longer holds
+   * (issue #278), and how many of them carry a decision. Kept, left out of
+   * the counts above, and still in the CCL key export. Optional so an older
+   * backend reads as none.
+   */
+  unserved_witness_count?: number
+  unserved_reviewed_count?: number
 }
 
 // ---------------------------------------------------------------------------

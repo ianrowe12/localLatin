@@ -93,10 +93,14 @@ def status_of(record: dict) -> ReviewerDirStatus:
     a confirmation is a scholarly fact, so a directory must not appear matched
     under one model and awaiting under another.
     """
-    members = record.get("member_query_ids", [])
+    # Counted by witness, served or not (issue #278): a later release that
+    # drops a member witness does not undo the confirmation that filed it.
+    witnesses = record.get(
+        "member_witness_count", len(record.get("member_query_ids", []))
+    )
     return (
         ReviewerDirStatus.MATCHED
-        if len(members) > 1
+        if witnesses > 1
         else ReviewerDirStatus.AWAITING_MATCH
     )
 

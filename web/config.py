@@ -97,12 +97,38 @@ class AuthConfig(BaseModel):
     password_rate_limit_window_seconds: int = 900
 
 
+class CorpusChangeConfig(BaseModel):
+    """What a corpus change at startup may do (issue #278, see web/CLAUDE.md).
+
+    A data release whose unlabelled listing differs from the one the feedback
+    DB was last bound to is re-keyed by xml_id at startup. Startup refuses it
+    when more than `max_missing_reviewed_share` of the reviewed witnesses the
+    previous corpus served are gone, which is usually a broken release. To
+    accept an intended removal, set `accept_missing_reviewed_sha256` to the
+    new corpus digest the refusal prints: the override applies to that exact
+    corpus only, so leaving it set cannot let a later broken release through.
+    """
+
+    max_missing_reviewed_share: float = 0.05
+    accept_missing_reviewed_sha256: str = os.environ.get(
+        "LOCALLATIN_ACCEPT_MISSING_REVIEWED_SHA256", ""
+    )
+
+    @field_validator("max_missing_reviewed_share")
+    @classmethod
+    def _share_is_a_fraction(cls, value: float) -> float:
+        if not 0.0 <= value <= 1.0:
+            raise ValueError("max_missing_reviewed_share must be between 0 and 1")
+        return value
+
+
 class Settings(BaseModel):
     app: AppConfig = AppConfig()
     paths: PathsConfig = PathsConfig()
     cors: CorsConfig = CorsConfig()
     pagination: PaginationConfig = PaginationConfig()
     auth: AuthConfig = AuthConfig()
+    corpus_change: CorpusChangeConfig = CorpusChangeConfig()
 
 
 def load_settings(config_path: str | Path | None = None) -> Settings:

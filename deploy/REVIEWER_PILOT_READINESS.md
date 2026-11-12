@@ -73,6 +73,35 @@ The canon text corpora are deliberately *not* in the payload: keeping `data/` ou
 
 After the sync, `deploy.sh` runs `scripts/webapp/export_webapp_data.sh <root> --strict`, which exits non-zero if any required path is absent **or present but empty**: a predictions CSV must be non-zero bytes and carry at least one data row, and `artifacts/` must contain at least one non-empty `.npz`. Existence alone is not a useful check, because what a truncated sync leaves behind is a zero-byte file that `[ -e ]` accepts and the CSV parser then rejects at startup. Without this gate a missing or empty CSV surfaces as an opaque uvicorn traceback behind the health check. Set `DEPLOY_SKIP_DATA_CHECK=1` to bypass.
 
+## Feedback DB Backups and Startup Refusals (issues #273, #278)
+
+Every stored review names its witness by `xml_id` (the query filename without `.txt`). The app checks the served corpus against the DB and the data release at startup, and refuses to start rather than show a review against the wrong text. Details: `web/CLAUDE.md`, sections "Witness ids" and "Corpus changes".
+
+### Automatic backups
+
+Both are written beside the DB (`data/feedback.db.<tag>-<UTC stamp>`) with SQLite's online backup API, mode 0600, never overwriting an earlier copy, and integrity-checked; a failed copy is deleted and startup stops. Like the `pre-role-change` copies above they hold every password hash: they are gitignored (`data/feedback.db.pre-*`), stay on the host, and are kept until another good copy exists.
+
+| File | Taken when | Happens |
+|---|---|---|
+| `feedback.db.pre-xml-id-*` | first boot of a populated pre-#273 DB, before the `xml_id` columns are added | once per DB (production: 2026-11-12) |
+| `feedback.db.pre-corpus-change-*` | a boot whose unlabelled corpus differs from the one the DB was last bound to, before the re-key | once per corpus change |
+
+A deploy that changes neither the corpus nor the release takes no backup and writes nothing. A corpus change also adds one row to `corpus_changes` (old and new corpus digests, release, backup name, counts of unchanged, moved and missing witnesses) and the id map in `corpus_change_witnesses`.
+
+### When the service will not start
+
+`deploy.sh` then fails its health check ("API did not become healthy"); there is no automatic rollback. Read the reason with `journalctl --user -u locallatin.service -n 100` and look for one of these:
+
+| Error | Meaning | Recovery |
+|---|---|---|
+| `ReleaseCorpusMismatchError` | the prediction CSVs or q-q matrices were built from another listing than `data/canon_unlabelled/` (a query file without a prediction row, or the reverse, or two files disagreeing on an id) | deploy the git commit and the `DATA_RELEASE_TAG` that belong together: either roll `DATA_RELEASE_TAG` back to the previous release (`deploy.sh` reinstalls an earlier tag) and revert the corpus commit, or publish the release rebuilt from the new listing. Nothing in the DB was touched. |
+| `MissingWitnessThresholdError` | more than `corpus_change.max_missing_reviewed_share` (default 5%) of the reviewed witnesses disappeared at once, usually a broken release | if the release is broken, fix it as above. If the removal is intended, put the digest the error prints into `corpus_change.accept_missing_reviewed_sha256` in `web/config.production.yaml` (a reviewed PR) and redeploy. Missing witnesses keep their reviews, leave the review queue, are counted on the dashboard and stay in the CCL key export. Nothing was written. |
+| `UnkeyedRowsError` | the corpus changed while some row still has no `xml_id` | redeploy the previous release once so the backfill names those rows, then deploy the new one. Nothing was written. |
+| `CorpusMismatchError` ("predate witness ids") | pre-#273 rows met a corpus other than the pinned one | boot once on the earlier release, as the message says. |
+| `CorpusMismatchError` (other) | the DB contradicts itself (one witness at two ids with no recorded change, a corpus listing one witness twice, an unexpected `reviewer_dir_members` shape or trigger) | do not edit the DB by hand; open an issue with the log line. |
+
+If a corpus change fails part-way (after its backup), its transaction is rolled back, so the DB is as it was; the next boot simply tries again. To restore a backup anyway: stop the service (`systemctl --user stop locallatin.service`), move `data/feedback.db` aside (keep it), copy the chosen `feedback.db.pre-*` file to `data/feedback.db` with mode 0600, and start the service on the release that backup was taken under. Reviews saved after that backup exist only in the copy you moved aside.
+
 ## Account Roles (issue #265)
 
 An account is a `reviewer` or a `pi_admin`. PI/admins can approve accounts, reset passwords, see `/api/stats` and export all feedback, so a promotion is a data-release decision.

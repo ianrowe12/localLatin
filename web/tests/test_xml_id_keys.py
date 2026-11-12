@@ -9,8 +9,9 @@ another witness. These tests pin the fix:
 * the backfill writes only the new xml_id columns, from the served corpus,
   and refuses to guess on a deployment whose corpus is not the one the rows
   were saved against;
-* the startup guard refuses a corpus that disagrees with stored ids, and does
-  not fire on a correct one, including the real repo corpus;
+* an unchanged corpus, including the real repo corpus, starts and writes
+  nothing; a changed one is re-keyed by xml_id (issue #278, covered in
+  `test_corpus_rekey.py`) and refused while any row has no xml_id;
 * new rows carry their xml_id and the directory behind every selected rank;
 * the CCL key export reads stored names and stored witnesses first.
 
@@ -34,6 +35,7 @@ from web.services.feedback_db import (
     PRE_XML_ID_CORPUS_SHA256,
     CorpusMismatchError,
     FeedbackDB,
+    UnkeyedRowsError,
     corpus_digest,
 )
 from web.tests.test_reviewer_dirs import _register, _write_fixture_data
@@ -355,43 +357,44 @@ def test_a_deployment_refuses_to_backfill_from_an_unknown_corpus(tmp_path: Path)
 # --- startup guard -------------------------------------------------------------
 
 
-def test_guard_refuses_a_shifted_corpus_and_writes_nothing(tmp_path: Path) -> None:
+def test_a_changed_corpus_refuses_while_a_row_has_no_xml_id(tmp_path: Path) -> None:
+    """Issue #278: a row known only by position cannot be re-keyed, so no start.
+
+    Query 9 is not in the corpus the rows were saved against, so the backfill
+    could not name it and its row keeps a NULL xml_id. Under a corpus that
+    changed, its stored id might name another witness.
+    """
     path = tmp_path / "feedback.db"
     _pre_273_db(path)
     asyncio.run(_adopt(path, CORPUS))
     snapshot = {**_originals(path), **_xml_ids(path)}
 
-    with pytest.raises(CorpusMismatchError) as raised:
+    with pytest.raises(UnkeyedRowsError) as raised:
         asyncio.run(_adopt(path, SHIFTED))
     message = str(raised.value)
     assert "Refusing to start" in message
-    assert "query_id 1 stores 'BAV1341.13v.2' but the corpus serves 'BAV1341.13v.1'" in message
+    assert "1 stored row(s) have no xml_id (1 in feedback)" in message
+    assert {**_originals(path), **_xml_ids(path)} == snapshot
+    assert sorted(tmp_path.glob("feedback.db.pre-corpus-change-*")) == []
+    assert _select(path, "corpus_changes", ["id"]) == []
+
+    # A removed tail is a corpus change too, and refuses for the same reason.
+    with pytest.raises(UnkeyedRowsError):
+        asyncio.run(_adopt(path, {0: CORPUS[0], 1: CORPUS[1]}))
     assert {**_originals(path), **_xml_ids(path)} == snapshot
 
 
-def test_guard_passes_the_same_corpus_and_tolerates_a_removed_tail(
-    tmp_path: Path,
-) -> None:
+def test_the_same_corpus_starts_and_writes_nothing(tmp_path: Path) -> None:
     path = tmp_path / "feedback.db"
     _pre_273_db(path)
     asyncio.run(_adopt(path, CORPUS))
-    asyncio.run(_adopt(path, dict(CORPUS)))
+    snapshot = {**_originals(path), **_xml_ids(path)}
 
-    # The last witness leaves the corpus: no id names another text, so the
-    # app starts; that witness's reviews are kept but not shown.
-    async def statuses() -> dict:
-        db = FeedbackDB(path)
-        await db.connect()
-        try:
-            result = await db.adopt_corpus({0: CORPUS[0], 1: CORPUS[1]})
-            assert result["unserved"] == 3  # one pair in each of the three tables
-            return await db.get_query_statuses()
-        finally:
-            await db.close()
-
-    shown = asyncio.run(statuses())
-    assert set(shown) == {1, 9}
-    assert shown[1]["review_status"] == "reviewed"
+    result = asyncio.run(_adopt(path, dict(CORPUS)))
+    assert result["changed"] is False
+    assert {**_originals(path), **_xml_ids(path)} == snapshot
+    assert sorted(tmp_path.glob("feedback.db.pre-corpus-change-*")) == []
+    assert _select(path, "corpus_changes", ["id"]) == []
 
 
 def _repo_corpus() -> dict[int, str]:
@@ -427,6 +430,11 @@ def test_guard_does_not_fire_on_the_real_corpus_with_a_release(tmp_path: Path) -
     ]
     second = asyncio.run(_adopt(path, corpus, data_release="data-20260906-v1"))
     assert sum(second["backfilled"].values()) == 0
+    # Issue #278: the corpus production serves is unchanged, so the second
+    # boot detects no change, takes no backup and records nothing.
+    assert second["changed"] is False
+    assert sorted(tmp_path.glob("feedback.db.pre-corpus-change-*")) == []
+    assert _select(path, "corpus_changes", ["id"]) == []
 
 
 # --- through the app -------------------------------------------------------------
@@ -499,7 +507,8 @@ def test_new_rows_carry_xml_id_and_selected_dirs(tmp_path: Path) -> None:
         connection.close()
 
 
-def test_app_refuses_to_start_on_a_shifted_corpus(tmp_path: Path) -> None:
+def test_app_rekeys_a_shifted_corpus_by_xml_id(tmp_path: Path) -> None:
+    """Issue #278 lifts #273's refusal: the review follows its witness."""
     config = _write_fixture_data(tmp_path, with_matrix=False)
     db_path = tmp_path / "runs/active/resubmit/webapp/feedback.db"
     with TestClient(create_app(str(config))) as client:
@@ -510,24 +519,34 @@ def test_app_refuses_to_start_on_a_shifted_corpus(tmp_path: Path) -> None:
     _rewrite_predictions(
         tmp_path, ["query-0.txt", "query-0a.txt", "query-1.txt", "query-2.txt", "query-3.txt"]
     )
-    app = create_app(str(config))
-    with (
-        pytest.raises(CorpusMismatchError, match="query_id 2 stores 'query-2'"),
-        TestClient(app),
-    ):
-        pass
-
-    # The same corpus as before starts normally and still shows the review.
-    _rewrite_predictions(tmp_path, ["query-0.txt", "query-1.txt", "query-2.txt", "query-3.txt"])
-    (tmp_path / "data/canon_unlabelled/query-0a.txt").unlink()
     with TestClient(create_app(str(config))) as client:
         client.post(
             "/api/auth/signin",
             json={"username": "pi", "password": "correct horse battery staple"},
         )
-        statuses = {q["file_id"]: q for q in client.get("/api/queries").json()["items"]}
-        assert statuses[2]["review_status"] == "reviewed"
-    assert sqlite3.connect(db_path).execute("SELECT COUNT(*) FROM feedback").fetchone() == (1,)
+        statuses = {q["filename"]: q for q in client.get("/api/queries").json()["items"]}
+        assert statuses["query-2.txt"]["file_id"] == 3
+        assert statuses["query-2.txt"]["review_status"] == "reviewed"
+        assert statuses["query-1.txt"]["review_status"] == "unreviewed"
+        latest = client.get(
+            "/api/feedback/latest", params={"query_id": 3, "model": "bowphs/LaTa"}
+        ).json()
+        assert latest["xml_id"] == "query-2" and latest["query_id"] == 3
+        assert client.get(
+            "/api/feedback/latest", params={"query_id": 2, "model": "bowphs/LaTa"}
+        ).json() is None
+
+    connection = sqlite3.connect(db_path)
+    try:
+        # The append-only row keeps the id it was saved at.
+        assert connection.execute("SELECT query_id, xml_id FROM feedback").fetchall() == [
+            (2, "query-2")
+        ]
+        assert connection.execute(
+            "SELECT witnesses_moved, witnesses_unchanged FROM corpus_changes"
+        ).fetchall() == [(1, 0)]
+    finally:
+        connection.close()
 
 
 # --- CCL key export -------------------------------------------------------------

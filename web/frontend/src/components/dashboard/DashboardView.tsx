@@ -194,6 +194,20 @@ export default function DashboardView() {
           />
         </div>
 
+        {(stats.unserved_witness_count ?? 0) > 0 && (
+          <p
+            className="text-sm text-stone-600"
+            data-testid="unserved-witnesses"
+          >
+            {stats.unserved_witness_count}{' '}
+            {stats.unserved_witness_count === 1 ? 'document' : 'documents'} with saved
+            reviews {stats.unserved_witness_count === 1 ? 'is' : 'are'} no longer in the
+            served corpus ({stats.unserved_reviewed_count ?? 0} with a decision). Their
+            reviews are kept, are not counted above, and stay in the CCL key
+            assignments export.
+          </p>
+        )}
+
         {/* Section 2: Resume CTA */}
         <ResumeCard stats={stats} />
 
