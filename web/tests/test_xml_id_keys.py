@@ -229,6 +229,75 @@ def test_a_fresh_or_empty_database_takes_no_backup(tmp_path: Path) -> None:
     assert _backups(path) == []
 
 
+def test_an_old_schema_database_without_feedback_rows_takes_no_backup(
+    tmp_path: Path,
+) -> None:
+    """A pre-#273 schema with zero feedback rows has nothing to protect."""
+    path = tmp_path / "feedback.db"
+    _pre_273_db(path)
+    connection = sqlite3.connect(path)
+    connection.execute("DELETE FROM feedback")
+    connection.commit()
+    connection.close()
+
+    async def open_close() -> None:
+        db = FeedbackDB(path)
+        await db.connect()
+        await db.close()
+
+    asyncio.run(open_close())
+    assert _backups(path) == []
+    columns = {r[1] for r in sqlite3.connect(path).execute("PRAGMA table_info(feedback)")}
+    assert "xml_id" in columns
+
+
+_CRASH_MID_UPDATE = """
+import os, sqlite3, sys
+connection = sqlite3.connect(sys.argv[1], isolation_level=None)
+connection.execute("PRAGMA cache_size=5")
+connection.execute("BEGIN")
+connection.execute("UPDATE feedback SET notes = notes || 'x'")
+os._exit(0)  # die mid-transaction: the rollback journal stays behind
+"""
+
+
+@pytest.mark.parametrize("schema", ["migrated", "pre_273"])
+def test_startup_rolls_back_a_hot_journal_left_by_a_crash(
+    tmp_path: Path, schema: str
+) -> None:
+    """A process killed mid-write leaves a hot journal; the next boot must start.
+
+    Only a read-write connection can roll a hot journal back. A read-only probe
+    fails with "attempt to write a readonly database", which would keep the
+    app down until someone opened the file by hand.
+    """
+    import subprocess
+    import sys
+
+    path = tmp_path / "feedback.db"
+    if schema == "pre_273":
+        _pre_273_db(path)
+        connection = sqlite3.connect(path)
+    else:
+        asyncio.run(_adopt(path, CORPUS))
+        connection = sqlite3.connect(path)
+    connection.executemany(
+        "INSERT INTO feedback (query_id, model_slug, notes, reviewer) VALUES (?, ?, ?, ?)",
+        [(0, "bowphs_LaTa", "n" * 200, "Fake Reviewer")] * 5000,
+    )
+    connection.commit()
+    connection.close()
+    notes_before = _select(path, "feedback", ["notes"])
+
+    subprocess.run([sys.executable, "-c", _CRASH_MID_UPDATE, str(path)], check=True)
+    journal = path.with_name(path.name + "-journal")
+    assert journal.exists() and journal.stat().st_size > 0
+
+    asyncio.run(_adopt(path, CORPUS))
+    # The crashed transaction was rolled back: no note gained its 'x'.
+    assert _select(path, "feedback", ["notes"]) == notes_before
+
+
 # --- backfill ----------------------------------------------------------------
 
 

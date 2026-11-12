@@ -2290,10 +2290,17 @@ def _backup_before_xml_id_migration(db_path: Path) -> Path | None:
     every password hash) and O_EXCL (never overwrites an earlier one), then
     integrity-checked. A failed backup is removed and startup stops, the same
     rule as `scripts/webapp/set_account_role.py`.
+
+    Both connections here are ordinary read-write ones, never `mode=ro`. This
+    runs on every boot, and after a crash mid-write the database has a hot
+    rollback journal that only a read-write connection can roll back; a
+    read-only one fails with "attempt to write a readonly database" and the
+    app would not start. Rolling the journal back is what the app's own first
+    connection always did; nothing else is written to the source.
     """
     if not db_path.exists():
         return None
-    probe = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=30)
+    probe = sqlite3.connect(str(db_path), timeout=30)
     try:
         columns = {
             row[1] for row in probe.execute("PRAGMA table_info(feedback)").fetchall()
@@ -2316,7 +2323,7 @@ def _backup_before_xml_id_migration(db_path: Path) -> Path | None:
             suffix += 1
             dest = db_path.with_name(f"{db_path.name}.pre-xml-id-{stamp}-{suffix}")
     try:
-        source = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=30)
+        source = sqlite3.connect(str(db_path), timeout=30)
         try:
             snapshot = sqlite3.connect(str(dest), timeout=30)
             try:
