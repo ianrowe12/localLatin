@@ -1,0 +1,50 @@
+{
+  "_comment": "Issue #274. Read by web/tests/test_input_safety.py and src/utils/inputSafety.test.ts, so the server and the frontend refuse exactly the same values. Every name here is invented.",
+  "messages": {
+    "A CCL key": "A CCL key cannot start with =, +, - or @ (a spreadsheet would run it as a formula) and cannot contain | (the export uses it to separate names).",
+    "A directory name": "A directory name cannot start with =, +, - or @ (a spreadsheet would run it as a formula) and cannot contain | (the export uses it to separate names).",
+    "A display name": "A display name cannot start with =, +, - or @ (a spreadsheet would run it as a formula) and cannot contain | (the export uses it to separate names)."
+  },
+  "rejected": [
+    { "value": "=HYPERLINK(\"http://example.invalid\",\"click\")", "why": "formula =" },
+    { "value": "=1+1", "why": "formula =" },
+    { "value": "+1", "why": "formula +" },
+    { "value": "-2+3", "why": "formula -" },
+    { "value": "@SUM(A1)", "why": "formula @" },
+    { "value": "@ann", "why": "display name starting with @" },
+    { "value": "   =1+1", "why": "leading spaces then =" },
+    { "value": "\t=1+1", "why": "leading tab then =" },
+    { "value": "\r=1+1", "why": "leading CR then =" },
+    { "value": "\n@x", "why": "leading LF then @" },
+    { "value": "\r\n\t -1", "why": "mixed leading whitespace then -" },
+    { "value": " +1", "why": "leading no-break space then +" },
+    { "value": "﻿=1", "why": "leading byte-order mark then =" },
+    { "value": "\u0001=1", "why": "leading control character then =" },
+    { "value": "\u001c=1", "why": "leading file separator (whitespace to Python, not to JS) then =" },
+    { "value": "CTOU.567.16 | CTOU.567.17", "why": "contains the list separator" },
+    { "value": "CTOU.567.16|CTOU.567.17", "why": "bare pipe" },
+    { "value": "Ann Example |", "why": "trailing pipe glues to the next separator" },
+    { "value": "| Bo Example", "why": "leading pipe" }
+  ],
+  "accepted": [
+    { "value": "", "why": "empty means no value" },
+    { "value": "CTOU.567.16", "why": "key-named label" },
+    { "value": "ctou.567.16", "why": "key typed in lower case" },
+    { "value": "CARL.501?.18", "why": "key with uncertain year" },
+    { "value": "DSIR.384.255 cap. 11", "why": "key with annotation" },
+    { "value": "CTOL.653.13  (excerpta canonum cap. 13)  Martinez Diez, vol. 5, pp. 475-476; text modified in W", "why": "real label with inner hyphen" },
+    { "value": "Can.apost.49", "why": "Apostolic Canons" },
+    { "value": "Capit.Martini.12", "why": "other collection" },
+    { "value": "Poen. Theod. II.6.1- 5, II.6.9-13", "why": "real label with inner hyphens" },
+    { "value": "Ps.-Clemens-Rufinus, Recognitiones 2.72 (eds Rehm-Paschke, 94,\nlines 4-8)", "why": "real label shape with a newline" },
+    { "value": "(ed. WARE, S. Patricio adscripta opuscula, 47) ", "why": "edition citation" },
+    { "value": "[Source unidentified]", "why": "bracketed" },
+    { "value": "Mt 18.15-17", "why": "biblical reference" },
+    { "value": "Ann Example", "why": "display name" },
+    { "value": "Ann-Marie Example", "why": "display name with inner hyphen" },
+    { "value": "A. N. Example", "why": "initials" },
+    { "value": "ann@example.invalid", "why": "inner @" },
+    { "value": "x = y + z", "why": "inner formula characters" },
+    { "value": "\tAnn Example", "why": "leading tab then a letter" }
+  ]
+}

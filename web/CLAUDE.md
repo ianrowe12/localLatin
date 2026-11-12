@@ -199,6 +199,24 @@ Lists are joined by ` | ` because 18 labelled directory names contain a semicolo
 and none contains `|`. Display names appear only in this download, never in a log line. Usernames
 and emails never appear.
 
+### Typed text that reaches the export (issue #274)
+
+Keys, labels and display names are exported verbatim, because escaping would change the value
+CCL's import reads. So they are refused at INPUT instead: the typed `ccl_key` on
+`POST /api/feedback`, `label` on `POST /api/reviewer_dirs`, and `display_name` on
+`POST /api/auth/register` and `POST /api/auth/accounts` (the app has no other display-name edit
+path; `scripts/webapp/provision_smoke_account.py` carries a literal copy of the rule). A value is
+refused when, after leading whitespace and control characters (tab, CR, LF, BOM), it starts with
+`=`, `+`, `-` or `@`, or when it contains `|` anywhere. A bare `|` is refused too, not only ` | `:
+a value ending in ` |` or starting with `| ` corrupts the ` | `-joined list just the same, and no
+labelled directory name contains one (`tests/test_input_safety.py` checks every name under
+`data/canon_labelled/`). The rule lives in `services/input_safety.py` (pydantic field validators
+in `models.py`), and `app.py` turns its failure into a 422 `{error: {code: "UNSAFE_TEXT",
+message}}` naming the field, never echoing the value; other validation errors keep FastAPI's
+shape. The frontend mirror is `frontend/src/utils/inputSafety.ts`, shown inline under the field
+with the submit disabled. Both sides test against `frontend/src/utils/inputSafetyCases.json`,
+which also holds the exact messages. Stored values are never re-checked or rewritten.
+
 ## Data Contract
 
 The webapp reads these from `data_root`:

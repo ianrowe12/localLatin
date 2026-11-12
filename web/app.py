@@ -8,6 +8,8 @@ import os
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 
@@ -20,6 +22,7 @@ from web.exceptions import (
     VariantUnavailableError,
 )
 from web.models import ErrorResponse, ErrorDetail
+from web.services.input_safety import UNSAFE_TEXT_ERROR_TYPE
 from web.routers import (
     auth,
     feedback,
@@ -126,6 +129,22 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 error=ErrorDetail(code="NOT_FOUND", message=exc.message)
             ).model_dump(),
         )
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_handler(request: Request, exc: RequestValidationError):
+        # Issue #274: a refused CCL key, directory name or display name gets the
+        # sentence a scholar can act on, in the `{error: {code, message}}` shape
+        # the frontend reads. Only the message is sent, never the refused value.
+        # Every other validation failure keeps FastAPI's own response.
+        for error in exc.errors():
+            if error.get("type") == UNSAFE_TEXT_ERROR_TYPE:
+                return JSONResponse(
+                    status_code=422,
+                    content=ErrorResponse(
+                        error=ErrorDetail(code="UNSAFE_TEXT", message=error["msg"])
+                    ).model_dump(),
+                )
+        return await request_validation_exception_handler(request, exc)
 
     # Routers
     app.include_router(auth.router)

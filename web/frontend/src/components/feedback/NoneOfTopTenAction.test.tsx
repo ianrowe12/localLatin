@@ -500,3 +500,36 @@ describe('the label on the control', () => {
     expect(screen.getAllByRole('button')).toHaveLength(11)
   })
 })
+
+describe('a key a spreadsheet would run (issue #274)', () => {
+  it.each([
+    '=HYPERLINK("http://example.invalid")',
+    '@x',
+    '-1',
+    'CTOU.567.16 | CTOU.567.17',
+  ])('says why %s is refused, and posts nothing', async (typed) => {
+    renderAction()
+    await userEvent.type(screen.getByTestId('ccl-key-input'), typed)
+
+    expect(screen.getByTestId('ccl-key-invalid').textContent).toBe(
+      'A CCL key cannot start with =, +, - or @ (a spreadsheet would run it as a formula) and cannot contain | (the export uses it to separate names).',
+    )
+    const submit = screen.getByTestId('none-of-top-k-submit') as HTMLButtonElement
+    expect(submit.disabled).toBe(true)
+    await userEvent.click(submit)
+    expect(posted).toHaveLength(0)
+  })
+
+  it('clears the message once the key is a real one', async () => {
+    renderAction()
+    const input = screen.getByTestId('ccl-key-input')
+    await userEvent.type(input, '=Can.apost.49')
+    expect(screen.getByTestId('ccl-key-invalid')).toBeTruthy()
+    await userEvent.clear(input)
+    await userEvent.type(input, 'Can.apost.49')
+    expect(screen.queryByTestId('ccl-key-invalid')).toBeNull()
+    expect(
+      (screen.getByTestId('none-of-top-k-submit') as HTMLButtonElement).disabled,
+    ).toBe(false)
+  })
+})
