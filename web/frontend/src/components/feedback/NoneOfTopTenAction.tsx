@@ -9,6 +9,7 @@ import { notifyReviewerDirsUpdated } from '../../api/reviewerDirs'
 import { toApiErrorInfo } from '../../api/client'
 import type { PredictionVariant } from '../../api/variants'
 import { CCL_KEY_COPY, recordedSentence } from '../../utils/reviewerDirectoryCopy'
+import { CCL_KEY_SUBJECT, unsafeTextError } from '../../utils/inputSafety'
 
 interface NoneOfTopTenActionProps {
   queryId: number
@@ -45,8 +46,10 @@ type State =
  * they happen to know it, names the CCL key of the source. What that key means
  * is the server's decision, not this component's -- it may name a directory the
  * labelled corpus already holds, a group a colleague already made, or nothing
- * yet -- so the field is not validated here beyond a length bound, and the
- * receipt reports what actually happened rather than what was hoped for.
+ * yet -- so the field is not validated here beyond a length bound and the
+ * spreadsheet-safety rule of issue #274 (`utils/inputSafety.ts`, which the
+ * server enforces too), and the receipt reports what actually happened rather
+ * than what was hoped for.
  *
  * THE RECEIPT OUTLIVES THE FORM, and that is the point of the three-way render
  * below. The first version returned null whenever `open` was false, while the
@@ -94,6 +97,7 @@ export default function NoneOfTopTenAction({
   const [state, setState] = useState<State>({ status: 'idle' })
 
   const saving = state.status === 'saving'
+  const keyError = unsafeTextError(key, CCL_KEY_SUBJECT)
   const justRecorded = state.status === 'recorded' ? state.receipt : null
 
   // What to show back, this session's answer first. A stored answer is only
@@ -111,7 +115,7 @@ export default function NoneOfTopTenAction({
 
   async function submit(event: React.FormEvent): Promise<void> {
     event.preventDefault()
-    if (saving) return
+    if (saving || keyError !== null) return
     setState({ status: 'saving' })
     try {
       const receipt = await recordNoneOfTopK({
@@ -207,9 +211,21 @@ export default function NoneOfTopTenAction({
         placeholder={CCL_KEY_COPY.placeholder}
         maxLength={200}
         disabled={saving}
+        aria-invalid={keyError !== null}
+        aria-describedby={keyError !== null ? 'ccl-key-invalid' : undefined}
         data-testid="ccl-key-input"
         className="w-full rounded-lg border border-stone-300 dark:border-stone-600 bg-white dark:bg-surface-800 px-3 py-2 text-sm disabled:opacity-60"
       />
+      {keyError !== null && (
+        <p
+          id="ccl-key-invalid"
+          role="alert"
+          data-testid="ccl-key-invalid"
+          className="font-ui text-xs leading-snug text-red-600 dark:text-red-400"
+        >
+          {keyError}
+        </p>
+      )}
       <p className="font-ui text-xs leading-snug text-stone-500 dark:text-stone-400">
         {CCL_KEY_COPY.optionalNote}
       </p>
@@ -240,7 +256,7 @@ export default function NoneOfTopTenAction({
 
       <button
         type="submit"
-        disabled={saving || !available}
+        disabled={saving || !available || keyError !== null}
         data-testid="none-of-top-k-submit"
         title={
           available

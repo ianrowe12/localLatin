@@ -329,3 +329,38 @@ def test_required_columns_match_the_apps_fail_closed_set() -> None:
 
     missing = app_columns - script_columns
     assert not missing, f"provisioning script does not check column(s) {sorted(missing)}"
+
+
+# --- display names (issue #274) ---------------------------------------------
+
+INPUT_SAFETY_CASES = REPO_ROOT / "web" / "frontend" / "src" / "utils" / "inputSafetyCases.json"
+
+
+def _unsafe_display_name_pattern() -> re.Pattern[str]:
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("provision_smoke_account", SCRIPT)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.UNSAFE_DISPLAY_NAME
+
+
+def test_display_name_rule_matches_the_apps_shared_cases() -> None:
+    """The literal copy refuses exactly what web/services/input_safety.py refuses."""
+    import json
+
+    cases = json.loads(INPUT_SAFETY_CASES.read_text(encoding="utf-8"))
+    pattern = _unsafe_display_name_pattern()
+    wrongly_accepted = [c["why"] for c in cases["rejected"] if not pattern.search(c["value"])]
+    wrongly_refused = [c["why"] for c in cases["accepted"] if pattern.search(c["value"])]
+    assert wrongly_accepted == []
+    assert wrongly_refused == []
+
+
+@pytest.mark.parametrize("bad", ["=HYPERLINK(1)", "@smoke", "\t+1", "Smoke | Check"])
+def test_an_unsafe_display_name_is_refused_before_any_write(db: Path, bad: str) -> None:
+    result = run(db, display_name=bad)
+    assert result.returncode != 0
+    assert "issue #274" in result.stderr
+    assert account_row(db) is None

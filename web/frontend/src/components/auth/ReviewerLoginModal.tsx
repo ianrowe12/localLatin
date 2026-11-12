@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { motion } from 'framer-motion'
 import { useReviewer } from '../../contexts/ReviewerContext'
+import { DISPLAY_NAME_SUBJECT, unsafeTextError } from '../../utils/inputSafety'
 
 type Mode = 'signin' | 'register'
 
@@ -13,10 +14,15 @@ export default function ReviewerLoginModal() {
   const [pendingMessage, setPendingMessage] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
+  // Issue #274: the server refuses the same names with the same sentence.
+  const displayNameError =
+    mode === 'register' ? unsafeTextError(displayName, DISPLAY_NAME_SUBJECT) : null
+
   const canSubmit =
     username.trim().length >= 2 &&
     password.length >= 12 &&
-    (mode === 'signin' || displayName.trim().length > 0)
+    (mode === 'signin' ||
+      (displayName.trim().length > 0 && displayNameError === null))
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -119,7 +125,22 @@ export default function ReviewerLoginModal() {
                          placeholder:text-stone-400 dark:placeholder:text-stone-500
                          focus:outline-none focus:ring-2 focus:ring-accent/30"
               aria-label="Display name or initials for attribution"
+              aria-invalid={displayNameError !== null}
+              aria-describedby={
+                displayNameError !== null ? 'register-display-name-invalid' : undefined
+              }
             />
+          )}
+
+          {displayNameError !== null && (
+            <p
+              id="register-display-name-invalid"
+              role="alert"
+              data-testid="register-display-name-invalid"
+              className="font-ui text-sm text-red-600 dark:text-red-400"
+            >
+              {displayNameError}
+            </p>
           )}
 
           <input

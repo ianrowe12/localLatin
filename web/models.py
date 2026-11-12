@@ -3,10 +3,16 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Annotated, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from web.bands import NO_MATCH_BAND, VERIFY_BAND
 from web.services.ccl_keys import MAX_KEY_LENGTH as CCL_KEY_MAX_LENGTH
+from web.services.input_safety import (
+    CCL_KEY,
+    DIRECTORY_NAME,
+    DISPLAY_NAME,
+    check_safe_text,
+)
 
 # Re-exported so API consumers can keep importing the variant vocabulary from
 # web.models; the canonical definition lives in web/variants.py.
@@ -109,6 +115,12 @@ class ReviewerDirCreate(BaseModel):
     label: Optional[str] = Field(default=None, max_length=200)
     model_slug: Optional[str] = None
     variant: Optional[PredictionVariant] = None
+
+    # Issue #274: the label is exported verbatim; see services/input_safety.py.
+    @field_validator("label")
+    @classmethod
+    def label_is_safe(cls, value: Optional[str]) -> Optional[str]:
+        return check_safe_text(value, DIRECTORY_NAME)
 
 
 class ReviewerDir(BaseModel):
@@ -413,6 +425,12 @@ class RegisterRequest(BaseModel):
     password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=256)
     admin_code: Optional[str] = None
 
+    # Issue #274: display names are exported verbatim; see services/input_safety.py.
+    @field_validator("display_name")
+    @classmethod
+    def display_name_is_safe(cls, value: str) -> str:
+        return check_safe_text(value, DISPLAY_NAME)
+
 
 class SignInRequest(BaseModel):
     username: str
@@ -437,6 +455,12 @@ class AccountCreateRequest(BaseModel):
         default=None, min_length=MIN_PASSWORD_LENGTH, max_length=256
     )
     approval_note: str = Field(default="", max_length=500)
+
+    # Issue #274: the same rule as RegisterRequest.display_name.
+    @field_validator("display_name")
+    @classmethod
+    def display_name_is_safe(cls, value: str) -> str:
+        return check_safe_text(value, DISPLAY_NAME)
 
 
 class AccountRoleChangeRequest(BaseModel):
@@ -514,6 +538,13 @@ class FeedbackCreate(BaseModel):
     #: The server normalises it, decides what it names and records the outcome;
     #: see routers/feedback.py and services/ccl_keys.py.
     ccl_key: Optional[str] = Field(default=None, max_length=CCL_KEY_MAX_LENGTH)
+
+    # Issue #274: a key is exported verbatim, and one that names no directory
+    # becomes a reviewer directory's label; see services/input_safety.py.
+    @field_validator("ccl_key")
+    @classmethod
+    def ccl_key_is_safe(cls, value: Optional[str]) -> Optional[str]:
+        return check_safe_text(value, CCL_KEY)
 
     @model_validator(mode="after")
     def validate_outcome_contract(self) -> FeedbackCreate:

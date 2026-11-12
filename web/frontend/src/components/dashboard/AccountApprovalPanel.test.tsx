@@ -175,3 +175,24 @@ describe('AccountApprovalPanel role control', () => {
     expect((within(coPi).getByRole('button', { name: 'Cancel' }) as HTMLButtonElement).disabled).toBe(false)
   })
 })
+
+describe('AccountApprovalPanel display names (issue #274)', () => {
+  it('refuses a display name a spreadsheet would run, before anything is sent', async () => {
+    const user = userEvent.setup()
+    await renderPanel()
+    await user.type(screen.getByLabelText('Email or username for new account'), 'invitee')
+    const name = screen.getByLabelText('Display name for new account')
+    await user.type(name, '@Ann Example')
+
+    expect(screen.getByTestId('new-display-name-invalid').textContent).toBe(
+      'A display name cannot start with =, +, - or @ (a spreadsheet would run it as a formula) and cannot contain | (the export uses it to separate names).',
+    )
+    const create = screen.getByRole('button', { name: 'Create Approved Account' })
+    expect((create as HTMLButtonElement).disabled).toBe(true)
+
+    await user.clear(name)
+    await user.type(name, 'Ann Example')
+    expect(screen.queryByTestId('new-display-name-invalid')).toBeNull()
+    expect((create as HTMLButtonElement).disabled).toBe(false)
+  })
+})

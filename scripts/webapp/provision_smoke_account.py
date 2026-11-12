@@ -71,6 +71,13 @@ import sys
 # system python and no dependency on the web package being importable.
 HASH_PATTERN = re.compile(r"^pbkdf2_sha256\$200000\$[0-9a-f]{32}\$[0-9a-f]{64}$")
 
+# Mirrors web/services/input_safety.py (issue #274): a display name is written
+# verbatim into the CCL key export, so one that a spreadsheet would run as a
+# formula, or that contains the export's `|` list separator, is refused here as
+# it is by the app. A literal copy for the same reason as HASH_PATTERN;
+# tests/test_provision_smoke_account.py checks it against the app's shared cases.
+UNSAFE_DISPLAY_NAME = re.compile(r"^[\s\x00-\x1f\x7f-\x9f\ufeff]*[=+\-@]|\|")
+
 # The account this script exists to manage. Enforced on BOTH modes, and the
 # reason is asymmetric:
 #
@@ -178,6 +185,11 @@ def main() -> int:
             f"name starts with {SMOKE_USERNAME_PREFIX!r}. Accounts outside that prefix "
             "belong to people and are managed from the application's account screens. "
             "Rotating one here would be an account takeover, not a maintenance step."
+        )
+    if UNSAFE_DISPLAY_NAME.search(args.display_name):
+        raise SystemExit(
+            "--display-name cannot start with =, +, - or @ and cannot contain |: "
+            "the CCL key export writes display names verbatim (issue #274)."
         )
     if not HASH_PATTERN.match(args.password_hash):
         # Deliberately does not echo the value: it is not secret-equivalent, but

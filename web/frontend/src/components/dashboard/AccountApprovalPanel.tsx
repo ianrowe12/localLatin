@@ -11,6 +11,7 @@ import {
   type AccountPublic,
   type AccountRole,
 } from '../../api/auth'
+import { DISPLAY_NAME_SUBJECT, unsafeTextError } from '../../utils/inputSafety'
 
 function roleLabel(role: AccountRole): string {
   return role === 'pi_admin' ? 'PI/admin' : 'Reviewer'
@@ -177,9 +178,13 @@ export default function AccountApprovalPanel() {
     }
   }
 
+  // Issue #274: the server refuses the same names with the same sentence.
+  const newDisplayNameError = unsafeTextError(newDisplayName, DISPLAY_NAME_SUBJECT)
+
   const canCreate =
     newUsername.trim().length >= 2 &&
     newDisplayName.trim().length > 0 &&
+    newDisplayNameError === null &&
     (newPassword.length === 0 || newPassword.length >= 12)
 
   const createApprovedAccount = async () => {
@@ -262,6 +267,10 @@ export default function AccountApprovalPanel() {
                        placeholder:text-stone-400 dark:placeholder:text-stone-500
                        focus:outline-none focus:ring-2 focus:ring-accent/30"
             aria-label="Display name for new account"
+            aria-invalid={newDisplayNameError !== null}
+            aria-describedby={
+              newDisplayNameError !== null ? 'new-display-name-invalid' : undefined
+            }
           />
           <select
             value={newRole}
@@ -300,6 +309,17 @@ export default function AccountApprovalPanel() {
             {creating ? 'Creating...' : 'Create Approved Account'}
           </button>
         </div>
+
+        {newDisplayNameError !== null && (
+          <p
+            id="new-display-name-invalid"
+            role="alert"
+            data-testid="new-display-name-invalid"
+            className="mt-3 font-ui text-sm text-red-600 dark:text-red-400"
+          >
+            {newDisplayNameError}
+          </p>
+        )}
 
         {createdAccount && (
           <div className="mt-3 rounded-md bg-accent/10 dark:bg-accent/15 px-3 py-2 font-ui text-sm text-stone-700 dark:text-stone-200">
