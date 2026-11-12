@@ -18,6 +18,8 @@ THE RULE, in the order it is applied:
    reviewed query back into a skipped one on the dashboard.
 2. A reviewer's current decision on a query is their newest decision row on
    each (model, variant) they reviewed it under, newest by (timestamp, id).
+   A query is its witness `xml_id`: the one stored on the row (issue #273),
+   or for a row without one the name the served corpus gives its query id.
    That is the "own decision" half of `GET /api/feedback/latest`, which is also
    keyed by model and variant. A newer save on the same model and variant
    replaces an older one; a save under a different model does not, because the
@@ -28,10 +30,12 @@ THE RULE, in the order it is applied:
    typed `ccl_key`, and one without a key is the answer "none of these", which
    rejects every candidate it was made against (`NONE_MARKER`).
 4. A pick is trusted only when it can be shown to be what the reviewer saw
-   (`resolve_picks`). The first selection's directory is stored on the row
-   (`correct_dir`, resolved server-side at save time), so a single pick is
-   trusted as stored. Later selections of a multi-rank pick are not stored;
-   they are read from the ranking the server serves now, and only after the
+   (`resolve_picks`). A row saved since issue #273 stores the directory behind
+   every selected rank (`selected_dirs_json`, resolved server-side from the
+   snapshot the reviewer saw), and every pick is trusted as stored. An older
+   row stores only the first selection's directory (`correct_dir`), so a
+   single pick is trusted as stored, and later selections of a multi-rank pick
+   are read from the ranking the server serves now, and only after the
    stored first pick is confirmed to still sit at its rank there. A pick that
    cannot be confirmed (the anchor moved, the rank or query is no longer
    served, the row has no variant, the row stores no directory at all, or the
@@ -137,6 +141,7 @@ class Decision:
     """One reviewer's current decision on one (query, model, variant)."""
 
     query_id: int
+    xml_id: str
     reviewer_key: tuple
     reviewer_name: str
     decided_at: str
@@ -171,7 +176,7 @@ def current_decisions(rows: Iterable[dict]) -> list[dict]:
         if row.get("outcome") not in DECISION_OUTCOMES:
             continue
         slot = (
-            int(row["query_id"]),
+            query_identity(row),
             reviewer_identity(row),
             row.get("model_slug"),
             row.get("variant"),
@@ -182,12 +187,33 @@ def current_decisions(rows: Iterable[dict]) -> list[dict]:
     return list(newest.values())
 
 
+def query_identity(row: dict) -> str | int:
+    """Which witness a row is about: its `xml_id`, else its stored query id."""
+    return row.get("xml_id") or int(row["query_id"])
+
+
+def stored_dirs(row: dict) -> list[str] | None:
+    """The directory behind every selected rank, as saved with the row.
+
+    None unless the row stores exactly one non-empty name per selected rank,
+    which every `matched_rank` row saved since issue #273 does.
+    """
+    names = row.get("selected_dirs")
+    ranks = selected_ranks(row)
+    if not names or len(names) != len(ranks) or not all(names):
+        return None
+    return [str(name) for name in names]
+
+
 def needs_ranking(row: dict) -> bool:
     """Whether a `matched_rank` row can only be read with the served ranking.
 
-    A single pick with a stored directory cannot; every other pick can.
+    A row that stores every picked directory cannot, nor can a single pick
+    with a stored `correct_dir`; every other pick can.
     """
     if row.get("outcome") != "matched_rank":
+        return False
+    if stored_dirs(row) is not None:
         return False
     ranks = selected_ranks(row)
     return not (len(ranks) == 1 and row.get("correct_dir"))
@@ -206,6 +232,11 @@ def resolve_picks(
     ranks = selected_ranks(row)
     if not ranks:
         return [], [None]
+    names = stored_dirs(row)
+    if names is not None:
+        # Saved with the row from the snapshot the reviewer saw (issue #273):
+        # no ranking is consulted, today's or any other.
+        return list(zip(ranks, names)), []
     stored = row.get("correct_dir") or None
     trusted: list[tuple[int, str]] = []
     unresolved: list[int | None] = []
@@ -242,6 +273,7 @@ def decision_from_row(
     """
     decision = Decision(
         query_id=int(row["query_id"]),
+        xml_id=str(row.get("xml_id") or ""),
         reviewer_key=reviewer_identity(row),
         reviewer_name=str(row.get("reviewer") or ""),
         decided_at=str(row.get("timestamp") or ""),
@@ -288,37 +320,31 @@ def selected_ranks(row: dict) -> list[int]:
 def build_rows(
     decisions: list[Decision],
     *,
-    filename_by_query: dict[int, str],
     labelled_dir_names: Iterable[str],
     data_release: str,
     exported_at: str,
     status: str | None = None,
-) -> tuple[list[dict], int]:
-    """One resolved row per query, sorted by `xml_id`.
+) -> list[dict]:
+    """One resolved row per witness, sorted by `xml_id`.
 
-    Returns the rows and how many queries were left out because the served
-    corpus has no filename for them. Such a query has no `xml_id`, and inventing
-    one (the raw export writes `unknown-<id>`) would hand CCL's import a witness
-    that does not exist.
+    Every decision must carry its `xml_id`. A row whose witness cannot be named
+    (no stored xml_id, and an id the served corpus does not know) is left out
+    by the caller before this point: inventing one (the raw export writes
+    `unknown-<id>`) would hand CCL's import a witness that does not exist.
     """
     labelled = list(labelled_dir_names)
-    by_query: dict[int, list[Decision]] = {}
+    by_witness: dict[str, list[Decision]] = {}
     for decision in decisions:
-        by_query.setdefault(decision.query_id, []).append(decision)
+        by_witness.setdefault(decision.xml_id, []).append(decision)
 
     rows: list[dict] = []
-    unknown = 0
-    for query_id, group in by_query.items():
-        filename = filename_by_query.get(query_id)
-        if not filename:
-            unknown += 1
-            continue
+    for xml_id, group in by_witness.items():
         resolved = resolve_query(group, labelled)
         if status is not None and resolved["status"] != status:
             continue
         rows.append(
             {
-                "xml_id": xml_id_of(filename),
+                "xml_id": xml_id,
                 **resolved,
                 "export_schema_version": EXPORT_SCHEMA_VERSION,
                 "exported_at": exported_at,
@@ -326,7 +352,7 @@ def build_rows(
             }
         )
     rows.sort(key=lambda row: row["xml_id"])
-    return rows, unknown
+    return rows
 
 
 def to_csv(rows: list[dict]) -> str:

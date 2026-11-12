@@ -358,6 +358,10 @@ def test_legacy_duplicates_survive_reopen_and_recover_oldest(
                     account["id"],
                 )
             await db._db.commit()
+            # The one-time witness id backfill (issue #273) runs here, before
+            # the triggers below, as the first boot after #273 does on a real
+            # database. From then on a reopen must change nothing at all.
+            await db.adopt_corpus({i: f"query-{i}.txt" for i in range(8)})
         finally:
             await db.close()
 

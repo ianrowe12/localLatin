@@ -628,6 +628,14 @@ class FeedbackEntry(BaseModel):
     correct_rank: Optional[int]
     correct_dir: Optional[str]
     selected_ranks: Optional[List[int]] = None
+    #: The directory behind each selected rank, in the same order, as the
+    #: server resolved it from the snapshot the reviewer saw (issue #273).
+    #: None on rows saved before then and on every non-rank outcome.
+    selected_dirs: Optional[List[str]] = None
+    #: The witness's CCL `xml:id` (query filename without `.txt`), stored on
+    #: the row so it stays attached when the corpus changes (issue #273).
+    #: None only for a row whose query id no corpus could name.
+    xml_id: Optional[str] = None
     notes: str
     reviewer: str
     reviewer_account_id: Optional[int] = None

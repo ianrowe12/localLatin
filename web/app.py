@@ -53,6 +53,16 @@ async def lifespan(app: FastAPI):
     db_path = settings.paths.resolve(settings.paths.feedback_db)
     db = FeedbackDB(db_path)
     await db.connect()
+    # Issue #273: refuse to start when the served corpus would put a stored
+    # review on another witness, backfill witness ids on older rows, and bind
+    # the corpus so every later row records its witness.
+    try:
+        await db.adopt_corpus(
+            store.file_id_to_filename, data_release=store.data_release
+        )
+    except BaseException:
+        await db.close()
+        raise
     set_db(db)
 
     logger.info("Startup complete. Serving %d queries, %d models.",

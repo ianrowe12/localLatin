@@ -96,6 +96,7 @@ async def create_feedback(
 
     # Client correct_dir is never an assignment authority.
     correct_dir = None
+    selected_dirs: list[str] | None = None
     if body.outcome == FeedbackOutcome.MATCHED_RANK:
         assert body.correct_rank is not None
         ranks = body.selected_ranks or [body.correct_rank]
@@ -128,6 +129,9 @@ async def create_feedback(
                 )
         # Preserve selection order: only the first choice assigns membership.
         correct_dir = candidates[ranks[0]].dir_name
+        # Every pick as the reviewer saw it, from this same snapshot (issue
+        # #273), so no later reader consults a ranking that may have moved.
+        selected_dirs = [candidates[rank].dir_name for rank in ranks]
 
     assert body.outcome is not None
 
@@ -218,6 +222,7 @@ async def create_feedback(
         reviewer=current_user.display_name,
         reviewer_account_id=current_user.id,
         selected_ranks=body.selected_ranks,
+        selected_dirs=selected_dirs,
     )
 
     # Confirming a reviewer-created directory is what makes it grow: the query
@@ -413,6 +418,7 @@ _DECISION_FIELDS = (
     "correct_rank",
     "correct_dir",
     "selected_ranks",
+    "selected_dirs",
     "ccl_key",
     "ccl_key_action",
     "ccl_key_dir",
@@ -457,6 +463,7 @@ def _merge_shared_note_with_own_decision(
                 "correct_rank": None,
                 "correct_dir": None,
                 "selected_ranks": None,
+                "selected_dirs": None,
                 "ccl_key": None,
                 "ccl_key_action": None,
                 "ccl_key_dir": None,
