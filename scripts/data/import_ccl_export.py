@@ -48,10 +48,12 @@ The export (a folder or the zip itself) is treated as untrusted:
 
 Directory names
 ---------------
-A key is matched whitespace-insensitively (NFC, then every whitespace
-character removed). 19 long citation keys in our corpus contain a line break;
-the macOS-unzipped 2026-11-12 export glues the two words together, so the two
-forms differ only in whitespace.
+A key is matched on its NFC form with every line-break character (CR, LF)
+deleted and the remaining whitespace runs collapsed to one space. 19 long
+citation keys in our corpus contain a line break; the macOS-unzipped 2026-11-12
+export glues the two words together, so the two forms differ only by that
+break. Any other space is significant: ``Ep. 1 23`` and ``Ep. 12 3`` are two
+keys.
 
 1. A key that matches a baseline directory this way is written under the
    baseline's directory name, verbatim. Every such case where the export's
@@ -150,14 +152,19 @@ def nfc(name: str) -> str:
     return unicodedata.normalize("NFC", name)
 
 
-def key_match_form(key: str) -> str:
-    """The form keys are matched on: NFC with every whitespace character removed.
+_LINE_BREAKS = re.compile(r"[\r\n]")
 
-    Removing (not collapsing) whitespace is what lets a key whose line break
-    was dropped without a space (``Gildas,82``) meet the form that kept it
-    (``Gildas,\\n82``).
+
+def key_match_form(key: str) -> str:
+    """The form keys are matched on.
+
+    NFC, then every line-break character (CR, LF) deleted, then the remaining
+    whitespace runs collapsed to one space and the ends trimmed. Deleting the
+    line break is what lets a key whose break was dropped without a space
+    (``Gildas,82``) meet the form that kept it (``Gildas,\\n82``). Every other
+    space is kept, so ``Ep. 1 23`` and ``Ep. 12 3`` stay different keys.
     """
-    return "".join(nfc(key).split())
+    return " ".join(_LINE_BREAKS.sub("", nfc(key)).split())
 
 
 _NON_SPACE_WHITESPACE_RUN = re.compile(r"\s*[^\S ]\s*")
@@ -549,7 +556,8 @@ def plan_directories(
         if form in by_form:
             raise ExportError(
                 f"baseline directories {by_form[form]!r} and {directory!r} differ only "
-                "in whitespace, so a key cannot be matched to one of them"
+                "by line breaks or repeated whitespace, so a key cannot be matched to "
+                "one of them"
             )
         by_form[form] = directory
 
@@ -560,8 +568,8 @@ def plan_directories(
         form = key_match_form(key)
         if form in export_forms:
             raise ExportError(
-                f"export keys {export_forms[form]!r} and {key!r} differ only in "
-                "whitespace; they cannot be kept apart"
+                f"export keys {export_forms[form]!r} and {key!r} differ only by "
+                "line breaks or repeated whitespace; they cannot be kept apart"
             )
         export_forms[form] = key
         baseline = by_form.get(form)

@@ -166,8 +166,9 @@ normalisations, the query-corpus digest the webapp would compute
 the webapp's startup checks from #278 would do with the new listing. It holds ids, keys,
 counts and digests only: no witness text and no reviewer data.
 
-Directory names. Keys are matched whitespace-insensitively (NFC, all whitespace removed).
-A key that matches a baseline directory keeps the baseline's name verbatim; 19 long
+Directory names. Keys are matched on their NFC form with every line-break character (CR,
+LF) deleted and the remaining whitespace runs collapsed to one space; any other space is
+significant, so `Ep. 1 23` and `Ep. 12 3` stay two keys. A key that matches a baseline directory keeps the baseline's name verbatim; 19 long
 citation keys in `data/canon_labelled` contain a line break, which the macOS-unzipped
 2026-11-12 export drops without a space, and those keep our form. A key the baseline
 does not hold keeps the export's form, except that a whitespace run containing a line

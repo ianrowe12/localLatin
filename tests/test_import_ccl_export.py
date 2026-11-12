@@ -257,11 +257,55 @@ def test_zip_names_without_the_utf8_flag_are_read_as_utf8(tmp_path):
     assert (out / "canon_labelled/Cite “q” – 4/MS8.1r.1.txt").is_file()
 
 
-def test_keys_that_collide_after_whitespace_removal_are_refused(tmp_path):
+@pytest.mark.parametrize("twin", ["AAAA.100.\n1", "AAAA.100.\r\n1"])
+def test_keys_that_differ_only_by_a_line_break_are_refused(tmp_path, twin):
     files = export_files()
-    files["cclexport/keyed/canon/AAAA.100. 1/MS9.1r.1.txt"] = "   x "
-    with pytest.raises(imp.ExportError, match="differ only in whitespace"):
+    files[f"cclexport/keyed/canon/{twin}/MS9.1r.1.txt"] = "   x "
+    with pytest.raises(imp.ExportError, match="differ only by line breaks"):
         run(tmp_path, make_zip(tmp_path, files))
+
+
+def test_match_form_deletes_line_breaks_and_collapses_spaces_only():
+    assert imp.key_match_form("Gildas,\n82") == imp.key_match_form("Gildas,82")
+    assert imp.key_match_form("trans.\r\nWINTER") == "trans.WINTER"
+    assert imp.key_match_form(" A  B\t C ") == "A B C"
+    assert imp.key_match_form("Ep. 1 23") != imp.key_match_form("Ep. 12 3")
+    assert imp.key_match_form("Ep. 1 23") != imp.key_match_form("Ep. 123")
+
+
+def test_keys_differing_by_an_inter_word_space_are_not_merged_with_the_baseline(tmp_path):
+    """Review #284 round 1: `Ep. 1 23` in the baseline is not `Ep. 12 3` in the export."""
+    baseline = tmp_path / "baseline"
+    write_tree(baseline, {
+        "canon_labelled/Ep. 1 23/A.1r.1.txt": "   a ",
+        "canon_unlabelled/U.1r.1.txt": "   u ",
+    })
+    export = make_zip(tmp_path, {
+        "cclexport/keyed/canon/Ep. 12 3/A.1r.1.txt": "   a ",
+        "cclexport/keyed/canon/Ep. 12 3/B.1r.1.txt": "   b ",
+        "cclexport/unkeyed/canon/U.1r.1.txt": "   u ",
+    })
+    report = imp.run(export, tmp_path / "out", baseline_root=baseline)
+    assert report["key_changed"] == [{
+        "xml_id": "A.1r.1", "type": "canon",
+        "baseline_directory": "Ep. 1 23", "directory": "Ep. 12 3",
+    }]
+    assert report["added"] == [
+        {"xml_id": "B.1r.1", "type": "canon", "status": "keyed", "directory": "Ep. 12 3"}
+    ]
+    assert report["key_name_cases"] == []
+    assert sorted(p.name for p in (tmp_path / "out" / "canon_labelled").iterdir()) == ["Ep. 12 3"]
+
+
+def test_export_holding_keys_differing_by_an_inter_word_space_is_imported(tmp_path):
+    files = export_files()
+    files["cclexport/keyed/canon/Ep. 1 23/C.1r.1.txt"] = "   c "
+    files["cclexport/keyed/canon/Ep. 12 3/D.1r.1.txt"] = "   d "
+    report, out = run(tmp_path, make_zip(tmp_path, files))
+    assert (out / "canon_labelled/Ep. 1 23/C.1r.1.txt").is_file()
+    assert (out / "canon_labelled/Ep. 12 3/D.1r.1.txt").is_file()
+    assert report["output"]["directories"] == 4
+    assert {c["export_key"] for c in report["key_name_cases"]} == {"Long cite,B 2"}
 
 
 def test_directories_that_collide_by_case_are_refused(tmp_path):
