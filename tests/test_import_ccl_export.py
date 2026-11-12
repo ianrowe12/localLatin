@@ -430,7 +430,10 @@ def test_whitespace_rule_matches_tei_to_canon():
 
 def test_repo_query_listing_digest_is_the_pre_xml_id_corpus():
     """The repo corpus listing hashes to the digest feedback_db pins (#273)."""
-    names = [p.name for p in (imp.REPO_ROOT / "data" / "canon_unlabelled").glob("*.txt")]
+    corpus = imp.REPO_ROOT / "data" / "canon_unlabelled"
+    if not corpus.is_dir():
+        pytest.skip("data/ is not checked out (CI uses a sparse checkout)")
+    names = [p.name for p in corpus.glob("*.txt")]
     assert imp.corpus_digest(imp.query_listing(names)) == (
         "23e913f50d96be43e8b412d393302f4b7515586cd9f6b40aecbd0269f81188af"
     )

@@ -13,6 +13,8 @@ import random
 import sys
 from pathlib import Path
 
+import pytest
+
 from web.services.feedback_db import PRE_XML_ID_CORPUS_SHA256, corpus_digest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -35,6 +37,8 @@ def test_digest_functions_agree():
 
 def test_listing_matches_index_unlabelled_and_the_pinned_corpus():
     unlabelled = REPO_ROOT / "data" / "canon_unlabelled"
+    if not unlabelled.is_dir():
+        pytest.skip("data/ is not checked out (CI uses a sparse checkout)")
     # index_unlabelled.py: sorted(root.glob("*.txt"), key=name), file_id = position.
     expected = {
         i: p.name for i, p in enumerate(sorted(unlabelled.glob("*.txt"), key=lambda p: p.name))
