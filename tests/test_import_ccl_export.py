@@ -205,13 +205,13 @@ def test_witness_of_an_unselected_type_is_reported_as_such(tmp_path):
     assert report["webapp"]["leaving_query_set"][0]["reason"] == "type_not_selected"
 
 
-def test_new_key_with_a_line_break_is_written_with_a_space(tmp_path):
+def test_new_key_with_a_line_break_is_written_without_it(tmp_path):
     files = export_files()
     files["cclexport/keyed/canon/New cite,\n  C 3/MS5.1r.1.txt"] = "   x "
     report, out = run(tmp_path, make_zip(tmp_path, files))
-    assert {"export_key": "New cite,\n  C 3", "directory": "New cite, C 3",
+    assert {"export_key": "New cite,\n  C 3", "directory": "New cite,  C 3",
             "baseline_directory": None, "reason": "whitespace_collapsed"} in report["key_name_cases"]
-    assert (out / "canon_labelled/New cite, C 3/MS5.1r.1.txt").is_file()
+    assert (out / "canon_labelled/New cite,  C 3/MS5.1r.1.txt").is_file()
 
 
 def test_types_all_and_unknown_type(tmp_path):
@@ -306,6 +306,75 @@ def test_export_holding_keys_differing_by_an_inter_word_space_is_imported(tmp_pa
     assert (out / "canon_labelled/Ep. 12 3/D.1r.1.txt").is_file()
     assert report["output"]["directories"] == 4
     assert {c["export_key"] for c in report["key_name_cases"]} == {"Long cite,B 2"}
+
+
+def test_new_keys_differing_by_line_break_versus_space_get_two_directories(tmp_path):
+    """Review #284 round 2, case 1: `New A\nB` and `New A B` are two keys, two directories."""
+    files = export_files()
+    files["cclexport/keyed/canon/New A\nB/N1.1r.1.txt"] = "   n1 "
+    files["cclexport/keyed/canon/New A B/N2.1r.1.txt"] = "   n2 "
+    report, out = run(tmp_path, make_zip(tmp_path, files))
+    added = {r["xml_id"]: r["directory"] for r in report["added"]}
+    assert added == {"N1.1r.1": "New AB", "N2.1r.1": "New A B"}
+    assert sorted(p.name for p in (out / "canon_labelled" / "New AB").iterdir()) == ["N1.1r.1.txt"]
+    assert sorted(p.name for p in (out / "canon_labelled" / "New A B").iterdir()) == ["N2.1r.1.txt"]
+
+
+def test_line_break_variant_of_a_baseline_key_does_not_join_its_directory(tmp_path):
+    """Review #284 round 2, case 2: baseline `Old A B`; export `Old A B` and `Old A\nB`."""
+    baseline = tmp_path / "baseline"
+    write_tree(baseline, {
+        "canon_labelled/Old A B/W1.1r.1.txt": "   w1 ",
+        "canon_unlabelled/U.1r.1.txt": "   u ",
+    })
+    export = make_zip(tmp_path, {
+        "cclexport/keyed/canon/Old A B/W1.1r.1.txt": "   w1 ",
+        "cclexport/keyed/canon/Old A\nB/W2.1r.1.txt": "   w2 ",
+        "cclexport/unkeyed/canon/U.1r.1.txt": "   u ",
+    })
+    report = imp.run(export, tmp_path / "out", baseline_root=baseline)
+    assert report["key_changed"] == []
+    assert report["added"] == [
+        {"xml_id": "W2.1r.1", "type": "canon", "status": "keyed", "directory": "Old AB"}
+    ]
+    labelled = tmp_path / "out" / "canon_labelled"
+    assert sorted(p.name for p in (labelled / "Old A B").iterdir()) == ["W1.1r.1.txt"]
+    assert sorted(p.name for p in (labelled / "Old AB").iterdir()) == ["W2.1r.1.txt"]
+
+
+def test_plan_refuses_two_keys_in_one_directory_whatever_the_naming_rule(monkeypatch):
+    """Rule 4 holds on the finished plan, even if the naming rule drifts from the match form."""
+    monkeypatch.setattr(imp, "fresh_directory_name", lambda key: " ".join(key.split()))
+    with pytest.raises(imp.ExportError, match="resolve to the same directory"):
+        imp.plan_directories(["New A\nB", "New A B"], [])
+    with pytest.raises(imp.ExportError, match="without matching it"):
+        imp.plan_directories(["Old A B", "Old A\nB"], ["Old A B"])
+    with pytest.raises(imp.ExportError, match="without matching it"):
+        imp.plan_directories(["Old A\nB"], ["Old A B"])
+
+
+@pytest.mark.parametrize("key", [
+    "New A\nB", "New A B", "A  B", " A\tB ", "x\r\ny", "Gildas,\n82", "a\u00a0b", "q \n r",
+])
+def test_fresh_name_keeps_the_match_form(key):
+    assert imp.key_match_form(imp.fresh_directory_name(key)) == imp.key_match_form(key)
+    assert "\n" not in imp.fresh_directory_name(key)
+
+
+def test_fresh_name_keeps_repeated_spaces_and_deletes_line_breaks():
+    assert imp.fresh_directory_name("A  B") == "A  B"
+    assert imp.fresh_directory_name("New A\nB") == "New AB"
+    assert imp.fresh_directory_name("New cite,\n  C 3") == "New cite,  C 3"
+
+
+def test_plan_gives_every_key_its_own_directory():
+    plan, _ = imp.plan_directories(
+        ["New A\nB", "New A B", "Old A B", "Old A\nB", "Long cite,B 2"],
+        ["Old A B", "Long cite,\nB 2"],
+    )
+    assert len(set(plan.values())) == len(plan)
+    assert plan["Long cite,B 2"] == "Long cite,\nB 2"
+    assert plan["Old A B"] == "Old A B"
 
 
 def test_directories_that_collide_by_case_are_refused(tmp_path):

@@ -58,16 +58,23 @@ keys.
 1. A key that matches a baseline directory this way is written under the
    baseline's directory name, verbatim. Every such case where the export's
    form differs is listed in the report (``key_name_cases``).
-2. A key the baseline does not hold is written under the export's form, with
-   every whitespace run that contains a character other than a plain space
-   (line break, tab) replaced by one space, and leading and trailing
-   whitespace removed. Each changed name is listed in the report.
+2. A key the baseline does not hold is written with its line breaks deleted
+   (as the match form deletes them), every whitespace character other than a
+   plain space turned into a space, and the ends trimmed; runs of plain
+   spaces are kept. The match form of that name is the key's own match form,
+   so a line break means the same thing to both rules and two keys with
+   different match forms can never be given one name. Each changed name is
+   listed in the report.
 3. A key is refused when it is empty, starts with ``.``, contains ``/``, a
    backslash, NUL or another control character besides whitespace, or is
    longer than 255 bytes in UTF-8, and when two different keys of the
    selected types collapse to the same match form. ``/`` can never reach a
    key: it is the path separator, so such a key shows up as extra nesting and
    fails the layout check.
+4. After every key has a directory, the import refuses if any output
+   directory (compared case-insensitively) would receive two different
+   export keys. The one key a baseline directory may receive is a key that
+   matched it under rule 1.
 
 The report holds xml_ids, keys, counts and sha256 digests only: no witness
 text and no reviewer data (this script never opens the feedback database).
@@ -167,12 +174,18 @@ def key_match_form(key: str) -> str:
     return " ".join(_LINE_BREAKS.sub("", nfc(key)).split())
 
 
-_NON_SPACE_WHITESPACE_RUN = re.compile(r"\s*[^\S ]\s*")
+_OTHER_WHITESPACE = re.compile(r"[^\S ]")
 
 
 def fresh_directory_name(key: str) -> str:
-    """Directory name for a key the baseline does not hold (rule 2 above)."""
-    return _NON_SPACE_WHITESPACE_RUN.sub(" ", key).strip()
+    """Directory name for a key the baseline does not hold (rule 2 above).
+
+    Invariant: ``key_match_form(fresh_directory_name(k)) == key_match_form(k)``.
+    A line break is deleted here exactly as the match form deletes it; turning
+    it into a space instead would give ``New A\nB`` and ``New A B`` different
+    match forms but one directory name.
+    """
+    return _OTHER_WHITESPACE.sub(" ", _LINE_BREAKS.sub("", key)).strip()
 
 
 def normalise_whitespace(text: str) -> str:
@@ -584,13 +597,29 @@ def plan_directories(
         if directory != key:
             cases.append(KeyNameCase(key, directory, None, "whitespace_collapsed"))
 
-    folded: Dict[str, str] = {}
-    for directory in plan.values():
-        other = folded.setdefault(directory.casefold(), directory)
-        if other != directory:
+    # Rule 4, checked on the finished plan rather than trusted to the rules
+    # above: no output directory receives two different export keys, and a
+    # baseline directory receives only a key that matched it.
+    matched = {key for key in plan if by_form.get(key_match_form(key)) == plan[key]}
+    baseline_names = set(by_form.values())
+    claimed: Dict[str, Tuple[str, str]] = {}
+    for key in sorted(plan):
+        directory = plan[key]
+        if directory in baseline_names and key not in matched:
             raise ExportError(
-                f"directories {other!r} and {directory!r} differ only in case; they "
-                "would merge on a case-insensitive filesystem"
+                f"export key {key!r} would be filed under the existing directory "
+                f"{directory!r} without matching it; refusing to merge two keys"
+            )
+        other = claimed.setdefault(directory.casefold(), (key, directory))
+        if other[0] != key:
+            how = (
+                "the same directory" if other[1] == directory
+                else f"directories {other[1]!r} and {directory!r}, which differ only "
+                "in case and would merge on a case-insensitive filesystem"
+            )
+            raise ExportError(
+                f"export keys {other[0]!r} and {key!r} resolve to {how}; refusing "
+                "to merge two keys"
             )
     return plan, cases
 

@@ -171,10 +171,13 @@ LF) deleted and the remaining whitespace runs collapsed to one space; any other 
 significant, so `Ep. 1 23` and `Ep. 12 3` stay two keys. A key that matches a baseline directory keeps the baseline's name verbatim; 19 long
 citation keys in `data/canon_labelled` contain a line break, which the macOS-unzipped
 2026-11-12 export drops without a space, and those keep our form. A key the baseline
-does not hold keeps the export's form, except that a whitespace run containing a line
-break or tab becomes one space and the ends are trimmed. A key is refused when it is
-blank, starts with `.`, holds a backslash, NUL or another control character, or exceeds
-255 bytes; `/` is the path separator, so a key containing it fails the layout check.
+does not hold is written with its line breaks deleted, as matching deletes them, any
+other non-space whitespace turned into a space and the ends trimmed; its name therefore
+has the key's own match form, so the naming and matching rules cannot disagree.
+After every key has a directory, the import refuses if any directory would receive two
+different export keys, or a baseline directory a key that did not match it. A key is
+refused when it is blank, starts with `.`, holds a backslash, NUL or another control
+character, or exceeds 255 bytes; `/` is the path separator, so a key containing it fails the layout check.
 
 The export is treated as untrusted: zip entry names are read from the zip (as UTF-8,
 whatever the archiver's flag says), folders are walked without following symlinks,
