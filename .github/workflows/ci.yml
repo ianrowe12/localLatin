@@ -106,6 +106,36 @@ jobs:
           echo "python-matrix result: ${RESULT}"
           [ "${RESULT}" = "success" ] || exit 1
 
+  snapshot-crypto-macos:
+    name: Snapshot crypto (macOS OpenSSL 3)
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out snapshot tools
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          filter: blob:none
+          sparse-checkout: |
+            .github
+            scripts/webapp
+            tests
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Select Homebrew OpenSSL 3
+        run: |
+          echo "OPENSSL=$(brew --prefix openssl@3)/bin/openssl" >> "$GITHUB_ENV"
+
+      - name: Check portable encryption and decryption
+        run: |
+          python -m pip install "$(grep '^pytest==' .github/ci-requirements.txt)"
+          "$OPENSSL" version
+          python -m pytest tests/test_review_snapshot_crypto.py -q
+
   frontend:
     name: Frontend build
     runs-on: ubuntu-latest
