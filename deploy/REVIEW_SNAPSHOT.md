@@ -34,6 +34,27 @@ archive paths and links, then verifies every CSV against `manifest.json`.
 Nothing is published to the requested output directory until all checks pass.
 Use encrypted local storage for the decrypted data.
 
+## Failure diagnostics
+
+Failures report a fixed stage and the exception class, for example
+`error: stage=ccl_assignments exception=OperationalError: no such column: ccl_key`.
+Stages distinguish configuration, deployed SHA lookup (`deploy_sha`), staging
+preparation, `backup`, `pseudonymise`, `load_store`, `ccl_assignments`,
+`write_bundle`, runner-checkout SHA lookup (`exporter_sha`), `encrypt`,
+`cleanup` and `decrypt`. The two SHA lookups deliberately use different
+checkouts: data and the production config come from `--deploy-path`, while
+Python imports and `exporter_git_sha` come from the reviewed runner checkout.
+
+Fixed-string `SnapshotError` refusals are included, so configuration, decryption
+and tamper failures remain distinguishable. SQLite messages must fully match a
+strict allowlist: missing tables/columns with simple SQL identifiers (optionally
+qualified), or fixed locking, read-only, corruption, disk-full, open and I/O
+errors. All other SQLite messages, including text-decoding errors that can echo
+cell values and constraint descriptions, are withheld.
+Other exception messages (including OpenSSL output),
+tracebacks, Python warnings and loader logs are withheld. Keep reproduction
+instrumentation local and use synthetic accounts, never production rows.
+
 ## Contents and redaction
 
 | File | Contents |
@@ -71,7 +92,7 @@ The authenticated encryption envelope protects the manifest as well.
 ## Threat model and format
 
 This repository is public. Treat **both Actions logs and artifacts as
-world-readable**. Only counts and static failure messages are logged by the
+world-readable**. Only counts and privacy-safe failure diagnostics are logged by the
 script. The artifact contains exactly two files, ciphertext and an RSA-wrapped
 random secret; neither the manifest nor any plaintext is uploaded.
 
@@ -80,6 +101,10 @@ uses a fresh credential-free checkout and the production Python venv, and
 opens the live database with SQLite `mode=ro`. The online backup API includes
 committed WAL state consistently. All export processing uses temporary copies.
 The temporary tree is private (umask 077) and removed on success or failure;
+all database connections and file handles are closed before removal, including
+the pseudonymised database connection. This avoids open-file `.nfs` remnants
+blocking directory removal when staging is on NFS. Cleanup failures remain hard
+failures reported as `stage=cleanup`, even after another export failure;
 the workflow's `always()` cleanup also handles cancellation. A host crash or
 forced kill can require local cleanup of that run's private staging directory.
 
