@@ -31,16 +31,19 @@
 # per invocation. 5 invocations (parity check + 4 caches) come to ~15-20 min;
 # 50 min leaves room for a slow load from /projects.
 #
-# Needs: REPO_ROOT is a checkout of this branch whose runs/ and data/ resolve to
-# the main checkout's (symlinks), so outputs land in the canonical cache.
+# Code runs from CODE_ROOT (a checkout of this branch); the working directory
+# is DATA_ROOT, the main checkout whose runs/ holds the canonical caches. Submit
+# from DATA_ROOT so the log paths below resolve there:
+#   cd /u/irowerojas/localLatin && sbatch $CODE_ROOT/slurm/resubmit/dataset2_extract_qwen8b.sbatch
 
 set -euo pipefail
 
 module reset
 module load miniforge3-python
 
-export REPO_ROOT="${REPO_ROOT:-/projects/beto/irowerojas/worktrees/issue-289}"
-cd "$REPO_ROOT" || exit 1
+CODE_ROOT="${CODE_ROOT:-/projects/beto/irowerojas/worktrees/issue-289}"
+DATA_ROOT="${DATA_ROOT:-/u/irowerojas/localLatin}"
+cd "$DATA_ROOT" || exit 1
 mkdir -p slurm/logs
 
 MODEL="Qwen/Qwen3-Embedding-8B"
@@ -64,7 +67,7 @@ for d in \
 done
 
 echo "=== Extraction metas (paths relative to the repo root) ==="
-$PY scripts/resubmit/dataset2_extraction_meta.py --out_dir "$META_DIR"
+$PY "$CODE_ROOT"/scripts/resubmit/dataset2_extraction_meta.py --out_dir "$META_DIR"
 
 COMMON=(--model_name "$MODEL" --repr hidden --layers "0-36" --token_filter tokenizer_empty
         --max_length 512 --batch_size 2 --half_precision --trust_remote_code --one_pass)
@@ -73,14 +76,14 @@ echo "=== Parity: --one_pass vs the cached labelled lasttok and mean runs (16 fi
 PARITY="$D2/one_pass_parity_${SLURM_JOB_ID:-manual}"
 for pool in lasttok mean; do
   CACHE="$LAB_BASES/$SLUG/hidden_${pool}_tokempty"
-  $PY scripts/resubmit/check_one_pass_parity.py make_meta \
+  $PY "$CODE_ROOT"/scripts/resubmit/check_one_pass_parity.py make_meta \
     --cache_dir "$CACHE" --split_csv "$SPLIT_CSV" --n_files 16 \
     --out_meta "$PARITY/meta_${pool}.csv"
-  $PY src/extract_encoder_cli.py "${COMMON[@]}" --layers "0,1,18,35,36" \
+  $PY "$CODE_ROOT"/src/extract_encoder_cli.py "${COMMON[@]}" --layers "0,1,18,35,36" \
     --pooling "$pool" --meta_csv "$PARITY/meta_${pool}.csv" \
     --runs_root "$PARITY" --run_dir "$PARITY/hidden_${pool}"
   suffix=""; [ "$pool" = lasttok ] && suffix="_lasttok"
-  $PY scripts/resubmit/check_one_pass_parity.py compare \
+  $PY "$CODE_ROOT"/scripts/resubmit/check_one_pass_parity.py compare \
     --cache_dir "$CACHE" --fresh_dir "$PARITY/hidden_${pool}" --suffix "$suffix"
 done
 
@@ -88,13 +91,13 @@ echo "=== Unlabelled: mean, lasttok, sif ==="
 for pool in mean lasttok sif; do
   EXTRA=()
   [ "$pool" = sif ] && EXTRA=(--split_csv "$SPLIT_CSV")
-  $PY src/extract_encoder_cli.py "${COMMON[@]}" --pooling "$pool" ${EXTRA[@]+"${EXTRA[@]}"} \
+  $PY "$CODE_ROOT"/src/extract_encoder_cli.py "${COMMON[@]}" --pooling "$pool" ${EXTRA[@]+"${EXTRA[@]}"} \
     --meta_csv "$META_DIR/unlabelled_meta.csv" \
     --runs_root "$UNLAB_BASES" --run_dir "$UNLAB_BASES/$SLUG/hidden_${pool}_tokempty"
 done
 
 echo "=== Labelled: sif ==="
-$PY src/extract_encoder_cli.py "${COMMON[@]}" --pooling sif --split_csv "$SPLIT_CSV" \
+$PY "$CODE_ROOT"/src/extract_encoder_cli.py "${COMMON[@]}" --pooling sif --split_csv "$SPLIT_CSV" \
   --meta_csv "$META_DIR/labelled_meta.csv" \
   --runs_root "$LAB_BASES" --run_dir "$LAB_BASES/$SLUG/hidden_sif_tokempty"
 
