@@ -71,6 +71,15 @@ def parse_args() -> argparse.Namespace:
         "--trust_remote_code", action="store_true",
         help="Trust remote code for model loading.",
     )
+    parser.add_argument(
+        "--one_pass", action="store_true",
+        help=(
+            "hidden repr only: pool every requested layer from one forward pass "
+            "per batch instead of one full pass per layer. Same batches, same "
+            "pooling, so the vectors match the per-layer path; only the number "
+            "of forward passes changes (1 instead of len(layers))."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -206,6 +215,67 @@ def extract_hidden_embeddings(
         )
         embeddings.append(pooled.detach().cpu().float().numpy().astype(np.float32))
     return np.concatenate(embeddings, axis=0)
+
+
+@torch.no_grad()
+def extract_hidden_embeddings_one_pass(
+    model,
+    tokenizer,
+    paths: List[str],
+    layer_indices: List[int],
+    max_length: int,
+    batch_size: int,
+    pooling: str,
+    token_probs: Optional[Dict[int, float]],
+    sif_a: float,
+    special_ids: set,
+    token_keep_lookup: Optional[np.ndarray],
+    device: str,
+    is_decoder: bool = False,
+) -> Dict[int, np.ndarray]:
+    """:func:`extract_hidden_embeddings` for many layers at once.
+
+    The per-layer function already asks for every hidden state and keeps one,
+    so calling it once per layer repeats the whole forward pass ``len(layers)``
+    times. This runs the pass once per batch and pools each requested layer from
+    it. Batches are cut from ``paths`` in the same order and size, so padding and
+    therefore every pooled vector is the same as on the per-layer path.
+    """
+    pooled_by_layer: Dict[int, List[np.ndarray]] = {layer: [] for layer in layer_indices}
+    for start in range(0, len(paths), batch_size):
+        batch_paths = paths[start: start + batch_size]
+        batch_texts = load_texts(batch_paths)
+        enc = tokenizer(
+            batch_texts,
+            truncation=True,
+            max_length=max_length,
+            padding=True,
+            return_tensors="pt",
+        )
+        input_ids = enc["input_ids"].to(device)
+        attention_mask = enc["attention_mask"].to(device)
+        outputs = model(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            output_hidden_states=True,
+            return_dict=True,
+        )
+        for layer_idx in layer_indices:
+            pooled = pool_embeddings(
+                outputs.hidden_states[layer_idx], attention_mask, pooling,
+                input_ids=input_ids,
+                token_probs=token_probs,
+                sif_a=sif_a,
+                special_ids=special_ids,
+                token_keep_lookup=token_keep_lookup,
+                is_decoder=is_decoder,
+            )
+            pooled_by_layer[layer_idx].append(
+                pooled.detach().cpu().float().numpy().astype(np.float32)
+            )
+    return {
+        layer: np.concatenate(chunks, axis=0) for layer, chunks in pooled_by_layer.items()
+    }
 
 
 @torch.no_grad()
@@ -375,6 +445,7 @@ def main() -> None:
         "sif_a": args.sif_a,
         "split_csv": args.split_csv,
         "half_precision": args.half_precision,
+        "one_pass": bool(args.one_pass),
         "num_model_layers": num_layers,
         "timestamp": run_id,
         "device": device,
@@ -389,6 +460,37 @@ def main() -> None:
         suffix = "_lasttok"
     else:
         suffix = "_sif"
+
+    if args.one_pass and args.repr != "hidden":
+        raise SystemExit("--one_pass supports --repr hidden only")
+
+    def save_layer(layer_num: int, emb: np.ndarray) -> None:
+        emb_norm = l2_normalize(emb)
+        np.save(run_dir / f"{repr_prefix}_layer{layer_num}_embeddings{suffix}.npy", emb)
+        np.save(run_dir / f"{repr_prefix}_layer{layer_num}_embeddings{suffix}_norm.npy", emb_norm)
+        print(f"  Layer {layer_num}: shape={emb.shape}")
+
+    if args.one_pass:
+        print(f"Extracting hidden layers {layers} ({args.pooling}) in one pass...")
+        by_layer = extract_hidden_embeddings_one_pass(
+            model=model,
+            tokenizer=tokenizer,
+            paths=paths,
+            layer_indices=layers,
+            max_length=args.max_length,
+            batch_size=args.batch_size,
+            pooling=args.pooling,
+            token_probs=token_probs,
+            sif_a=args.sif_a,
+            special_ids=special_ids,
+            token_keep_lookup=token_keep_lookup,
+            device=device,
+            is_decoder=is_decoder,
+        )
+        for layer_num in layers:
+            save_layer(layer_num, by_layer[layer_num])
+        print(f"Done. Run dir: {run_dir}")
+        return
 
     for layer_num in layers:
         print(f"Extracting {args.repr} layer {layer_num} ({args.pooling})...")
@@ -427,10 +529,7 @@ def main() -> None:
                 is_decoder=is_decoder,
             )
 
-        emb_norm = l2_normalize(emb)
-        np.save(run_dir / f"{repr_prefix}_layer{layer_num}_embeddings{suffix}.npy", emb)
-        np.save(run_dir / f"{repr_prefix}_layer{layer_num}_embeddings{suffix}_norm.npy", emb_norm)
-        print(f"  Layer {layer_num}: shape={emb.shape}")
+        save_layer(layer_num, emb)
 
     print(f"Done. Run dir: {run_dir}")
 
