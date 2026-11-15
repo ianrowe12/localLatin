@@ -316,9 +316,16 @@ class FeedbackDB:
         self._qid_to_xml: dict[int, str] | None = None
         self._xml_to_qid: dict[str, int] | None = None
 
-    async def connect(self) -> None:
+    async def connect(self, *, read_only: bool = False) -> None:
+        """Open the database; read-only exports must not migrate or create it."""
         async with self._connection_lock:
             if self._db is not None:
+                return
+            if read_only:
+                self._db = await aiosqlite.connect(
+                    self.db_path.resolve().as_uri() + "?mode=ro", uri=True
+                )
+                self._db.row_factory = aiosqlite.Row
                 return
             await self._open_connection()
 

@@ -1,0 +1,68 @@
+name: Export encrypted review snapshot
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deploy-refs/heads/main
+  cancel-in-progress: false
+
+jobs:
+  export:
+    name: Freeze review data on the production host
+    runs-on:
+      - self-hosted
+      - locallatin
+      - production
+    if: github.ref == 'refs/heads/main' && vars.ENABLE_PRODUCTION_DEPLOY == 'true'
+    timeout-minutes: 20
+    steps:
+      - name: Check out reviewed export code
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          persist-credentials: false
+          filter: blob:none
+          sparse-checkout: |
+            scripts/webapp
+            web
+
+      - name: Build and encrypt snapshot
+        env:
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          ENABLE_PRODUCTION_DEPLOY: ${{ vars.ENABLE_PRODUCTION_DEPLOY }}
+          REVIEW_SNAPSHOT_PUBKEY_PEM: ${{ vars.REVIEW_SNAPSHOT_PUBKEY_PEM }}
+          LOCALLATIN_SMOKE_USERNAME: ${{ secrets.LOCALLATIN_SMOKE_USERNAME }}
+        run: |
+          set -euo pipefail
+          umask 077
+          DEPLOY_PATH="${DEPLOY_PATH:-/homes/ipro222/localLatin}"
+          # A known per-run parent lets the always() step clean plaintext
+          # after cancellation as well as normal Python error cleanup.
+          export TMPDIR="${RUNNER_TEMP}/review-snapshot-work-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -m 700 -- "${TMPDIR}"
+          "${DEPLOY_PATH}/.venv/bin/python" scripts/webapp/review_snapshot.py export \
+            --deploy-path="${DEPLOY_PATH}" \
+            --output="${RUNNER_TEMP}/review-snapshot-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
+      # Explicit filenames only. Never upload the DB, staging tree or manifest.
+      - name: Upload public ciphertext
+        uses: actions/upload-artifact@v4
+        with:
+          name: encrypted-review-snapshot
+          path: |
+            ${{ runner.temp }}/review-snapshot-${{ github.run_id }}-${{ github.run_attempt }}/review-snapshot.tar.gz.enc
+            ${{ runner.temp }}/review-snapshot-${{ github.run_id }}-${{ github.run_attempt }}/review-snapshot.key.enc
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Remove local snapshot staging
+        if: always()
+        run: |
+          rm -f -- \
+            "${RUNNER_TEMP}/review-snapshot-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}/review-snapshot.tar.gz.enc" \
+            "${RUNNER_TEMP}/review-snapshot-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}/review-snapshot.key.enc"
+          rm -rf -- "${RUNNER_TEMP:?}/review-snapshot-work-${GITHUB_RUN_ID:?}-${GITHUB_RUN_ATTEMPT:?}"
