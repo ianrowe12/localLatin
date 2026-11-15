@@ -131,3 +131,99 @@ def test_parity_compare_matches_by_filename(tmp_path):
     assert parity.compare(tmp_path / "cache", tmp_path / "fresh", "_lasttok", 0.9999) == 0
     np.save(tmp_path / "fresh" / "hidden_layer1_embeddings_lasttok.npy", emb[[0, 1]])
     assert parity.compare(tmp_path / "cache", tmp_path / "fresh", "_lasttok", 0.9999) == 1
+
+
+# --- whitening (issue #289 round 1: rank-deficient fits) -----------------------
+
+MODEL = "toy/model"
+
+
+def _toy_ctx(tmp_path: Path, n_train: int, dim: int, n_query: int = 6) -> dict:
+    """Labelled and unlabelled caches for one model at layer 1, plus a score ctx."""
+    rng = np.random.default_rng(7)
+    n_lab = 2 * n_train
+    lab_names = [f"l{i}.txt" for i in range(n_lab)]
+    q_names = [f"q{i}.txt" for i in range(n_query)]
+    split = pd.DataFrame({
+        "filename": lab_names,
+        "folder_id": [f"D{i % (n_train // 2)}" for i in range(n_lab)],
+        "split": ["train"] * n_train + ["test"] * n_train,
+    })
+    qmeta = pd.DataFrame({"filename": q_names})
+    for bases, names, n in (("lab", lab_names, n_lab), ("unlab", q_names, n_query)):
+        _write_cache(tmp_path / bases / sd.slug(MODEL) / "hidden_mean_tokempty", names,
+                     rng.normal(size=(n, dim)).astype(np.float32))
+    train = split["split"].values == "train"
+    return {
+        "labelled_bases": tmp_path / "lab", "unlabelled_bases": tmp_path / "unlab",
+        "lab_resolver": sd.AlignmentResolver(split),
+        "unlab_resolver": sd.AlignmentResolver(qmeta),
+        "dir_names": list(dict.fromkeys(split["folder_id"])),
+        "folder_ids": split["folder_id"].values, "train_mask": train,
+        "train_fids": split.loc[train, "folder_id"].values,
+        "lab_blank": np.zeros(n_lab, bool), "unlab_blank": np.zeros(n_query, bool),
+    }
+
+
+def test_rank_deficient_whitening_is_marked_not_scored(tmp_path):
+    ctx = _toy_ctx(tmp_path, n_train=12, dim=16)  # n_train <= d, like the 1024-d models
+    res = sd.score_one(MODEL, "whitening", 1, None, ctx)
+    assert res.get("status") == "not_applicable_rank_deficient"
+    assert "scores" not in res
+    assert "n_train=12 <= d=16" in res["reason"]
+    with pytest.raises(sd.RankDeficientWhitening):
+        sd.paper_whitening(np.zeros((16, 16), np.float32))  # n_train == d is deficient too
+
+
+def test_full_rank_whitening_is_scored(tmp_path):
+    ctx = _toy_ctx(tmp_path, n_train=40, dim=8)
+    res = sd.score_one(MODEL, "whitening", 1, None, ctx)
+    assert res["status"] == sd.SCORED
+    assert np.isfinite(res["scores"]).all()
+    # Whitened at the cache's float32, as the paper does, not on a float64 copy.
+    lab = ctx["lab_resolver"].load(sd.emb_path(ctx["labelled_bases"], MODEL, "mean", 1))
+    unlab = ctx["unlab_resolver"].load(sd.emb_path(ctx["unlabelled_bases"], MODEL, "mean", 1))
+    lab_w, unlab_w = sd.paper_whitening(lab[ctx["train_mask"]], lab, unlab)
+    want = sd.directory_scores(sd.l2_normalize(lab_w), sd.l2_normalize(unlab_w),
+                               ctx["folder_ids"], ctx["dir_names"], np.zeros(len(lab), bool))
+    np.testing.assert_array_equal(res["scores"], want)
+
+
+def test_whitening_is_the_paper_evaluators_whitening():
+    """Same transform and precision as run_resubmit_evaluate.evaluate_single."""
+    import run_resubmit_evaluate as paper
+
+    rng = np.random.default_rng(3)
+    n, dim = 60, 12
+    emb = (rng.normal(size=(n, dim)) * np.geomspace(1, 1e-3, dim)).astype(np.float32)
+    split = pd.DataFrame({"split": ["train", "test"] * (n // 2),
+                          "folder_id": [f"D{i // 4}" for i in range(n)]})
+    test = split["split"] == "test"
+    split["has_test_partner"] = False
+    split.loc[test, "has_test_partner"] = sd.has_partner_flags(
+        split.loc[test, "folder_id"].values)
+    want = paper.evaluate_single(emb, split, "whitening", 0, 0.0, "m", "hidden", "mean", 1, [1])
+
+    train_mask = (split["split"] == "train").values
+    tr, te = sd.paper_whitening(emb[train_mask], emb[train_mask], emb[~train_mask])
+    assert tr.dtype == np.float32
+    got = paper.evaluate_from_similarity(
+        train_sim=sd.similarity_matrix(sd.l2_normalize(tr)),
+        test_sim=sd.similarity_matrix(sd.l2_normalize(te)),
+        train_folder_ids=split.loc[train_mask, "folder_id"].values,
+        test_folder_ids=split.loc[~train_mask, "folder_id"].values,
+        test_has_partner=split.loc[~train_mask, "has_test_partner"].values.astype(bool),
+    )
+    assert got == {k: want[k] for k in got}
+
+
+def test_not_applicable_rows_carry_the_marker_and_no_number():
+    q = pd.DataFrame({"status": ["agreed", "conflict", "agreed"],
+                      "seen_group": ["a", "a", "b"]})
+    sets = {"agreed": q["status"] == "agreed"}
+    rows = pd.DataFrame(sd.not_applicable_rows(q, sets, "M", "whitening", 5, "why"))
+    assert set(rows["seen_group"]) == {"all", "a", "b"}
+    assert (rows["status"] == sd.NOT_APPLICABLE).all() and rows["value"].isna().all()
+    head = sd.headline_table(rows)
+    assert len(head) == 1 and head["status"].iloc[0] == sd.NOT_APPLICABLE
+    assert head[["acc@1", "mrr"]].isna().all(axis=None)

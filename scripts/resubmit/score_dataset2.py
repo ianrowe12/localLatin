@@ -44,6 +44,22 @@ same CSV.
 Dataset 2 has no "new text" queries with ground truth, so ranking is over the
 840 directories only, without the paper's ``__NEW__`` pseudo-directory; the
 threshold tau plays no part.
+
+Whitening
+---------
+Whitening is the paper's own (``run_resubmit_evaluate.py``, ``evaluate_single``):
+``PCA(whiten=True)`` fit on the train rows, then ``transform``, in the cache's
+dtype (float32). It is undefined when the train covariance is rank deficient:
+centred, n_train rows span at most n_train - 1 directions, so with
+n_train <= d at least one direction has zero variance, and dividing by its
+square root lets that one direction swamp every vector outside the fit. That is
+Qwen3-0.6B (1024-d), KaLM-mini (896-d) and Qwen3-8B (4096-d) against 847 train
+files. Those cells are written as ``not_applicable_rank_deficient`` with the
+reason and no number, in every output. The test is n_train <= d alone: an
+eigenvalue-ratio threshold cannot separate the cases in float32, where LaBSE
+layer 12's healthy fit has a smaller ratio (6e-14: a near-null direction that
+every vector shares, so whitening it does no harm) than Qwen3-0.6B layer 5's
+degenerate one (2e-12). How the paper reports whitening for d >= n is issue #291, not here.
 """
 from __future__ import annotations
 
@@ -131,6 +147,8 @@ NONE_MARKER = "(none_of_top_k)"
 UNRESOLVED_MARKER = "(unresolved)"
 LIST_SEPARATOR = " | "
 DECISION_OUTCOMES = ("matched_rank", "none_of_top_k")
+SCORED = "scored"
+NOT_APPLICABLE = "not_applicable_rank_deficient"
 
 DEFAULTS = {
     "split_csv": "runs/active/resubmit/data/phase_resubmit_split.csv",
@@ -181,6 +199,29 @@ def key_to_dir_index(dir_names: Sequence[str]) -> Dict[str, int]:
 # --- post-processing ---------------------------------------------------------
 
 
+class RankDeficientWhitening(ValueError):
+    """Whitening was asked for on a train set that cannot define it."""
+
+
+def whitening_rank_deficiency(n_train: int, dim: int) -> Optional[str]:
+    """The reason whitening is undefined for an (n_train, dim) fit, or None."""
+    if n_train <= dim:
+        return (f"train covariance rank deficient: n_train={n_train} <= d={dim}, "
+                f"so centred train rows span at most {n_train - 1} of {dim} directions")
+    return None
+
+
+def paper_whitening(train: np.ndarray, *arrays: np.ndarray) -> Tuple[np.ndarray, ...]:
+    """``run_resubmit_evaluate.evaluate_single``'s whitening: fit on train, then
+    transform, at the input dtype. Raises on a rank-deficient fit."""
+    reason = whitening_rank_deficiency(*train.shape)
+    if reason:
+        raise RankDeficientWhitening(reason)
+    pca = PCA(whiten=True)
+    pca.fit(train)
+    return tuple(pca.transform(a) for a in arrays)
+
+
 def post_process(
     method_post: str, lab: np.ndarray, unlab: np.ndarray, train_mask: np.ndarray,
     train_folder_ids: np.ndarray, d_override: Optional[int] = None,
@@ -199,8 +240,8 @@ def post_process(
         cleaner = EmbeddingCleaner(num_components=D, center=True).fit(train)
         return cleaner.transform(lab), cleaner.transform(unlab), D
     if method_post == "whitening":
-        pca = PCA(whiten=True).fit(train)
-        return pca.transform(lab), pca.transform(unlab), None
+        lab_w, unlab_w = paper_whitening(train, lab, unlab)
+        return lab_w, unlab_w, None
     raise ValueError(method_post)
 
 
@@ -246,19 +287,25 @@ def _select_layer_job(job) -> List[Dict]:
     path = emb_path(Path(bases), QWEN8B, pooling, layer)
     if not path.exists():
         return []
-    emb = AlignmentResolver(split).load(path).astype(np.float64)
+    native = AlignmentResolver(split).load(path)
+    emb = native.astype(np.float64)
     train_mask = split["split"].values == "train"
     fids = split.loc[train_mask, "folder_id"].values
     train = emb[train_mask]
     rows = []
 
-    def row(method, D, score):
+    def row(method, D, score, status=SCORED, reason=""):
         rows.append({"model": QWEN8B, "repr": "hidden", "pooling": pooling, "layer": layer,
-                     "method": method, "D": D, TRAIN_METRIC: score})
+                     "method": method, "D": D, TRAIN_METRIC: score,
+                     "status": status, "reason": reason})
 
     if pooling == "mean":
         row("baseline", None, _train_score(train, fids))
-        row("whitening", None, _train_score(PCA(whiten=True).fit_transform(train), fids))
+        try:
+            (white,) = paper_whitening(native[train_mask], native[train_mask])
+            row("whitening", None, _train_score(white, fids))
+        except RankDeficientWhitening as e:
+            row("whitening", None, float("nan"), NOT_APPLICABLE, str(e))
     if pooling == "sif":
         row("sif_only", None, _train_score(train, fids))
     prefix = "sif_" if pooling == "sif" else ""
@@ -318,6 +365,18 @@ def select_layers(results_csv: Path, qwen8b_csv: Path) -> pd.DataFrame:
             if sub.empty:
                 continue
             sub = sub.sort_values("layer", kind="stable")
+            if sub[TRAIN_METRIC].isna().all():
+                # No layer has a train score (whitening with n_train <= d at
+                # every layer), so there is nothing to select.
+                reasons = sub["reason"].dropna() if "reason" in sub else []
+                rows.append({
+                    "model": model, "display": DISPLAY[model], "method": method,
+                    "pooling": pooling, "layer": None, "D": None, TRAIN_METRIC: None,
+                    "source": src, "status": NOT_APPLICABLE,
+                    "reason": "every layer: " + (reasons.iloc[0] if len(reasons)
+                                                 else "no train score"),
+                })
+                continue
             best = sub.loc[sub[TRAIN_METRIC].idxmax()]
             D = best["D"]
             rows.append({
@@ -325,8 +384,11 @@ def select_layers(results_csv: Path, qwen8b_csv: Path) -> pd.DataFrame:
                 "pooling": pooling, "layer": int(best["layer"]),
                 "D": (int(D) if METHODS[method][1].startswith("abtt") and not pd.isna(D) else None),
                 TRAIN_METRIC: float(best[TRAIN_METRIC]), "source": src,
+                "status": SCORED, "reason": "",
             })
     sel = pd.DataFrame(rows)
+    sel["layer"] = sel["layer"].astype("Int64")
+    sel["D"] = sel["D"].astype("Int64")
 
     bad = []
     for model, layers in PAPER_ROUTING_LAYERS.items():
@@ -421,23 +483,33 @@ def bootstrap(ranks: np.ndarray, idx: np.ndarray) -> Dict[str, Tuple[float, floa
 def score_one(
     model: str, method: str, layer: int, D: Optional[int], ctx: Dict,
 ) -> Optional[Dict]:
+    """Directory scores for one cell, or ``{"status": NOT_APPLICABLE, ...}``."""
     pooling, post = METHODS[method]
     lab_p = emb_path(ctx["labelled_bases"], model, pooling, layer)
     unlab_p = emb_path(ctx["unlabelled_bases"], model, pooling, layer)
     if not lab_p.exists() or not unlab_p.exists():
         print(f"  {model} {method} L{layer}: missing {lab_p if not lab_p.exists() else unlab_p}")
         return None
-    lab = ctx["lab_resolver"].load(lab_p).astype(np.float64)
-    unlab = ctx["unlab_resolver"].load(unlab_p).astype(np.float64)
+    lab_native = ctx["lab_resolver"].load(lab_p)
+    unlab_native = ctx["unlab_resolver"].load(unlab_p)
+    lab = lab_native.astype(np.float64)
+    unlab = unlab_native.astype(np.float64)
     exclude_lab = ctx["lab_blank"] | zero_norm_mask(lab)
     exclude_q = ctx["unlab_blank"] | zero_norm_mask(unlab)
-    lab, unlab, D_used = post_process(post, lab, unlab, ctx["train_mask"],
-                                      ctx["train_fids"], d_override=D)
+    if post == "whitening":
+        # The paper whitens the cache as loaded (float32), not a float64 copy.
+        lab, unlab = lab_native, unlab_native
+    try:
+        lab, unlab, D_used = post_process(post, lab, unlab, ctx["train_mask"],
+                                          ctx["train_fids"], d_override=D)
+    except RankDeficientWhitening as e:
+        return {"status": NOT_APPLICABLE, "reason": str(e), "D": None,
+                "excluded_queries": exclude_q, "excluded_refs": exclude_lab}
     scores = directory_scores(l2_normalize(lab), l2_normalize(unlab), ctx["folder_ids"],
                               ctx["dir_names"], exclude_lab)
     scores[exclude_q] = np.nan
-    return {"scores": scores, "D": D_used, "excluded_queries": exclude_q,
-            "excluded_refs": exclude_lab}
+    return {"status": SCORED, "reason": "", "scores": scores, "D": D_used,
+            "excluded_queries": exclude_q, "excluded_refs": exclude_lab}
 
 
 def save_ranking(path: Path, res: Dict, model: str, method: str, layer: int, ctx: Dict) -> None:
@@ -561,24 +633,39 @@ def cmd_score(args) -> None:
     per_query = q[["xml_id", "status", "seen_group", "unmapped_keys"]].copy()
     acc_rows, nokey_rows = [], []
     for _, s in sel.iterrows():
-        model, method, layer = s["model"], s["method"], int(s["layer"])
+        model, method = s["model"], s["method"]
+        layer = None if pd.isna(s["layer"]) else int(s["layer"])
         D = None if pd.isna(s["D"]) else int(s["D"])
+        col = f"{DISPLAY[model]}|{method}"
+        ranking_path = out / "rankings" / f"{slug(model)}__{method}.npz"
         print(f"Scoring {DISPLAY[model]} {method} L{layer} D{D}", flush=True)
         # D is re-tuned on train rather than read from the CSV, and the two are
         # compared: a mismatch would mean the cache is not what the paper scored.
-        res = score_one(model, method, layer, None, ctx)
+        if layer is None:
+            res = {"status": s["status"], "reason": s["reason"], "D": None}
+        else:
+            res = score_one(model, method, layer, None, ctx)
         if res is None:
+            continue
+        sel.loc[s.name, ["status", "reason"]] = [res["status"], res["reason"]]
+        if res["status"] == NOT_APPLICABLE:
+            print(f"  {NOT_APPLICABLE}: {res['reason']}")
+            ranking_path.unlink(missing_ok=True)  # never leave a stale ranking behind
+            per_query[f"rank:{col}"] = NOT_APPLICABLE
+            acc_rows += not_applicable_rows(q, label_sets, DISPLAY[model], method, layer,
+                                            res["reason"])
+            nokey_rows.append({"model": DISPLAY[model], "method": method, "layer": layer,
+                               "status": NOT_APPLICABLE, "reason": res["reason"]})
             continue
         sel.loc[s.name, "D_retuned"] = res["D"]
         if METHODS[method][1] == "abtt_optimal" and D is not None and res["D"] != D:
             print(f"  WARNING: re-tuned D {res['D']} != recorded D {D}")
-        save_ranking(out / "rankings" / f"{slug(model)}__{method}.npz", res, model, method, layer, ctx)
+        save_ranking(ranking_path, res, model, method, layer, ctx)
         order = rank_order(np.nan_to_num(res["scores"], nan=-np.inf))
         excl = res["excluded_queries"]
         rows = q["query_row"].values
         ranks = ranks_of(order, q["label_cols"].tolist(), rows)
         ranks[excl[rows]] = np.nan
-        col = f"{DISPLAY[model]}|{method}"
         per_query[f"rank:{col}"] = ranks
 
         for set_name, mask in label_sets.items():
@@ -603,6 +690,7 @@ def cmd_score(args) -> None:
                         "model": DISPLAY[model], "method": method, "layer": layer,
                         "D": res["D"], "metric": m, "value": v,
                         "ci_lo": ci[m][0], "ci_hi": ci[m][1],
+                        "status": SCORED, "reason": "",
                     })
 
         nk = (q["status"] == "no_key").values
@@ -629,19 +717,19 @@ def cmd_score(args) -> None:
             "n_single_seen_model": n_seen,
             "top1_in_seen_served_top10": in_seen,
             "frac_in_seen_served_top10": in_seen / n_seen if n_seen else float("nan"),
+            "status": SCORED, "reason": "",
         })
 
     sel.to_csv(out / "results" / "selected_layers.csv", index=False)
     acc = pd.DataFrame(acc_rows)
+    for c in ("layer", "D", "n_excluded"):
+        acc[c] = acc[c].astype("Int64")
     acc.to_csv(out / "results" / "accuracy_long.csv", index=False)
     nokey = pd.DataFrame(nokey_rows)
+    nokey["layer"] = nokey["layer"].astype("Int64")
     nokey.to_csv(out / "results" / "nokey_top1_vs_served.csv", index=False)
     per_query.to_csv(out / "results" / "per_query_ranks.csv", index=False)
-
-    head = acc[(acc["seen_group"] == "all")].pivot_table(
-        index=["label_set", "model", "method", "layer", "D", "n"], columns="metric",
-        values="value", dropna=False).reset_index()
-    head.to_csv(out / "results" / "headline.csv", index=False)
+    headline_table(acc).to_csv(out / "results" / "headline.csv", index=False)
 
     counts = {
         "queries_with_snapshot_row": int(len(q)),
@@ -659,6 +747,37 @@ def cmd_score(args) -> None:
     print(f"Done -> {out / 'results'}")
 
 
+def not_applicable_rows(q: pd.DataFrame, label_sets: Dict[str, pd.Series], display: str,
+                        method: str, layer: Optional[int], reason: str) -> List[Dict]:
+    """accuracy_long rows for a cell with no number: same keys, value left empty."""
+    rows = []
+    for set_name, mask in label_sets.items():
+        groups = {"all": mask.values}
+        for g in sorted(q.loc[mask, "seen_group"].unique()):
+            groups[g] = (mask & (q["seen_group"] == g)).values
+        for g, gmask in groups.items():
+            if not gmask.any():
+                continue
+            for m in [f"acc@{k}" for k in KS] + ["mrr"]:
+                rows.append({
+                    "label_set": set_name, "seen_group": g, "n": int(gmask.sum()),
+                    "n_excluded": None, "model": display, "method": method,
+                    "layer": layer, "D": None, "metric": m, "value": None,
+                    "ci_lo": None, "ci_hi": None, "status": NOT_APPLICABLE,
+                    "reason": reason,
+                })
+    return rows
+
+
+def headline_table(acc: pd.DataFrame) -> pd.DataFrame:
+    """One row per (label set, model, method) over all queries; metrics as columns."""
+    keys = ["label_set", "model", "method", "layer", "D", "n", "status", "reason"]
+    sub = acc[acc["seen_group"] == "all"]
+    wide = sub.pivot(index=["label_set", "model", "method"], columns="metric", values="value")
+    meta = sub.drop_duplicates(["label_set", "model", "method"])[keys]
+    return meta.merge(wide.reset_index(), on=["label_set", "model", "method"], how="left")
+
+
 def write_summary(path: Path, acc, nokey, sel, sanity, counts) -> None:
     def fmt(v, lo, hi):
         return f"{v:.3f} [{lo:.3f}, {hi:.3f}]"
@@ -667,7 +786,11 @@ def write_summary(path: Path, acc, nokey, sel, sanity, counts) -> None:
              "Layers and D selected on benchmark v1 train (see `selected_layers.csv`).",
              "Ranking over the 840 labelled directories; 95% percentile bootstrap CIs.", "",
              f"Counts: `{json.dumps(counts)}`", "",
-             f"Sanity: `{json.dumps(sanity)}`", ""]
+             f"Sanity: `{json.dumps(sanity)}`", "",
+             "Whitening is the paper's (`PCA(whiten=True)` fit on the train rows, float32).",
+             f"A cell marked `{NOT_APPLICABLE}` has no number: with n_train <= d the train",
+             "covariance has a zero-variance direction, and whitening by it collapses every",
+             "query onto a few directories. Paper-side handling is issue #291.", ""]
     for set_name in ("agreed", "agreed_plus_conflict", "conflict"):
         sub = acc[(acc["label_set"] == set_name) & (acc["seen_group"] == "all")]
         if sub.empty:
@@ -679,11 +802,18 @@ def write_summary(path: Path, acc, nokey, sel, sanity, counts) -> None:
         for (model, method), g in sub.groupby(["model", "method"], sort=False):
             g = g.set_index("metric")
             D = g["D"].iloc[0]
+            layer = g["layer"].iloc[0]
+            layer = "" if pd.isna(layer) else int(layer)
+            if g["status"].iloc[0] == NOT_APPLICABLE:
+                lines.append(f"| {model} | {method} | {layer} | | {NOT_APPLICABLE}: "
+                             f"{g['reason'].iloc[0]} | | | |")
+                continue
             cells = [fmt(g.loc[m, "value"], g.loc[m, "ci_lo"], g.loc[m, "ci_hi"])
                      for m in ("acc@1", "acc@5", "acc@10", "mrr")]
-            lines.append(f"| {model} | {method} | {int(g['layer'].iloc[0])} | "
+            lines.append(f"| {model} | {method} | {layer} | "
                          f"{'' if pd.isna(D) else int(D)} | " + " | ".join(cells) + " |")
         lines.append("")
+    nokey = nokey.astype(object).where(nokey.notna(), "")  # no "nan" in place of a number
     try:
         table = nokey.to_markdown(index=False)
     except ImportError:  # tabulate is optional
