@@ -42,7 +42,7 @@ Use encrypted local storage for the decrypted data.
 | `ccl_key_assignments.csv` | The API's resolved CCL table, using the same resolver and served rankings for legacy multi-rank picks, with pseudonyms instead of reviewer names |
 | `reviewer_dirs.csv` | Directory id, seed query/witness, model, variant, CCL key, creation timestamp and pseudonymised creator |
 | `reviewer_dir_members.csv` | Directory membership decisions, stored query/witness, membership role, timestamp and pseudonymised author |
-| `manifest.json` | Snapshot schema version, UTC creation time, deployed git SHA, installed data release, webapp corpus digest, per-file row counts, outcome counts, distinct reviewed witnesses, feedback reviewer count, smoke/test feedback count and SHA256 of each CSV |
+| `manifest.json` | Snapshot schema version, UTC creation time, deployed `git_sha`, `exporter_git_sha` from the workflow checkout, installed data release, webapp corpus digest, per-file row counts, outcome counts, distinct reviewed queries, feedback reviewer count, smoke/test feedback count and SHA256 of each CSV |
 
 All three decision logs have `reviewer`, `reviewer_role` (current account role,
 or `unknown` for legacy/deleted accounts) and `is_smoke_or_test`. The membership
@@ -97,6 +97,8 @@ RHEL 8's OpenSSL 1.1.1 and RHEL 9/macOS OpenSSL 3. Older RHEL 7 OpenSSL and some
 LibreSSL versions lack PBKDF2 and are refused. See the upstream
 [OpenSSL enc manual](https://docs.openssl.org/3.2/man1/openssl-enc/), including its
 compatibility note about not using an explicit `-S` salt across OpenSSL versions.
+The portable encryption, helper round trip and tamper checks run in CI on Linux
+and macOS with OpenSSL 3, independently of the webapp's Python dependencies.
 
 Pseudonymisation is not anonymity: review timestamps, source identifiers and
 decisions may still allow inference by someone with outside knowledge. The

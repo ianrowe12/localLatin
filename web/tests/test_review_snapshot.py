@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import csv
-import json
 import os
-from pathlib import Path
 import sqlite3
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -67,7 +66,7 @@ def production(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
             "VALUES (731041, 'PRIVATE session token', '2099-01-01')"
         )
         rows = [
-            (0, "query-0", "matched_rank", 1, "candidate-a", "[1]", '["candidate-a"]',
+            (0, None, "matched_rank", 1, "candidate-a", "[1]", '["candidate-a"]',
              None, "Alice Scholar", 731041, "sif_abtt"),
             (0, "query-0", "none_of_top_k", 0, None, None, None,
              "candidate-b", "Automated Runner", 731042, "sif_abtt"),
@@ -142,7 +141,7 @@ def test_bundle_redaction_pseudonyms_and_manifest(production, tmp_path: Path) ->
     work, bundle, manifest = build(production, tmp_path)
     for private in PRIVATE_STRINGS:
         grep = subprocess.run(
-            ["grep", "-r", "-F", "--", private, str(bundle)], capture_output=True
+            ["grep", "-r", "-F", "--", private, str(bundle)], capture_output=True, check=False
         )
         assert grep.returncode == 1, private
     assert {p.name for p in bundle.iterdir()} == {*snapshot.FILES, "manifest.json"}
@@ -251,38 +250,6 @@ def keypair(tmp_path_factory: pytest.TempPathFactory):
     return private, public
 
 
-def test_encrypt_decrypt_helper_and_tamper_checks(production, tmp_path: Path, keypair) -> None:
-    work, bundle, _ = build(production, tmp_path)
-    private, public = keypair
-    artifact = tmp_path / "artifact"
-    snapshot.encrypt_bundle(bundle, public, artifact, work)
-    assert {p.name for p in artifact.iterdir()} == {snapshot.CIPHERTEXT, snapshot.WRAPPED_KEY}
-    out = tmp_path / "decrypted"
-    helper = ROOT / "scripts/webapp/decrypt_review_snapshot.sh"
-    result = subprocess.run([str(helper), str(artifact), str(private), str(out)], capture_output=True)
-    assert result.returncode == 0, result.stderr
-    assert all((out / name).read_bytes() == (bundle / name).read_bytes()
-               for name in (*snapshot.FILES, "manifest.json"))
-    # Re-encrypt a modified CSV with its original manifest. Authentication
-    # succeeds but the helper must still refuse the stale file hash.
-    (bundle / "reviews.csv").write_text((bundle / "reviews.csv").read_text() + "tampered\n")
-    tampered = tmp_path / "tampered-artifact"
-    snapshot.encrypt_bundle(bundle, public, tampered, work)
-    refused = tmp_path / "refused"
-    result = subprocess.run([str(helper), str(tampered), str(private), str(refused)], capture_output=True)
-    assert result.returncode != 0
-    assert b"Manifest SHA256 verification failed" in result.stderr
-    assert not refused.exists()
-    ciphertext = artifact / snapshot.CIPHERTEXT
-    data = bytearray(ciphertext.read_bytes())
-    data[-1] ^= 1
-    ciphertext.write_bytes(data)
-    with pytest.raises(snapshot.SnapshotError, match="authentication failed"):
-        snapshot.decrypt_snapshot(artifact, private, refused)
-    assert not refused.exists()
-    assert not list(tmp_path.glob(".review-decrypt-*"))
-
-
 def test_export_cli_counts_only_cleanup_and_no_live_writes(
     production, tmp_path: Path, keypair
 ) -> None:
@@ -306,7 +273,7 @@ def test_export_cli_counts_only_cleanup_and_no_live_writes(
         sys.executable, str(ROOT / "scripts/webapp/review_snapshot.py"), "export",
         f"--deploy-path={root}", f"--output={artifact}",
     ]
-    result = subprocess.run(command, env=env, capture_output=True, text=True)
+    result = subprocess.run(command, env=env, capture_output=True, text=True, check=False)
     assert result.returncode == 0, result.stderr
     assert result.stdout.splitlines() == [
         "Feedback rows: 9", "Reviewed queries: 4", "Reviewers: 4", "Smoke/test rows: 1",
@@ -318,13 +285,13 @@ def test_export_cli_counts_only_cleanup_and_no_live_writes(
     # Invalid key failures must clean staging and never log the supplied text.
     env["REVIEW_SNAPSHOT_PUBKEY_PEM"] = "PRIVATE malformed key"
     command[-1] = f"--output={tmp_path / 'failed'}"
-    failed = subprocess.run(command, env=env, capture_output=True, text=True)
+    failed = subprocess.run(command, env=env, capture_output=True, text=True, check=False)
     assert failed.returncode != 0
     assert "PRIVATE" not in failed.stdout + failed.stderr
     assert list(staging.iterdir()) == []
     assert not (tmp_path / "failed").exists()
     env["ENABLE_PRODUCTION_DEPLOY"] = "false"
-    refused = subprocess.run(command, env=env, capture_output=True, text=True)
+    refused = subprocess.run(command, env=env, capture_output=True, text=True, check=False)
     assert refused.returncode != 0
     assert "disabled" in refused.stderr
 

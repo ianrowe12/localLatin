@@ -15,7 +15,6 @@ import hmac
 import json
 import logging
 import os
-from pathlib import Path
 import re
 import secrets
 import shutil
@@ -25,6 +24,11 @@ import sys
 import tarfile
 import tempfile
 from collections import Counter
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from web.config import Settings
 
 SCHEMA_VERSION = 1
 ITERATIONS = 200_000
@@ -44,7 +48,7 @@ DIR_COLUMNS = (
     "ccl_key", "created_at",
 )
 MEMBER_COLUMNS = ("id", "dir_id", "query_id", "xml_id", "role", "added_at")
-TEST_TOKEN = re.compile(r"(^|[^a-z0-9])(smoke|test|testing)([^a-z0-9]|$)", re.I)
+TEST_TOKEN = re.compile(r"(^|[^a-z0-9])(smoke|test|testing)([^a-z0-9]|$)", re.IGNORECASE)
 
 # Computed afresh for each SELECT, never stored as a table or Python lookup.
 # Account identity takes precedence over the historical display name, exactly
@@ -97,6 +101,16 @@ def sha256(path: Path) -> str:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def repository_sha(root: Path) -> str:
+    value = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "HEAD"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    if not re.fullmatch(r"[0-9a-f]{40}", value):
+        raise SnapshotError("Invalid repository git SHA.")
+    return value
 
 
 def backup_database(source: Path, destination: Path) -> None:
@@ -164,7 +178,7 @@ def write_csv(path: Path, columns: tuple[str, ...], rows: list[dict]) -> None:
         writer.writerows(rows)
 
 
-async def build_bundle(snapshot: Path, bundle: Path, settings, git_sha: str) -> dict:
+async def build_bundle(snapshot: Path, bundle: Path, settings: Settings, git_sha: str) -> dict:
     from web.services import ccl_key_export
     from web.services.data_store import build_store
     from web.services.feedback_db import FeedbackDB, corpus_digest
@@ -221,20 +235,23 @@ async def build_bundle(snapshot: Path, bundle: Path, settings, git_sha: str) -> 
     write_csv(bundle / FILES[2], (*DIR_COLUMNS, *extras), tables["reviewer_dirs"])
     write_csv(bundle / FILES[3], (*MEMBER_COLUMNS, *extras), tables["reviewer_dir_members"])
     reviewed = [r for r in reviews if r["outcome"] in ccl_key_export.DECISION_OUTCOMES]
+    reviewed_queries = set()
+    for row in reviewed:
+        filename = store.file_id_to_filename.get(row["query_id"])
+        witness = row["xml_id"] or (ccl_key_export.xml_id_of(filename) if filename else None)
+        reviewed_queries.add(("xml_id", witness) if witness else ("query_id", row["query_id"]))
     manifest = {
         "snapshot_schema_version": SCHEMA_VERSION,
         "created_at": created_at,
         "git_sha": git_sha,
+        "exporter_git_sha": repository_sha(Path(__file__).resolve().parents[2]),
         "data_release": store.data_release,
         "served_corpus_sha256": corpus_digest(store.file_id_to_filename),
         "row_counts": {filename: len(rows) for filename, rows in zip(FILES, (
             reviews, assignments, tables["reviewer_dirs"], tables["reviewer_dir_members"],
         ))},
         "rows_per_outcome": dict(sorted(Counter(r["outcome"] for r in reviews).items())),
-        "distinct_queries_reviewed": len({
-            r["xml_id"] or store.file_id_to_filename.get(r["query_id"], r["query_id"])
-            for r in reviewed
-        }),
+        "distinct_queries_reviewed": len(reviewed_queries),
         "reviewers": len({r["reviewer"] for r in reviews}),
         "is_smoke_or_test_rows": sum(r["is_smoke_or_test"] for r in reviews),
         "files": {name: sha256(bundle / name) for name in FILES},
@@ -378,12 +395,7 @@ def export_snapshot(deploy: Path, output: Path) -> None:
     public_pem = os.environ.get("REVIEW_SNAPSHOT_PUBKEY_PEM", "")
     if not public_pem:
         raise SnapshotError("REVIEW_SNAPSHOT_PUBKEY_PEM is required.")
-    git_sha = subprocess.run(
-        ["git", "-C", str(deploy), "rev-parse", "HEAD"],
-        capture_output=True, text=True, check=True,
-    ).stdout.strip()
-    if not re.fullmatch(r"[0-9a-f]{40}", git_sha):
-        raise SnapshotError("Invalid deployed git SHA.")
+    git_sha = repository_sha(deploy)
     with tempfile.TemporaryDirectory(prefix="review-snapshot-") as work:
         temp = Path(work)
         public_key = temp / "public.pem"
