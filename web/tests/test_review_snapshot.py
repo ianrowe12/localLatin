@@ -9,7 +9,9 @@ import os
 import sqlite3
 import subprocess
 import sys
+import threading
 import warnings
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -299,7 +301,10 @@ def test_export_cli_counts_only_cleanup_and_no_live_writes(
     env["ENABLE_PRODUCTION_DEPLOY"] = "false"
     refused = subprocess.run(command, env=env, capture_output=True, text=True, check=False)
     assert refused.returncode != 0
-    assert "stage=configure exception=SnapshotError" in refused.stderr
+    assert (
+        "stage=configure exception=SnapshotError: Production export is disabled."
+        in refused.stderr
+    )
 
 
 def test_read_only_feedback_connection_does_not_create_or_migrate(tmp_path: Path) -> None:
@@ -325,20 +330,37 @@ def test_read_only_feedback_connection_does_not_create_or_migrate(tmp_path: Path
     asyncio.run(run())
 
 
+@pytest.fixture
+def export_cli(production, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    monkeypatch.setattr(snapshot, "repository_sha", lambda root: "a" * 40)
+    monkeypatch.setenv("ENABLE_PRODUCTION_DEPLOY", "true")
+    monkeypatch.setenv("REVIEW_SNAPSHOT_PUBKEY_PEM", "unused public key")
+    monkeypatch.setattr(sys, "excepthook", sys.excepthook)
+    monkeypatch.setattr(snapshot.logging.root.manager, "disable", 0)
+    artifact = tmp_path / "artifact"
+    monkeypatch.setattr(sys, "argv", [
+        "review_snapshot.py", "export", f"--deploy-path={production[0]}",
+        f"--output={artifact}",
+    ])
+    return artifact
+
+
 @pytest.mark.parametrize(("stage", "error"), [
     ("deploy_sha", subprocess.CalledProcessError(1, ["PRIVATE deployed path"])),
     ("backup", OSError("PRIVATE path")),
     ("pseudonymise", sqlite3.IntegrityError("UNIQUE constraint failed: feedback.id")),
     ("load_store", ValueError("PRIVATE loader value")),
     ("load_store", RuntimeError("PRIVATE corpus mismatch")),
+    ("load_store", KeyError("PRIVATE loader key")),
+    ("load_store", TypeError("PRIVATE loader type")),
+    ("load_store", ImportError("PRIVATE loader import")),
     ("ccl_assignments", sqlite3.OperationalError("no such column: missing_column")),
     ("write_bundle", ValueError("PRIVATE row value")),
     ("exporter_sha", subprocess.CalledProcessError(1, ["PRIVATE runner path"])),
     ("encrypt", subprocess.CalledProcessError(1, ["PRIVATE command"])),
-    ("encrypt", snapshot.SnapshotError("PRIVATE validation value")),
 ])
 def test_export_failure_diagnostics_are_private(
-    production, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys,
+    production, export_cli: Path, monkeypatch: pytest.MonkeyPatch, capsys,
     stage: str, error: Exception,
 ) -> None:
     from web.services import data_store
@@ -355,7 +377,6 @@ def test_export_failure_diagnostics_are_private(
             return "a" * 40
         fail()
 
-    monkeypatch.setattr(snapshot, "repository_sha", lambda root: "a" * 40)
     targets = {
         "deploy_sha": (snapshot, "repository_sha", fail),
         "backup": (snapshot, "backup_database", fail),
@@ -367,22 +388,138 @@ def test_export_failure_diagnostics_are_private(
         "encrypt": (snapshot, "encrypt_bundle", fail),
     }
     monkeypatch.setattr(*targets[stage])
-    monkeypatch.setenv("ENABLE_PRODUCTION_DEPLOY", "true")
-    monkeypatch.setenv("REVIEW_SNAPSHOT_PUBKEY_PEM", "unused public key")
-    monkeypatch.setattr(sys, "excepthook", sys.excepthook)
-    monkeypatch.setattr(snapshot.logging.root.manager, "disable", 0)
-    monkeypatch.setattr(sys, "argv", [
-        "review_snapshot.py", "export", f"--deploy-path={production[0]}",
-        f"--output={tmp_path / 'artifact'}",
-    ])
     with warnings.catch_warnings(record=True) as emitted:
-        assert snapshot.main() == 1
+        if isinstance(error, (KeyError, TypeError, ImportError)):
+            with pytest.raises(type(error)) as raised:
+                snapshot.main()
+            assert raised.value is error
+            sys.excepthook(type(error), error, raised.tb)
+        else:
+            assert snapshot.main() == 1
     captured = capsys.readouterr()
+    assert "PRIVATE" not in captured.out + captured.err
     assert f"stage={stage}" in captured.err
     assert f"exception={type(error).__name__}" in captured.err
-    assert "PRIVATE" not in captured.out + captured.err
     assert not emitted
     assert "Traceback" not in captured.err
-    assert not (tmp_path / "artifact").exists()
-    if isinstance(error, sqlite3.Error):
+    assert not export_cli.exists()
+    if str(error).startswith("no such column:"):
         assert str(error) in captured.err
+
+
+@pytest.mark.parametrize(("message", "allowed"), [
+    ("no such table: feedback", True),
+    ("no such column: t.ccl_key", True),
+    ("database is locked", True),
+    ("disk I/O error", True),
+    ("unable to open database file", True),
+    ("database or disk is full", True),
+    ("attempt to write a readonly database", True),
+    ("database disk image is malformed", True),
+    ("UNIQUE constraint failed: feedback.id", False),
+    ("no such column: ccl_key PRIVATE", False),
+    ("no such table: /PRIVATE/path", False),
+    ("database is locked\nPRIVATE", False),
+    ("PRIVATE unknown sqlite error", False),
+])
+def test_sqlite_diagnostic_allowlist(message: str, allowed: bool, capsys) -> None:
+    snapshot.report_failure(snapshot.SnapshotProgress("backup"), sqlite3.OperationalError(message))
+    expected = "error: stage=backup exception=OperationalError"
+    assert capsys.readouterr().err == expected + (f": {message}" if allowed else "") + "\n"
+
+
+def test_invalid_utf8_cell_is_not_logged(
+    production, export_cli: Path, capsys,
+) -> None:
+    with closing(sqlite3.connect(production[1])) as db, db:
+        db.execute(
+            "UPDATE feedback SET ccl_key = CAST(? AS TEXT) WHERE id = 1",
+            (b"PRIVATE typed key\xff",),
+        )
+        assert db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+        with pytest.raises(sqlite3.OperationalError, match="PRIVATE typed key"):
+            db.execute("SELECT ccl_key FROM feedback WHERE id = 1").fetchone()
+    assert snapshot.main() == 1
+    captured = capsys.readouterr()
+    assert captured.err == "error: stage=pseudonymise exception=OperationalError\n"
+    assert "PRIVATE" not in captured.out + captured.err
+    assert not export_cli.exists()
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Requires Linux /proc/self/fd")
+@pytest.mark.parametrize("failure_stage", [None, "load_store", "ccl_assignments"])
+def test_export_closes_temporary_files_before_cleanup(
+    export_cli: Path, keypair, monkeypatch: pytest.MonkeyPatch, failure_stage: str | None,
+) -> None:
+    from web.services import data_store
+
+    connect = sqlite3.connect
+    connections = []
+    checked = []
+
+    def retain_connection(*args, **kwargs):
+        connection = connect(*args, **kwargs)
+        if threading.current_thread() is threading.main_thread():
+            connections.append(connection)
+        return connection
+
+    class AuditedTemporaryDirectory(snapshot.tempfile.TemporaryDirectory):
+        def cleanup(self):
+            opened = []
+            for fd in Path("/proc/self/fd").iterdir():
+                try:
+                    target = fd.readlink()
+                except FileNotFoundError:
+                    continue
+                if target.is_relative_to(self.name):
+                    opened.append(target)
+            checked.append(self.name)
+            try:
+                assert not opened, f"Temporary files still open at cleanup: {opened}"
+            finally:
+                super().cleanup()
+
+    def fail(*args, **kwargs):
+        raise ValueError("PRIVATE loader value")
+
+    async def fail_async(*args, **kwargs):
+        fail()
+
+    if failure_stage == "load_store":
+        monkeypatch.setattr(data_store, "build_store", fail)
+    elif failure_stage == "ccl_assignments":
+        monkeypatch.setattr(FeedbackDB, "ccl_key_assignments", fail_async)
+    monkeypatch.setenv("REVIEW_SNAPSHOT_PUBKEY_PEM", keypair[1].read_text())
+    # Keep connections reachable so garbage collection cannot hide a missing close.
+    monkeypatch.setattr(sqlite3, "connect", retain_connection)
+    monkeypatch.setattr(snapshot.tempfile, "TemporaryDirectory", AuditedTemporaryDirectory)
+    try:
+        assert snapshot.main() == (1 if failure_stage else 0)
+        assert len(checked) == 1
+    finally:
+        for connection in connections:
+            connection.close()
+
+
+@pytest.mark.parametrize("loader_failure", [False, True])
+def test_cleanup_failure_is_fatal_and_reports_cleanup_stage(
+    export_cli: Path, monkeypatch: pytest.MonkeyPatch, capsys, loader_failure: bool,
+) -> None:
+    from web.services import data_store
+
+    class FailedCleanup(snapshot.tempfile.TemporaryDirectory):
+        def cleanup(self):
+            super().cleanup()
+            raise OSError("PRIVATE cleanup path")
+
+    def fail(*args, **kwargs):
+        raise ValueError("PRIVATE loader value")
+
+    monkeypatch.setattr(snapshot.tempfile, "TemporaryDirectory", FailedCleanup)
+    monkeypatch.setattr(snapshot, "encrypt_bundle", lambda *args: None)
+    if loader_failure:
+        monkeypatch.setattr(data_store, "build_store", fail)
+    assert snapshot.main() == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == "error: stage=cleanup exception=OSError\n"

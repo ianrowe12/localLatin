@@ -45,13 +45,13 @@ preparation, `backup`, `pseudonymise`, `load_store`, `ccl_assignments`,
 checkouts: data and the production config come from `--deploy-path`, while
 Python imports and `exporter_git_sha` come from the reviewed runner checkout.
 
-Only SQLite exception messages are included. The export executes fixed SQL
-with bound values: schema/constraint failures identify tables, columns or
-fixed CHECK expressions; locking, read-only, corruption and I/O errors describe
-the database operation, not row contents. It does not execute user SQL or
-user-defined error-raising triggers on the copied database. This is specific
-to this export, not a guarantee about arbitrary SQLite applications.
-Other exception messages (including OpenSSL output and validation errors),
+Fixed-string `SnapshotError` refusals are included, so configuration, decryption
+and tamper failures remain distinguishable. SQLite messages must fully match a
+strict allowlist: missing tables/columns with simple SQL identifiers (optionally
+qualified), or fixed locking, read-only, corruption, disk-full, open and I/O
+errors. All other SQLite messages, including text-decoding errors that can echo
+cell values and constraint descriptions, are withheld.
+Other exception messages (including OpenSSL output),
 tracebacks, Python warnings and loader logs are withheld. Keep reproduction
 instrumentation local and use synthetic accounts, never production rows.
 
@@ -101,6 +101,10 @@ uses a fresh credential-free checkout and the production Python venv, and
 opens the live database with SQLite `mode=ro`. The online backup API includes
 committed WAL state consistently. All export processing uses temporary copies.
 The temporary tree is private (umask 077) and removed on success or failure;
+all database connections and file handles are closed before removal, including
+the pseudonymised database connection. This avoids open-file `.nfs` remnants
+blocking directory removal when staging is on NFS. Cleanup failures remain hard
+failures reported as `stage=cleanup`, even after another export failure;
 the workflow's `always()` cleanup also handles cancellation. A host crash or
 forced kill can require local cleanup of that run's private staging directory.
 

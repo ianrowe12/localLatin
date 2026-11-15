@@ -25,6 +25,7 @@ import tarfile
 import tempfile
 import warnings
 from collections import Counter
+from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -51,6 +52,12 @@ DIR_COLUMNS = (
 )
 MEMBER_COLUMNS = ("id", "dir_id", "query_id", "xml_id", "role", "added_at")
 TEST_TOKEN = re.compile(r"(^|[^a-z0-9])(smoke|test|testing)([^a-z0-9]|$)", re.IGNORECASE)
+SAFE_SQLITE_MESSAGE = re.compile(
+    r"(?:no such (?:table|column): [A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*"
+    r"|database is locked|disk I/O error|unable to open database file"
+    r"|database or disk is full|attempt to write a readonly database"
+    r"|database disk image is malformed)"
+)
 
 # Computed afresh for each SELECT, never stored as a table or Python lookup.
 # Account identity takes precedence over the historical display name, exactly
@@ -76,7 +83,7 @@ WITH actors(source, row_id, account_id, name) AS (
 
 
 class SnapshotError(Exception):
-    """An operator-facing error containing no database values."""
+    """A fixed-string operator-facing error containing no database values."""
 
 
 @dataclass
@@ -88,7 +95,9 @@ class SnapshotProgress:
 
 def report_failure(progress: SnapshotProgress, exc: BaseException) -> None:
     message = f"error: stage={progress.stage} exception={type(exc).__name__}"
-    if isinstance(exc, sqlite3.Error):
+    if isinstance(exc, SnapshotError) or (
+        isinstance(exc, sqlite3.Error) and SAFE_SQLITE_MESSAGE.fullmatch(str(exc))
+    ):
         message += f": {exc}"
     print(message, file=sys.stderr)
 
@@ -156,9 +165,9 @@ def safe_tables(snapshot: Path) -> dict[str, list[dict]]:
         ))
 
     conn = sqlite3.connect(snapshot.resolve().as_uri() + "?mode=ro", uri=True)
-    conn.row_factory = sqlite3.Row
-    conn.create_function("is_smoke_or_test", 3, is_test)
     try:
+        conn.row_factory = sqlite3.Row
+        conn.create_function("is_smoke_or_test", 3, is_test)
         result = {}
         for table, columns, name, account in (
             ("feedback", REVIEW_COLUMNS, "reviewer", "reviewer_account_id"),
@@ -209,7 +218,7 @@ async def build_bundle(
     # Feed only pseudonyms into the API code. This database has no accounts,
     # notes, sessions or identity map, and is never part of the archive.
     redacted = snapshot.with_name("pseudonymised.db")
-    with sqlite3.connect(redacted) as conn:
+    with closing(sqlite3.connect(redacted)) as conn, conn:
         for table, columns in (
             ("feedback", REVIEW_COLUMNS),
             ("reviewer_dirs", DIR_COLUMNS),
@@ -238,9 +247,9 @@ async def build_bundle(
 
     progress.stage = "ccl_assignments"
     db = FeedbackDB(redacted)
-    await db.connect(read_only=True)
-    created_at = ccl_key_export.now_iso_utc()
     try:
+        await db.connect(read_only=True)
+        created_at = ccl_key_export.now_iso_utc()
         assignments = await db.ccl_key_assignments(
             filename_by_query=store.file_id_to_filename,
             labelled_dir_names=store.labelled_dir_files,
@@ -428,8 +437,9 @@ def export_snapshot(
     progress.stage = "deploy_sha"
     git_sha = repository_sha(deploy)
     progress.stage = "prepare"
-    with tempfile.TemporaryDirectory(prefix="review-snapshot-") as work:
-        temp = Path(work)
+    work = tempfile.TemporaryDirectory(prefix="review-snapshot-")
+    try:
+        temp = Path(work.name)
         public_key = temp / "public.pem"
         public_key.write_text(public_pem, encoding="ascii")
         snapshot = temp / "feedback.db"
@@ -441,6 +451,12 @@ def export_snapshot(
         progress.stage = "encrypt"
         encrypt_bundle(temp / "bundle", public_key, output, temp)
         progress.stage = "cleanup"
+    finally:
+        # Preserve the operation stage unless cleanup itself fails.
+        failed_stage = progress.stage
+        progress.stage = "cleanup"
+        work.cleanup()
+        progress.stage = failed_stage
     print(f"Feedback rows: {manifest['row_counts'][FILES[0]]}")
     print(f"Reviewed queries: {manifest['distinct_queries_reviewed']}")
     print(f"Reviewers: {manifest['reviewers']}")

@@ -66,7 +66,11 @@ def test_encrypt_decrypt_helper_and_tamper_checks(tmp_path: Path, keypair) -> No
     result = subprocess.run([str(helper), str(tampered), str(private), str(refused)],
                             capture_output=True, check=False, env=decrypt_env)
     assert result.returncode != 0
-    assert b"stage=decrypt exception=SnapshotError" in result.stderr
+    assert (
+        b"stage=decrypt exception=SnapshotError: Manifest SHA256 verification failed."
+        in result.stderr
+    )
+    manifest_refusal = result.stderr
     assert not refused.exists()
     with pytest.raises(snapshot.SnapshotError, match="Manifest SHA256 verification failed"):
         snapshot.decrypt_snapshot(tampered, private, refused)
@@ -76,6 +80,14 @@ def test_encrypt_decrypt_helper_and_tamper_checks(tmp_path: Path, keypair) -> No
     ciphertext.write_bytes(data)
     with pytest.raises(snapshot.SnapshotError, match="authentication failed"):
         snapshot.decrypt_snapshot(artifact, private, refused)
+    result = subprocess.run([str(helper), str(artifact), str(private), str(refused)],
+                            capture_output=True, check=False, env=decrypt_env)
+    assert result.returncode != 0
+    assert (
+        b"stage=decrypt exception=SnapshotError: Ciphertext authentication failed."
+        in result.stderr
+    )
+    assert result.stderr != manifest_refusal
     assert not refused.exists()
     assert not list(tmp_path.glob(".review-decrypt-*"))
 
