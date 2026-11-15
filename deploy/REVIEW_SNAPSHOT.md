@@ -34,6 +34,27 @@ archive paths and links, then verifies every CSV against `manifest.json`.
 Nothing is published to the requested output directory until all checks pass.
 Use encrypted local storage for the decrypted data.
 
+## Failure diagnostics
+
+Failures report a fixed stage and the exception class, for example
+`error: stage=ccl_assignments exception=OperationalError: no such column: ccl_key`.
+Stages distinguish configuration, deployed SHA lookup (`deploy_sha`), staging
+preparation, `backup`, `pseudonymise`, `load_store`, `ccl_assignments`,
+`write_bundle`, runner-checkout SHA lookup (`exporter_sha`), `encrypt`,
+`cleanup` and `decrypt`. The two SHA lookups deliberately use different
+checkouts: data and the production config come from `--deploy-path`, while
+Python imports and `exporter_git_sha` come from the reviewed runner checkout.
+
+Only SQLite exception messages are included. The export executes fixed SQL
+with bound values: schema/constraint failures identify tables, columns or
+fixed CHECK expressions; locking, read-only, corruption and I/O errors describe
+the database operation, not row contents. It does not execute user SQL or
+user-defined error-raising triggers on the copied database. This is specific
+to this export, not a guarantee about arbitrary SQLite applications.
+Other exception messages (including OpenSSL output and validation errors),
+tracebacks, Python warnings and loader logs are withheld. Keep reproduction
+instrumentation local and use synthetic accounts, never production rows.
+
 ## Contents and redaction
 
 | File | Contents |
@@ -71,7 +92,7 @@ The authenticated encryption envelope protects the manifest as well.
 ## Threat model and format
 
 This repository is public. Treat **both Actions logs and artifacts as
-world-readable**. Only counts and static failure messages are logged by the
+world-readable**. Only counts and privacy-safe failure diagnostics are logged by the
 script. The artifact contains exactly two files, ciphertext and an RSA-wrapped
 random secret; neither the manifest nor any plaintext is uploaded.
 

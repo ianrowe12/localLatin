@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import csv
+import json
 import os
 import sqlite3
 import subprocess
 import sys
+import warnings
 from pathlib import Path
 
 import pytest
@@ -282,6 +284,10 @@ def test_export_cli_counts_only_cleanup_and_no_live_writes(
     assert live.read_bytes() == before
     assert list(staging.iterdir()) == []
     snapshot.decrypt_snapshot(artifact, private, tmp_path / "out")
+    manifest = json.loads((tmp_path / "out/manifest.json").read_text())
+    assert manifest["git_sha"] == snapshot.repository_sha(root)
+    assert manifest["exporter_git_sha"] == snapshot.repository_sha(ROOT)
+    assert manifest["git_sha"] != manifest["exporter_git_sha"]
     # Invalid key failures must clean staging and never log the supplied text.
     env["REVIEW_SNAPSHOT_PUBKEY_PEM"] = "PRIVATE malformed key"
     command[-1] = f"--output={tmp_path / 'failed'}"
@@ -293,7 +299,7 @@ def test_export_cli_counts_only_cleanup_and_no_live_writes(
     env["ENABLE_PRODUCTION_DEPLOY"] = "false"
     refused = subprocess.run(command, env=env, capture_output=True, text=True, check=False)
     assert refused.returncode != 0
-    assert "disabled" in refused.stderr
+    assert "stage=configure exception=SnapshotError" in refused.stderr
 
 
 def test_read_only_feedback_connection_does_not_create_or_migrate(tmp_path: Path) -> None:
@@ -317,3 +323,66 @@ def test_read_only_feedback_connection_does_not_create_or_migrate(tmp_path: Path
         assert missing.read_bytes() == before
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize(("stage", "error"), [
+    ("deploy_sha", subprocess.CalledProcessError(1, ["PRIVATE deployed path"])),
+    ("backup", OSError("PRIVATE path")),
+    ("pseudonymise", sqlite3.IntegrityError("UNIQUE constraint failed: feedback.id")),
+    ("load_store", ValueError("PRIVATE loader value")),
+    ("load_store", RuntimeError("PRIVATE corpus mismatch")),
+    ("ccl_assignments", sqlite3.OperationalError("no such column: missing_column")),
+    ("write_bundle", ValueError("PRIVATE row value")),
+    ("exporter_sha", subprocess.CalledProcessError(1, ["PRIVATE runner path"])),
+    ("encrypt", subprocess.CalledProcessError(1, ["PRIVATE command"])),
+    ("encrypt", snapshot.SnapshotError("PRIVATE validation value")),
+])
+def test_export_failure_diagnostics_are_private(
+    production, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys,
+    stage: str, error: Exception,
+) -> None:
+    from web.services import data_store
+
+    def fail(*args, **kwargs):
+        warnings.warn("PRIVATE warning value", UserWarning)
+        raise error
+
+    async def fail_async(*args, **kwargs):
+        fail()
+
+    def fail_exporter_sha(root):
+        if root == production[0]:
+            return "a" * 40
+        fail()
+
+    monkeypatch.setattr(snapshot, "repository_sha", lambda root: "a" * 40)
+    targets = {
+        "deploy_sha": (snapshot, "repository_sha", fail),
+        "backup": (snapshot, "backup_database", fail),
+        "pseudonymise": (snapshot, "safe_tables", fail),
+        "load_store": (data_store, "build_store", fail),
+        "ccl_assignments": (FeedbackDB, "ccl_key_assignments", fail_async),
+        "write_bundle": (snapshot, "write_csv", fail),
+        "exporter_sha": (snapshot, "repository_sha", fail_exporter_sha),
+        "encrypt": (snapshot, "encrypt_bundle", fail),
+    }
+    monkeypatch.setattr(*targets[stage])
+    monkeypatch.setenv("ENABLE_PRODUCTION_DEPLOY", "true")
+    monkeypatch.setenv("REVIEW_SNAPSHOT_PUBKEY_PEM", "unused public key")
+    monkeypatch.setattr(sys, "excepthook", sys.excepthook)
+    monkeypatch.setattr(snapshot.logging.root.manager, "disable", 0)
+    monkeypatch.setattr(sys, "argv", [
+        "review_snapshot.py", "export", f"--deploy-path={production[0]}",
+        f"--output={tmp_path / 'artifact'}",
+    ])
+    with warnings.catch_warnings(record=True) as emitted:
+        assert snapshot.main() == 1
+    captured = capsys.readouterr()
+    assert f"stage={stage}" in captured.err
+    assert f"exception={type(error).__name__}" in captured.err
+    assert "PRIVATE" not in captured.out + captured.err
+    assert not emitted
+    assert "Traceback" not in captured.err
+    assert not (tmp_path / "artifact").exists()
+    if isinstance(error, sqlite3.Error):
+        assert str(error) in captured.err

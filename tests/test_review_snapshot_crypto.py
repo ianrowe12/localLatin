@@ -66,8 +66,10 @@ def test_encrypt_decrypt_helper_and_tamper_checks(tmp_path: Path, keypair) -> No
     result = subprocess.run([str(helper), str(tampered), str(private), str(refused)],
                             capture_output=True, check=False, env=decrypt_env)
     assert result.returncode != 0
-    assert b"Manifest SHA256 verification failed" in result.stderr
+    assert b"stage=decrypt exception=SnapshotError" in result.stderr
     assert not refused.exists()
+    with pytest.raises(snapshot.SnapshotError, match="Manifest SHA256 verification failed"):
+        snapshot.decrypt_snapshot(tampered, private, refused)
     ciphertext = artifact / snapshot.CIPHERTEXT
     data = bytearray(ciphertext.read_bytes())
     data[-1] ^= 1

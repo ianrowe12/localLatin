@@ -23,7 +23,9 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import warnings
 from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -75,6 +77,20 @@ WITH actors(source, row_id, account_id, name) AS (
 
 class SnapshotError(Exception):
     """An operator-facing error containing no database values."""
+
+
+@dataclass
+class SnapshotProgress:
+    """Share the failing stage across the asyncio.run boundary."""
+
+    stage: str = "configure"
+
+
+def report_failure(progress: SnapshotProgress, exc: BaseException) -> None:
+    message = f"error: stage={progress.stage} exception={type(exc).__name__}"
+    if isinstance(exc, sqlite3.Error):
+        message += f": {exc}"
+    print(message, file=sys.stderr)
 
 
 def openssl(*args: str) -> bytes:
@@ -178,7 +194,12 @@ def write_csv(path: Path, columns: tuple[str, ...], rows: list[dict]) -> None:
         writer.writerows(rows)
 
 
-async def build_bundle(snapshot: Path, bundle: Path, settings: Settings, git_sha: str) -> dict:
+async def build_bundle(
+    snapshot: Path, bundle: Path, settings: Settings, git_sha: str,
+    progress: SnapshotProgress | None = None,
+) -> dict:
+    progress = progress or SnapshotProgress()
+    progress.stage = "pseudonymise"
     from web.services import ccl_key_export
     from web.services.data_store import build_store
     from web.services.feedback_db import FeedbackDB, corpus_digest
@@ -202,6 +223,7 @@ async def build_bundle(snapshot: Path, bundle: Path, settings: Settings, git_sha
             )
         conn.execute("ALTER TABLE feedback ADD COLUMN reviewer_account_id INTEGER")
 
+    progress.stage = "load_store"
     store = build_store(settings)
 
     async def rank_dir(query_id: int, slug: str, variant: str | None, rank: int) -> str | None:
@@ -214,6 +236,7 @@ async def build_bundle(snapshot: Path, bundle: Path, settings: Settings, git_sha
         match = next((p for p in row["predictions"] if p["rank"] == rank), None)
         return match["dir_name"] if match else None
 
+    progress.stage = "ccl_assignments"
     db = FeedbackDB(redacted)
     await db.connect(read_only=True)
     created_at = ccl_key_export.now_iso_utc()
@@ -228,6 +251,7 @@ async def build_bundle(snapshot: Path, bundle: Path, settings: Settings, git_sha
     finally:
         await db.close()
 
+    progress.stage = "write_bundle"
     bundle.mkdir(mode=0o700)
     extras = ("reviewer", "reviewer_role", "is_smoke_or_test")
     write_csv(bundle / FILES[0], (*REVIEW_COLUMNS, *extras), reviews)
@@ -240,11 +264,14 @@ async def build_bundle(snapshot: Path, bundle: Path, settings: Settings, git_sha
         filename = store.file_id_to_filename.get(row["query_id"])
         witness = row["xml_id"] or (ccl_key_export.xml_id_of(filename) if filename else None)
         reviewed_queries.add(("xml_id", witness) if witness else ("query_id", row["query_id"]))
+    progress.stage = "exporter_sha"
+    exporter_git_sha = repository_sha(Path(__file__).resolve().parents[2])
+    progress.stage = "write_bundle"
     manifest = {
         "snapshot_schema_version": SCHEMA_VERSION,
         "created_at": created_at,
         "git_sha": git_sha,
-        "exporter_git_sha": repository_sha(Path(__file__).resolve().parents[2]),
+        "exporter_git_sha": exporter_git_sha,
         "data_release": store.data_release,
         "served_corpus_sha256": corpus_digest(store.file_id_to_filename),
         "row_counts": {filename: len(rows) for filename, rows in zip(FILES, (
@@ -376,7 +403,10 @@ def decrypt_snapshot(artifact: Path, private_key: Path, output: Path) -> None:
     print(f"Verified files: {len(FILES)}")
 
 
-def export_snapshot(deploy: Path, output: Path) -> None:
+def export_snapshot(
+    deploy: Path, output: Path, progress: SnapshotProgress | None = None,
+) -> None:
+    progress = progress or SnapshotProgress()
     from web.config import load_settings
 
     if os.environ.get("ENABLE_PRODUCTION_DEPLOY") != "true":
@@ -395,15 +425,22 @@ def export_snapshot(deploy: Path, output: Path) -> None:
     public_pem = os.environ.get("REVIEW_SNAPSHOT_PUBKEY_PEM", "")
     if not public_pem:
         raise SnapshotError("REVIEW_SNAPSHOT_PUBKEY_PEM is required.")
+    progress.stage = "deploy_sha"
     git_sha = repository_sha(deploy)
+    progress.stage = "prepare"
     with tempfile.TemporaryDirectory(prefix="review-snapshot-") as work:
         temp = Path(work)
         public_key = temp / "public.pem"
         public_key.write_text(public_pem, encoding="ascii")
         snapshot = temp / "feedback.db"
+        progress.stage = "backup"
         backup_database(deploy / "data/feedback.db", snapshot)
-        manifest = asyncio.run(build_bundle(snapshot, temp / "bundle", settings, git_sha))
+        manifest = asyncio.run(build_bundle(
+            snapshot, temp / "bundle", settings, git_sha, progress,
+        ))
+        progress.stage = "encrypt"
         encrypt_bundle(temp / "bundle", public_key, output, temp)
+        progress.stage = "cleanup"
     print(f"Feedback rows: {manifest['row_counts'][FILES[0]]}")
     print(f"Reviewed queries: {manifest['distinct_queries_reviewed']}")
     print(f"Reviewers: {manifest['reviewers']}")
@@ -412,14 +449,13 @@ def export_snapshot(deploy: Path, output: Path) -> None:
 
 def main() -> int:
     os.umask(0o077)
-    # Third-party loaders can log paths and corpus values. The public workflow
-    # deliberately emits only the counts above, and static failure messages.
+    # Third-party logs and warnings can contain paths and corpus values.
     logging.disable(logging.CRITICAL)
+    warnings.filterwarnings("ignore")
+    progress = SnapshotProgress()
     # Even an unexpected loader failure must not put database values in a
     # traceback in public Actions logs. The process still exits nonzero.
-    sys.excepthook = lambda *_: print(
-        "error: Unexpected snapshot failure; details withheld from public logs.", file=sys.stderr
-    )
+    sys.excepthook = lambda _kind, exc, _traceback: report_failure(progress, exc)
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     commands = parser.add_subparsers(dest="command", required=True)
     export = commands.add_parser("export")
@@ -433,14 +469,15 @@ def main() -> int:
     try:
         if args.command == "export":
             sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-            export_snapshot(args.deploy_path, args.output)
+            export_snapshot(args.deploy_path, args.output, progress)
         else:
+            progress.stage = "decrypt"
             decrypt_snapshot(args.artifact_dir, args.private_key, args.output_dir)
-    except SnapshotError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
-    except (OSError, ValueError, sqlite3.Error, subprocess.SubprocessError, tarfile.TarError):
-        print("error: Snapshot operation failed; no verified bundle was published.", file=sys.stderr)
+    except (
+        SnapshotError, OSError, ValueError, RuntimeError, sqlite3.Error,
+        subprocess.SubprocessError, tarfile.TarError,
+    ) as exc:
+        report_failure(progress, exc)
         return 1
     return 0
 
