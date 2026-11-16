@@ -569,6 +569,18 @@ def test_unknown_ascii_key_and_all_ascii_export_are_flagged(tmp_path):
     assert "## Warnings (1)" in markdown
 
 
+def test_new_ascii_key_is_not_listed_when_export_has_non_ascii_paths(tmp_path):
+    report, out = run(tmp_path, make_zip(tmp_path, {
+        "cclexport/keyed/canon/NEWK.500.1/NEW.1r.1.txt": "   x ",
+        "cclexport/keyed/canon/Cite \u2013 4/OLD.1r.1.txt": "   y ",
+    }))
+    assert (out / "canon_labelled/NEWK.500.1/NEW.1r.1.txt").is_file()
+    assert "key_names_unchecked" not in report
+    assert "key_names_unchecked" not in report["summary"]
+    assert "warnings" not in report
+    assert "Key names not checked" not in (out / imp.REPORT_MD).read_text()
+
+
 def test_all_ascii_warning_considers_unselected_paths_not_witness_text(tmp_path):
     report, _ = run(tmp_path, make_zip(tmp_path, {
         "cclexport/keyed/canon/AAAA.100.1/MS1.1r.1.txt": "   \u00e9 ",

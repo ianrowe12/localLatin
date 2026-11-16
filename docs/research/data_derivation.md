@@ -202,7 +202,9 @@ Only key names change, never witness text.
 
 The optional JSON sections `key_names_restored`, `key_names_ambiguous` and
 `key_names_unchecked` list restored names (with the matching method), ambiguous
-candidates, and new ASCII keys with no known match. Each has a count in `summary`
+candidates, and new ASCII keys with no known match (listed only when the whole
+export has no non-ASCII path characters, since only then can it have been
+stripped). Each has a count in `summary`
 and a corresponding Markdown section: "Key names restored", "Ambiguous key names"
 and "Key names not checked". Empty sections are omitted. `warnings` adds an
 all-ASCII-path warning when the whole export has no non-ASCII path characters,

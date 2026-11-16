@@ -782,6 +782,10 @@ def build_report(
     restored_keys, key_diagnostics = restore_key_names(
         selected, baseline, references, baseline_keys
     )
+    if not export.all_paths_ascii:
+        # Only an all-ASCII export can have been stripped; elsewhere a new
+        # ASCII key is just a new key, so listing it would be noise.
+        key_diagnostics.pop("key_names_unchecked", None)
     plan, cases = plan_directories(
         (w.key for w in selected if w.key is not None), baseline_dirs,
         restored_keys=restored_keys,
