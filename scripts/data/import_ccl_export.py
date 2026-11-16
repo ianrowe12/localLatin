@@ -617,7 +617,10 @@ def plan_directories(
             )
         export_forms[form] = key
         if key in restored_keys:
-            directory = nfc(restored_keys[key])
+            # A key known only from a reference export gets the same name
+            # importing that reference would give it (line breaks deleted).
+            target = nfc(restored_keys[key])
+            directory = by_form.get(key_match_form(target)) or fresh_directory_name(target)
             _check_key(directory, f"restored key {key!r}")
             plan[key] = directory
             continue
@@ -779,17 +782,20 @@ def build_report(
     everywhere = {w.xml_id: w for w in export.witnesses}
 
     baseline_dirs = {b.directory for b in baseline.values() if b.directory is not None}
-    restored_keys, key_diagnostics = restore_key_names(
-        selected, baseline, references, baseline_keys
-    )
-    if not export.all_paths_ascii:
-        # Only an all-ASCII export can have been stripped; elsewhere a new
-        # ASCII key is just a new key, so listing it would be noise.
-        key_diagnostics.pop("key_names_unchecked", None)
+    # Only an all-ASCII export can have been stripped. In any other export an
+    # ASCII key is taken as written, so a real CCL rename is never undone.
+    restored_keys: Dict[str, str] = {}
+    key_diagnostics: Dict[str, list] = {}
+    if export.all_paths_ascii:
+        restored_keys, key_diagnostics = restore_key_names(
+            selected, baseline, references, baseline_keys
+        )
     plan, cases = plan_directories(
         (w.key for w in selected if w.key is not None), baseline_dirs,
         restored_keys=restored_keys,
     )
+    for row in key_diagnostics.get("key_names_restored", []):
+        row["directory"] = plan[row["export_key"]]
 
     def directory_of(witness: Witness) -> Optional[str]:
         return plan[witness.key] if witness.key is not None else None

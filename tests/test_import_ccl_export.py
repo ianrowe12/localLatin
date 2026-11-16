@@ -82,7 +82,8 @@ def make_zip(tmp_path: Path, files: dict, name: str = "export.zip") -> Path:
 
 def run(tmp_path, export, **kwargs):
     out = tmp_path / kwargs.pop("out_name", "out")
-    report = imp.run(export, out, baseline_root=kwargs.pop("baseline", make_baseline(tmp_path)), **kwargs)
+    baseline = kwargs.pop("baseline", None) or make_baseline(tmp_path)
+    report = imp.run(export, out, baseline_root=baseline, **kwargs)
     return report, out
 
 
@@ -581,6 +582,65 @@ def test_new_ascii_key_is_not_listed_when_export_has_non_ascii_paths(tmp_path):
     assert "Key names not checked" not in (out / imp.REPORT_MD).read_text()
 
 
+def test_export_with_non_ascii_paths_is_never_restored(tmp_path):
+    baseline = tmp_path / "own-baseline"
+    write_tree(baseline, {
+        "canon_labelled/Ep. 1\u201323/A.1r.1.txt": "   a ",
+        "canon_unlabelled/U.1r.1.txt": "   u ",
+    })
+    report, out = run(tmp_path, make_zip(tmp_path, {
+        "cclexport/keyed/canon/Ep. 1 23/A.1r.1.txt": "   a ",
+        "cclexport/keyed/canon/Ep. 1 23/NEW.1r.1.txt": "   n ",
+        "cclexport/keyed/canon/Other \u00e9/B.1r.1.txt": "   b ",
+    }), baseline=baseline)
+    assert (out / "canon_labelled/Ep. 1 23/A.1r.1.txt").is_file()
+    assert (out / "canon_labelled/Ep. 1 23/NEW.1r.1.txt").is_file()
+    assert not (out / "canon_labelled/Ep. 1\u201323").exists()
+    assert [r["xml_id"] for r in report["key_changed"]] == ["A.1r.1"]
+    assert "key_names_restored" not in report
+    assert "warnings" not in report
+
+
+def test_reference_only_key_gets_the_name_importing_the_reference_gives(tmp_path):
+    reference = make_zip(tmp_path, {
+        "cclexport/keyed/canon/Long cite,\r\nB\u2013 2/R.1r.1.txt": "   r ",
+        "cclexport/keyed/canon/Tab\tcite \u2013 3/T.1r.1.txt": "   t ",
+    }, "reference.zip")
+    stripped = make_zip(tmp_path, {
+        "cclexport/keyed/canon/Long cite,  B  2/R.1r.1.txt": "   r ",
+        "cclexport/keyed/canon/Tab cite   3/T.1r.1.txt": "   t ",
+    })
+    report, out = run(tmp_path, stripped, reference_exports=[reference])
+    _, direct = run(tmp_path, reference, out_name="direct")
+    listing = lambda root: sorted(
+        p.relative_to(root).as_posix() for p in (root / "canon_labelled").rglob("*.txt")
+    )
+    assert listing(out) == listing(direct)
+    assert "canon_labelled/Long cite,B\u2013 2/R.1r.1.txt" in listing(out)
+    assert "canon_labelled/Tab cite \u2013 3/T.1r.1.txt" in listing(out)
+    assert sorted(r["directory"] for r in report["key_names_restored"]) == [
+        "Long cite,B\u2013 2", "Tab cite \u2013 3",
+    ]
+
+
+def test_exact_known_key_is_kept_even_when_it_is_another_keys_stripped_form(tmp_path):
+    baseline = tmp_path / "own-baseline"
+    write_tree(baseline, {
+        "canon_labelled/Cite 4/A.1r.1.txt": "   a ",
+        "canon_labelled/Cite \u2013 4/B.1r.1.txt": "   b ",
+        "canon_unlabelled/U.1r.1.txt": "   u ",
+    })
+    # B's own xml:id points at "Cite \u2013 4", but its exported key matches the
+    # known key "Cite 4" exactly, so it moves there rather than being restored.
+    report, out = run(tmp_path, make_zip(tmp_path, {
+        "cclexport/keyed/canon/Cite 4/B.1r.1.txt": "   b ",
+    }), baseline=baseline)
+    assert (out / "canon_labelled/Cite 4/B.1r.1.txt").is_file()
+    assert not (out / "canon_labelled/Cite \u2013 4").exists()
+    assert [r["xml_id"] for r in report["key_changed"]] == ["B.1r.1"]
+    assert "key_names_restored" not in report
+
+
 def test_all_ascii_warning_considers_unselected_paths_not_witness_text(tmp_path):
     report, _ = run(tmp_path, make_zip(tmp_path, {
         "cclexport/keyed/canon/AAAA.100.1/MS1.1r.1.txt": "   \u00e9 ",
@@ -608,18 +668,30 @@ def test_unstripped_unknown_unicode_key_is_not_restored(tmp_path):
 
 
 @pytest.mark.parametrize("other_key", ["Cite \u2013 4", "cite \u2013 4"])
-def test_restored_keys_still_pass_the_final_directory_collision_check(tmp_path, other_key):
-    baseline = tmp_path / "baseline"
+def test_restored_keys_still_pass_the_final_directory_collision_check(other_key):
+    # The safety net itself, whatever restoration decided.
+    with pytest.raises(imp.ExportError, match="refusing to merge two keys"):
+        imp.plan_directories(
+            ["Cite   4", other_key], ["Cite \u2013 4"],
+            restored_keys={"Cite   4": "Cite \u2013 4"},
+        )
+
+
+def test_restored_keys_differing_only_in_case_are_refused(tmp_path):
+    baseline = tmp_path / "own-baseline"
     write_tree(baseline, {
         "canon_labelled/Cite \u2013 4/A.1r.1.txt": "   a ",
         "canon_unlabelled/U.1r.1.txt": "   u ",
     })
+    reference = make_zip(tmp_path, {
+        "cclexport/keyed/canon/cite \u2013 4/B.1r.1.txt": "   b ",
+    }, "reference.zip")
     export = make_zip(tmp_path, {
         "cclexport/keyed/canon/Cite   4/A.1r.1.txt": "   a ",
-        f"cclexport/keyed/canon/{other_key}/B.1r.1.txt": "   b ",
+        "cclexport/keyed/canon/cite   4/B.1r.1.txt": "   b ",
     })
     with pytest.raises(imp.ExportError, match="refusing to merge two keys"):
-        run(tmp_path, export, baseline=baseline)
+        run(tmp_path, export, baseline=baseline, reference_exports=[reference])
     assert not (tmp_path / "out").exists()
 
 
