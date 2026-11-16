@@ -6,6 +6,7 @@ beyond invented ones, no network. The real-export run is documented in the PR.
 from __future__ import annotations
 
 import csv
+import hashlib
 import importlib.util
 import json
 import os
@@ -13,6 +14,7 @@ import stat
 import sys
 import unicodedata
 import zipfile
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -80,7 +82,8 @@ def make_zip(tmp_path: Path, files: dict, name: str = "export.zip") -> Path:
 
 def run(tmp_path, export, **kwargs):
     out = tmp_path / kwargs.pop("out_name", "out")
-    report = imp.run(export, out, baseline_root=kwargs.pop("baseline", make_baseline(tmp_path)), **kwargs)
+    baseline = kwargs.pop("baseline", None) or make_baseline(tmp_path)
+    report = imp.run(export, out, baseline_root=baseline, **kwargs)
     return report, out
 
 
@@ -382,6 +385,354 @@ def test_directories_that_collide_by_case_are_refused(tmp_path):
     files["cclexport/keyed/regCanon/aaaa.100.1/MS9.1r.1.txt"] = "   x "
     with pytest.raises(imp.ExportError, match="differ only in case"):
         run(tmp_path, make_zip(tmp_path, files), types="all")
+
+
+# --- stripped key names -------------------------------------------------------
+
+
+@pytest.mark.parametrize("kind", ["folder", "zip"])
+@pytest.mark.parametrize(("known_key", "stripped_key"), [
+    ("eds de Example\u2013 Editor", "eds de Example  Editor"),
+    ("E\u0301d. Example", "E d. Example"),
+    ("\u00c9d. Example", " d. Example"),
+    ("E\u0301d. \u00dcber", "E d.  ber"),
+    ("Newline cite,\r\nB 2", "Newline cite,  B 2"),
+])
+def test_stripped_key_restored_from_same_xml_id(tmp_path, kind, known_key, stripped_key):
+    baseline = tmp_path / "baseline"
+    write_tree(baseline, {
+        f"canon_labelled/{known_key}/A.1r.1.txt": "   a ",
+        "canon_unlabelled/U.1r.1.txt": "   u ",
+    })
+    files = {f"cclexport/keyed/canon/{stripped_key}/A.1r.1.txt": "   a "}
+    export = make_folder(tmp_path, files) if kind == "folder" else make_zip(tmp_path, files)
+    report, out = run(tmp_path, export, baseline=baseline)
+    directory = unicodedata.normalize("NFC", known_key)
+    assert (out / f"canon_labelled/{directory}/A.1r.1.txt").read_bytes() == b"   a "
+    assert report["key_changed"] == []
+    assert report["key_names_restored"] == [{
+        "export_key": stripped_key, "directory": directory, "reason": "xml_id",
+        "xml_ids": ["A.1r.1"],
+    }]
+    assert report["summary"]["key_names_restored"] == 1
+    assert "## Key names restored (1)" in (out / imp.REPORT_MD).read_text()
+
+
+def test_same_xml_id_disambiguates_stripped_keys(tmp_path):
+    baseline = tmp_path / "baseline"
+    write_tree(baseline, {
+        "canon_labelled/Cite \u2013 4/A.1r.1.txt": "   a ",
+        "canon_labelled/Cite \u2212 4/B.1r.1.txt": "   b ",
+        "canon_unlabelled/U.1r.1.txt": "   u ",
+    })
+    report, out = run(tmp_path, make_zip(tmp_path, {
+        "cclexport/keyed/canon/Cite   4/A.1r.1.txt": "   a ",
+    }), baseline=baseline)
+    assert (out / "canon_labelled/Cite \u2013 4/A.1r.1.txt").is_file()
+    assert report["key_names_restored"][0]["reason"] == "xml_id"
+    assert "key_names_ambiguous" not in report
+
+
+def test_unique_stripped_key_restored_for_new_xml_id(tmp_path):
+    baseline = tmp_path / "baseline"
+    write_tree(baseline, {
+        "canon_labelled/Cite \u2013 4/A.1r.1.txt": "   a ",
+        "canon_unlabelled/U.1r.1.txt": "   u ",
+    })
+    report, out = run(tmp_path, make_folder(tmp_path, {
+        "cclexport/keyed/canon/Cite   4/B.1r.1.txt": "   b ",
+    }), baseline=baseline)
+    assert (out / "canon_labelled/Cite \u2013 4/B.1r.1.txt").is_file()
+    assert report["key_names_restored"][0]["reason"] == "unique_key"
+
+
+def test_reference_exports_are_repeatable_and_use_the_existing_reader(tmp_path, capsys):
+    reference_zip = make_zip(tmp_path, {
+        "cclexport/keyed/regCanon/E\u0301d. \u00dcber/REF.1r.1.txt": "   ref ",
+    }, "reference.zip")
+    reference_folder = make_folder(tmp_path, {
+        "cclexport/keyed/canon/Cite \u2013 4/REF.2r.1.txt": "   ref ",
+    }, "reference-folder")
+    export = make_zip(tmp_path, {
+        "cclexport/keyed/canon/E d.  ber/REF.1r.1.txt": "   a ",
+        "cclexport/keyed/canon/Cite   4/NEW.1r.1.txt": "   b ",
+    })
+    out = tmp_path / "out"
+    assert imp.main([
+        str(export), "--out-dir", str(out), "--baseline", str(make_baseline(tmp_path)),
+        "--reference-export", str(reference_zip),
+        "--reference-export", str(reference_folder),
+    ]) == 0
+    report = json.loads((out / imp.REPORT_JSON).read_text())
+    assert (out / "canon_labelled/\u00c9d. \u00dcber/REF.1r.1.txt").is_file()
+    assert (out / "canon_labelled/Cite \u2013 4/NEW.1r.1.txt").is_file()
+    assert {r["reason"] for r in report["key_names_restored"]} == {"xml_id", "unique_key"}
+    assert "Key names restored" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("ids", [
+    ["NEW.1r.1"], ["A.1r.1", "B.1r.1"], ["A.1r.1", "NEW.1r.1"],
+])
+def test_ambiguous_stripped_key_is_kept_and_reported(tmp_path, ids):
+    baseline = tmp_path / "baseline"
+    write_tree(baseline, {
+        "canon_labelled/Cite \u2013 4/A.1r.1.txt": "   a ",
+        "canon_labelled/Cite \u2212 4/B.1r.1.txt": "   b ",
+        "canon_unlabelled/U.1r.1.txt": "   u ",
+    })
+    report, out = run(tmp_path, make_zip(tmp_path, {
+        f"cclexport/keyed/canon/Cite   4/{xml_id}.txt": "   x " for xml_id in ids
+    }), baseline=baseline)
+    assert sorted(p.name for p in (out / "canon_labelled").iterdir()) == ["Cite   4"]
+    assert "key_names_restored" not in report
+    assert report["key_names_ambiguous"] == [{
+        "export_key": "Cite   4", "candidates": ["Cite \u2013 4", "Cite \u2212 4"],
+        "xml_ids": ids,
+    }]
+    assert report["summary"]["key_names_ambiguous"] == 1
+    assert "## Ambiguous key names (1)" in (out / imp.REPORT_MD).read_text()
+
+
+def test_conflicting_reference_keys_for_the_same_xml_id_are_not_guessed(tmp_path):
+    baseline = tmp_path / "custom-baseline"
+    write_tree(baseline, {
+        "canon_labelled/Cite \u2013 4/A.1r.1.txt": "   a ",
+        "canon_unlabelled/U.1r.1.txt": "   u ",
+    })
+    reference = make_zip(tmp_path, {
+        "cclexport/keyed/canon/Cite \u2212 4/A.1r.1.txt": "   a ",
+    }, "reference.zip")
+    report, out = run(tmp_path, make_zip(tmp_path, {
+        "cclexport/keyed/canon/Cite   4/A.1r.1.txt": "   a ",
+    }), baseline=baseline, reference_exports=[reference])
+    assert (out / "canon_labelled/Cite   4/A.1r.1.txt").is_file()
+    assert report["key_names_ambiguous"][0]["candidates"] == ["Cite \u2013 4", "Cite \u2212 4"]
+
+
+@pytest.mark.parametrize("source", ["baseline", "reference"])
+def test_empty_known_key_directories_can_restore_new_witnesses(tmp_path, source):
+    baseline = make_baseline(tmp_path)
+    if source == "baseline":
+        (baseline / "canon_labelled/Empty \u2013 key").mkdir()
+        references = []
+    else:
+        reference = make_folder(tmp_path, {
+            "cclexport/unkeyed/canon/REF.1r.1.txt": "   ref ",
+        }, "reference")
+        (reference / "keyed/canon/Empty \u2013 key").mkdir(parents=True)
+        references = [reference]
+    report, out = run(tmp_path, make_zip(tmp_path, {
+        "cclexport/keyed/canon/Empty   key/NEW.1r.1.txt": "   x ",
+    }), baseline=baseline, reference_exports=references)
+    assert (out / "canon_labelled/Empty \u2013 key/NEW.1r.1.txt").is_file()
+    assert report["key_names_restored"][0]["reason"] == "unique_key"
+
+
+def test_reference_whitespace_variants_are_the_same_known_key(tmp_path):
+    references = [
+        make_zip(tmp_path, {
+            f"cclexport/keyed/canon/{key}/REF.1r.1.txt": "   ref ",
+        }, f"reference-{i}.zip")
+        for i, key in enumerate(["\u00c9d.  Example", "\u00c9d. Example"])
+    ]
+    report, out = run(tmp_path, make_zip(tmp_path, {
+        "cclexport/keyed/canon/E d. Example/NEW.1r.1.txt": "   x ",
+    }), reference_exports=references)
+    assert (out / "canon_labelled/\u00c9d.  Example/NEW.1r.1.txt").is_file()
+    assert report["key_names_restored"][0]["reason"] == "unique_key"
+
+
+def test_reference_exports_are_validated_and_protected_from_output_overlap(tmp_path):
+    export = make_zip(tmp_path, export_files())
+    reference = make_folder(tmp_path, {
+        "cclexport/readme.txt": "   not a witness ",
+    }, "reference")
+    with pytest.raises(imp.ExportError, match="below 'cclexport/'"):
+        run(tmp_path, export, reference_exports=[reference])
+    with pytest.raises(imp.ExportError, match="overlaps"):
+        run(tmp_path, export, reference_exports=[reference], out_name="reference/cclexport/out")
+    assert not (tmp_path / "out").exists()
+
+
+def test_unknown_ascii_key_and_all_ascii_export_are_flagged(tmp_path):
+    report, out = run(tmp_path, make_zip(tmp_path, {
+        "cclexport/keyed/canon/Unknown new key/NEW.1r.1.txt": "   x ",
+    }))
+    assert (out / "canon_labelled/Unknown new key/NEW.1r.1.txt").is_file()
+    assert report["key_names_unchecked"] == [{
+        "export_key": "Unknown new key", "xml_ids": ["NEW.1r.1"],
+    }]
+    assert report["summary"]["key_names_unchecked"] == 1
+    assert len(report["warnings"]) == 1
+    assert "no non-ASCII path characters" in report["warnings"][0]
+    markdown = (out / imp.REPORT_MD).read_text()
+    assert "## Key names not checked (1)" in markdown
+    assert "## Warnings (1)" in markdown
+
+
+def test_new_ascii_key_is_not_listed_when_export_has_non_ascii_paths(tmp_path):
+    report, out = run(tmp_path, make_zip(tmp_path, {
+        "cclexport/keyed/canon/NEWK.500.1/NEW.1r.1.txt": "   x ",
+        "cclexport/keyed/canon/Cite \u2013 4/OLD.1r.1.txt": "   y ",
+    }))
+    assert (out / "canon_labelled/NEWK.500.1/NEW.1r.1.txt").is_file()
+    assert "key_names_unchecked" not in report
+    assert "key_names_unchecked" not in report["summary"]
+    assert "warnings" not in report
+    assert "Key names not checked" not in (out / imp.REPORT_MD).read_text()
+
+
+def test_export_with_non_ascii_paths_is_never_restored(tmp_path):
+    baseline = tmp_path / "own-baseline"
+    write_tree(baseline, {
+        "canon_labelled/Ep. 1\u201323/A.1r.1.txt": "   a ",
+        "canon_unlabelled/U.1r.1.txt": "   u ",
+    })
+    report, out = run(tmp_path, make_zip(tmp_path, {
+        "cclexport/keyed/canon/Ep. 1 23/A.1r.1.txt": "   a ",
+        "cclexport/keyed/canon/Ep. 1 23/NEW.1r.1.txt": "   n ",
+        "cclexport/keyed/canon/Other \u00e9/B.1r.1.txt": "   b ",
+    }), baseline=baseline)
+    assert (out / "canon_labelled/Ep. 1 23/A.1r.1.txt").is_file()
+    assert (out / "canon_labelled/Ep. 1 23/NEW.1r.1.txt").is_file()
+    assert not (out / "canon_labelled/Ep. 1\u201323").exists()
+    assert [r["xml_id"] for r in report["key_changed"]] == ["A.1r.1"]
+    assert "key_names_restored" not in report
+    assert "warnings" not in report
+
+
+def test_reference_only_key_gets_the_name_importing_the_reference_gives(tmp_path):
+    reference = make_zip(tmp_path, {
+        "cclexport/keyed/canon/Long cite,\r\nB\u2013 2/R.1r.1.txt": "   r ",
+        "cclexport/keyed/canon/Tab\tcite \u2013 3/T.1r.1.txt": "   t ",
+    }, "reference.zip")
+    stripped = make_zip(tmp_path, {
+        "cclexport/keyed/canon/Long cite,  B  2/R.1r.1.txt": "   r ",
+        "cclexport/keyed/canon/Tab cite   3/T.1r.1.txt": "   t ",
+    })
+    report, out = run(tmp_path, stripped, reference_exports=[reference])
+    _, direct = run(tmp_path, reference, out_name="direct")
+    listing = lambda root: sorted(
+        p.relative_to(root).as_posix() for p in (root / "canon_labelled").rglob("*.txt")
+    )
+    assert listing(out) == listing(direct)
+    assert "canon_labelled/Long cite,B\u2013 2/R.1r.1.txt" in listing(out)
+    assert "canon_labelled/Tab cite \u2013 3/T.1r.1.txt" in listing(out)
+    assert sorted(r["directory"] for r in report["key_names_restored"]) == [
+        "Long cite,B\u2013 2", "Tab cite \u2013 3",
+    ]
+
+
+def test_exact_known_key_is_kept_even_when_it_is_another_keys_stripped_form(tmp_path):
+    baseline = tmp_path / "own-baseline"
+    write_tree(baseline, {
+        "canon_labelled/Cite 4/A.1r.1.txt": "   a ",
+        "canon_labelled/Cite \u2013 4/B.1r.1.txt": "   b ",
+        "canon_unlabelled/U.1r.1.txt": "   u ",
+    })
+    # B's own xml:id points at "Cite \u2013 4", but its exported key matches the
+    # known key "Cite 4" exactly, so it moves there rather than being restored.
+    report, out = run(tmp_path, make_zip(tmp_path, {
+        "cclexport/keyed/canon/Cite 4/B.1r.1.txt": "   b ",
+    }), baseline=baseline)
+    assert (out / "canon_labelled/Cite 4/B.1r.1.txt").is_file()
+    assert not (out / "canon_labelled/Cite \u2013 4").exists()
+    assert [r["xml_id"] for r in report["key_changed"]] == ["B.1r.1"]
+    assert "key_names_restored" not in report
+
+
+def test_all_ascii_warning_considers_unselected_paths_not_witness_text(tmp_path):
+    report, _ = run(tmp_path, make_zip(tmp_path, {
+        "cclexport/keyed/canon/AAAA.100.1/MS1.1r.1.txt": "   \u00e9 ",
+        "cclexport/unkeyed/regCanon/\u00c9X.1r.1.txt": "   x ",
+    }))
+    assert "warnings" not in report
+    report, _ = run(tmp_path, make_zip(tmp_path, {
+        "cclexport/keyed/canon/AAAA.100.1/MS1.1r.1.txt": "   \u00e9 ",
+    }, "ascii.zip"), out_name="ascii-out")
+    assert "no non-ASCII path characters" in report["warnings"][0]
+
+
+def test_unstripped_unknown_unicode_key_is_not_restored(tmp_path):
+    baseline = tmp_path / "baseline"
+    write_tree(baseline, {
+        "canon_labelled/Cite \u2013 4/A.1r.1.txt": "   a ",
+        "canon_unlabelled/U.1r.1.txt": "   u ",
+    })
+    report, out = run(tmp_path, make_zip(tmp_path, {
+        "cclexport/keyed/canon/Cite \u00e9 4/A.1r.1.txt": "   a ",
+    }), baseline=baseline)
+    assert (out / "canon_labelled/Cite \u00e9 4/A.1r.1.txt").is_file()
+    assert report["key_changed"][0]["directory"] == "Cite \u00e9 4"
+    assert "key_names_restored" not in report
+
+
+@pytest.mark.parametrize("other_key", ["Cite \u2013 4", "cite \u2013 4"])
+def test_restored_keys_still_pass_the_final_directory_collision_check(other_key):
+    # The safety net itself, whatever restoration decided.
+    with pytest.raises(imp.ExportError, match="refusing to merge two keys"):
+        imp.plan_directories(
+            ["Cite   4", other_key], ["Cite \u2013 4"],
+            restored_keys={"Cite   4": "Cite \u2013 4"},
+        )
+
+
+def test_restored_keys_differing_only_in_case_are_refused(tmp_path):
+    baseline = tmp_path / "own-baseline"
+    write_tree(baseline, {
+        "canon_labelled/Cite \u2013 4/A.1r.1.txt": "   a ",
+        "canon_unlabelled/U.1r.1.txt": "   u ",
+    })
+    reference = make_zip(tmp_path, {
+        "cclexport/keyed/canon/cite \u2013 4/B.1r.1.txt": "   b ",
+    }, "reference.zip")
+    export = make_zip(tmp_path, {
+        "cclexport/keyed/canon/Cite   4/A.1r.1.txt": "   a ",
+        "cclexport/keyed/canon/cite   4/B.1r.1.txt": "   b ",
+    })
+    with pytest.raises(imp.ExportError, match="refusing to merge two keys"):
+        run(tmp_path, export, baseline=baseline, reference_exports=[reference])
+    assert not (tmp_path / "out").exists()
+
+
+def test_unstripped_export_is_byte_identical_to_the_original_importer(tmp_path, monkeypatch):
+    class FrozenDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 11, 16, 12, 0, tzinfo=tz)
+
+    monkeypatch.setattr(imp, "datetime", FrozenDatetime)
+    monkeypatch.chdir(tmp_path)
+    write_tree(Path("baseline"), {
+        "canon_labelled/\u00c9d. \u2013 4/A.1r.1.txt": "   a ",
+        "canon_labelled/Long cite,\nB 2/B.1r.1.txt": "   b ",
+        "canon_unlabelled/U.1r.1.txt": "   u ",
+    })
+    export = make_folder(Path("."), {
+        "cclexport/keyed/canon/E\u0301d. \u2013 4/A.1r.1.txt": "   a ",
+        "cclexport/keyed/canon/Long cite,B 2/B.1r.1.txt": "   b ",
+        "cclexport/unkeyed/canon/U.1r.1.txt": "   u ",
+    })
+    imp.run(export, Path("out"), baseline_root=Path("baseline"))
+    digests = {
+        p.relative_to("out").as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+        for p in sorted(Path("out").rglob("*")) if p.is_file()
+    }
+    # Captured from the pre-restoration importer with the synthetic fixture above.
+    assert digests == {
+        "canon_labelled/Long cite,\nB 2/B.1r.1.txt":
+            "af9ae1bbcb6e68c73dac852a3cbdd30608a6ac39aa79d29b8c349bdd9aa51df0",
+        "canon_labelled/\u00c9d. \u2013 4/A.1r.1.txt":
+            "eeff1d16e3212d10a9b6e3c5b18580f86e72aa844a986b68ab48441a863706c1",
+        "canon_unlabelled/U.1r.1.txt":
+            "c2f56631c0adf75e7944ec16f21c1ac652902634afe7bd9f5b6bc55c2f12a985",
+        "import_report.json":
+            "102cca7322c6e92a764a70aab58de609aca275f833e178a791b30b564dc9cfdf",
+        "import_report.md":
+            "90508e779061dbef0787b118eed31f5f0fe272b171fb38aad971955aa0a8b2d2",
+        "witnesses.csv":
+            "a9551f511986f2b60371655dada7ad33269de97e563be76c3012fe28d9a6aafb",
+    }
 
 
 # --- refusals: layout and untrusted input ------------------------------------
