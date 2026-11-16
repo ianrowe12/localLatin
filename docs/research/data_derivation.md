@@ -179,6 +179,36 @@ different export keys, or a baseline directory a key that did not match it. A ke
 refused when it is blank, starts with `.`, holds a backslash, NUL or another control
 character, or exceeds 255 bytes; `/` is the path separator, so a key containing it fails the layout check.
 
+Stripped key names (issue #292). Some exports replace CR, LF and each non-ASCII
+code point with one space each, including combining marks in NFD names. The importer
+checks unknown ASCII keys against baseline keys and keys in previous exports supplied
+with repeatable `--reference-export` options (zip or unzipped folder):
+
+```bash
+python scripts/data/import_ccl_export.py <new-export.zip> \
+    --reference-export <previous-export.zip> \
+    --reference-export <another-cclexport-folder> \
+    --out-dir /scratch/ccl_import_restored
+```
+
+The same stripping rule is applied to both NFC and NFD spellings of known keys,
+then existing whitespace matching collapses the replacement spaces. A unique known
+key for the same xml:id takes precedence; otherwise only a unique key-level match
+is restored. If witnesses sharing an exported key disagree or remain ambiguous,
+the whole key is left unchanged, never guessed. Exact known
+matches keep the existing behavior, including the older line-break deletion rule.
+Restored names are NFC-normalised and pass the same final directory collision check.
+Only key names change, never witness text.
+
+The optional JSON sections `key_names_restored`, `key_names_ambiguous` and
+`key_names_unchecked` list restored names (with the matching method), ambiguous
+candidates, and new ASCII keys with no known match. Each has a count in `summary`
+and a corresponding Markdown section: "Key names restored", "Ambiguous key names"
+and "Key names not checked". Empty sections are omitted. `warnings` adds an
+all-ASCII-path warning when the whole export has no non-ASCII path characters,
+even if its text does. An unstripped export with no new diagnostics keeps the
+original output and report bytes.
+
 The export is treated as untrusted: zip entry names are read from the zip (as UTF-8,
 whatever the archiver's flag says), folders are walked without following symlinks,
 names are NFC-normalised, and duplicate xml_ids, case-only collisions, unexpected

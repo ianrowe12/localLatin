@@ -76,6 +76,14 @@ keys.
    export keys. The one key a baseline directory may receive is a key that
    matched it under rule 1.
 
+Some exports replace CR, LF and every non-ASCII code point in keys with one
+space each. Unknown ASCII keys without line breaks are checked against known
+keys from the baseline and any repeatable ``--reference-export`` inputs.
+Matching strips both NFC and NFD spellings before applying ``key_match_form``.
+A unique match for the same xml_id takes priority over a unique key-level
+match; ambiguous matches are reported and left alone. Restored names are NFC
+and still pass the final directory collision check.
+
 The report holds xml_ids, keys, counts and sha256 digests only: no witness
 text and no reviewer data (this script never opens the feedback database).
 
@@ -172,6 +180,17 @@ def key_match_form(key: str) -> str:
     space is kept, so ``Ep. 1 23`` and ``Ep. 12 3`` stay different keys.
     """
     return " ".join(_LINE_BREAKS.sub("", nfc(key)).split())
+
+
+def stripped_key_forms(key: str) -> set[str]:
+    """Strip original, NFC and NFD spellings, using the existing match rules."""
+    return {
+        key_match_form("".join(
+            " " if char in "\r\n" or not char.isascii() else char
+            for char in spelling
+        ))
+        for spelling in (key, nfc(key), unicodedata.normalize("NFD", key))
+    }
 
 
 _OTHER_WHITESPACE = re.compile(r"[^\S ]")
@@ -285,6 +304,8 @@ class Export:
     witnesses: List[Witness]
     nfc_renamed: int = 0
     ignored: List[str] = field(default_factory=list)
+    key_names: set[str] = field(default_factory=set)  # Raw spellings before NFC.
+    all_paths_ascii: bool = True
 
     def types(self) -> Dict[str, Counter]:
         out: Dict[str, Counter] = defaultdict(Counter)
@@ -375,8 +396,10 @@ def _folder_entries(root: Path) -> List[RawEntry]:
     return entries
 
 
-def _parse_entries(entries: Sequence[RawEntry]) -> Tuple[List[Witness], int, List[str]]:
-    """Validate the layout and load every witness. Returns (witnesses, nfc_renamed, ignored)."""
+def _parse_entries(
+    entries: Sequence[RawEntry],
+) -> Tuple[List[Witness], int, List[str], set[str], bool]:
+    """Validate names and layout, load witnesses, and collect key/path metadata."""
     witnesses: List[Witness] = []
     seen_names: Dict[str, str] = {}
     folded_names: Dict[str, str] = {}
@@ -385,6 +408,8 @@ def _parse_entries(entries: Sequence[RawEntry]) -> Tuple[List[Witness], int, Lis
     ignored: List[str] = []
     nfc_renamed = 0
     total = 0
+    key_names: set[str] = set()
+    all_paths_ascii = True
 
     for raw_name, is_dir, loader in entries:
         name = nfc(raw_name)
@@ -398,6 +423,7 @@ def _parse_entries(entries: Sequence[RawEntry]) -> Tuple[List[Witness], int, Lis
         if not is_dir and parts[-1] in IGNORED_FILENAMES:
             ignored.append(name)
             continue
+        all_paths_ascii = all_paths_ascii and raw_name.isascii()
         if parts[0] != EXPORT_ROOT:
             raise ExportError(f"{where}: outside '{EXPORT_ROOT}/'")
         for component in parts:
@@ -419,6 +445,7 @@ def _parse_entries(entries: Sequence[RawEntry]) -> Tuple[List[Witness], int, Lis
             raise ExportError(f"{where}: unexpected unit type name {parts[2]!r}")
         if len(parts) >= 4 and parts[1] == KEYED:
             _check_key(parts[3], where)
+            key_names.add(raw_name.split("/")[3])
 
         file_depth = 5 if len(parts) >= 2 and parts[1] == KEYED else 4
         if is_dir:
@@ -464,7 +491,7 @@ def _parse_entries(entries: Sequence[RawEntry]) -> Tuple[List[Witness], int, Lis
         )
     if not witnesses:
         raise ExportError("the export holds no witness files")
-    return witnesses, nfc_renamed, ignored
+    return witnesses, nfc_renamed, ignored, key_names, all_paths_ascii
 
 
 def read_export(path: Path) -> Export:
@@ -484,8 +511,10 @@ def read_export(path: Path) -> Export:
             for chunk in iter(lambda: handle.read(1 << 20), b""):
                 digest.update(chunk)
         with zipfile.ZipFile(path) as archive:
-            witnesses, renamed, ignored = _parse_entries(_zip_entries(archive))
-        return Export("zip", path.name, digest.hexdigest(), witnesses, renamed, ignored)
+            witnesses, renamed, ignored, keys, ascii_paths = _parse_entries(_zip_entries(archive))
+        return Export(
+            "zip", path.name, digest.hexdigest(), witnesses, renamed, ignored, keys, ascii_paths
+        )
     if not stat.S_ISDIR(st.st_mode):
         raise ExportError(f"{path}: neither a zip file nor a folder")
     root = path
@@ -498,8 +527,8 @@ def read_export(path: Path) -> Export:
         root = path / EXPORT_ROOT
         if os.path.islink(root) or not root.is_dir():
             raise ExportError(f"{root}: not a plain directory")
-    witnesses, renamed, ignored = _parse_entries(_folder_entries(root))
-    return Export("folder", path.name, None, witnesses, renamed, ignored)
+    witnesses, renamed, ignored, keys, ascii_paths = _parse_entries(_folder_entries(root))
+    return Export("folder", path.name, None, witnesses, renamed, ignored, keys, ascii_paths)
 
 
 # --------------------------------------------------------------------------
@@ -560,9 +589,11 @@ class KeyNameCase:
 
 
 def plan_directories(
-    keys: Iterable[str], baseline_dirs: Iterable[str]
+    keys: Iterable[str], baseline_dirs: Iterable[str],
+    *, restored_keys: Optional[Mapping[str, str]] = None,
 ) -> Tuple[Dict[str, str], List[KeyNameCase]]:
     """Directory name for every export key, and every case where it is not the key itself."""
+    restored_keys = restored_keys or {}
     by_form: Dict[str, str] = {}
     for directory in sorted(set(baseline_dirs)):
         form = key_match_form(directory)
@@ -585,6 +616,11 @@ def plan_directories(
                 "line breaks or repeated whitespace; they cannot be kept apart"
             )
         export_forms[form] = key
+        if key in restored_keys:
+            directory = nfc(restored_keys[key])
+            _check_key(directory, f"restored key {key!r}")
+            plan[key] = directory
+            continue
         baseline = by_form.get(form)
         if baseline is not None:
             plan[key] = baseline
@@ -600,7 +636,10 @@ def plan_directories(
     # Rule 4, checked on the finished plan rather than trusted to the rules
     # above: no output directory receives two different export keys, and a
     # baseline directory receives only a key that matched it.
-    matched = {key for key in plan if by_form.get(key_match_form(key)) == plan[key]}
+    matched = {
+        key for key in plan
+        if by_form.get(key_match_form(restored_keys.get(key, key))) == plan[key]
+    }
     baseline_names = set(by_form.values())
     claimed: Dict[str, Tuple[str, str]] = {}
     for key in sorted(plan):
@@ -622,6 +661,82 @@ def plan_directories(
                 "to merge two keys"
             )
     return plan, cases
+
+
+def restore_key_names(
+    witnesses: Sequence[Witness],
+    baseline: Mapping[str, BaselineWitness],
+    references: Sequence[Export],
+    baseline_keys: Iterable[str] = (),
+) -> Tuple[Dict[str, str], dict]:
+    """Conservatively recover stripped keys without changing exact known matches."""
+    known_keys = set(baseline_keys) | {
+        b.directory for b in baseline.values() if b.directory is not None
+    }
+    known_by_form = {
+        key_match_form(key): nfc(key) for key in sorted(known_keys)
+    }
+    known_by_id: Dict[str, set[str]] = defaultdict(set)
+    for witness in baseline.values():
+        if witness.directory is not None:
+            known_by_id[witness.xml_id].add(witness.directory)
+    for reference in references:
+        known_keys.update(reference.key_names)
+        for key in sorted(reference.key_names):
+            known_by_form.setdefault(key_match_form(key), nfc(key))
+        for witness in reference.witnesses:
+            if witness.key is not None:
+                known_by_id[witness.xml_id].add(known_by_form[key_match_form(witness.key)])
+
+    known_forms = set(known_by_form)
+    stripped: Dict[str, set[str]] = defaultdict(set)
+    for key in known_keys:
+        for form in stripped_key_forms(key):
+            stripped[form].add(known_by_form[key_match_form(key)])
+
+    ids_by_key: Dict[str, List[str]] = defaultdict(list)
+    for witness in witnesses:
+        if witness.key is not None:
+            ids_by_key[witness.key].append(witness.xml_id)
+
+    restored_keys: Dict[str, str] = {}
+    restored, ambiguous, unchecked = [], [], []
+    for key, ids in sorted(ids_by_key.items()):
+        form = key_match_form(key)
+        if form in known_forms or not key.isascii():
+            continue
+        row = {"export_key": key, "xml_ids": sorted(ids)}
+        if _LINE_BREAKS.search(key):
+            unchecked.append(row)
+            continue
+        candidates = stripped.get(form, set())
+        preferred: set[str] = set()
+        matched_by_id = False
+        # All witnesses sharing an export key must agree on one directory.
+        for xml_id in ids:
+            id_candidates = known_by_id.get(xml_id, set()) & candidates
+            matched_by_id = matched_by_id or bool(id_candidates)
+            preferred.update(id_candidates or candidates)
+        if len(preferred) == 1:
+            directory = next(iter(preferred))
+            restored_keys[key] = directory
+            restored.append({
+                **row, "directory": directory,
+                "reason": "xml_id" if matched_by_id else "unique_key",
+            })
+        elif preferred:
+            ambiguous.append({**row, "candidates": sorted(preferred)})
+        else:
+            unchecked.append(row)
+
+    diagnostics = {
+        name: rows for name, rows in (
+            ("key_names_restored", restored),
+            ("key_names_ambiguous", ambiguous),
+            ("key_names_unchecked", unchecked),
+        ) if rows
+    }
+    return restored_keys, diagnostics
 
 
 def parse_types(raw: str, export: Export) -> List[str]:
@@ -655,6 +770,8 @@ def build_report(
     types: Sequence[str],
     baseline: Mapping[str, BaselineWitness],
     baseline_path: str,
+    references: Sequence[Export] = (),
+    baseline_keys: Iterable[str] = (),
 ) -> Tuple[dict, Dict[str, str]]:
     """The change report and the key -> directory plan."""
     selected = [w for w in export.witnesses if w.unit_type in types]
@@ -662,8 +779,12 @@ def build_report(
     everywhere = {w.xml_id: w for w in export.witnesses}
 
     baseline_dirs = {b.directory for b in baseline.values() if b.directory is not None}
+    restored_keys, key_diagnostics = restore_key_names(
+        selected, baseline, references, baseline_keys
+    )
     plan, cases = plan_directories(
-        (w.key for w in selected if w.key is not None), baseline_dirs
+        (w.key for w in selected if w.key is not None), baseline_dirs,
+        restored_keys=restored_keys,
     )
 
     def directory_of(witness: Witness) -> Optional[str]:
@@ -828,6 +949,15 @@ def build_report(
             "startup_forecast": forecast,
         },
     }
+    for name, rows in key_diagnostics.items():
+        report[name] = rows
+        summary[name] = len(rows)
+    if export.all_paths_ascii:
+        report["warnings"] = [
+            "The whole export has no non-ASCII path characters. Key names may have "
+            "been stripped; new ASCII keys without a known match cannot be checked "
+            "or restored. Supply previous exports with --reference-export."
+        ]
     return report, plan
 
 
@@ -1024,6 +1154,21 @@ def render_markdown(report: dict) -> str:
         f"{json.dumps(c['directory'], ensure_ascii=False)} ({c['reason']})"
         for c in report["key_name_cases"]
     ])
+    listing("Key names restored", [
+        f"{json.dumps(r['export_key'], ensure_ascii=False)} restored as "
+        f"{json.dumps(r['directory'], ensure_ascii=False)} ({r['reason']})"
+        for r in report.get("key_names_restored", [])
+    ])
+    listing("Ambiguous key names", [
+        f"{json.dumps(r['export_key'], ensure_ascii=False)} left unchanged; candidates: "
+        + ", ".join(json.dumps(key, ensure_ascii=False) for key in r["candidates"])
+        for r in report.get("key_names_ambiguous", [])
+    ])
+    listing("Key names not checked", [
+        f"{json.dumps(r['export_key'], ensure_ascii=False)}: new ASCII key with no known match"
+        for r in report.get("key_names_unchecked", [])
+    ])
+    listing("Warnings", report.get("warnings", []))
     return "\n".join(lines) + "\n"
 
 
@@ -1034,13 +1179,21 @@ def run(
     types: str = ",".join(DEFAULT_TYPES),
     baseline_root: Path = DEFAULT_BASELINE,
     dry_run: bool = False,
+    reference_exports: Sequence[Path] = (),
 ) -> dict:
     """Import, write and return the report. Raises ExportError on any refusal."""
-    target = check_out_dir(out_dir, forbidden=[export_path, baseline_root])
+    target = check_out_dir(out_dir, forbidden=[export_path, baseline_root, *reference_exports])
     export = read_export(export_path)
+    references = [read_export(path) for path in reference_exports]
     selected_types = parse_types(types, export)
     baseline = read_baseline(baseline_root)
-    report, plan = build_report(export, selected_types, baseline, str(baseline_root))
+    baseline_keys = [
+        path.name for path in (baseline_root / LABELLED_SUBDIR).iterdir()
+        if not path.is_symlink() and path.is_dir()
+    ]
+    report, plan = build_report(
+        export, selected_types, baseline, str(baseline_root), references, baseline_keys
+    )
     selected = [w for w in export.witnesses if w.unit_type in selected_types]
 
     staging = target.parent / f".{target.name}.partial-{uuid.uuid4().hex[:8]}"
@@ -1087,6 +1240,10 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Corpus root holding canon_labelled/ and canon_unlabelled/ (default: repo data/).",
     )
     parser.add_argument(
+        "--reference-export", type=Path, action="append", default=[],
+        help="Previous export zip or folder supplying known keys (repeatable).",
+    )
+    parser.add_argument(
         "--dry-run", action="store_true",
         help="Write only the report into --out-dir, not the corpus.",
     )
@@ -1099,6 +1256,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         report = run(
             args.export, args.out_dir, types=args.types,
             baseline_root=args.baseline, dry_run=args.dry_run,
+            reference_exports=args.reference_export,
         )
     except (ExportError, OSError) as exc:
         print(f"import_ccl_export: refused: {exc}", file=sys.stderr)
