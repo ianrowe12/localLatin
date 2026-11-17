@@ -87,7 +87,7 @@ def draws(args, name, group, n, domain):
 
 def reference_scores(ctx, data_root):
     texts = [
-        resolve_source_path(path, Path(data_root)).read_text(encoding="utf-8", errors="replace")
+        resolve_source_path(path, Path(data_root)).read_text(encoding="utf-8", errors="ignore")
         for frame in (ctx["split"], ctx["qmeta"]) for path in frame["path"]
     ]
     n_lab = len(ctx["split"])

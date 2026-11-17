@@ -6,7 +6,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=64g
-#SBATCH --time=08:00:00
+#SBATCH --time=03:00:00
 #SBATCH --output=slurm/logs/dataset2_score_%j.out
 #SBATCH --error=slurm/logs/dataset2_score_%j.err
 #
@@ -21,10 +21,12 @@
 #   5. layers         agreed acc@1/MRR at every cached layer, train-only D
 #   6. render         CSV-driven LaTeX tables + depth PDF/PNG
 #
-# --time: selected-layer scoring was budgeted at 90 minutes. The full depth
-# sweep adds hundreds of cells, including train-fitted PCA on the 4096-d cache
-# and train D sweeps wherever a per-layer record is absent. Allow eight hours;
-# no GPU allocation, extraction or connection to another host is needed.
+# --time: about an hour of work, with the same 3x margin as before. The
+# selected-layer steps were estimated at ~25 minutes. `layers` is ~900 cells at
+# 0.1-1.1 s each (timed at real sizes on synthetic data), and 2.5-6.6 s for a
+# train D retune, which only runs where a per-layer D record is missing: at
+# most ~30 minutes. `compare` and `render` take minutes. No GPU allocation,
+# extraction or connection to another host is needed.
 #
 # Submit from DATA_ROOT (the main checkout, whose runs/ holds the caches):
 #   cd /u/irowerojas/localLatin && sbatch $CODE_ROOT/slurm/resubmit/dataset2_score.sbatch

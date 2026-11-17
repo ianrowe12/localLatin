@@ -18,7 +18,7 @@ sbatch /u/irowerojas/localLatin/slurm/resubmit/dataset2_score.sbatch
 ```
 
 This requests the `cpu` partition, `beto-delta-cpu` account, 16 CPUs, 64 GB
-and eight hours, with no GPUs. It checks the Qwen3-8B manifests, selects that
+and three hours (about one hour of work), with no GPUs. It checks the Qwen3-8B manifests, selects that
 model's layers on benchmark-v1 train, runs the unchanged `score` command,
 and runs `compare`, `layers` and `render`. `CODE_ROOT` can point at a code
 checkout distinct from `DATA_ROOT`; the working directory remains `DATA_ROOT`

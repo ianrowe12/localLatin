@@ -602,6 +602,41 @@ def test_reference_different_exclusions_get_an_explicit_independent_stream(parit
     assert agreed["n_excluded"].tolist() == [1] * 4
     assert set(agreed["bootstrap_stream"]) == {"reference_named"}
 
+    # The CI really comes from the named reference stream, not the legacy RNG.
+    ctx = dp.context(args)
+    q = dp.labels(args, ctx)
+    reference = dp.reference_scores(ctx, args.data_root)
+    order = sd.rank_order(np.nan_to_num(reference["scores"], nan=-np.inf))
+    ref_ranks = dp.rank_vectors(order, reference["excluded_queries"], q)
+    mask = (q["status"] == "agreed").to_numpy()
+    valid = mask & ~np.isnan(ref_ranks["final"])
+    n = int(valid.sum())
+    want = sd.bootstrap(ref_ranks["final"][valid], dp.draws(args, "agreed", "all", n, 1))
+    for metric, row in agreed.set_index("metric").iterrows():
+        np.testing.assert_allclose([row["ci_lo"], row["ci_hi"]], want[metric], atol=1e-14)
+
+    # Paired differences use their own stream (domain 2), on the queries both terms rank.
+    selection = pd.read_csv(args.out_dir / "results/selected_layers.csv")
+    cells = dp.load_rankings(args.out_dir, selection, ctx, q)
+    model = cells[(sd.MT5, "baseline")]["final"]
+    both = mask & ~np.isnan(model) & ~np.isnan(ref_ranks["final"])
+    idx = dp.draws(args, "agreed", "all", int(both.sum()), 2)
+    # A draw matrix equal to the reference's would make the two streams coincide.
+    assert not np.array_equal(idx, dp.draws(args, "agreed", "all", int(both.sum()), 1))
+    diffs = pd.read_csv(args.out_dir / "results/paired_differences.csv")
+    for metric in ("acc@1", "acc@5", "acc@10", "mrr"):
+        if metric == "mrr":
+            delta = 1 / model[both] - 1 / ref_ranks["final"][both]
+        else:
+            k = int(metric[4:])
+            delta = (model[both] <= k).astype(float) - (ref_ranks["final"][both] <= k).astype(float)
+        row = diffs[(diffs["contrast"] == "model_minus_reference")
+                    & (diffs["method"] == "baseline") & (diffs["label_set"] == "agreed")
+                    & (diffs["seen_group"] == "all") & (diffs["metric"] == metric)].iloc[0]
+        assert row["n"] == int(both.sum()) == 4
+        np.testing.assert_allclose([row["ci_lo"], row["ci_hi"]],
+                                   np.percentile(delta[idx].mean(axis=1), [2.5, 97.5]), atol=1e-14)
+
 
 def test_compare_refuses_different_legacy_bootstrap_configuration(parity_scoring):
     args = parity_scoring
@@ -611,17 +646,18 @@ def test_compare_refuses_different_legacy_bootstrap_configuration(parity_scoring
 
 
 def test_paired_ci_uses_common_queries_same_resamples_and_keeps_misses(monkeypatch):
-    q = pd.DataFrame({"status": ["agreed"] * 4, "reviewer_status": ["agreed"] * 4,
-                      "seen_group": ["model"] * 4})
-    a = {"final": np.array([1., 2., np.nan, np.inf])}
-    b = {"final": np.array([2., 1., 1., np.inf])}
+    q = pd.DataFrame({"status": ["agreed"] * 5, "reviewer_status": ["agreed"] * 5,
+                      "seen_group": ["model"] * 5})
+    # Query 2 is excluded on the a side, query 4 on the b side (the reference's OOV case).
+    a = {"final": np.array([1., 2., np.nan, np.inf, 1.])}
+    b = {"final": np.array([2., 1., 1., np.inf, np.nan])}
     a["reviewers"], b["reviewers"] = a["final"], b["final"]
     idx = np.array([[0, 0, 1], [1, 1, 2], [2, 2, 0]])
     monkeypatch.setattr(dp, "draws", lambda args, name, group, n, domain: idx)
     rows = pd.DataFrame(dp.paired_rows(None, q, a, b, {"contrast": "test"}))
     got = rows[(rows["label_set"] == "agreed") & (rows["seen_group"] == "all")]
-    assert got["n"].tolist() == [3] * 4  # inf is a miss; NaN alone is excluded.
-    assert got["n_excluded"].tolist() == [1] * 4
+    assert got["n"].tolist() == [3] * 4  # inf is a miss; NaN on either side is excluded.
+    assert got["n_excluded"].tolist() == [2] * 4
     for metric, delta in (("acc@1", np.array([1., -1., 0.])),
                           ("mrr", np.array([.5, -.5, 0.]))):
         row = got[got["metric"] == metric].iloc[0]
