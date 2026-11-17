@@ -33,13 +33,15 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from web.config import Settings
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 ITERATIONS = 200_000
 MAGIC = b"LLRS001\n"
 CIPHERTEXT = "review-snapshot.tar.gz.enc"
 WRAPPED_KEY = "review-snapshot.key.enc"
-FILES = ("reviews.csv", "ccl_key_assignments.csv", "reviewer_dirs.csv",
-         "reviewer_dir_members.csv")
+V1_FILES = ("reviews.csv", "ccl_key_assignments.csv", "reviewer_dirs.csv",
+            "reviewer_dir_members.csv")
+FILES = (*V1_FILES, "deciding_answers.csv")
+VERSION_FILES = {1: V1_FILES, SCHEMA_VERSION: FILES}
 REVIEW_COLUMNS = (
     "id", "xml_id", "query_id", "model_slug", "variant", "outcome",
     "correct_rank", "correct_dir", "selected_ranks_json", "selected_dirs_json",
@@ -51,6 +53,7 @@ DIR_COLUMNS = (
     "ccl_key", "created_at",
 )
 MEMBER_COLUMNS = ("id", "dir_id", "query_id", "xml_id", "role", "added_at")
+DECIDING_COLUMNS = ("id", "xml_id", "timestamp", "ccl_key")
 TEST_TOKEN = re.compile(r"(^|[^a-z0-9])(smoke|test|testing)([^a-z0-9]|$)", re.IGNORECASE)
 SAFE_SQLITE_MESSAGE = re.compile(
     r"(?:no such (?:table|column): [A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*"
@@ -61,7 +64,7 @@ SAFE_SQLITE_MESSAGE = re.compile(
 
 # Computed afresh for each SELECT, never stored as a table or Python lookup.
 # Account identity takes precedence over the historical display name, exactly
-# as in ccl_key_export.reviewer_identity. Directory-only authors follow reviews.
+# as in ccl_key_export.reviewer_identity. New deciders follow directory authors.
 PSEUDONYMS = """
 WITH actors(source, row_id, account_id, name) AS (
     SELECT 0, id, reviewer_account_id, reviewer FROM feedback
@@ -69,6 +72,7 @@ WITH actors(source, row_id, account_id, name) AS (
     SELECT 1, id, created_by_account_id, created_by FROM reviewer_dirs
     UNION ALL
     SELECT 2, id, added_by_account_id, added_by FROM reviewer_dir_members
+    {deciding_actors}
 ), first_events AS (
     SELECT *, ROW_NUMBER() OVER (
         PARTITION BY account_id, CASE WHEN account_id IS NULL THEN name END
@@ -140,20 +144,18 @@ def repository_sha(root: Path) -> str:
 
 def backup_database(source: Path, destination: Path) -> None:
     os.close(os.open(destination, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600))
-    src = sqlite3.connect(source.resolve().as_uri() + "?mode=ro", uri=True, timeout=30)
-    try:
-        dest = sqlite3.connect(destination)
-        try:
+    with closing(sqlite3.connect(
+        source.resolve().as_uri() + "?mode=ro", uri=True, timeout=30,
+    )) as src:
+        with closing(sqlite3.connect(destination)) as dest:
             src.backup(dest)
             if dest.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
                 raise SnapshotError("Database backup failed its integrity check.")
-        finally:
-            dest.close()
-    finally:
-        src.close()
 
 
 def safe_tables(snapshot: Path) -> dict[str, list[dict]]:
+    from web.services.feedback_db import DATABASE_SCHEMA_VERSION
+
     smoke_username = os.environ.get("LOCALLATIN_SMOKE_USERNAME", "").casefold()
 
     def is_test(*values: str | None) -> int:
@@ -164,19 +166,35 @@ def safe_tables(snapshot: Path) -> dict[str, list[dict]]:
             ) for value in values
         ))
 
-    conn = sqlite3.connect(snapshot.resolve().as_uri() + "?mode=ro", uri=True)
-    try:
+    with closing(sqlite3.connect(snapshot.resolve().as_uri() + "?mode=ro", uri=True)) as conn:
         conn.row_factory = sqlite3.Row
         conn.create_function("is_smoke_or_test", 3, is_test)
-        result = {}
-        for table, columns, name, account in (
+        has_decisions = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'deciding_answers'"
+        ).fetchone() is not None
+        # A missing table is valid only before v3. Otherwise let SQLite refuse
+        # it, rather than silently dropping final answers from a damaged DB.
+        has_decisions = has_decisions or (
+            conn.execute("PRAGMA user_version").fetchone()[0] >= DATABASE_SCHEMA_VERSION
+        )
+        pseudonyms = PSEUDONYMS.format(deciding_actors=(
+            "UNION ALL SELECT 3, id, reviewer_account_id, reviewer FROM deciding_answers"
+            if has_decisions else ""
+        ))
+        result = {"deciding_answers": []}
+        sources = [
             ("feedback", REVIEW_COLUMNS, "reviewer", "reviewer_account_id"),
             ("reviewer_dirs", DIR_COLUMNS, "created_by", "created_by_account_id"),
             ("reviewer_dir_members", MEMBER_COLUMNS, "added_by", "added_by_account_id"),
-        ):
+        ]
+        if has_decisions:
+            sources.append(
+                ("deciding_answers", DECIDING_COLUMNS, "reviewer", "reviewer_account_id")
+            )
+        for table, columns, name, account in sources:
             selected = ", ".join(f"t.{column}" for column in columns)
             result[table] = [dict(row) for row in conn.execute(
-                PSEUDONYMS + f"""
+                pseudonyms + f"""
                 SELECT {selected}, p.reviewer,
                        COALESCE(a.role, 'unknown') AS reviewer_role,
                        is_smoke_or_test(a.username, a.display_name, t.{name})
@@ -192,8 +210,6 @@ def safe_tables(snapshot: Path) -> dict[str, list[dict]]:
                 """
             )]
         return result
-    finally:
-        conn.close()
 
 
 def write_csv(path: Path, columns: tuple[str, ...], rows: list[dict]) -> None:
@@ -223,6 +239,7 @@ async def build_bundle(
             ("feedback", REVIEW_COLUMNS),
             ("reviewer_dirs", DIR_COLUMNS),
             ("reviewer_dir_members", MEMBER_COLUMNS),
+            ("deciding_answers", DECIDING_COLUMNS),
         ):
             fields = (*columns, "reviewer", "reviewer_role", "is_smoke_or_test")
             conn.execute(f"CREATE TABLE {table} ({', '.join(fields)})")
@@ -267,6 +284,7 @@ async def build_bundle(
     (bundle / FILES[1]).write_text(ccl_key_export.to_csv(assignments), encoding="utf-8")
     write_csv(bundle / FILES[2], (*DIR_COLUMNS, *extras), tables["reviewer_dirs"])
     write_csv(bundle / FILES[3], (*MEMBER_COLUMNS, *extras), tables["reviewer_dir_members"])
+    write_csv(bundle / FILES[4], (*DECIDING_COLUMNS, *extras), tables["deciding_answers"])
     reviewed = [r for r in reviews if r["outcome"] in ccl_key_export.DECISION_OUTCOMES]
     reviewed_queries = set()
     for row in reviewed:
@@ -285,6 +303,7 @@ async def build_bundle(
         "served_corpus_sha256": corpus_digest(store.file_id_to_filename),
         "row_counts": {filename: len(rows) for filename, rows in zip(FILES, (
             reviews, assignments, tables["reviewer_dirs"], tables["reviewer_dir_members"],
+            tables["deciding_answers"],
         ))},
         "rows_per_outcome": dict(sorted(Counter(r["outcome"] for r in reviews).items())),
         "distinct_queries_reviewed": len(reviewed_queries),
@@ -346,14 +365,15 @@ def encrypt_bundle(bundle: Path, public_key: Path, output: Path, temp: Path) -> 
 
 def verify_bundle(bundle: Path) -> None:
     manifest = json.loads((bundle / "manifest.json").read_text(encoding="utf-8"))
-    if manifest.get("snapshot_schema_version") != SCHEMA_VERSION:
+    files = VERSION_FILES.get(manifest.get("snapshot_schema_version"))
+    if files is None:
         raise SnapshotError("Unsupported snapshot schema version.")
     hashes = manifest.get("files")
-    if not isinstance(hashes, dict) or set(hashes) != set(FILES):
+    if not isinstance(hashes, dict) or set(hashes) != set(files):
         raise SnapshotError("Manifest file inventory is invalid.")
-    if {p.name for p in bundle.iterdir()} != {*FILES, "manifest.json"}:
+    if {p.name for p in bundle.iterdir()} != {*files, "manifest.json"}:
         raise SnapshotError("Bundle file inventory is invalid.")
-    for name in FILES:
+    for name in files:
         if not hmac.compare_digest(sha256(bundle / name), hashes[name]):
             raise SnapshotError("Manifest SHA256 verification failed.")
 
@@ -394,10 +414,10 @@ def decrypt_snapshot(artifact: Path, private_key: Path, output: Path) -> None:
         bundle.mkdir(mode=0o700)
         with tarfile.open(archive, "r:gz") as tar:
             members = tar.getmembers()
-            wanted = {*FILES, "manifest.json"}
+            names = {member.name for member in members}
             if (
-                len(members) != len(wanted)
-                or {member.name for member in members} != wanted
+                len(members) != len(names)
+                or names not in [{*files, "manifest.json"} for files in VERSION_FILES.values()]
                 or any(not member.isfile() for member in members)
             ):
                 raise SnapshotError("Unsafe or unexpected archive members.")
@@ -409,7 +429,7 @@ def decrypt_snapshot(artifact: Path, private_key: Path, output: Path) -> None:
                     shutil.copyfileobj(source, dest)
         verify_bundle(bundle)
         bundle.rename(output)
-    print(f"Verified files: {len(FILES)}")
+    print(f"Verified files: {len(members) - 1}")
 
 
 def export_snapshot(

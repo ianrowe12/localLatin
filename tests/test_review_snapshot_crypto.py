@@ -26,22 +26,29 @@ def keypair(tmp_path_factory: pytest.TempPathFactory):
     return private, public
 
 
-def test_encrypt_decrypt_helper_and_tamper_checks(tmp_path: Path, keypair) -> None:
+@pytest.mark.parametrize("schema_version", [1, snapshot.SCHEMA_VERSION])
+def test_encrypt_decrypt_helper_and_tamper_checks(
+    tmp_path: Path, keypair, schema_version: int, monkeypatch: pytest.MonkeyPatch,
+) -> None:
     work = tmp_path / "work"
     bundle = work / "bundle"
     bundle.mkdir(parents=True)
     for name in snapshot.FILES:
         (bundle / name).write_text("xml_id,ccl_key\nwitness,CTOU.567.16\n", encoding="utf-8")
-    (bundle / "manifest.json").write_text(json.dumps({
-        "snapshot_schema_version": 1,
+    files = snapshot.VERSION_FILES[schema_version]
+    manifest = {
+        "snapshot_schema_version": schema_version,
         "files": {
             name: hashlib.sha256((bundle / name).read_bytes()).hexdigest()
-            for name in snapshot.FILES
+            for name in files
         },
-    }), encoding="utf-8")
+    }
+    (bundle / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     private, public = keypair
     artifact = tmp_path / "artifact"
-    snapshot.encrypt_bundle(bundle, public, artifact, work)
+    with monkeypatch.context() as legacy_exporter:
+        legacy_exporter.setattr(snapshot, "FILES", files)
+        snapshot.encrypt_bundle(bundle, public, artifact, work)
     assert {p.name for p in artifact.iterdir()} == {snapshot.CIPHERTEXT, snapshot.WRAPPED_KEY}
     with tarfile.open(work / "snapshot.tar.gz") as tar:
         assert all(m.uid == m.gid == 0 and not m.uname and not m.gname for m in tar.getmembers())
@@ -56,11 +63,19 @@ def test_encrypt_decrypt_helper_and_tamper_checks(tmp_path: Path, keypair) -> No
                             capture_output=True, check=False, env=decrypt_env)
     assert result.returncode == 0, result.stderr
     assert all((out / name).read_bytes() == (bundle / name).read_bytes()
-               for name in (*snapshot.FILES, "manifest.json"))
+               for name in (*files, "manifest.json"))
+    assert {path.name for path in out.iterdir()} == {*files, "manifest.json"}
     # Authentication succeeds for this new envelope, but its stale manifest
     # must still prevent publication of the modified payload.
     (bundle / "reviews.csv").write_text((bundle / "reviews.csv").read_text() + "tampered\n")
     tampered = tmp_path / "tampered-artifact"
+    # Tampering checks use the current inventory, including for the legacy round trip.
+    manifest["snapshot_schema_version"] = snapshot.SCHEMA_VERSION
+    manifest["files"] = {
+        name: manifest["files"].get(name, snapshot.sha256(bundle / name))
+        for name in snapshot.FILES
+    }
+    (bundle / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     snapshot.encrypt_bundle(bundle, public, tampered, work)
     refused = tmp_path / "refused"
     result = subprocess.run([str(helper), str(tampered), str(private), str(refused)],

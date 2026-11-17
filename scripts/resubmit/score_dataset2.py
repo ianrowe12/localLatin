@@ -2,10 +2,13 @@
 
 Dataset 2 is the reviewer pilot's verdicts on the 2,238 unlabelled queries,
 exported as a pseudonymised snapshot (``runs/active/dataset2/snapshot_*``, never
-committed). A query whose reviewers confirmed one CCL key is ``agreed``; one
+committed). Label sets follow the final resolved status, including PI/admin
+answers. ``reviewers_agreed`` selects ``reviewer_status == agreed`` separately.
+A query whose reviewers confirmed one CCL key is ``agreed``; one
 where they named different keys is ``conflict``; ``no_key`` means "none of the
 top 10 served" with no key typed, which says the match was not in the served
-list and nothing about whether one exists.
+list and nothing about whether one exists. A final key resolves to ``agreed``;
+an explicit final none resolves to ``no_key``.
 
 Subcommands
 -----------
@@ -413,6 +416,8 @@ def load_snapshot(snapshot: Path, query_names: Sequence[str]) -> pd.DataFrame:
     dec = reviews[reviews["outcome"].isin(DECISION_OUTCOMES)]
     seen = dec.groupby("xml_id")["model_slug"].agg(lambda s: sorted(set(s)))
     q = keys[["xml_id", "ccl_key", "status", "conflicting_keys"]].copy()
+    q["decided"] = keys["decided"] if "decided" in keys else 0
+    q["reviewer_status"] = keys["reviewer_status"] if "reviewer_status" in keys else keys["status"]
     q["seen_models"] = q["xml_id"].map(seen)
     q["seen_group"] = [
         (m[0] if len(m) == 1 else "mixed") if isinstance(m, list) else "none"
@@ -626,8 +631,11 @@ def cmd_score(args) -> None:
         "agreed": q["status"] == "agreed",
         "agreed_plus_conflict": q["status"].isin(["agreed", "conflict"]),
         "conflict": q["status"] == "conflict",
+        "reviewers_agreed": q["reviewer_status"] == "agreed",
     }
     rng = np.random.default_rng(args.seed)
+    # Keep the new set from changing existing sets' bootstrap draws across models.
+    reviewers_rng = np.random.default_rng(args.seed)
     boot_idx: Dict[Tuple[str, str], np.ndarray] = {}
 
     per_query = q[["xml_id", "status", "seen_group", "unmapped_keys"]].copy()
@@ -680,7 +688,8 @@ def cmd_score(args) -> None:
                     continue
                 key = (set_name, g)
                 if key not in boot_idx or boot_idx[key].shape[1] != n:
-                    boot_idx[key] = rng.integers(0, n, size=(args.n_boot, n))
+                    set_rng = reviewers_rng if set_name == "reviewers_agreed" else rng
+                    boot_idx[key] = set_rng.integers(0, n, size=(args.n_boot, n))
                 point = metric_block(r)
                 ci = bootstrap(r, boot_idx[key])
                 for m, v in point.items():
@@ -734,6 +743,7 @@ def cmd_score(args) -> None:
     counts = {
         "queries_with_snapshot_row": int(len(q)),
         "status": q["status"].value_counts().to_dict(),
+        "agreed_by_final_answer": int(((q["status"] == "agreed") & (q["decided"] == 1)).sum()),
         "seen_group": q["seen_group"].value_counts().to_dict(),
         "keyed_queries_with_unmapped_key": int(((q["unmapped_keys"] > 0)
                                                 & (q["status"] != "no_key")).sum()),
@@ -786,12 +796,13 @@ def write_summary(path: Path, acc, nokey, sel, sanity, counts) -> None:
              "Layers and D selected on benchmark v1 train (see `selected_layers.csv`).",
              "Ranking over the 840 labelled directories; 95% percentile bootstrap CIs.", "",
              f"Counts: `{json.dumps(counts)}`", "",
+             f"Agreed queries settled by a final answer: {counts['agreed_by_final_answer']}.", "",
              f"Sanity: `{json.dumps(sanity)}`", "",
              "Whitening is the paper's (`PCA(whiten=True)` fit on the train rows, float32).",
              f"A cell marked `{NOT_APPLICABLE}` has no number: with n_train <= d the train",
              "covariance has a zero-variance direction, and whitening by it collapses every",
              "query onto a few directories. Paper-side handling is issue #291.", ""]
-    for set_name in ("agreed", "agreed_plus_conflict", "conflict"):
+    for set_name in ("agreed", "agreed_plus_conflict", "conflict", "reviewers_agreed"):
         sub = acc[(acc["label_set"] == set_name) & (acc["seen_group"] == "all")]
         if sub.empty:
             continue

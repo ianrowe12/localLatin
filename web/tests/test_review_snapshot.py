@@ -30,6 +30,8 @@ PRIVATE_STRINGS = (
     "Directory Only Scholar", "Automated Runner", "custom-robot-login",
     "PRIVATE reviewer note", "PRIVATE directory label", "PRIVATE password hash",
     "PRIVATE session token", "731041", "731042", "731043", "731044",
+    "Final Answer Scholar", "final.private@example.invalid", "731045",
+    "Admin Renamed", "PRIVATE final note",
 )
 
 
@@ -136,6 +138,30 @@ def build(production, tmp_path: Path):
     return work, bundle, manifest
 
 
+@pytest.fixture
+def decided_production(production):
+    with closing(sqlite3.connect(production[1])) as db, db:
+        db.execute(
+            """INSERT INTO accounts (id, username, display_name, password_hash, role)
+               VALUES (731045, 'final.private@example.invalid', 'Final Answer Scholar',
+                       'PRIVATE password hash', 'pi_admin')"""
+        )
+        db.executemany(
+            """INSERT INTO deciding_answers
+               (query_id, xml_id, reviewer_account_id, reviewer, timestamp, ccl_key, notes)
+               VALUES (?, ?, ?, ?, ?, ?, 'PRIVATE final note')""",
+            [
+                (0, "query-0", 731042, "Automated Runner", "2026-11-25 10:00:00", "candidate-b"),
+                # The higher id breaks a timestamp tie; renamed accounts keep their alias.
+                (0, "query-0", 731042, "Admin Renamed", "2026-11-25 10:00:00", "candidate-a"),
+                (2, "query-2", 731045, "Final Answer Scholar", "2026-11-26 10:00:00", None),
+                (3, "query-3", 731045, "Final Answer Scholar", "2026-11-27 10:00:00", "FINAL.100.1"),
+                (88, "retired-witness", 731042, "Admin Renamed", "2026-11-28 10:00:00", "candidate-b"),
+            ],
+        )
+    return production
+
+
 def csv_rows(bundle: Path, filename: str) -> list[dict[str, str]]:
     with (bundle / filename).open(newline="", encoding="utf-8") as stream:
         return list(csv.DictReader(stream))
@@ -175,6 +201,7 @@ def test_bundle_redaction_pseudonyms_and_manifest(production, tmp_path: Path) ->
     assert manifest["row_counts"] == {
         "reviews.csv": 9, "ccl_key_assignments.csv": 4,
         "reviewer_dirs.csv": 1, "reviewer_dir_members.csv": 2,
+        "deciding_answers.csv": 0,
     }
     snapshot.verify_bundle(bundle)
     # The API's input copy cannot contain identities either.
@@ -182,7 +209,11 @@ def test_bundle_redaction_pseudonyms_and_manifest(production, tmp_path: Path) ->
     assert all(value.encode() not in redacted_bytes for value in PRIVATE_STRINGS)
 
 
-def test_ccl_table_is_the_api_export_with_pseudonyms(production, tmp_path: Path) -> None:
+@pytest.mark.parametrize("fixture_name", ["production", "decided_production"])
+def test_ccl_table_is_the_api_export_with_pseudonyms(
+    request, fixture_name: str, tmp_path: Path,
+) -> None:
+    production = request.getfixturevalue(fixture_name)
     _, bundle, manifest = build(production, tmp_path)
     store = build_store(production[2])
 
@@ -218,13 +249,71 @@ def test_ccl_table_is_the_api_export_with_pseudonyms(production, tmp_path: Path)
     }
     for row in expected:
         row["reviewers"] = ccl_key_export.LIST_SEPARATOR.join(sorted(
-            aliases[name] for name in row["reviewers"].split(ccl_key_export.LIST_SEPARATOR)
+            aliases[name] for name in row["reviewers"].split(ccl_key_export.LIST_SEPARATOR) if name
         ))
     actual = csv_rows(bundle, "ccl_key_assignments.csv")
     assert actual == [{k: str(v) for k, v in row.items()} for row in expected]
     multi = next(row for row in actual if row["xml_id"] == "query-2")
-    assert multi["status"] == "conflict"
-    assert multi["conflicting_keys"] == "candidate-a | candidate-b"
+    assert multi["reviewer_status"] == "conflict"
+    if fixture_name == "production":
+        assert multi["status"] == "conflict"
+        assert multi["conflicting_keys"] == "candidate-a | candidate-b"
+    else:
+        assert multi["status"] == "no_key"
+        assert multi["conflicting_keys"] == ""
+
+
+def test_final_answers_are_redacted_and_share_reviewer_pseudonyms(
+    decided_production, tmp_path: Path,
+) -> None:
+    work, bundle, manifest = build(decided_production, tmp_path)
+    for path in [*bundle.iterdir(), work / "pseudonymised.db"]:
+        assert all(value.encode() not in path.read_bytes() for value in PRIVATE_STRINGS), path.name
+    decisions = csv_rows(bundle, "deciding_answers.csv")
+    assert [row["reviewer"] for row in decisions] == ["R02", "R02", "R06", "R06", "R02"]
+    assert [row["ccl_key"] for row in decisions] == [
+        "candidate-b", "candidate-a", "", "FINAL.100.1", "candidate-b",
+    ]
+    assert [row["timestamp"] for row in decisions] == [
+        "2026-11-25 10:00:00", "2026-11-25 10:00:00", "2026-11-26 10:00:00",
+        "2026-11-27 10:00:00", "2026-11-28 10:00:00",
+    ]
+    assert [row["is_smoke_or_test"] for row in decisions] == ["1", "1", "0", "0", "1"]
+    assignments = {row["xml_id"]: row for row in csv_rows(bundle, "ccl_key_assignments.csv")}
+    assert assignments["query-0"]["decided"] == "1"
+    assert assignments["query-0"]["reviewer_status"] == "conflict"
+    assert assignments["query-0"]["status"] == "agreed"
+    assert assignments["query-0"]["ccl_key"] == "candidate-a"
+    assert assignments["query-0"]["reviewers"] == "R01"
+    assert assignments["query-3"]["reviewer_status"] == ""
+    assert assignments["query-3"]["key_source"] == "final_answer"
+    assert assignments["query-3"]["reviewers"] == ""
+    assert assignments["retired-witness"]["ccl_key"] == "candidate-b"
+    assert manifest["row_counts"]["deciding_answers.csv"] == 5
+    snapshot.verify_bundle(bundle)
+
+
+def test_v2_database_snapshots_without_final_answers(production, tmp_path: Path) -> None:
+    with closing(sqlite3.connect(production[1])) as db, db:
+        db.execute("DROP TABLE deciding_answers")
+        db.execute("PRAGMA user_version=2")
+    before = production[1].read_bytes()
+    _, bundle, manifest = build(production, tmp_path)
+    assignments = csv_rows(bundle, "ccl_key_assignments.csv")
+    assert len(assignments) == 4
+    assert all(row["decided"] == "0" for row in assignments)
+    assert all(row["reviewer_status"] == row["status"] for row in assignments)
+    assert csv_rows(bundle, "deciding_answers.csv") == []
+    assert manifest["row_counts"]["deciding_answers.csv"] == 0
+    assert production[1].read_bytes() == before
+    snapshot.verify_bundle(bundle)
+
+
+def test_v3_database_missing_final_answers_table_is_not_silently_exported(production) -> None:
+    with closing(sqlite3.connect(production[1])) as db, db:
+        db.execute("DROP TABLE deciding_answers")
+    with pytest.raises(sqlite3.OperationalError, match="no such table: deciding_answers"):
+        snapshot.safe_tables(production[1])
 
 
 def test_backup_includes_wal_without_changing_live_database(production, tmp_path: Path) -> None:

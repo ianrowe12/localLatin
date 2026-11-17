@@ -60,21 +60,32 @@ instrumentation local and use synthetic accounts, never production rows.
 | File | Contents |
 |---|---|
 | `reviews.csv` | Every feedback row, ordered by insertion id: stored query id, witness xml_id, model, variant, outcome, ranks and saved directories, CCL key/action/directory/rank, schema version and review timestamp |
-| `ccl_key_assignments.csv` | The API's resolved CCL table, using the same resolver and served rankings for legacy multi-rank picks, with pseudonyms instead of reviewer names |
+| `ccl_key_assignments.csv` | The API's resolved CCL table, including final answers, `decided` and `reviewer_status`, using the same resolver and served rankings for legacy multi-rank picks, with pseudonyms instead of reviewer names |
+| `deciding_answers.csv` | Every final-answer row in insertion-id order: row id, witness xml_id, timestamp, CCL key (empty for an explicit none) and pseudonymised decider |
 | `reviewer_dirs.csv` | Directory id, seed query/witness, model, variant, CCL key, creation timestamp and pseudonymised creator |
 | `reviewer_dir_members.csv` | Directory membership decisions, stored query/witness, membership role, timestamp and pseudonymised author |
 | `manifest.json` | Snapshot schema version, UTC creation time, deployed `git_sha`, `exporter_git_sha` from the workflow checkout, installed data release, webapp corpus digest, per-file row counts, outcome counts, distinct reviewed queries, feedback reviewer count, smoke/test feedback count and SHA256 of each CSV |
 
-All three decision logs have `reviewer`, `reviewer_role` (current account role,
+All four decision logs have `reviewer`, `reviewer_role` (current account role,
 or `unknown` for legacy/deleted accounts) and `is_smoke_or_test`. The membership
 `role` column is the seed/member decision, not the account role.
 
 Reviewers become `R01`, `R02`, etc. in order of their first feedback **id**, not
 timestamp. An account's renamed display names keep one pseudonym; accountless
 historical rows use the API's stored-name identity rule. Directory-only authors
-follow feedback authors, first by directory id, then membership id. This order
-is snapshot-local, not an identifier to join across releases. SQL computes the
+follow feedback authors, first by directory id, then membership id. Accounts
+with only final answers follow those authors, by final-answer insertion id.
+Final answers reuse an author's existing pseudonym, including after a rename.
+This order is snapshot-local, not an identifier to join across releases. SQL computes the
 pseudonyms without persisting an identity lookup table or exporting a map.
+
+Snapshot schema version 2 adds `deciding_answers.csv`. A pre-v3 database with no
+final-answer table produces an empty file and assignments with `decided=0`.
+The decryption helper also accepts schema-version-1 snapshots without that file.
+Dataset-2 scoring uses the final assignment status and key. Its
+`reviewers_agreed` label set selects queries whose reviewers alone agreed;
+`agreed_by_final_answer` in `counts.json` and `summary.md` counts agreed queries
+with `decided=1`, including queries without counted reviews.
 
 Smoke/test rows are retained and flagged, not removed from CCL resolution.
 Flags recognise the configured `LOCALLATIN_SMOKE_USERNAME` secret and whole
