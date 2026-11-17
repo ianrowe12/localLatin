@@ -7,6 +7,7 @@ import RightSidebar from './RightSidebar'
 import DashboardView from '../dashboard/DashboardView'
 import FileBrowser from '../files/FileBrowser'
 import { useReviewer } from '../../contexts/ReviewerContext'
+import AdminDecisionPanel from '../feedback/AdminDecisionPanel'
 
 export default function AppShell() {
   const { currentView } = useApp()
@@ -27,7 +28,10 @@ export default function AppShell() {
             isOpen={leftOpen}
             onToggle={() => setLeftOpen((prev) => !prev)}
           />
-          <CenterArea />
+          <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+            <CenterArea />
+            <AdminDecisionPanel />
+          </div>
           <RightSidebar
             isOpen={rightOpen}
             onToggle={() => setRightOpen((prev) => !prev)}

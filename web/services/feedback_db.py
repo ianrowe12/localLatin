@@ -28,6 +28,8 @@ from web.variants import DEFAULT_VARIANT
 
 logger = logging.getLogger(__name__)
 
+DATABASE_SCHEMA_VERSION = 3
+
 #: `(query_id, model_slug, variant, rank) -> directory name or None`.
 RankDirResolver = Callable[[int, str, "str | None", int], Awaitable["str | None"]]
 
@@ -223,10 +225,11 @@ _EXPORT_COLUMNS = [
 ]
 
 #: Tables that reference an unlabelled query, as (table, query id column,
-#: xml_id column). Every one gains the xml_id column in `_migrate()`, is
-#: backfilled by `adopt_corpus()` and is checked by its startup guard.
+#: xml_id column). Witness columns are created in `_migrate()` and checked by
+#: `adopt_corpus()`. Legacy NULLs are backfilled; deciding answers start keyed.
 _QUERY_REFERENCES = (
     ("feedback", "query_id", "xml_id"),
+    ("deciding_answers", "query_id", "xml_id"),
     ("reviewer_dirs", "seed_query_id", "seed_xml_id"),
     ("reviewer_dir_members", "query_id", "xml_id"),
 )
@@ -712,6 +715,30 @@ class FeedbackDB:
             "CREATE INDEX IF NOT EXISTS idx_corpus_change_witnesses_xml "
             "ON corpus_change_witnesses(xml_id, change_id)"
         )
+        await self._db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS deciding_answers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                query_id INTEGER NOT NULL,
+                xml_id TEXT NOT NULL CHECK (length(xml_id) > 0),
+                timestamp TEXT NOT NULL DEFAULT (datetime('now')),
+                reviewer_account_id INTEGER NOT NULL,
+                reviewer TEXT NOT NULL,
+                ccl_key TEXT,
+                notes TEXT NOT NULL DEFAULT '',
+                CHECK (ccl_key IS NULL OR length(ccl_key) > 0)
+            )
+            """
+        )
+        await self._db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_deciding_answers_witness "
+            "ON deciding_answers(xml_id, timestamp, id)"
+        )
+        # Existing migrations are additive and re-run on boot. This version
+        # records the new table without changing feedback row schema versions.
+        version = await (await self._db.execute("PRAGMA user_version")).fetchone()
+        if version[0] < DATABASE_SCHEMA_VERSION:
+            await self._db.execute(f"PRAGMA user_version = {DATABASE_SCHEMA_VERSION}")
 
     async def _ensure_member_witness_index(self) -> None:
         """One membership per (directory, witness), enforced by the database.
@@ -1018,7 +1045,7 @@ class FeedbackDB:
         """Witnesses with a stored decision or a reviewer-directory row.
 
         The ones the missing-witness threshold protects: a `matched_rank` or
-        `none_of_top_k` row, a directory seed or a directory membership.
+        `none_of_top_k` row, a directory seed, a membership or a deciding answer.
         """
         assert self._db is not None
         rows = await (
@@ -1030,6 +1057,8 @@ class FeedbackDB:
                 SELECT seed_xml_id FROM reviewer_dirs WHERE seed_xml_id IS NOT NULL
                 UNION
                 SELECT xml_id FROM reviewer_dir_members WHERE xml_id IS NOT NULL
+                UNION
+                SELECT xml_id FROM deciding_answers WHERE xml_id IS NOT NULL
                 """
             )
         ).fetchall()
@@ -2434,9 +2463,16 @@ class FeedbackDB:
         unserved_witnesses = set(unserved_status)
         if self._xml_to_qid is not None:
             unserved_witnesses |= await self._stored_xml_ids() - self._xml_to_qid.keys()
-        unserved_reviewed = sum(
-            1 for has_review, _ in unserved_status.values() if has_review
-        )
+        unserved_reviewed_ids = {
+            xml_id for xml_id, (has_review, _) in unserved_status.items() if has_review
+        }
+        if self._xml_to_qid is not None:
+            final_rows = await (
+                await self._db.execute("SELECT DISTINCT xml_id FROM deciding_answers")
+            ).fetchall()
+            unserved_reviewed_ids.update(
+                row["xml_id"] for row in final_rows if row["xml_id"] not in self._xml_to_qid
+            )
 
         unresolved = (
             await (
@@ -2493,7 +2529,7 @@ class FeedbackDB:
             "outcome_distribution": outcome_dist,
             "rank_distribution": rank_dist,
             "unserved_witness_count": len(unserved_witnesses),
-            "unserved_reviewed_count": unserved_reviewed,
+            "unserved_reviewed_count": len(unserved_reviewed_ids),
         }
 
     async def _newest_served_rows(
@@ -2719,6 +2755,62 @@ class FeedbackDB:
         Reads only. Reviewer names reach the returned rows and nothing else:
         the one log line here carries a count.
         """
+        decisions = await self.ccl_counted_decisions(
+            filename_by_query=filename_by_query, rank_dir=rank_dir
+        )
+        return ccl_key_export.build_rows(
+            decisions,
+            labelled_dir_names=labelled_dir_names,
+            data_release=data_release,
+            exported_at=exported_at or ccl_key_export.now_iso_utc(),
+            status=status,
+            deciding_answers=await self.get_deciding_answers(),
+        )
+
+    async def insert_deciding_answer(
+        self, *, query_id: int, reviewer_account_id: int, reviewer: str,
+        ccl_key: str | None, notes: str,
+    ) -> dict:
+        assert self._db is not None
+        xml_id = self._xml_id_for(query_id)
+        if not xml_id:
+            raise ValueError("A deciding answer requires a served witness")
+        cursor = await self._db.execute(
+            """INSERT INTO deciding_answers
+                   (query_id, xml_id, reviewer_account_id, reviewer, ccl_key, notes)
+               VALUES (?, ?, ?, ?, ?, ?) RETURNING *""",
+            (query_id, xml_id, reviewer_account_id, reviewer, ccl_key, notes),
+        )
+        row = await cursor.fetchone()
+        await cursor.close()
+        await self._db.commit()
+        return dict(row)
+
+    async def get_deciding_answers(self) -> list[dict]:
+        assert self._db is not None
+        table = await (
+            await self._db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'deciding_answers'"
+            )
+        ).fetchone()
+        if table is None:
+            # Read-only pre-#294 databases, including snapshot reconstruction,
+            # have no deciding answers and must never be migrated by a read.
+            version = await (await self._db.execute("PRAGMA user_version")).fetchone()
+            if version[0] < DATABASE_SCHEMA_VERSION:
+                return []
+        rows = await (
+            await self._db.execute(
+                "SELECT * FROM deciding_answers ORDER BY timestamp, id"
+            )
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    async def ccl_counted_decisions(
+        self, *, filename_by_query: dict[int, str],
+        rank_dir: RankDirResolver | None = None,
+    ) -> list[ccl_key_export.Decision]:
+        """Shared input to the admin queue and export, using only the export rule."""
         assert self._db is not None
         # Every row, unfiltered: which outcomes count is the export module's
         # rule (`current_decisions`), stated and tested in one place.
@@ -2779,20 +2871,13 @@ class FeedbackDB:
             )
 
         unknown = len(unknown_ids)
-        resolved = ccl_key_export.build_rows(
-            decisions,
-            labelled_dir_names=labelled_dir_names,
-            data_release=data_release,
-            exported_at=exported_at or ccl_key_export.now_iso_utc(),
-            status=status,
-        )
         if unknown:
             logger.warning(
                 "CCL key export left out %d reviewed query id(s) the served corpus "
                 "does not know",
                 unknown,
             )
-        return resolved
+        return decisions
 
 
 def _utc_now() -> datetime:

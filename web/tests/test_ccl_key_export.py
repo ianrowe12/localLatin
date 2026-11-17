@@ -16,6 +16,7 @@ import io
 import sqlite3
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from web.services import ccl_key_export
@@ -157,9 +158,106 @@ def test_two_reviewers_picking_the_same_directory_agree(tmp_path: Path) -> None:
     assert row["reviewers"] == "Alice Example | Bruno Example"
     assert row["first_decided_at"] == "2026-11-01T10:00:00Z"
     assert row["last_decided_at"] == "2026-11-02T09:00:00Z"
-    assert row["export_schema_version"] == ccl_key_export.EXPORT_SCHEMA_VERSION == 1
+    assert row["export_schema_version"] == ccl_key_export.EXPORT_SCHEMA_VERSION == 2
     assert row["exported_at"] == EXPORTED_AT
     assert row["data_release"] == RELEASE
+
+
+async def _decide(db: FeedbackDB, key: str | None) -> None:
+    await db.adopt_corpus(FILENAMES)
+    await db.insert_deciding_answer(
+        query_id=1, reviewer_account_id=3, reviewer="Example Admin",
+        ccl_key=key, notes="Checked the source",
+    )
+
+
+def test_final_answer_nobody_named_has_no_reviewer_or_model_credit(tmp_path: Path) -> None:
+    async def build(db: FeedbackDB) -> None:
+        await _pick(db, "CTOU.567.16", rank=3)
+        await _pick(db, "CTOU.567.16", rank=3, reviewer="Bruno Example", account=2)
+        await _decide(db, "ctou.600.1")
+
+    row = _only(_scenario(tmp_path, build))
+    assert row["ccl_key"] == "ctou.600.1"
+    assert row["status"] == row["reviewer_status"] == "agreed"
+    assert row["decided"] == 1
+    assert row["key_source"] == "final_answer"
+    assert row["suggested_by"] == row["reviewers"] == ""
+    assert row["reviewer_count"] == 0
+
+
+def test_final_answer_confirming_reviewers_keeps_their_credit(tmp_path: Path) -> None:
+    async def build(db: FeedbackDB) -> None:
+        await _pick(db, "CTOU.567.16", rank=3)
+        await _pick(db, "CTOU.567.16", rank=3, reviewer="Bruno Example", account=2)
+        await _decide(db, "ctou.567.16")
+
+    row = _only(_scenario(tmp_path, build))
+    assert row["ccl_key"] == "CTOU.567.16"
+    assert row["key_shaped"] == "true"
+    assert row["key_source"] == "model_suggestion"
+    assert row["suggested_by"] == "model_one:sif_abtt:3"
+    assert row["reviewers"] == "Alice Example | Bruno Example"
+    assert row["reviewer_count"] == 2
+
+
+@pytest.mark.parametrize(("key", "source", "suggestion", "reviewer"), [
+    ("ctou.567.16", "model_suggestion", "model_one:sif_abtt:3", "Alice Example"),
+    ("carl.501?.18", "reviewer_typed", "", "Bruno Example"),
+])
+def test_final_answer_credits_only_the_matching_side_of_a_disagreement(
+    tmp_path: Path, key: str, source: str, suggestion: str, reviewer: str,
+) -> None:
+    async def build(db: FeedbackDB) -> None:
+        await _pick(db, "CTOU.567.16", rank=3)
+        await _typed(db, "CARL.501?.18", reviewer="Bruno Example", account=2)
+        await _decide(db, key)
+
+    row = _only(_scenario(tmp_path, build))
+    assert row["status"] == "agreed" and row["reviewer_status"] == "conflict"
+    assert row["key_source"] == source
+    assert row["suggested_by"] == suggestion
+    assert row["reviewers"] == reviewer
+    assert row["reviewer_count"] == 1
+
+
+def test_final_answer_credits_only_matching_claims_in_a_multi_rank_decision(tmp_path: Path) -> None:
+    async def build(db: FeedbackDB) -> None:
+        await _pick(db, "CTOU.567.16", rank=3, selected="[3, 4]")
+        await _decide(db, "ctou.567.16")
+
+    row = _only(_scenario(tmp_path, build, ranking={
+        (1, "model_one", "sif_abtt", 3): "CTOU.567.16",
+        (1, "model_one", "sif_abtt", 4): "CARL.501?.18",
+    }))
+    assert row["reviewer_status"] == "conflict"
+    assert row["ccl_key"] == "CTOU.567.16"
+    assert row["suggested_by"] == "model_one:sif_abtt:3"
+    assert row["reviewers"] == "Alice Example"
+
+
+def test_final_answer_uses_labelled_display_form_without_reviews(tmp_path: Path) -> None:
+    async def build(db: FeedbackDB) -> None:
+        await _decide(db, "ctou.567.16")
+
+    row = _only(_scenario(tmp_path, build))
+    assert row["ccl_key"] == "CTOU.567.16"
+    assert row["key_shaped"] == "true"
+    assert row["key_source"] == "final_answer"
+    assert row["reviewer_count"] == 0
+
+
+def test_final_none_keeps_reviewers_but_has_no_key_provenance(tmp_path: Path) -> None:
+    async def build(db: FeedbackDB) -> None:
+        await _pick(db, "CTOU.567.16", rank=3)
+        await _typed(db, None, reviewer="Bruno Example", account=2)
+        await _decide(db, None)
+
+    row = _only(_scenario(tmp_path, build))
+    assert row["status"] == "no_key"
+    assert row["ccl_key"] == row["key_source"] == row["suggested_by"] == ""
+    assert row["reviewers"] == "Alice Example | Bruno Example"
+    assert row["reviewer_count"] == 2
 
 
 def test_reviewers_naming_different_keys_conflict(tmp_path: Path) -> None:
@@ -670,7 +768,33 @@ def test_the_csv_has_the_issue_s_columns_in_order() -> None:
         "export_schema_version",
         "exported_at",
         "data_release",
+        "decided",
+        "reviewer_status",
     ]
+
+
+def test_no_admin_decisions_preserves_legacy_csv_bytes_except_version_and_appended_columns(
+    tmp_path: Path,
+) -> None:
+    async def build(db: FeedbackDB) -> None:
+        await _pick(db, "CTOU.567.16", rank=3)
+
+    text = ccl_key_export.to_csv(_scenario(tmp_path, build))
+    legacy = (
+        "xml_id,ccl_key,status,conflicting_keys,key_source,suggested_by,key_shaped,"
+        "reviewer_count,reviewers,first_decided_at,last_decided_at,export_schema_version,"
+        "exported_at,data_release\r\n"
+        "BAV1341.13v.1,CTOU.567.16,agreed,,model_suggestion,model_one:sif_abtt:3,true,"
+        "1,Alice Example,2026-11-01T10:00:00Z,2026-11-01T10:00:00Z,1,"
+        "2026-11-11T12:00:00Z,data-20261101\r\n"
+    )
+    without_appended = "".join(line.rsplit(",", 2)[0] + "\r\n" for line in text.splitlines())
+    # The required version bump is the only change among the old cells.
+    assert without_appended == legacy.replace(
+        ",1,2026-11-11T12:00:00Z,", ",2,2026-11-11T12:00:00Z,"
+    )
+    assert list(csv.DictReader(io.StringIO(text)))[0]["decided"] == "0"
+    assert list(csv.DictReader(io.StringIO(text)))[0]["reviewer_status"] == "agreed"
 
 
 # --- data release ------------------------------------------------------------
@@ -792,7 +916,7 @@ def test_the_route_serves_the_resolved_csv(tmp_path: Path) -> None:
         assert agreed["reviewer_count"] == "2"
         assert agreed["reviewers"] == "PI | Scholar"
         assert agreed["data_release"] == "data-20261101"
-        assert agreed["export_schema_version"] == "1"
+        assert agreed["export_schema_version"] == "2"
 
         filtered = client.get("/api/feedback/export/ccl_keys", params={"status": "agreed"})
         assert [r["xml_id"] for r in csv.DictReader(io.StringIO(filtered.text))] == [

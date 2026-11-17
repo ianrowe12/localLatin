@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from web.bands import NO_MATCH_BAND, VERIFY_BAND
 from web.services.ccl_keys import MAX_KEY_LENGTH as CCL_KEY_MAX_LENGTH
+from web.services.ccl_keys import normalize_ccl_key
 from web.services.input_safety import (
     CCL_KEY,
     DIRECTORY_NAME,
@@ -659,6 +660,70 @@ class FeedbackEntry(BaseModel):
     #: not offer.
     ccl_key_rank: Optional[int] = None
     schema_version: int = 2
+
+
+class DecidingAnswerCreate(BaseModel):
+    ccl_key: Optional[str] = Field(default=None, max_length=CCL_KEY_MAX_LENGTH)
+    none_of_these: bool = False
+    notes: str = Field(default="", max_length=10000)
+
+    @field_validator("ccl_key")
+    @classmethod
+    def key_is_safe(cls, value: Optional[str]) -> Optional[str]:
+        return check_safe_text(value, CCL_KEY)
+
+    @field_validator("notes")
+    @classmethod
+    def note_is_safe(cls, value: str) -> str:
+        check_safe_text(value, "A decision note")
+        return value.strip()
+
+    @model_validator(mode="after")
+    def exactly_one_answer(self) -> DecidingAnswerCreate:
+        self.ccl_key = normalize_ccl_key(self.ccl_key) or None
+        if bool(self.ccl_key) == self.none_of_these:
+            raise ValueError("Choose a CCL key or explicitly choose none of these")
+        return self
+
+
+class DecidingAnswerEntry(BaseModel):
+    id: int
+    xml_id: str
+    timestamp: str
+    reviewer_account_id: int
+    reviewer: str
+    ccl_key: Optional[str]
+    notes: str
+
+
+class CountedReviewAnswer(BaseModel):
+    reviewer: str
+    model_slug: str
+    variant: Optional[str]
+    keys: List[str]
+    none_of_these: bool
+    unresolved: bool
+    notes: str
+    timestamp: str
+
+
+class AdminReviewItem(BaseModel):
+    xml_id: str
+    query_id: int
+    status: str
+    reviewer_status: str
+    reviewer_count: int
+    answers: List[CountedReviewAnswer]
+    deciding_answer: Optional[DecidingAnswerEntry] = None
+
+
+class AdminReviewQueue(BaseModel):
+    items: List[AdminReviewItem]
+    counts: Dict[str, int]
+    total: int
+    page: int
+    page_size: int
+    has_more: bool
 
 
 # --- Stats ---
