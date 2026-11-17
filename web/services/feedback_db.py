@@ -736,7 +736,9 @@ class FeedbackDB:
         )
         # Existing migrations are additive and re-run on boot. This version
         # records the new table without changing feedback row schema versions.
-        await self._db.execute(f"PRAGMA user_version = {DATABASE_SCHEMA_VERSION}")
+        version = await (await self._db.execute("PRAGMA user_version")).fetchone()
+        if version[0] < DATABASE_SCHEMA_VERSION:
+            await self._db.execute(f"PRAGMA user_version = {DATABASE_SCHEMA_VERSION}")
 
     async def _ensure_member_witness_index(self) -> None:
         """One membership per (directory, witness), enforced by the database.

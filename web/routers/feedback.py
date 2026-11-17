@@ -428,7 +428,9 @@ async def _admin_review_items(store: DataStore, db: FeedbackDB) -> list[AdminRev
         deciding_answers=final_answers,
     )
     by_witness: dict[str, list] = {}
+    reviewers: dict[str, set[tuple]] = {}
     for decision in decisions:
+        reviewers.setdefault(decision.xml_id, set()).add(decision.reviewer_key)
         by_witness.setdefault(decision.xml_id, []).append(
             {
                 "reviewer": decision.reviewer_name,
@@ -441,7 +443,7 @@ async def _admin_review_items(store: DataStore, db: FeedbackDB) -> list[AdminRev
                 "timestamp": ccl_key_export.iso_utc(decision.decided_at),
             }
         )
-    latest = {answer["xml_id"]: answer for answer in final_answers}
+    latest = ccl_key_export.latest_deciding_answers(final_answers)
     served = {
         ccl_key_export.xml_id_of(name): query_id
         for query_id, name in store.file_id_to_filename.items()
@@ -452,7 +454,7 @@ async def _admin_review_items(store: DataStore, db: FeedbackDB) -> list[AdminRev
             query_id=served[row["xml_id"]],
             status=row["status"],
             reviewer_status=row["reviewer_status"],
-            reviewer_count=row["reviewer_count"],
+            reviewer_count=len(reviewers.get(row["xml_id"], set())),
             answers=by_witness.get(row["xml_id"], []),
             deciding_answer=latest.get(row["xml_id"]),
         )

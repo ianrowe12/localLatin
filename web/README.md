@@ -122,6 +122,9 @@ reviewer's display name, model, variant, key or keys (or "None of these"), note 
 timestamp. Open a row to inspect the document in the normal review view. The
 **Final answer** panel there shows counted answers and lets a PI/admin record a
 CCL key or explicitly choose **None of these**, with an optional decision note.
+Cancel on **Change final answer** discards the draft and restores the recorded
+key, none selection and note. Recorded answers show the same calendar-date
+format as review-note attribution.
 Reviewers cannot fetch either queue endpoint or record a final answer, and never
 receive this panel's data. Existing shared-note prefilling is unchanged.
 
@@ -145,7 +148,8 @@ fields use the existing input-safety rule: no formula-leading `=`, `+`, `-` or
 `@` after leading whitespace/control characters, and no `|` anywhere.
 
 Migration creates the append-only `deciding_answers` table and records database
-schema version 3 (`PRAGMA user_version`). It stores `id`, the original
+schema version 3 (`PRAGMA user_version`), retaining any higher version already
+present so a rollback never lowers the marker. It stores `id`, the original
 `query_id`, nonempty `xml_id`, account id, display-name snapshot, timestamp,
 nullable `ccl_key` (NULL means an explicit none) and note. Changing a final answer
 appends another row; no feedback or earlier answer is rewritten or deleted. The
@@ -155,15 +159,23 @@ and witness mapping. Missing witnesses leave the queue but retain their decision
 in the export. Recording an answer does not create a directory or membership.
 
 The queue and CCL export reuse `services/ccl_key_export.py`'s current-decision
-selection and resolution, including unresolved legacy picks. A deciding key
-overrides the export result to `agreed` with that key; an explicit none overrides
-it to `no_key`. The export retains all 14 original columns in the same order and
-appends only `decided` (0/1) and `reviewer_status` (the reviewers-only result,
+selection, newest-final-answer selection and resolution, including unresolved
+legacy picks. A deciding key overrides the export result to `agreed` with that
+key; an explicit none overrides it to `no_key`. The export retains all 14
+original columns in the same order and appends only `decided` (0/1) and
+`reviewer_status` (the reviewers-only result,
 empty if there are no counted reviews). Its `export_schema_version` is now 2.
 Without decisions the original cells are unchanged except for that version bump.
 With a decision, `ccl_key`, `status`, `conflicting_keys` and `key_shaped` describe
-the final result; reviewer counts, names, times and suggestion provenance still
-describe the underlying reviews, not agreement with the final answer.
+the final result. The key uses the labelled directory's own name when it names
+one, so `ctou.567.16` prints as `CTOU.567.16`. `key_source`, `suggested_by`,
+`reviewers` and `reviewer_count` credit only counted decisions and claims that
+named the final key, compared case-insensitively with `ccl_keys.match_form`.
+When nobody named it, `key_source=final_answer`, `suggested_by` and `reviewers`
+are empty and `reviewer_count=0`. A final **None of these** clears key provenance
+but keeps the counted reviewer list. Reviewer timestamps still cover all
+counted reviews. Queue reviewer counts and the Reviewed once filter likewise
+count all reviewers, independently of final-key credit.
 `status=` filtering applies after the override. The raw feedback export is
 unchanged. Snapshot and dataset-2 scoring support for final answers is a separate
 follow-up.

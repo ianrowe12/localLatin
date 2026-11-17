@@ -12,10 +12,11 @@ THE RULE, in the order it is applied:
 1. Only decisions count: `matched_rank` and `none_of_top_k` rows, the same two
    outcomes that make a query `reviewed` everywhere else in the app
    (`FeedbackDB.get_query_statuses`, `get_reviewed_query_ids`, the stats). So
-   the set of queries in this export is exactly the set the dashboard calls
-   reviewed. `skipped` and `legacy_unresolved` rows are ignored, and a later
-   skip does not retract an earlier decision, just as it does not turn a
-   reviewed query back into a skipped one on the dashboard.
+   every query the dashboard calls reviewed is included. A deciding answer
+   also includes an otherwise unreviewed query. `skipped` and
+   `legacy_unresolved` rows are ignored, and a later skip does not retract an
+   earlier decision, just as it does not turn a reviewed query back into a
+   skipped one on the dashboard.
 2. A reviewer's current decision on a query is their newest decision row on
    each (model, variant) they reviewed it under, newest by (timestamp, id).
    A query is its witness `xml_id`: the one stored on the row (issue #273),
@@ -53,10 +54,11 @@ THE RULE, in the order it is applied:
    - `agreed`: exactly one key, and every counted decision names it.
    - `no_key`: nobody named a key (every decision is a no-key "none of these").
 6. A reviewer counts once (`reviewer_count`, `reviewers`) however many models
-   they decided under. `reviewers` lists everyone with a counted decision,
-   whatever they answered. Only an `agreed` row carries a `ccl_key`, and in an
-   `agreed` row every listed reviewer's decisions named that key, so nobody is
-   ever credited with a key they rejected.
+   they decided under. Without a deciding answer, `reviewers` lists everyone
+   with a counted decision, whatever they answered. Only an `agreed` row carries
+   a `ccl_key`, and every listed reviewer named it. Decided rows credit only
+   matching decisions, as described below, so nobody is credited with a key
+   they did not name.
 
 DISPLAY FORM. Reviewers who typed `ctou.567.16` and `CTOU.567.16` agree, and one
 form has to be printed. It is the labelled directory's own name when the key
@@ -68,18 +70,22 @@ Every candidate is a stored form; nothing is re-cased here.
 DECIDING ANSWERS (issue #294). The newest append-only admin answer per xml_id,
 ordered by (timestamp, id), overrides the result: a key gives `agreed`, and
 an explicit none gives `no_key`. `decided` is 1 and `reviewer_status` preserves
-the resolution above (empty if nobody reviewed it). Reviewer counts, names,
-times and suggestion provenance still describe the reviewers, not endorsement
-of the admin answer. Without an admin answer the old columns are unchanged,
-apart from the export schema version. Only `decided` and `reviewer_status`
-are appended to the existing column order.
+the resolution above (empty if nobody reviewed it). For a final key, `key_source`,
+`suggested_by`, `reviewers` and `reviewer_count` use only counted decisions and
+claims that named it, compared by `ccl_keys.match_form`. With no matching claim,
+`key_source` is `final_answer`, suggestion and reviewer cells are empty and the
+reviewer count is zero. Its display form follows DISPLAY FORM above. A final
+none keeps all counted reviewers but clears key provenance. Reviewer times
+still cover all counted decisions. Without an admin answer the old columns are
+unchanged, apart from the export schema version. Only `decided` and
+`reviewer_status` are appended to the existing column order.
 """
 
 from __future__ import annotations
 
 import csv
 import io
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from typing import Iterable
 
@@ -132,6 +138,7 @@ LIST_SEPARATOR = " | "
 MODEL_SUGGESTION = "model_suggestion"
 REVIEWER_TYPED = "reviewer_typed"
 BOTH = "both"
+FINAL_ANSWER = "final_answer"
 
 
 @dataclass(frozen=True)
@@ -334,6 +341,16 @@ def selected_ranks(row: dict) -> list[int]:
     return [int(rank)] if rank else []
 
 
+def latest_deciding_answers(answers: Iterable[dict]) -> dict[str, dict]:
+    """The newest final answer per witness, by (timestamp, id), in any input order."""
+    newest: dict[str, dict] = {}
+    for answer in answers:
+        xml_id = answer["xml_id"]
+        if xml_id not in newest or _order(answer) > _order(newest[xml_id]):
+            newest[xml_id] = answer
+    return newest
+
+
 def build_rows(
     decisions: list[Decision],
     *,
@@ -354,11 +371,8 @@ def build_rows(
     by_witness: dict[str, list[Decision]] = {}
     for decision in decisions:
         by_witness.setdefault(decision.xml_id, []).append(decision)
-    newest: dict[str, dict] = {}
-    for answer in deciding_answers:
-        xml_id = answer["xml_id"]
-        if xml_id not in newest or _order(answer) > _order(newest[xml_id]):
-            newest[xml_id] = answer
+    newest = latest_deciding_answers(deciding_answers)
+    for xml_id in newest:
         by_witness.setdefault(xml_id, [])
 
     rows: list[dict] = []
@@ -369,6 +383,26 @@ def build_rows(
         resolved["decided"] = int(answer is not None)
         if answer is not None:
             key = answer["ccl_key"] or ""
+            if key:
+                form = ccl_keys.match_form(key)
+                matching: list[Decision] = []
+                for decision in group:
+                    claims = [
+                        claim for claim in decision.claims
+                        if ccl_keys.match_form(claim.key) == form
+                    ]
+                    if claims:
+                        matching.append(
+                            replace(decision, claims=claims, rejects_all=False, unresolved=[])
+                        )
+                credited = resolve_query(matching, labelled)
+                key = credited["ccl_key"] or ccl_keys.find_labelled_dir(key, labelled) or key
+                for column in ("key_source", "suggested_by", "reviewers", "reviewer_count"):
+                    resolved[column] = credited[column]
+                if not matching:
+                    resolved["key_source"] = FINAL_ANSWER
+            else:
+                resolved.update(key_source="", suggested_by="")
             resolved.update(
                 ccl_key=key,
                 status="agreed" if key else "no_key",

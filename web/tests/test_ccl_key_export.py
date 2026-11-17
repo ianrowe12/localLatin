@@ -16,6 +16,7 @@ import io
 import sqlite3
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from web.services import ccl_key_export
@@ -160,6 +161,103 @@ def test_two_reviewers_picking_the_same_directory_agree(tmp_path: Path) -> None:
     assert row["export_schema_version"] == ccl_key_export.EXPORT_SCHEMA_VERSION == 2
     assert row["exported_at"] == EXPORTED_AT
     assert row["data_release"] == RELEASE
+
+
+async def _decide(db: FeedbackDB, key: str | None) -> None:
+    await db.adopt_corpus(FILENAMES)
+    await db.insert_deciding_answer(
+        query_id=1, reviewer_account_id=3, reviewer="Example Admin",
+        ccl_key=key, notes="Checked the source",
+    )
+
+
+def test_final_answer_nobody_named_has_no_reviewer_or_model_credit(tmp_path: Path) -> None:
+    async def build(db: FeedbackDB) -> None:
+        await _pick(db, "CTOU.567.16", rank=3)
+        await _pick(db, "CTOU.567.16", rank=3, reviewer="Bruno Example", account=2)
+        await _decide(db, "ctou.600.1")
+
+    row = _only(_scenario(tmp_path, build))
+    assert row["ccl_key"] == "ctou.600.1"
+    assert row["status"] == row["reviewer_status"] == "agreed"
+    assert row["decided"] == 1
+    assert row["key_source"] == "final_answer"
+    assert row["suggested_by"] == row["reviewers"] == ""
+    assert row["reviewer_count"] == 0
+
+
+def test_final_answer_confirming_reviewers_keeps_their_credit(tmp_path: Path) -> None:
+    async def build(db: FeedbackDB) -> None:
+        await _pick(db, "CTOU.567.16", rank=3)
+        await _pick(db, "CTOU.567.16", rank=3, reviewer="Bruno Example", account=2)
+        await _decide(db, "ctou.567.16")
+
+    row = _only(_scenario(tmp_path, build))
+    assert row["ccl_key"] == "CTOU.567.16"
+    assert row["key_shaped"] == "true"
+    assert row["key_source"] == "model_suggestion"
+    assert row["suggested_by"] == "model_one:sif_abtt:3"
+    assert row["reviewers"] == "Alice Example | Bruno Example"
+    assert row["reviewer_count"] == 2
+
+
+@pytest.mark.parametrize(("key", "source", "suggestion", "reviewer"), [
+    ("ctou.567.16", "model_suggestion", "model_one:sif_abtt:3", "Alice Example"),
+    ("carl.501?.18", "reviewer_typed", "", "Bruno Example"),
+])
+def test_final_answer_credits_only_the_matching_side_of_a_disagreement(
+    tmp_path: Path, key: str, source: str, suggestion: str, reviewer: str,
+) -> None:
+    async def build(db: FeedbackDB) -> None:
+        await _pick(db, "CTOU.567.16", rank=3)
+        await _typed(db, "CARL.501?.18", reviewer="Bruno Example", account=2)
+        await _decide(db, key)
+
+    row = _only(_scenario(tmp_path, build))
+    assert row["status"] == "agreed" and row["reviewer_status"] == "conflict"
+    assert row["key_source"] == source
+    assert row["suggested_by"] == suggestion
+    assert row["reviewers"] == reviewer
+    assert row["reviewer_count"] == 1
+
+
+def test_final_answer_credits_only_matching_claims_in_a_multi_rank_decision(tmp_path: Path) -> None:
+    async def build(db: FeedbackDB) -> None:
+        await _pick(db, "CTOU.567.16", rank=3, selected="[3, 4]")
+        await _decide(db, "ctou.567.16")
+
+    row = _only(_scenario(tmp_path, build, ranking={
+        (1, "model_one", "sif_abtt", 3): "CTOU.567.16",
+        (1, "model_one", "sif_abtt", 4): "CARL.501?.18",
+    }))
+    assert row["reviewer_status"] == "conflict"
+    assert row["ccl_key"] == "CTOU.567.16"
+    assert row["suggested_by"] == "model_one:sif_abtt:3"
+    assert row["reviewers"] == "Alice Example"
+
+
+def test_final_answer_uses_labelled_display_form_without_reviews(tmp_path: Path) -> None:
+    async def build(db: FeedbackDB) -> None:
+        await _decide(db, "ctou.567.16")
+
+    row = _only(_scenario(tmp_path, build))
+    assert row["ccl_key"] == "CTOU.567.16"
+    assert row["key_shaped"] == "true"
+    assert row["key_source"] == "final_answer"
+    assert row["reviewer_count"] == 0
+
+
+def test_final_none_keeps_reviewers_but_has_no_key_provenance(tmp_path: Path) -> None:
+    async def build(db: FeedbackDB) -> None:
+        await _pick(db, "CTOU.567.16", rank=3)
+        await _typed(db, None, reviewer="Bruno Example", account=2)
+        await _decide(db, None)
+
+    row = _only(_scenario(tmp_path, build))
+    assert row["status"] == "no_key"
+    assert row["ccl_key"] == row["key_source"] == row["suggested_by"] == ""
+    assert row["reviewers"] == "Alice Example | Bruno Example"
+    assert row["reviewer_count"] == 2
 
 
 def test_reviewers_naming_different_keys_conflict(tmp_path: Path) -> None:

@@ -7,6 +7,7 @@ import {
 } from '../../api/adminReview'
 import { CCL_KEY_SUBJECT, unsafeTextError } from '../../utils/inputSafety'
 import AdminReviewAnswers from './AdminReviewAnswers'
+import { formatNoteDate } from './noteAttribution'
 
 const INPUT = 'w-full rounded-lg border border-stone-200 dark:border-stone-700 bg-white dark:bg-surface-800 p-2 text-sm'
 const BUTTON = 'min-h-11 px-3 rounded-lg border border-stone-200 dark:border-stone-700 text-sm hover:bg-stone-100 dark:hover:bg-stone-700 disabled:opacity-50 disabled:cursor-not-allowed'
@@ -99,7 +100,7 @@ function DecisionPanel({ queryId }: { queryId: number }) {
           {final && (
             <div className="rounded-lg bg-stone-50 dark:bg-surface-900 p-3 text-sm break-words space-y-1">
               <p className="font-semibold text-stone-800 dark:text-stone-100">Recorded final answer: {final.ccl_key ?? 'None of these'}</p>
-              <p className="text-stone-500 dark:text-stone-400">{final.reviewer}, <time dateTime={final.timestamp}>{final.timestamp}</time></p>
+              <p className="text-stone-500 dark:text-stone-400">{final.reviewer}, <time dateTime={final.timestamp}>{formatNoteDate(final.timestamp)}</time></p>
               {final.notes && <p className="whitespace-pre-wrap text-stone-700 dark:text-stone-200">{final.notes}</p>}
               {!editing && <button type="button" className={BUTTON} onClick={() => setEditing(true)}>Change final answer</button>}
             </div>
@@ -125,7 +126,13 @@ function DecisionPanel({ queryId }: { queryId: number }) {
                 </div>
                 <div className="flex gap-2">
                   <button type="submit" className="min-h-11 px-4 rounded-lg bg-accent text-white text-sm hover:bg-accent-dark disabled:opacity-50 disabled:cursor-not-allowed" disabled={Boolean(keyError || noteError || (!none && !key.trim()))}>{saving ? 'Recording...' : 'Record final answer'}</button>
-                  {final && <button type="button" className={BUTTON} onClick={() => setEditing(false)}>Cancel</button>}
+                  {final && <button type="button" className={BUTTON} onClick={() => {
+                    setKey(final.ccl_key ?? '')
+                    setNone(final.ccl_key === null)
+                    setNotes(final.notes)
+                    setError(null)
+                    setEditing(false)
+                  }}>Cancel</button>}
                 </div>
               </fieldset>
             </form>

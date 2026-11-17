@@ -133,9 +133,10 @@ what flips the badge to `matched`, which is why it may only follow a server-reso
 ## CCL key assignments export (issue #270)
 
 `GET /api/feedback/export/ccl_keys` (PI/admin only, `require_pi_admin`) is the file CCL's import
-is built on. It returns a CSV named `ccl_key_assignments_YYYY-MM-DD.csv` with one row per reviewed
-unlabelled query, sorted by `xml_id`. `/api/feedback/export` is unchanged and stays the raw log.
-The optional `status=agreed|conflict|no_key|needs_check` keeps one status; the default is every reviewed query.
+is built on. It returns a CSV named `ccl_key_assignments_YYYY-MM-DD.csv` with one row per unlabelled
+query that has counted reviews or a PI/admin final answer, sorted by `xml_id`.
+`/api/feedback/export` is unchanged and stays the raw log.
+The optional `status=agreed|conflict|no_key|needs_check` keeps one status; the default includes all rows.
 The dashboard's "Download CCL key assignments" button (`ExportControls`) opens it without filters.
 Like the raw export it is a `window.open`, so the mock fetch handler never sees it.
 
@@ -143,8 +144,9 @@ Resolution rule, implemented in `services/ccl_key_export.py` and read by
 `FeedbackDB.ccl_key_assignments`:
 
 1. Only `matched_rank` and `none_of_top_k` rows count, the same pair that makes a query
-   `reviewed` on the dashboard, so the export covers exactly the reviewed queries. Skipped and
-   legacy-unresolved rows are ignored, and a later skip does not retract an earlier decision.
+   `reviewed` on the dashboard, so every reviewed query is covered. A final answer also includes
+   an otherwise unreviewed query. Skipped and legacy-unresolved rows are ignored, and a later
+   skip does not retract an earlier decision.
 2. A reviewer's current decision is their newest decision row on each (model, variant), newest by
    timestamp and then row id. That is the decision half of `GET /api/feedback/latest`. A save
    under a different model does not replace one under another model, because the app still shows
@@ -170,34 +172,51 @@ Resolution rule, implemented in `services/ccl_key_export.py` and read by
    under two models, or one multi-rank pick) or when a key is named and another counted decision is
    a no-key "none of these"; `agreed` when exactly one key is named and every counted decision
    names it; `no_key` when every counted decision is a no-key "none of these".
-6. Each reviewer counts once, under the display name on their newest counted decision. Rows from
-   before accounts existed are told apart by that name. `reviewers` lists everyone with a counted
-   decision, whatever they answered, so in a `conflict` or `needs_check` row it includes people who
-   rejected a key. Only an `agreed` row has a `ccl_key`, and there every listed reviewer named it, so
-   nobody is credited with a key they rejected.
+6. Each reviewer counts once, under the display name on their newest counted decision in the
+   credited set. Rows from before accounts existed are told apart by that name. Without a final
+   answer, `reviewers` lists everyone with a counted decision, whatever they answered, so in a
+   `conflict` or `needs_check` row it includes people who rejected a key. Only an `agreed` row has
+   a `ccl_key`, and every listed reviewer named it. With a final key, the credited set contains
+   only counted decisions and claims that named that key, compared by `ccl_keys.match_form`:
+   `key_source`, `suggested_by`, `reviewers` and `reviewer_count` are recomputed from that set.
+   When nobody named it, `key_source=final_answer`, `suggested_by` and `reviewers` are empty and
+   `reviewer_count=0`. A decided `no_key` row carries no key, clears key provenance and may list
+   all counted reviewers. Nobody is credited with a key they did not name.
+7. The newest append-only PI/admin final answer per `xml_id`, by (timestamp, id), overrides the
+   reviewer result: a key gives `agreed`, an explicit none gives `no_key`, and `conflicting_keys`
+   is cleared. `decided=1` marks that override; `reviewer_status` preserves the reviewers-only
+   result, or is empty without counted reviews. Filtering by `status` uses the final result.
+   The queue and export share the newest-answer selection in `ccl_key_export.latest_deciding_answers`.
 
-When reviewers typed one key in different capitalisations, the printed form is the labelled
+When reviewers or a PI/admin typed one key in different capitalisations, the printed form is the labelled
 directory's own name if the key names one; otherwise the earliest form that is key-shaped
 (`ctou.567.16` then `CTOU.567.16` prints `CTOU.567.16`); otherwise the form on the earliest decision
-that named it. Every candidate is a form somebody stored; nothing is re-cased. Rows are grouped
+that named it. For a final key, use its matching reviewer claims when present, otherwise the final
+answer's own form, with the same labelled-directory preference. Every candidate is a form somebody
+stored; nothing is re-cased. Rows are grouped
 by the `xml_id` stored on them (#273); a row without one is named through the served corpus, and
 one that neither names is left out (logged as a count), because it has no `xml_id`.
 
-Columns (`EXPORT_SCHEMA_VERSION = 1`; bump it when a column is added, removed or changes meaning):
+The 16 columns (`EXPORT_SCHEMA_VERSION = 2`; bump it when a column is added, removed or changes meaning):
 
 | column | value |
 |---|---|
 | `xml_id` | the query filename without `.txt`, which is the CCL `xml:id` (`scripts/data/tei_to_canon.py`) |
-| `ccl_key` | the agreed key; empty for every other status |
+| `ccl_key` | the agreed or final key in display form; empty for every other status |
 | `status` | `agreed`, `conflict`, `no_key` or `needs_check` (a human must look before importing) |
 | `conflicting_keys` | for `conflict` and `needs_check`, every distinct key, sorted, then `(none_of_top_k)` if anyone answered None without a key, then `(unresolved)` if any pick is unresolved, joined by ` \| ` |
-| `key_source` | `model_suggestion`, `reviewer_typed` or `both`, over the decisions that named a key |
-| `suggested_by` | `model:variant:rank` per picked ranked candidate, joined by ` \| `; in `conflict` and `needs_check` rows each entry is prefixed `KEY=`, and an unresolved pick is listed as `(unresolved)=model:variant:rank` |
+| `key_source` | `model_suggestion`, `reviewer_typed` or `both` over credited claims; `final_answer` when no counted decision named the final key; empty without key provenance |
+| `suggested_by` | `model:variant:rank` per credited picked candidate, joined by ` \| `; in `conflict` and `needs_check` rows each entry is prefixed `KEY=`, and an unresolved pick is listed as `(unresolved)=model:variant:rank`; final-key rows include only suggestions for that key, and final none clears it |
 | `key_shaped` | `true` or `false` by `ccl_keys.KEY_SHAPED`, a flag and never a filter; empty without an agreed key |
-| `reviewer_count`, `reviewers` | people with a counted decision, and their display names joined by ` \| ` |
-| `first_decided_at`, `last_decided_at` | earliest and latest counted decision, ISO 8601 UTC |
-| `export_schema_version`, `exported_at` | `1`, and the export time in ISO 8601 UTC |
+| `reviewer_count` | distinct reviewers in the credited set from rule 6 |
+| `reviewers` | those reviewers' display names joined by ` \| ` |
+| `first_decided_at` | earliest counted reviewer decision, ISO 8601 UTC; empty without reviews |
+| `last_decided_at` | latest counted reviewer decision, ISO 8601 UTC; empty without reviews |
+| `export_schema_version` | `2` |
+| `exported_at` | export time in ISO 8601 UTC |
 | `data_release` | the release tag `deploy/deploy.sh` recorded in `.deploy-cache/installed.state` under `data_root` (`paths.data_release_state`), read at startup; empty when there is none, as in local development |
+| `decided` | `1` when a PI/admin final answer overrides the reviewer result, otherwise `0` |
+| `reviewer_status` | reviewers-only `agreed`, `conflict`, `no_key` or `needs_check`; empty without counted reviews |
 
 Lists are joined by ` | ` because 18 labelled directory names contain a semicolon and 103 a comma,
 and none contains `|`. Display names appear only in this download, never in a log line. Usernames

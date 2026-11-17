@@ -148,6 +148,65 @@ def test_deciding_answers_append_and_newest_overrides_export(tmp_path: Path) -> 
         client.__exit__(None, None, None)
 
 
+def test_queue_and_export_choose_the_same_newest_answer_from_unordered_rows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _client(tmp_path)
+    try:
+        _register(client, "pi", "Fake Admin")
+        for key in ("CTOU.567.16", "CARL.501.18", "CTOU.600.1"):
+            assert client.post("/api/feedback/decisions/0", json={"ccl_key": key}).status_code == 201
+        db = get_db()
+        with sqlite3.connect(db.db_path) as connection:
+            connection.execute(
+                "UPDATE deciding_answers SET timestamp = "
+                "CASE WHEN id = 3 THEN '2026-11-01 10:00:00' ELSE '2026-11-02 10:00:00' END"
+            )
+        get_answers = db.get_deciding_answers
+
+        async def unordered_answers() -> list[dict]:
+            return list(reversed(await get_answers()))
+
+        monkeypatch.setattr(db, "get_deciding_answers", unordered_answers)
+        item = client.get("/api/feedback/review_queue/0").json()
+        exported = list(csv.DictReader(io.StringIO(client.get("/api/feedback/export/ccl_keys").text)))[0]
+        assert item["deciding_answer"]["id"] == 2
+        assert item["deciding_answer"]["ccl_key"] == exported["ccl_key"] == "CARL.501.18"
+        assert item["status"] == exported["status"] == "agreed"
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_migration_never_lowers_a_newer_database_version(tmp_path: Path) -> None:
+    path = tmp_path / "feedback.db"
+    with sqlite3.connect(path) as connection:
+        connection.execute("PRAGMA user_version = 4")
+
+    async def run() -> None:
+        db = FeedbackDB(path)
+        await db.connect()
+        await db.close()
+
+    asyncio.run(run())
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 4
+
+
+def test_reviewed_once_counts_reviewers_not_final_key_credits(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    try:
+        _register(client, "pi", "Fake Admin")
+        asyncio.run(_pick(get_db(), "candidate-a", query_id=0))
+        assert client.post("/api/feedback/decisions/0", json={"ccl_key": "CTOU.567.16"}).status_code == 201
+        queue = client.get("/api/feedback/review_queue", params={"filter": "reviewed_once"}).json()
+        assert queue["total"] == 1
+        assert queue["items"][0]["reviewer_count"] == 1
+        exported = list(csv.DictReader(io.StringIO(client.get("/api/feedback/export/ccl_keys").text)))[0]
+        assert exported["reviewer_count"] == "0"
+    finally:
+        client.__exit__(None, None, None)
+
+
 @pytest.mark.parametrize("body", [
     {}, {"ccl_key": " "}, {"ccl_key": "CTOU.567.16", "none_of_these": True},
     {"ccl_key": "\t=1+1"}, {"ccl_key": "CTOU|567"}, {"none_of_these": True, "notes": "+1"},

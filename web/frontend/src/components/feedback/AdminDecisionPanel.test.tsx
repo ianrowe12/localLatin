@@ -89,6 +89,40 @@ describe('admin deciding answer', () => {
     expect(posts).toHaveLength(0)
   })
 
+  it('discards cancelled key, none and note edits before reopening the recorded answer', async () => {
+    const user = userEvent.setup()
+    render(<AdminDecisionPanel />)
+    await user.type(await screen.findByLabelText('Final CCL key'), 'CTOU.567.16')
+    await user.type(screen.getByLabelText('Decision note (optional)'), 'Recorded note')
+    await user.click(screen.getByRole('button', { name: 'Record final answer' }))
+    await screen.findByText('Final answer recorded.')
+    await user.click(screen.getByRole('button', { name: 'Change final answer' }))
+    await user.clear(screen.getByLabelText('Final CCL key'))
+    await user.type(screen.getByLabelText('Final CCL key'), 'CTOU.600.1')
+    await user.click(screen.getByLabelText('None of these'))
+    await user.clear(screen.getByLabelText('Decision note (optional)'))
+    await user.type(screen.getByLabelText('Decision note (optional)'), 'Abandoned note')
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    await user.click(screen.getByRole('button', { name: 'Change final answer' }))
+    expect((screen.getByLabelText('CCL key') as HTMLInputElement).checked).toBe(true)
+    expect((screen.getByLabelText('Final CCL key') as HTMLInputElement).value).toBe('CTOU.567.16')
+    expect((screen.getByLabelText('Decision note (optional)') as HTMLTextAreaElement).value).toBe('Recorded note')
+    expect(posts).toHaveLength(1)
+  })
+
+  it('formats the recorded SQLite timestamp as a human-readable date', async () => {
+    const recorded = item(7)
+    recorded.deciding_answer = {
+      id: 1, xml_id: 'witness.7', reviewer_account_id: 1, reviewer: 'Example Admin',
+      timestamp: '2026-11-17 00:00:00', ccl_key: 'CTOU.567.16', notes: '',
+    }
+    vi.mocked(fetch).mockResolvedValueOnce(reply(recorded))
+    render(<AdminDecisionPanel />)
+    await screen.findByText('Recorded final answer: CTOU.567.16')
+    expect(screen.getByText('2026-11-17').tagName).toBe('TIME')
+    expect(screen.queryByText('2026-11-17 00:00:00')).toBeNull()
+  })
+
   it('keeps an unsaved answer after failure and never claims it saved', async () => {
     const user = userEvent.setup()
     postStatus = 503
