@@ -181,7 +181,7 @@ We compare SIF frequency weighting \citep{arora2017sif} and reduced-rank whiteni
 % TODO(reviewers): description and credit pending
 Dataset~2 tests routing on witnesses outside the testbed and is never pooled with it.
 Its 2,238 witnesses come from the same project but have no source key in our files.
-For each witness, reviewers working with the CCL project saw the ten testbed directories an encoder ranked highest, for most witnesses mT5-base (the \emph{label source}), and picked the one that shares its source or answered that none did.
+For each witness, reviewers working with the CCL project saw the ten testbed directories an encoder ranked highest, for most witnesses mT5-base (the \emph{label source}), and picked the one that shares its source or answered that none did, optionally typing the source's key.
 We score the witnesses with one agreed key.
 ``None of the ten'' does not mean that the testbed lacks the source, so it is not scored as new.
 Each witness is ranked against all 840 directories, with no \texttt{NEW} option or threshold, and we report acc@1 of the agreed directory and its mean reciprocal rank (MRR).
@@ -328,7 +328,7 @@ Its mask sits neither in a few coordinates nor in a few token types, and we have
 \label{sec:routing}
 
 At their train-selected layers after ABTT, the six frozen encoders route about equally well, but none beats a character n-gram reference.
-On held-out dataset~2 the projection again helps, and again no encoder beats the reference.
+On held-out dataset~2 post-processing again helps, and again no encoder beats the reference.
 
 Of the 858 test witnesses, 535 have a same-source partner in test (\emph{existing}) and 323 do not (\emph{new}).
 Each test directory scores a witness by the highest cosine between the witness and any other member.
@@ -381,7 +381,7 @@ On dataset~2 (Section~\ref{sec:dataset2}; Table~\ref{tab:dataset2_headline}), ac
 The train-best post-processing raises acc@1 by 5 to 10 points for LaTa, PhilTa, LaBSE, Qwen3-0.6B and KaLM-mini, and by 30 for mT5-base, each paired interval excluding zero (Table~\ref{tab:dataset2_headline_ci_diffs}).
 Qwen3-8B, whose train-best method pools the last token, gains nothing.
 The character n-gram reference reaches 95.5 acc@1, and no encoder setting beats it.
-With their train-best methods, PhilTa ties it and LaTa's interval includes zero; the other five fall below it with intervals excluding zero.
+With their train-best methods, PhilTa is 0.3 points above it and LaTa 1.4 below, both intervals including zero; the other five fall below it with intervals excluding zero.
 With ABTT, three encoders tie it and four fall below it.
 mT5-base, the label source, supplied most of the candidate lists, so its row is not an independent test (Limitations).
 By depth, uncorrected LaTa, PhilTa and mT5-base fall at the same middle layers as on the testbed, and ABTT lifts those layers (Figure~\ref{fig:dataset2_depth}).
@@ -437,7 +437,9 @@ No inter-annotator agreement figure therefore exists for this testbed.
 Collation needs at least two witnesses of a key, and 545 of the 840 directories hold only one in this testbed.
 
 Dataset~2 has its own bias.
-A witness receives a key only if a reviewer found its source among the ten directories an encoder ranked highest, for most witnesses mT5-base.
+A witness usually receives a key only if a reviewer found its source among the ten directories an encoder ranked highest, for most witnesses mT5-base.
+% dataset-2 snapshot: recount typed and final-answer keys after the final rescoring.
+Reviewers could also type a key the list lacked, and the project director can record a final answer, but in the snapshot all 662 agreed keys were picked from a list.
 The scored witnesses therefore favor those that mT5-base already places, and they cannot show how often an encoder misses a source that no list contained.
 Witnesses answered with ``none of the ten'' have no known directory; we do not score them, and we do not read them as new sources.
 % TODO(final snapshot): drop the next sentence once the final snapshot is rescored and rendered.
@@ -453,7 +455,7 @@ We will release it under the same license, in coordination with the project's pe
 The intended use is research on retrieval and on assisted source identification: the system ranks candidates for an expert to judge and does not identify sources on its own.
 The English control sample consists of public-domain US court opinions from the Caselaw Access Project \citep{cap2024}, which name litigants; we use it only for label-free geometry statistics and do not release it.
 % TODO(reviewers): description and credit pending
-The keys of dataset~2 come from reviewers working with the CCL project, who judged candidate lists in our review tool.
+The keys of dataset~2 come from reviewers working with the CCL project, who judged candidate lists in our review tool and could type a key the list lacked.
 We analyze a pseudonymized export of their answers and report only aggregate results.
 We used AI assistants for writing and checking code; the authors verified all code and numbers.
 
@@ -567,6 +569,7 @@ It adds two embedding-trained models that Table~\ref{tab:models} leaves out, Sen
 It also gives each checkpoint's feed-forward type and width, whether its embeddings are tied, its lowest effective rank and its range of mean pairwise cosine.
 None of the added models collapses.
 Every checkpoint has at most 0.6B parameters, and each is released under the Apache 2.0 license, as its Hugging Face model card states.
+Qwen3-Embedding-8B, used on dataset~2 only, has 8B parameters and is also released under the Apache 2.0 license.
 The rest of the appendix gives the readouts behind the sibling pairs, T5-base against T5-v1.1-base and T5-efficient-base, the projection on the controls, the English-text check and the fine-tuned LaTa model.
 Per-layer values are in the code release.
 
@@ -785,13 +788,16 @@ This appendix gives the details of dataset~2 that Sections~\ref{sec:dataset2} an
 \paragraph{Review.}
 % TODO(reviewers): description and credit pending
 Reviewers working with the CCL project judged the 2,238 witnesses in our review tool, which showed each witness beside the ten testbed directories an encoder ranked highest.
-A reviewer picked the directory that shares the witness's source or answered that none of the ten did.
+A reviewer picked the directory that shares the witness's source or answered that none of the ten did, and with that answer could type the source's key.
+The project director can also record a final answer that settles a witness.
+% dataset-2 snapshot: recount typed and final-answer keys after the final rescoring.
+In the snapshot no agreed key was typed or set by a final answer: all 662 were picked from a list.
 In the snapshot, 2,237 witnesses are reviewed: 662 have one agreed key, 66 have conflicting keys and 1,509 have no key.
 Most lists came from mT5-base, with SIF+ABTT at the layer deployed in the tool: 603 of the 662 agreed witnesses were judged on its lists alone, and the other 59 on lists from another panel encoder or from more than one.
 mT5-base is therefore the label source, marked $\dagger$ in every dataset-2 table and figure.
 
 \paragraph{Scoring.}
-Each agreed witness is ranked against all 840 testbed directories (1,705 witnesses).
+Each agreed witness is ranked against all 840 testbed directories, which hold 1,705 witnesses.
 As in routing, a directory scores a witness by its highest cosine with any member, but there is no \texttt{NEW} pseudo-directory and no threshold.
 Acc@1 is the share of witnesses whose top-ranked directory carries the agreed key, and MRR is the mean reciprocal rank of that directory.
 A key that matches no testbed directory counts as a miss.
