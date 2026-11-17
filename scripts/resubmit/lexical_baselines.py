@@ -236,6 +236,16 @@ def char_tfidf_score_matrix(
     ngram_range: Tuple[int, int] = (3, 5),
 ) -> np.ndarray:
     """Cosine over character n-gram TF-IDF, vocabulary and IDF fitted on train."""
+    matrix = char_tfidf_vectors(texts, train_idx, ngram_range)
+    return np.asarray((matrix @ matrix.T).todense(), dtype=np.float64)
+
+
+def char_tfidf_vectors(
+    texts: Sequence[str],
+    train_idx: np.ndarray,
+    ngram_range: Tuple[int, int] = (3, 5),
+):
+    """Train-fitted sparse vectors, also usable for rectangular query retrieval."""
     from sklearn.feature_extraction.text import TfidfVectorizer
 
     normalised = [normalise_text(t) for t in texts]
@@ -246,8 +256,7 @@ def char_tfidf_score_matrix(
         norm="l2",
     )
     vectoriser.fit([normalised[i] for i in np.asarray(train_idx)])
-    matrix = vectoriser.transform(normalised)
-    return np.asarray((matrix @ matrix.T).todense(), dtype=np.float64)
+    return vectoriser.transform(normalised)
 
 
 def levenshtein_score_matrix(texts: Sequence[str], workers: int = -1) -> np.ndarray:
