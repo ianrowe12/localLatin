@@ -326,8 +326,8 @@ the DB record also carries `seed_served: false`, the API model only the -1), and
 holds only served members; a directory stays `matched` when a member witness leaves, because
 `status_of` counts stored member witnesses (`member_witness_count`), served or not. They stay in
 the CCL key export unchanged, since the key assignment for that `xml_id` is still valid for CCL;
-no column marks them, so `EXPORT_SCHEMA_VERSION` stays 1 (an older row that needs the served
-ranking for a later pick becomes `needs_check`, as for any unserved query). The raw export keeps
+no column marks them, so their inclusion does not change `EXPORT_SCHEMA_VERSION` (an older row
+that needs the served ranking for a later pick becomes `needs_check`, as for any unserved query). The raw export keeps
 `query_id` as saved and appends `served_query_id` (empty when not served).
 
 **Release consistency.** Prediction CSVs and q-q matrices address queries by position, so

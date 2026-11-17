@@ -60,21 +60,46 @@ instrumentation local and use synthetic accounts, never production rows.
 | File | Contents |
 |---|---|
 | `reviews.csv` | Every feedback row, ordered by insertion id: stored query id, witness xml_id, model, variant, outcome, ranks and saved directories, CCL key/action/directory/rank, schema version and review timestamp |
-| `ccl_key_assignments.csv` | The API's resolved CCL table, using the same resolver and served rankings for legacy multi-rank picks, with pseudonyms instead of reviewer names |
+| `ccl_key_assignments.csv` | The API's resolved CCL table, including final answers, `decided` and `reviewer_status`, using the same resolver and served rankings for legacy multi-rank picks, with pseudonyms instead of reviewer names |
+| `ccl_key_assignments_reviewers_only.csv` | The same API resolution with final answers ignored, preserving the reviewers' own status and key with the same pseudonyms |
+| `deciding_answers.csv` | Every final-answer row in insertion-id order: row id, witness xml_id, timestamp, CCL key (empty for an explicit none) and pseudonymised decider |
 | `reviewer_dirs.csv` | Directory id, seed query/witness, model, variant, CCL key, creation timestamp and pseudonymised creator |
 | `reviewer_dir_members.csv` | Directory membership decisions, stored query/witness, membership role, timestamp and pseudonymised author |
 | `manifest.json` | Snapshot schema version, UTC creation time, deployed `git_sha`, `exporter_git_sha` from the workflow checkout, installed data release, webapp corpus digest, per-file row counts, outcome counts, distinct reviewed queries, feedback reviewer count, smoke/test feedback count and SHA256 of each CSV |
 
-All three decision logs have `reviewer`, `reviewer_role` (current account role,
+All four decision logs have `reviewer`, `reviewer_role` (current account role,
 or `unknown` for legacy/deleted accounts) and `is_smoke_or_test`. The membership
 `role` column is the seed/member decision, not the account role.
 
 Reviewers become `R01`, `R02`, etc. in order of their first feedback **id**, not
 timestamp. An account's renamed display names keep one pseudonym; accountless
 historical rows use the API's stored-name identity rule. Directory-only authors
-follow feedback authors, first by directory id, then membership id. This order
-is snapshot-local, not an identifier to join across releases. SQL computes the
+follow feedback authors, first by directory id, then membership id. Accounts
+with only final answers follow those authors, by final-answer insertion id.
+Final answers reuse an author's existing pseudonym, including after a rename.
+This order is snapshot-local, not an identifier to join across releases. SQL computes the
 pseudonyms without persisting an identity lookup table or exporting a map.
+
+Snapshot schema version 3 adds `ccl_key_assignments_reviewers_only.csv` to the
+encrypted payload and the manifest's row counts and SHA256 inventory. Version 2
+added `deciding_answers.csv`. A pre-v3 database with no final-answer table
+produces an empty decisions file and assignments with `decided=0`. The
+decryption helper still accepts schema-version-1 and schema-version-2 snapshots.
+
+Dataset-2 scoring uses the final assignment status and key for its existing
+sets. Its `reviewers_agreed` set takes both membership (`status=agreed`) and
+labels from the reviewer-only file, even when a final answer names another key
+or explicitly says none. An older snapshot without that file can use the main
+assignments only if it has no final answers; otherwise scoring refuses it and
+requires a new snapshot. This set has an independently derived bootstrap random
+stream, so adding it cannot change the existing sets' confidence intervals.
+
+Both `counts.json` and `summary.md` distinguish
+`agreed_settled_by_final_answer` (a final key where reviewers alone were not
+agreed, including queries without counted reviews) from
+`agreed_confirmed_by_final_answer` (a final key matching the reviewers' agreed
+key, using the app's key comparison). A final none or an override of a different
+reviewer-agreed key counts as neither.
 
 Smoke/test rows are retained and flagged, not removed from CCL resolution.
 Flags recognise the configured `LOCALLATIN_SMOKE_USERNAME` secret and whole
