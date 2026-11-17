@@ -870,7 +870,9 @@ Table~\ref{tab:headline_ci} gives the SIF and SIF+ABTT cells at train-selected l
 Per-layer values for every setting in this appendix are in the code release.
 
 \paragraph{Whitening.}
-Full-rank PCA whitening \citep{su2021whitening} is ill-conditioned here (768 to 1,024 dimensions estimated from 847 training vectors; condition numbers $3\times10^{5}$ to $10^{16}$), and it ranks below ABTT at every panel layer.
+Full-rank PCA whitening \citep{su2021whitening} keeps every principal component of the 847 training vectors.
+For Qwen3-0.6B (1,024 dimensions) and KaLM-mini (896) it is undefined: with more dimensions than training vectors, the training covariance has a direction of zero variance, which whitening rescales without bound, so their scores change with floating-point details and Table~\ref{tab:whiten_reduced} reports none.
+For the four 768-dimensional encoders it is ill-conditioned (condition numbers $3\times10^{5}$ to $10^{16}$), and it ranks below ABTT at every panel layer.
 It also routes all but at most one test witness to an existing directory, so its assignment accuracy sits at the 62.4 percent class prior.
 Whitening to a reduced dimension, as \citet{su2021whitening} also do, drops the near-null directions and is the fairer comparison (Table~\ref{tab:whiten_reduced}).
 Fit on training embeddings with $r=128$ or $256$ components, it ranks on par with ABTT.

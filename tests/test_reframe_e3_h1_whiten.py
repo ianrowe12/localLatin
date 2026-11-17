@@ -221,3 +221,26 @@ def test_e3_row_recomputes_from_cached_vectors(tmp_path):
     assert list(mine.columns) == list(ref.columns)
     num = mine.select_dtypes("number").columns
     np.testing.assert_allclose(mine[num].to_numpy(float), ref[num].to_numpy(float), atol=1e-6)
+
+
+def _whiten_row(name, full_components):
+    row = {"name": name, "base": 0.9, "abtt": 0.95, "abtt_dir1": 0.85, "abtt_assign": 0.88}
+    for k in [str(k) for k in asw.WH_K] + ["full"]:
+        row[f"w{k}"], row[f"w{k}_dir1"], row[f"w{k}_assign"] = 0.91, 0.81, 0.83
+    row["wfull"], row["wfull_dir1"], row["wfull_assign"] = 0.594, 0.205, 0.624
+    row["wfull_n_components"] = full_components
+    return row
+
+
+def test_full_whitening_is_not_reported_when_dims_reach_the_training_count(tmp_path):
+    # d < n keeps d components and is reported; d >= n keeps n and is undefined (#291).
+    path = tmp_path / "whiten_reduced.tex"
+    asw.write_whiten_table(
+        [_whiten_row("Small", 768), _whiten_row("Big", asw.N_TRAIN_PASSAGES)], path,
+    )
+    lines = {line.split(" & ")[0]: line for line in path.read_text().splitlines()
+             if line.startswith(("Small &", "Big &"))}
+    assert "n/a" not in lines["Small"] and "0.594" in lines["Small"] and "20.5" in lines["Small"]
+    assert lines["Big"].count("n/a") == 3
+    assert "0.594" not in lines["Big"] and "20.5" not in lines["Big"]
+    assert "0.910" in lines["Big"]  # reduced-rank whitening is still reported
