@@ -3,7 +3,8 @@
 Dataset 2 is the reviewer pilot's verdicts on the 2,238 unlabelled queries,
 exported as a pseudonymised snapshot (``runs/active/dataset2/snapshot_*``, never
 committed). Label sets follow the final resolved status, including PI/admin
-answers. ``reviewers_agreed`` selects ``reviewer_status == agreed`` separately.
+answers. ``reviewers_agreed`` uses the separate reviewer-only assignments'
+``agreed`` status and key, ignoring any final-answer overrides.
 A query whose reviewers confirmed one CCL key is ``agreed``; one
 where they named different keys is ``conflict``; ``no_key`` means "none of the
 top 10 served" with no key typed, which says the match was not in the served
@@ -417,7 +418,22 @@ def load_snapshot(snapshot: Path, query_names: Sequence[str]) -> pd.DataFrame:
     seen = dec.groupby("xml_id")["model_slug"].agg(lambda s: sorted(set(s)))
     q = keys[["xml_id", "ccl_key", "status", "conflicting_keys"]].copy()
     q["decided"] = keys["decided"] if "decided" in keys else 0
-    q["reviewer_status"] = keys["reviewer_status"] if "reviewer_status" in keys else keys["status"]
+    reviewers_path = snapshot / "ccl_key_assignments_reviewers_only.csv"
+    if reviewers_path.is_file():
+        reviewers = pd.read_csv(reviewers_path)
+    else:
+        decisions_path = snapshot / "deciding_answers.csv"
+        if (q["decided"] == 1).any() or (
+            decisions_path.is_file() and not pd.read_csv(decisions_path).empty
+        ):
+            raise SystemExit(
+                "Snapshot has final answers but no ccl_key_assignments_reviewers_only.csv; "
+                "export a new snapshot to score reviewers' own labels."
+            )
+        reviewers = keys
+    reviewers = reviewers.set_index("xml_id")
+    q["reviewer_status"] = q["xml_id"].map(reviewers["status"])
+    q["reviewer_ccl_key"] = q["xml_id"].map(reviewers["ccl_key"])
     q["seen_models"] = q["xml_id"].map(seen)
     q["seen_group"] = [
         (m[0] if len(m) == 1 else "mixed") if isinstance(m, list) else "none"
@@ -623,6 +639,10 @@ def cmd_score(args) -> None:
     q = load_snapshot(Path(args.snapshot), query_names)
     key_index = key_to_dir_index(dir_names)
     q["label_cols"], q["unmapped_keys"] = label_dirs(q, key_index)
+    reviewer_labels = q[["reviewer_status", "reviewer_ccl_key"]].rename(
+        columns={"reviewer_status": "status", "reviewer_ccl_key": "ccl_key"},
+    ).assign(conflicting_keys="")
+    q["reviewer_label_cols"], _ = label_dirs(reviewer_labels, key_index)
     served_mt5 = load_served(args.served_dir, slug(MT5), query_names)
     served_by_slug = {g: load_served(args.served_dir, g, query_names)
                       for g in q["seen_group"].unique() if g not in ("mixed", "none")}
@@ -635,7 +655,7 @@ def cmd_score(args) -> None:
     }
     rng = np.random.default_rng(args.seed)
     # Keep the new set from changing existing sets' bootstrap draws across models.
-    reviewers_rng = np.random.default_rng(args.seed)
+    reviewers_rng = np.random.default_rng(np.random.SeedSequence(args.seed, spawn_key=(1,)))
     boot_idx: Dict[Tuple[str, str], np.ndarray] = {}
 
     per_query = q[["xml_id", "status", "seen_group", "unmapped_keys"]].copy()
@@ -675,13 +695,16 @@ def cmd_score(args) -> None:
         ranks = ranks_of(order, q["label_cols"].tolist(), rows)
         ranks[excl[rows]] = np.nan
         per_query[f"rank:{col}"] = ranks
+        reviewer_ranks = ranks_of(order, q["reviewer_label_cols"].tolist(), rows)
+        reviewer_ranks[excl[rows]] = np.nan
 
         for set_name, mask in label_sets.items():
+            set_ranks = reviewer_ranks if set_name == "reviewers_agreed" else ranks
             groups = {"all": mask.values}
             for g in sorted(q.loc[mask, "seen_group"].unique()):
                 groups[g] = (mask & (q["seen_group"] == g)).values
             for g, gmask in groups.items():
-                r = ranks[gmask]
+                r = set_ranks[gmask]
                 r = r[~np.isnan(r)]
                 n = len(r)
                 if n == 0:
@@ -740,10 +763,14 @@ def cmd_score(args) -> None:
     per_query.to_csv(out / "results" / "per_query_ranks.csv", index=False)
     headline_table(acc).to_csv(out / "results" / "headline.csv", index=False)
 
+    final_agreed = (q["status"] == "agreed") & (q["decided"] == 1)
+    reviewer_agreed = q["reviewer_status"] == "agreed"
+    same_key = q["ccl_key"].map(match_form) == q["reviewer_ccl_key"].map(match_form)
     counts = {
         "queries_with_snapshot_row": int(len(q)),
         "status": q["status"].value_counts().to_dict(),
-        "agreed_by_final_answer": int(((q["status"] == "agreed") & (q["decided"] == 1)).sum()),
+        "agreed_settled_by_final_answer": int((final_agreed & ~reviewer_agreed).sum()),
+        "agreed_confirmed_by_final_answer": int((final_agreed & reviewer_agreed & same_key).sum()),
         "seen_group": q["seen_group"].value_counts().to_dict(),
         "keyed_queries_with_unmapped_key": int(((q["unmapped_keys"] > 0)
                                                 & (q["status"] != "no_key")).sum()),
@@ -796,7 +823,10 @@ def write_summary(path: Path, acc, nokey, sel, sanity, counts) -> None:
              "Layers and D selected on benchmark v1 train (see `selected_layers.csv`).",
              "Ranking over the 840 labelled directories; 95% percentile bootstrap CIs.", "",
              f"Counts: `{json.dumps(counts)}`", "",
-             f"Agreed queries settled by a final answer: {counts['agreed_by_final_answer']}.", "",
+             "Agreed queries settled by a final answer: "
+             f"{counts['agreed_settled_by_final_answer']}.",
+             "Agreed queries confirmed by a final answer: "
+             f"{counts['agreed_confirmed_by_final_answer']}.", "",
              f"Sanity: `{json.dumps(sanity)}`", "",
              "Whitening is the paper's (`PCA(whiten=True)` fit on the train rows, float32).",
              f"A cell marked `{NOT_APPLICABLE}` has no number: with n_train <= d the train",

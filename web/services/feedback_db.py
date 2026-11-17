@@ -2737,6 +2737,7 @@ class FeedbackDB:
         data_release: str = "",
         exported_at: str | None = None,
         status: str | None = None,
+        include_deciding_answers: bool = True,
     ) -> list[dict]:
         """One resolved row per reviewed query, for CCL's import (issue #270).
 
@@ -2753,7 +2754,8 @@ class FeedbackDB:
         unresolved and the row is `needs_check`.
 
         Reads only. Reviewer names reach the returned rows and nothing else:
-        the one log line here carries a count.
+        the one log line here carries a count. Snapshots can ignore final
+        answers with `include_deciding_answers=False` for reviewer-only labels.
         """
         decisions = await self.ccl_counted_decisions(
             filename_by_query=filename_by_query, rank_dir=rank_dir
@@ -2764,7 +2766,7 @@ class FeedbackDB:
             data_release=data_release,
             exported_at=exported_at or ccl_key_export.now_iso_utc(),
             status=status,
-            deciding_answers=await self.get_deciding_answers(),
+            deciding_answers=await self.get_deciding_answers() if include_deciding_answers else [],
         )
 
     async def insert_deciding_answer(

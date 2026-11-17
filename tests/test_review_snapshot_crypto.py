@@ -26,7 +26,7 @@ def keypair(tmp_path_factory: pytest.TempPathFactory):
     return private, public
 
 
-@pytest.mark.parametrize("schema_version", [1, snapshot.SCHEMA_VERSION])
+@pytest.mark.parametrize("schema_version", sorted(snapshot.VERSION_FILES))
 def test_encrypt_decrypt_helper_and_tamper_checks(
     tmp_path: Path, keypair, schema_version: int, monkeypatch: pytest.MonkeyPatch,
 ) -> None:

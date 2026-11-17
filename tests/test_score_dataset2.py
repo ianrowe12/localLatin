@@ -281,7 +281,8 @@ def snapshot_scoring(tmp_path, monkeypatch):
     ]))
     monkeypatch.setattr(sd, "score_one", lambda model, method, *a: {
         "status": sd.SCORED, "reason": "", "D": None, "scores": model_scores[method],
-        "excluded_queries": np.zeros(len(names), bool), "excluded_refs": np.zeros(len(split), bool),
+        "excluded_queries": np.array([method == "sif_only"] + [False] * (len(names) - 1)),
+        "excluded_refs": np.zeros(len(split), bool),
     })
     return args, keys, model_scores
 
@@ -292,6 +293,9 @@ def test_snapshot_without_decisions_preserves_existing_scoring_outputs(snapshot_
     if not legacy:
         keys["decided"] = 0
         keys["reviewer_status"] = keys["status"]
+        pd.DataFrame(columns=["xml_id", "ccl_key"]).to_csv(
+            args.snapshot / "deciding_answers.csv", index=False,
+        )
     keys.to_csv(args.snapshot / "ccl_key_assignments.csv", index=False)
     sd.cmd_score(args)
     results = args.out_dir / "results"
@@ -301,7 +305,7 @@ def test_snapshot_without_decisions_preserves_existing_scoring_outputs(snapshot_
         "status": {"agreed": 5, "conflict": 2, "no_key": 2, "needs_check": 1},
         "seen_group": {"m1": 6, "m2": 4},
         "keyed_queries_with_unmapped_key": 1, "keyed_queries_with_no_mapped_dir": 2,
-        "agreed_by_final_answer": 0,
+        "agreed_settled_by_final_answer": 0, "agreed_confirmed_by_final_answer": 0,
     }
     per_query = pd.read_csv(results / "per_query_ranks.csv")
     assert per_query.columns.tolist() == [
@@ -324,6 +328,8 @@ def test_snapshot_without_decisions_preserves_existing_scoring_outputs(snapshot_
     labels = [[0], [1], [2], [0], [0, 2], [1], [], [], [], []]
     for method, matrix in scores.items():
         ranks = sd.ranks_of(sd.rank_order(matrix), labels, np.arange(len(keys)))
+        if method == "sif_only":
+            ranks[0] = np.nan
         np.testing.assert_array_equal(per_query[f"rank:mT5-base|{method}"], ranks)
         with np.load(args.out_dir / "rankings" / f"{sd.slug(sd.MT5)}__{method}.npz") as ranking:
             np.testing.assert_array_equal(ranking["scores"], matrix)
@@ -332,8 +338,11 @@ def test_snapshot_without_decisions_preserves_existing_scoring_outputs(snapshot_
             groups.update({g: mask & (seen == g) for g in sorted(seen[mask].unique())})
             for group, group_mask in groups.items():
                 r = ranks[group_mask]
+                r = r[~np.isnan(r)]
+                if not len(r):
+                    continue
                 slot = (set_name, group)
-                if slot not in boot_idx:
+                if slot not in boot_idx or boot_idx[slot].shape[1] != len(r):
                     boot_idx[slot] = rng.integers(0, len(r), size=(args.n_boot, len(r)))
                 expected_ci = sd.bootstrap(r, boot_idx[slot])
                 got = acc[(acc["method"] == method) & (acc["label_set"] == set_name)
@@ -353,16 +362,58 @@ def test_snapshot_without_decisions_preserves_existing_scoring_outputs(snapshot_
     assert nokey["top1_in_mt5_served_top10"].tolist() == [2, 2]
     summary = (results / "summary.md").read_text()
     assert "Agreed queries settled by a final answer: 0." in summary
+    assert "Agreed queries confirmed by a final answer: 0." in summary
     assert "## reviewers_agreed (n=5)" in summary
+
+
+def test_reviewers_set_does_not_change_existing_output_bytes(snapshot_scoring, monkeypatch):
+    args, keys, _ = snapshot_scoring
+    monkeypatch.setattr(sd, "select_layers", lambda *a: pd.DataFrame([
+        {"model": sd.MT5, "method": "baseline", "layer": 1, "D": None},
+        {"model": "bowphs/LaTa", "method": "sif_only", "layer": 1, "D": None},
+    ]))
+    keys.to_csv(args.snapshot / "ccl_key_assignments.csv", index=False)
+    args.out_dir = args.out_dir.parent / "with_reviewers"
+    sd.cmd_score(args)
+    with_reviewers = args.out_dir / "results"
+    accuracy = pd.read_csv(with_reviewers / "accuracy_long.csv")
+    agreed = accuracy[(accuracy["label_set"] == "agreed")
+                      & (accuracy["seen_group"] == "all")].drop_duplicates("model")
+    assert agreed.set_index("model")[["n", "n_excluded"]].to_dict("index") == {
+        "mT5-base": {"n": 5, "n_excluded": 0}, "LaTa": {"n": 4, "n_excluded": 1},
+    }
+
+    load_snapshot = sd.load_snapshot
+
+    def without_reviewers_set(*a):
+        q = load_snapshot(*a)
+        q["reviewer_status"] = ""
+        return q
+
+    monkeypatch.setattr(sd, "load_snapshot", without_reviewers_set)
+    args.out_dir = args.out_dir.parent / "without_reviewers"
+    sd.cmd_score(args)
+    without_reviewers = args.out_dir / "results"
+
+    for name in ("accuracy_long.csv", "headline.csv"):
+        existing_rows = b"".join(
+            line for line in (with_reviewers / name).read_bytes().splitlines(keepends=True)
+            if not line.startswith(b"reviewers_agreed,")
+        )
+        assert existing_rows == (without_reviewers / name).read_bytes(), name
+    for name in ("per_query_ranks.csv", "nokey_top1_vs_served.csv", "counts.json"):
+        assert (with_reviewers / name).read_bytes() == (without_reviewers / name).read_bytes()
 
 
 def test_final_answers_drive_labels_counts_and_reviewer_agreement_set(snapshot_scoring):
     args, keys, _ = snapshot_scoring
+    keys.to_csv(args.snapshot / "ccl_key_assignments_reviewers_only.csv", index=False)
     keys["reviewer_status"] = keys["status"]
     keys["decided"] = 0
-    # A conflict becomes agreed, an agreed key changes, another becomes explicit
-    # none, and an unresolved item with no counted review gets a final key.
-    keys.loc[[1, 2, 4, 8], "decided"] = 1
+    # Confirm one key, override another, settle a conflict, record final none,
+    # and decide an item with no counted review.
+    keys.loc[[0, 1, 2, 4, 8], "decided"] = 1
+    keys.loc[0, "ccl_key"] = " k.1 "
     keys.loc[[1, 4, 8], ["status", "ccl_key"]] = ["agreed", "K.3"]
     keys.loc[2, ["status", "ccl_key"]] = ["no_key", None]
     keys.loc[[1, 2, 4, 8], "conflicting_keys"] = None
@@ -373,7 +424,9 @@ def test_final_answers_drive_labels_counts_and_reviewer_agreement_set(snapshot_s
     sd.cmd_score(args)
     results = args.out_dir / "results"
     counts = json.loads((results / "counts.json").read_text())
-    assert counts["agreed_by_final_answer"] == 3
+    assert counts["agreed_settled_by_final_answer"] == 2
+    assert counts["agreed_confirmed_by_final_answer"] == 1
+    assert "agreed_by_final_answer" not in counts
     assert counts["status"] == {"agreed": 6, "no_key": 3, "conflict": 1}
     ranks = pd.read_csv(results / "per_query_ranks.csv").set_index("xml_id")
     assert ranks.loc["q1", "rank:mT5-base|baseline"] == 3
@@ -386,9 +439,47 @@ def test_final_answers_drive_labels_counts_and_reviewer_agreement_set(snapshot_s
     assert all_baseline.groupby("label_set")["n"].first().to_dict() == {
         "agreed": 6, "agreed_plus_conflict": 7, "conflict": 1, "reviewers_agreed": 5,
     }
+    reviewers = all_baseline[all_baseline["label_set"] == "reviewers_agreed"].set_index("metric")
+    assert reviewers.loc["acc@5", "value"] == pytest.approx(0.8)
+    assert reviewers.loc["mrr", "value"] == pytest.approx((1 + 1 / 2 + 1 / 3 + 1 / 3) / 5)
     headline = pd.read_csv(results / "headline.csv")
     assert "reviewers_agreed" in set(headline["label_set"])
     assert pd.read_csv(results / "nokey_top1_vs_served.csv")["n"].tolist() == [3, 3]
     summary = (results / "summary.md").read_text()
-    assert "Agreed queries settled by a final answer: 3." in summary
+    assert "Agreed queries settled by a final answer: 2." in summary
+    assert "Agreed queries confirmed by a final answer: 1." in summary
     assert "## reviewers_agreed (n=5)" in summary
+
+
+@pytest.mark.parametrize("final_key", [None, "K.3"])
+def test_reviewers_agreed_uses_its_own_status_and_key(snapshot_scoring, final_key):
+    args, keys, _ = snapshot_scoring
+    keys.to_csv(args.snapshot / "ccl_key_assignments_reviewers_only.csv", index=False)
+    keys["decided"] = 0
+    keys["reviewer_status"] = "conflict"  # Membership must come from the separate file.
+    keys.loc[1, ["decided", "status", "ccl_key"]] = [
+        1, "no_key" if final_key is None else "agreed", final_key,
+    ]
+    keys.to_csv(args.snapshot / "ccl_key_assignments.csv", index=False)
+    sd.cmd_score(args)
+    acc = pd.read_csv(args.out_dir / "results" / "accuracy_long.csv")
+    reviewers = acc[(acc["label_set"] == "reviewers_agreed")
+                    & (acc["method"] == "baseline") & (acc["seen_group"] == "all")]
+    assert reviewers["n"].tolist() == [5] * 4
+    assert reviewers.set_index("metric").loc["mrr", "value"] == pytest.approx(
+        (1 + 1 / 2 + 1 / 3 + 1 / 3) / 5,
+    )
+
+
+@pytest.mark.parametrize("decision_source", ["assignments", "log"])
+def test_snapshot_with_decisions_requires_reviewers_only_file(snapshot_scoring, decision_source):
+    args, keys, _ = snapshot_scoring
+    if decision_source == "assignments":
+        keys["decided"] = 1
+    else:
+        pd.DataFrame({"xml_id": ["q0"], "ccl_key": [None]}).to_csv(
+            args.snapshot / "deciding_answers.csv", index=False,
+        )
+    keys.to_csv(args.snapshot / "ccl_key_assignments.csv", index=False)
+    with pytest.raises(SystemExit, match="ccl_key_assignments_reviewers_only.csv"):
+        sd.load_snapshot(args.snapshot, [f"q{i}.txt" for i in range(len(keys))])

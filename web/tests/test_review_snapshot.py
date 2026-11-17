@@ -202,6 +202,7 @@ def test_bundle_redaction_pseudonyms_and_manifest(production, tmp_path: Path) ->
         "reviews.csv": 9, "ccl_key_assignments.csv": 4,
         "reviewer_dirs.csv": 1, "reviewer_dir_members.csv": 2,
         "deciding_answers.csv": 0,
+        "ccl_key_assignments_reviewers_only.csv": 4,
     }
     snapshot.verify_bundle(bundle)
     # The API's input copy cannot contain identities either.
@@ -210,8 +211,9 @@ def test_bundle_redaction_pseudonyms_and_manifest(production, tmp_path: Path) ->
 
 
 @pytest.mark.parametrize("fixture_name", ["production", "decided_production"])
+@pytest.mark.parametrize("include_deciding_answers", [True, False])
 def test_ccl_table_is_the_api_export_with_pseudonyms(
-    request, fixture_name: str, tmp_path: Path,
+    request, fixture_name: str, tmp_path: Path, include_deciding_answers: bool,
 ) -> None:
     production = request.getfixturevalue(fixture_name)
     _, bundle, manifest = build(production, tmp_path)
@@ -238,6 +240,7 @@ def test_ccl_table_is_the_api_export_with_pseudonyms(
                 labelled_dir_names=store.labelled_dir_files,
                 rank_dir=ranking, data_release=store.data_release,
                 exported_at=manifest["created_at"],
+                include_deciding_answers=include_deciding_answers,
             )
         finally:
             await db.close()
@@ -251,11 +254,13 @@ def test_ccl_table_is_the_api_export_with_pseudonyms(
         row["reviewers"] = ccl_key_export.LIST_SEPARATOR.join(sorted(
             aliases[name] for name in row["reviewers"].split(ccl_key_export.LIST_SEPARATOR) if name
         ))
-    actual = csv_rows(bundle, "ccl_key_assignments.csv")
+    filename = ("ccl_key_assignments.csv" if include_deciding_answers
+                else "ccl_key_assignments_reviewers_only.csv")
+    actual = csv_rows(bundle, filename)
     assert actual == [{k: str(v) for k, v in row.items()} for row in expected]
     multi = next(row for row in actual if row["xml_id"] == "query-2")
     assert multi["reviewer_status"] == "conflict"
-    if fixture_name == "production":
+    if fixture_name == "production" or not include_deciding_answers:
         assert multi["status"] == "conflict"
         assert multi["conflicting_keys"] == "candidate-a | candidate-b"
     else:
@@ -289,7 +294,15 @@ def test_final_answers_are_redacted_and_share_reviewer_pseudonyms(
     assert assignments["query-3"]["key_source"] == "final_answer"
     assert assignments["query-3"]["reviewers"] == ""
     assert assignments["retired-witness"]["ccl_key"] == "candidate-b"
+    reviewers = {
+        row["xml_id"]: row for row in csv_rows(bundle, "ccl_key_assignments_reviewers_only.csv")
+    }
+    assert "query-3" not in reviewers
+    assert reviewers["retired-witness"]["status"] == "agreed"
+    assert reviewers["retired-witness"]["ccl_key"] == "candidate-a"
+    assert all(row["decided"] == "0" for row in reviewers.values())
     assert manifest["row_counts"]["deciding_answers.csv"] == 5
+    assert manifest["row_counts"]["ccl_key_assignments_reviewers_only.csv"] == 4
     snapshot.verify_bundle(bundle)
 
 

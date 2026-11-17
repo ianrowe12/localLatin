@@ -33,15 +33,16 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from web.config import Settings
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 ITERATIONS = 200_000
 MAGIC = b"LLRS001\n"
 CIPHERTEXT = "review-snapshot.tar.gz.enc"
 WRAPPED_KEY = "review-snapshot.key.enc"
 V1_FILES = ("reviews.csv", "ccl_key_assignments.csv", "reviewer_dirs.csv",
             "reviewer_dir_members.csv")
-FILES = (*V1_FILES, "deciding_answers.csv")
-VERSION_FILES = {1: V1_FILES, SCHEMA_VERSION: FILES}
+V2_FILES = (*V1_FILES, "deciding_answers.csv")
+FILES = (*V2_FILES, "ccl_key_assignments_reviewers_only.csv")
+VERSION_FILES = {1: V1_FILES, 2: V2_FILES, SCHEMA_VERSION: FILES}
 REVIEW_COLUMNS = (
     "id", "xml_id", "query_id", "model_slug", "variant", "outcome",
     "correct_rank", "correct_dir", "selected_ranks_json", "selected_dirs_json",
@@ -274,6 +275,14 @@ async def build_bundle(
             data_release=store.data_release,
             exported_at=created_at,
         )
+        reviewers_only = await db.ccl_key_assignments(
+            filename_by_query=store.file_id_to_filename,
+            labelled_dir_names=store.labelled_dir_files,
+            rank_dir=rank_dir,
+            data_release=store.data_release,
+            exported_at=created_at,
+            include_deciding_answers=False,
+        )
     finally:
         await db.close()
 
@@ -285,6 +294,7 @@ async def build_bundle(
     write_csv(bundle / FILES[2], (*DIR_COLUMNS, *extras), tables["reviewer_dirs"])
     write_csv(bundle / FILES[3], (*MEMBER_COLUMNS, *extras), tables["reviewer_dir_members"])
     write_csv(bundle / FILES[4], (*DECIDING_COLUMNS, *extras), tables["deciding_answers"])
+    (bundle / FILES[5]).write_text(ccl_key_export.to_csv(reviewers_only), encoding="utf-8")
     reviewed = [r for r in reviews if r["outcome"] in ccl_key_export.DECISION_OUTCOMES]
     reviewed_queries = set()
     for row in reviewed:
@@ -303,7 +313,7 @@ async def build_bundle(
         "served_corpus_sha256": corpus_digest(store.file_id_to_filename),
         "row_counts": {filename: len(rows) for filename, rows in zip(FILES, (
             reviews, assignments, tables["reviewer_dirs"], tables["reviewer_dir_members"],
-            tables["deciding_answers"],
+            tables["deciding_answers"], reviewers_only,
         ))},
         "rows_per_outcome": dict(sorted(Counter(r["outcome"] for r in reviews).items())),
         "distinct_queries_reviewed": len(reviewed_queries),
