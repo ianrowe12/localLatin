@@ -109,7 +109,7 @@ lines up and that named files keep byte-identical vectors across a relabelling.
 | `sif_only` | SIF-weighted pooling (down-weights frequent tokens) |
 | `sif_abtt_fixed` | SIF + remove top D=10 principal components |
 | `sif_abtt_optimal` | SIF + ABTT with D tuned per layer on train set |
-| `whitening` | PCA whitening fitted on train (consistently fails on this task) |
+| `whitening` | PCA whitening fitted on train. Full rank is ill-conditioned, and undefined (reported n/a) when dims >= 847 train files (Qwen3-0.6B, KaLM-mini, Qwen3-8B); reduced rank (r=128/256) ranks on par with ABTT but routes below it |
 
 ## Paths
 

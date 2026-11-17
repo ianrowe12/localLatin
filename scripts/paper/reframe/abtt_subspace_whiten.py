@@ -105,6 +105,12 @@ FACTS_MD = OUT_ROOT / "facts_e3_h1_whiten.md"
 H1_D = [0, 1, 2, 3, 5, 7, 10, 15, 20, 30, 50]
 SEL_GRID = [1, 2, 3, 5, 7, 10]  # the paper's abtt_optimal grid
 WH_K = [64, 128, 256]
+# Full-rank whitening is undefined when a model has at least as many dimensions as
+# there are training passages: centred, 847 vectors span at most 846 directions, so a
+# zero-variance direction is rescaled by ~1/sqrt(0) and swamps every vector outside the
+# fit; its scores then depend on float details (issue #291). PCA keeps min(n, d)
+# components, so n_components >= N_TRAIN_PASSAGES marks exactly the d >= n models.
+N_TRAIN_PASSAGES = 847
 COLLAPSE_AUROC = 0.70  # paper Sec. 4: collapsed = baseline test AUROC below 0.70
 PC1_FLAG = 0.60  # paper Sec. 4: top-PC share >= 0.6 flags all collapsed layers
 RANK1_BAR = 0.80  # H1: D=1 must recover >= 80% of the D=10 gain
@@ -682,6 +688,7 @@ def whiten_rows(wh: pd.DataFrame, res: pd.DataFrame) -> List[Dict]:
             x = s[s.layer == layer].iloc[0]
             row[f"w{k}_layer"], row[f"w{k}"] = layer, float(x.aucroc)
             row[f"w{k}_cond"] = float(x["cond"])
+            row[f"w{k}_n_components"] = int(s.n_components.max())
             # also at the ABTT-selected layer, to separate method from layer choice
             y = s[s.layer == row["abtt_layer"]].iloc[0]
             row[f"w{k}_at_abtt_layer"] = float(y.aucroc)
@@ -699,8 +706,18 @@ def pct(x) -> str:
     return "--" if not np.isfinite(x) else f"{100 * x:.1f}"
 
 
+def full_whitening_undefined(row: Dict) -> bool:
+    """True when full-rank whitening has a zero-variance direction (d >= n_train)."""
+    return row.get("wfull_n_components", 0) >= N_TRAIN_PASSAGES
+
+
 def write_whiten_table(rows: List[Dict], path: Path) -> None:
     ks = [str(k) for k in WH_K] + ["full"]
+
+    def cell(x, k, kind):
+        if k == "full" and full_whitening_undefined(x):
+            return "n/a"
+        return f3(x[f"w{k}"]) if kind == "auroc" else pct(x[f"w{k}_{kind}"])
     kh = " & ".join(ks)
     lines = [HEADER, r"\begin{table*}[t]", r"\centering", r"\footnotesize",
              r"\setlength{\tabcolsep}{3.2pt}", r"\begin{tabular}{lrrrrrrrrrrrrrrrr}", r"\toprule",
@@ -717,15 +734,17 @@ def write_whiten_table(rows: List[Dict], path: Path) -> None:
         if i == 3:
             lines.append(r"\midrule")
         lines.append(f"{x['name']} & {f3(x['base'])} & {f3(x['abtt'])} & "
-                     + " & ".join(f3(x[f'w{k}']) for k in ks) + " & "
-                     + f"{pct(x['abtt_dir1'])} & " + " & ".join(pct(x[f'w{k}_dir1']) for k in ks)
+                     + " & ".join(cell(x, k, "auroc") for k in ks) + " & "
+                     + f"{pct(x['abtt_dir1'])} & " + " & ".join(cell(x, k, "dir1") for k in ks)
                      + " & " + f"{pct(x['abtt_assign'])} & "
-                     + " & ".join(pct(x[f'w{k}_assign']) for k in ks) + r" \\")
+                     + " & ".join(cell(x, k, "assign") for k in ks) + r" \\")
     lines += [r"\bottomrule", r"\end{tabular}",
               r"\caption{PCA whitening to $r$ components against the baseline and ABTT, fit on "
               r"training embeddings, at each setting's train-selected layer. Whitening keeps the "
               r"top $r$ principal components, rescaled to unit variance; full keeps all, at most 847 (the "
-              r"number of training passages). Routing in percent. "
+              r"number of training passages). Routing in percent. n/a: full whitening is "
+              r"undefined for Qwen3-0.6B (1,024 dimensions) and KaLM-mini (896), which have "
+              r"more dimensions than training passages. "
               r"Whitening ranks on par with ABTT, but routes below it.}",
               r"\label{tab:whiten_reduced}", r"\end{table*}"]
     path.write_text("\n".join(lines) + "\n")
