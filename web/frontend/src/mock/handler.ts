@@ -17,6 +17,7 @@ import type { TokenMapResponse } from '../api/tokenMap'
 import { MOCK_QUERIES, MOCK_QUERY_DETAILS } from './queries'
 import { MOCK_PREDICTIONS } from './predictions'
 import { MOCK_TOKEN_MAPS } from './tokenMaps'
+import { handleAdminReview } from './adminReview'
 
 // ---------------------------------------------------------------------------
 // Synthetic query generation (expand 3 real queries to 2238 items)
@@ -775,6 +776,8 @@ export function installMockHandler(): void {
     // Route to mock handlers
     const authResponse = await handleAuth(url, init)
     if (authResponse) return authResponse
+    const adminReviewResponse = handleAdminReview(url, init, mockUser, ALL_QUERIES)
+    if (adminReviewResponse) return adminReviewResponse
 
     // Next actionable query
     if (url.match(/\/api\/queries\/next/)) {

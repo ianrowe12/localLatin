@@ -110,6 +110,67 @@ artifacts generated before those arrays existed. `query_sif_weights` /
 | GET | `/api/feedback/export` | Export feedback as CSV |
 | GET | `/api/stats` | Dashboard statistics |
 | GET | `/api/models` | Available model metadata |
+| GET | `/api/feedback/review_queue` | PI/admin only: paginated counted answers and resolution per served xml:id |
+| GET | `/api/feedback/review_queue/{query_id}` | PI/admin only: the document's counted answers and newest final answer |
+| POST | `/api/feedback/decisions/{query_id}` | PI/admin only: append a deciding answer |
+| GET | `/api/feedback/export/ccl_keys` | PI/admin only: resolved CCL key assignments CSV |
+
+### Admin review queue and final answers (issue #294)
+
+The dashboard's **Review queue** lists one row per served witness, with each counted
+reviewer's display name, model, variant, key or keys (or "None of these"), note and
+timestamp. Open a row to inspect the document in the normal review view. The
+**Final answer** panel there shows counted answers and lets a PI/admin record a
+CCL key or explicitly choose **None of these**, with an optional decision note.
+Reviewers cannot fetch either queue endpoint or record a final answer, and never
+receive this panel's data. Existing shared-note prefilling is unchanged.
+
+`GET /api/feedback/review_queue` accepts `filter=conflict` (default),
+`needs_check`, `with_notes`, `reviewed_once`, `decided` or `all`, plus `page`
+(1-based) and `page_size` (1 to 100, default 20). The response contains `items`,
+`counts` for every filter over the full served queue, `total` for the chosen
+filter, `page`, `page_size` and `has_more`. Disagreements and Needs check use the
+effective export status, so a final answer removes an item from those filters.
+With notes means a current counted answer has a nonblank note. Reviewed once
+means the reviewers alone agreed and exactly one distinct reviewer counted,
+even if that reviewer used multiple models. Decided means a final answer exists.
+Filters may overlap.
+
+`POST /api/feedback/decisions/{query_id}` accepts
+`{ccl_key: "CTOU.567.16", notes?: "..."}` or
+`{none_of_these: true, notes?: "..."}` and returns the saved answer with 201.
+Exactly one answer is required. Keys use the existing 200-character limit and
+whitespace normalization. Decision notes have a 10,000-character limit. Both
+fields use the existing input-safety rule: no formula-leading `=`, `+`, `-` or
+`@` after leading whitespace/control characters, and no `|` anywhere.
+
+Migration creates the append-only `deciding_answers` table and records database
+schema version 3 (`PRAGMA user_version`). It stores `id`, the original
+`query_id`, nonempty `xml_id`, account id, display-name snapshot, timestamp,
+nullable `ccl_key` (NULL means an explicit none) and note. Changing a final answer
+appends another row; no feedback or earlier answer is rewritten or deleted. The
+newest row per xml:id, ordered by timestamp then id, counts. Decisions participate
+in the existing corpus-change checks, missing-reviewed-witness threshold, backups
+and witness mapping. Missing witnesses leave the queue but retain their decisions
+in the export. Recording an answer does not create a directory or membership.
+
+The queue and CCL export reuse `services/ccl_key_export.py`'s current-decision
+selection and resolution, including unresolved legacy picks. A deciding key
+overrides the export result to `agreed` with that key; an explicit none overrides
+it to `no_key`. The export retains all 14 original columns in the same order and
+appends only `decided` (0/1) and `reviewer_status` (the reviewers-only result,
+empty if there are no counted reviews). Its `export_schema_version` is now 2.
+Without decisions the original cells are unchanged except for that version bump.
+With a decision, `ccl_key`, `status`, `conflicting_keys` and `key_shaped` describe
+the final result; reviewer counts, names, times and suggestion provenance still
+describe the underlying reviews, not agreement with the final answer.
+`status=` filtering applies after the override. The raw feedback export is
+unchanged. Snapshot and dataset-2 scoring support for final answers is a separate
+follow-up.
+
+Mock mode includes queue filters, pagination, role guards and final-answer
+recording. Sign in as `pi` in `npm run dev:mock` to use them. The new queue and
+answer data appear only in authenticated PI/admin responses and UI, never logs.
 
 ### Reviewer directories, the CCL key, and the ranked list (issue #196)
 

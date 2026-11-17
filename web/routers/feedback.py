@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import math
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse, PlainTextResponse
@@ -15,9 +16,13 @@ from web.exceptions import (
     VariantUnavailableError,
 )
 from web.models import (
+    AdminReviewItem,
+    AdminReviewQueue,
     CandidateSource,
     ErrorDetail,
     ErrorResponse,
+    DecidingAnswerCreate,
+    DecidingAnswerEntry,
     FeedbackCreate,
     FeedbackEntry,
     FeedbackOutcome,
@@ -30,7 +35,7 @@ from web.routers.predictions import _get_prediction_row, get_predictions, resolv
 from web.services import ccl_key_export, ccl_keys
 from web.services import reviewer_dirs as reviewer_dirs_svc
 from web.services.data_store import DataStore, normalize_slug
-from web.services.feedback_db import FeedbackDB
+from web.services.feedback_db import FeedbackDB, RankDirResolver
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["feedback"])
@@ -370,6 +375,24 @@ async def export_ccl_key_assignments(
     and `web/CLAUDE.md`. Carries reviewer display names, so PI/admin only.
     """
 
+    exported_at = ccl_key_export.now_iso_utc()
+    rows = await db.ccl_key_assignments(
+        filename_by_query=store.file_id_to_filename,
+        labelled_dir_names=store.labelled_dir_files.keys(),
+        rank_dir=_rank_dir_resolver(store),
+        data_release=store.data_release,
+        exported_at=exported_at,
+        status=status,
+    )
+    filename = f"ccl_key_assignments_{exported_at[:10]}.csv"
+    return PlainTextResponse(
+        content=ccl_key_export.to_csv(rows),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+def _rank_dir_resolver(store: DataStore) -> RankDirResolver:
     async def rank_dir(
         query_id: int, slug: str, variant: str | None, rank: int
     ) -> str | None:
@@ -388,21 +411,128 @@ async def export_ccl_key_assignments(
         match = next((p for p in row["predictions"] if p["rank"] == rank), None)
         return match["dir_name"] if match is not None else None
 
-    exported_at = ccl_key_export.now_iso_utc()
-    rows = await db.ccl_key_assignments(
+    return rank_dir
+
+
+async def _admin_review_items(store: DataStore, db: FeedbackDB) -> list[AdminReviewItem]:
+    decisions = await db.ccl_counted_decisions(
         filename_by_query=store.file_id_to_filename,
+        rank_dir=_rank_dir_resolver(store),
+    )
+    final_answers = await db.get_deciding_answers()
+    resolved = ccl_key_export.build_rows(
+        decisions,
         labelled_dir_names=store.labelled_dir_files.keys(),
-        rank_dir=rank_dir,
         data_release=store.data_release,
-        exported_at=exported_at,
-        status=status,
+        exported_at="",
+        deciding_answers=final_answers,
     )
-    filename = f"ccl_key_assignments_{exported_at[:10]}.csv"
-    return PlainTextResponse(
-        content=ccl_key_export.to_csv(rows),
-        media_type="text/csv",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    by_witness: dict[str, list] = {}
+    for decision in decisions:
+        by_witness.setdefault(decision.xml_id, []).append(
+            {
+                "reviewer": decision.reviewer_name,
+                "model_slug": decision.model_slug,
+                "variant": decision.variant,
+                "keys": list(dict.fromkeys(claim.key for claim in decision.claims)),
+                "none_of_these": decision.rejects_all,
+                "unresolved": bool(decision.unresolved),
+                "notes": decision.notes,
+                "timestamp": ccl_key_export.iso_utc(decision.decided_at),
+            }
+        )
+    latest = {answer["xml_id"]: answer for answer in final_answers}
+    served = {
+        ccl_key_export.xml_id_of(name): query_id
+        for query_id, name in store.file_id_to_filename.items()
+    }
+    return [
+        AdminReviewItem(
+            xml_id=row["xml_id"],
+            query_id=served[row["xml_id"]],
+            status=row["status"],
+            reviewer_status=row["reviewer_status"],
+            reviewer_count=row["reviewer_count"],
+            answers=by_witness.get(row["xml_id"], []),
+            deciding_answer=latest.get(row["xml_id"]),
+        )
+        for row in resolved if row["xml_id"] in served
+    ]
+
+
+QueueFilter = Literal["all", "conflict", "needs_check", "with_notes", "reviewed_once", "decided"]
+
+
+@router.get("/feedback/review_queue", response_model=AdminReviewQueue)
+async def admin_review_queue(
+    filter: QueueFilter = "conflict",
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    store: DataStore = Depends(get_store),
+    db: FeedbackDB = Depends(get_db),
+    current_user: UserPublic = Depends(require_pi_admin),
+) -> AdminReviewQueue:
+    items = await _admin_review_items(store, db)
+
+    def matches(item: AdminReviewItem, kind: str) -> bool:
+        if kind == "all":
+            return True
+        if kind == "with_notes":
+            return any(answer.notes.strip() for answer in item.answers)
+        if kind == "reviewed_once":
+            return item.reviewer_status == "agreed" and item.reviewer_count == 1
+        if kind == "decided":
+            return item.deciding_answer is not None
+        return item.status == kind
+
+    counts = {
+        kind: sum(matches(item, kind) for item in items)
+        for kind in ("all", "conflict", "needs_check", "with_notes", "reviewed_once", "decided")
+    }
+    selected = [item for item in items if matches(item, filter)]
+    start = (page - 1) * page_size
+    return AdminReviewQueue(
+        items=selected[start:start + page_size],
+        counts=counts, total=len(selected), page=page, page_size=page_size,
+        has_more=start + page_size < len(selected),
     )
+
+
+@router.get("/feedback/review_queue/{query_id}", response_model=AdminReviewItem)
+async def admin_review_item(
+    query_id: int,
+    store: DataStore = Depends(get_store),
+    db: FeedbackDB = Depends(get_db),
+    current_user: UserPublic = Depends(require_pi_admin),
+) -> AdminReviewItem:
+    if query_id not in store.file_id_to_filename:
+        raise QueryNotFoundError(query_id)
+    items = await _admin_review_items(store, db)
+    return next(
+        (item for item in items if item.query_id == query_id),
+        AdminReviewItem(
+            xml_id=ccl_key_export.xml_id_of(store.file_id_to_filename[query_id]),
+            query_id=query_id, status="unreviewed", reviewer_status="",
+            reviewer_count=0, answers=[],
+        ),
+    )
+
+
+@router.post("/feedback/decisions/{query_id}", response_model=DecidingAnswerEntry, status_code=201)
+async def record_deciding_answer(
+    query_id: int,
+    body: DecidingAnswerCreate,
+    store: DataStore = Depends(get_store),
+    db: FeedbackDB = Depends(get_db),
+    current_user: UserPublic = Depends(require_pi_admin),
+) -> DecidingAnswerEntry:
+    if query_id not in store.file_id_to_filename:
+        raise QueryNotFoundError(query_id)
+    row = await db.insert_deciding_answer(
+        query_id=query_id, reviewer_account_id=current_user.id,
+        reviewer=current_user.display_name, ccl_key=body.ccl_key, notes=body.notes,
+    )
+    return DecidingAnswerEntry(**row)
 
 
 #: The reviewer's answer, as opposed to their prose. Never inherited from

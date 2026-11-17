@@ -157,7 +157,7 @@ def test_two_reviewers_picking_the_same_directory_agree(tmp_path: Path) -> None:
     assert row["reviewers"] == "Alice Example | Bruno Example"
     assert row["first_decided_at"] == "2026-11-01T10:00:00Z"
     assert row["last_decided_at"] == "2026-11-02T09:00:00Z"
-    assert row["export_schema_version"] == ccl_key_export.EXPORT_SCHEMA_VERSION == 1
+    assert row["export_schema_version"] == ccl_key_export.EXPORT_SCHEMA_VERSION == 2
     assert row["exported_at"] == EXPORTED_AT
     assert row["data_release"] == RELEASE
 
@@ -670,7 +670,33 @@ def test_the_csv_has_the_issue_s_columns_in_order() -> None:
         "export_schema_version",
         "exported_at",
         "data_release",
+        "decided",
+        "reviewer_status",
     ]
+
+
+def test_no_admin_decisions_preserves_legacy_csv_bytes_except_version_and_appended_columns(
+    tmp_path: Path,
+) -> None:
+    async def build(db: FeedbackDB) -> None:
+        await _pick(db, "CTOU.567.16", rank=3)
+
+    text = ccl_key_export.to_csv(_scenario(tmp_path, build))
+    legacy = (
+        "xml_id,ccl_key,status,conflicting_keys,key_source,suggested_by,key_shaped,"
+        "reviewer_count,reviewers,first_decided_at,last_decided_at,export_schema_version,"
+        "exported_at,data_release\r\n"
+        "BAV1341.13v.1,CTOU.567.16,agreed,,model_suggestion,model_one:sif_abtt:3,true,"
+        "1,Alice Example,2026-11-01T10:00:00Z,2026-11-01T10:00:00Z,1,"
+        "2026-11-11T12:00:00Z,data-20261101\r\n"
+    )
+    without_appended = "".join(line.rsplit(",", 2)[0] + "\r\n" for line in text.splitlines())
+    # The required version bump is the only change among the old cells.
+    assert without_appended == legacy.replace(
+        ",1,2026-11-11T12:00:00Z,", ",2,2026-11-11T12:00:00Z,"
+    )
+    assert list(csv.DictReader(io.StringIO(text)))[0]["decided"] == "0"
+    assert list(csv.DictReader(io.StringIO(text)))[0]["reviewer_status"] == "agreed"
 
 
 # --- data release ------------------------------------------------------------
@@ -792,7 +818,7 @@ def test_the_route_serves_the_resolved_csv(tmp_path: Path) -> None:
         assert agreed["reviewer_count"] == "2"
         assert agreed["reviewers"] == "PI | Scholar"
         assert agreed["data_release"] == "data-20261101"
-        assert agreed["export_schema_version"] == "1"
+        assert agreed["export_schema_version"] == "2"
 
         filtered = client.get("/api/feedback/export/ccl_keys", params={"status": "agreed"})
         assert [r["xml_id"] for r in csv.DictReader(io.StringIO(filtered.text))] == [

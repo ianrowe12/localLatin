@@ -64,6 +64,15 @@ names a labelled directory; otherwise the earliest key-shaped form any counted
 decision used (CCL writes the source code in capitals, so `CTOU.567.16` beats
 an earlier `ctou.567.16`); otherwise the form on the earliest counted decision.
 Every candidate is a stored form; nothing is re-cased here.
+
+DECIDING ANSWERS (issue #294). The newest append-only admin answer per xml_id,
+ordered by (timestamp, id), overrides the result: a key gives `agreed`, and
+an explicit none gives `no_key`. `decided` is 1 and `reviewer_status` preserves
+the resolution above (empty if nobody reviewed it). Reviewer counts, names,
+times and suggestion provenance still describe the reviewers, not endorsement
+of the admin answer. Without an admin answer the old columns are unchanged,
+apart from the export schema version. Only `decided` and `reviewer_status`
+are appended to the existing column order.
 """
 
 from __future__ import annotations
@@ -79,7 +88,7 @@ from web.services import ccl_keys
 from web.services.reviewer_dirs import is_reviewer_dir_id
 
 #: Bumped whenever a column is added, removed, renamed or changes meaning.
-EXPORT_SCHEMA_VERSION = 1
+EXPORT_SCHEMA_VERSION = 2
 
 COLUMNS = [
     "xml_id",
@@ -96,6 +105,8 @@ COLUMNS = [
     "export_schema_version",
     "exported_at",
     "data_release",
+    "decided",
+    "reviewer_status",
 ]
 
 #: The outcomes that are a decision. The same pair `get_query_statuses` reads
@@ -151,6 +162,9 @@ class Decision:
     rejects_all: bool = False
     #: `(model_slug, variant, rank)` of every pick that could not be confirmed.
     unresolved: list[tuple] = field(default_factory=list)
+    model_slug: str = ""
+    variant: str | None = None
+    notes: str = ""
 
 
 def reviewer_identity(row: dict) -> tuple:
@@ -278,6 +292,9 @@ def decision_from_row(
         reviewer_name=str(row.get("reviewer") or ""),
         decided_at=str(row.get("timestamp") or ""),
         row_id=int(row["id"]),
+        model_slug=str(row.get("model_slug") or ""),
+        variant=row.get("variant"),
+        notes=str(row.get("notes") or ""),
     )
     common = {
         "decided_at": decision.decided_at,
@@ -324,6 +341,7 @@ def build_rows(
     data_release: str,
     exported_at: str,
     status: str | None = None,
+    deciding_answers: Iterable[dict] = (),
 ) -> list[dict]:
     """One resolved row per witness, sorted by `xml_id`.
 
@@ -336,10 +354,27 @@ def build_rows(
     by_witness: dict[str, list[Decision]] = {}
     for decision in decisions:
         by_witness.setdefault(decision.xml_id, []).append(decision)
+    newest: dict[str, dict] = {}
+    for answer in deciding_answers:
+        xml_id = answer["xml_id"]
+        if xml_id not in newest or _order(answer) > _order(newest[xml_id]):
+            newest[xml_id] = answer
+        by_witness.setdefault(xml_id, [])
 
     rows: list[dict] = []
     for xml_id, group in by_witness.items():
         resolved = resolve_query(group, labelled)
+        resolved["reviewer_status"] = resolved["status"] if group else ""
+        answer = newest.get(xml_id)
+        resolved["decided"] = int(answer is not None)
+        if answer is not None:
+            key = answer["ccl_key"] or ""
+            resolved.update(
+                ccl_key=key,
+                status="agreed" if key else "no_key",
+                conflicting_keys="",
+                key_shaped=("true" if ccl_keys.KEY_SHAPED.match(key) else "false") if key else "",
+            )
         if status is not None and resolved["status"] != status:
             continue
         rows.append(

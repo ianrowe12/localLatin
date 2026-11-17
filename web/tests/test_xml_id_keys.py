@@ -321,6 +321,7 @@ def test_backfill_writes_only_the_new_columns_from_the_served_corpus(
     assert _originals(path) == before
     assert result["backfilled"] == {
         "feedback": 2,
+        "deciding_answers": 0,
         "reviewer_dirs": 1,
         "reviewer_dir_members": 2,
     }

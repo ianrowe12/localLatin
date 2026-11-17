@@ -13,7 +13,7 @@
  * containing ' | '. Nothing already stored is checked or rewritten.
  */
 
-export type SafeTextSubject = 'A CCL key' | 'A directory name' | 'A display name'
+export type SafeTextSubject = 'A CCL key' | 'A directory name' | 'A display name' | 'A decision note'
 
 export const CCL_KEY_SUBJECT: SafeTextSubject = 'A CCL key'
 export const DIRECTORY_NAME_SUBJECT: SafeTextSubject = 'A directory name'
