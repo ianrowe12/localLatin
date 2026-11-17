@@ -28,6 +28,8 @@ from web.variants import DEFAULT_VARIANT
 
 logger = logging.getLogger(__name__)
 
+DATABASE_SCHEMA_VERSION = 3
+
 #: `(query_id, model_slug, variant, rank) -> directory name or None`.
 RankDirResolver = Callable[[int, str, "str | None", int], Awaitable["str | None"]]
 
@@ -223,8 +225,8 @@ _EXPORT_COLUMNS = [
 ]
 
 #: Tables that reference an unlabelled query, as (table, query id column,
-#: xml_id column). Every one gains the xml_id column in `_migrate()`, is
-#: backfilled by `adopt_corpus()` and is checked by its startup guard.
+#: xml_id column). Witness columns are created in `_migrate()` and checked by
+#: `adopt_corpus()`. Legacy NULLs are backfilled; deciding answers start keyed.
 _QUERY_REFERENCES = (
     ("feedback", "query_id", "xml_id"),
     ("deciding_answers", "query_id", "xml_id"),
@@ -734,7 +736,7 @@ class FeedbackDB:
         )
         # Existing migrations are additive and re-run on boot. This version
         # records the new table without changing feedback row schema versions.
-        await self._db.execute("PRAGMA user_version = 3")
+        await self._db.execute(f"PRAGMA user_version = {DATABASE_SCHEMA_VERSION}")
 
     async def _ensure_member_witness_index(self) -> None:
         """One membership per (directory, witness), enforced by the database.
@@ -1041,7 +1043,7 @@ class FeedbackDB:
         """Witnesses with a stored decision or a reviewer-directory row.
 
         The ones the missing-witness threshold protects: a `matched_rank` or
-        `none_of_top_k` row, a directory seed or a directory membership.
+        `none_of_top_k` row, a directory seed, a membership or a deciding answer.
         """
         assert self._db is not None
         rows = await (
@@ -2792,7 +2794,9 @@ class FeedbackDB:
         if table is None:
             # Read-only pre-#294 databases, including snapshot reconstruction,
             # have no deciding answers and must never be migrated by a read.
-            return []
+            version = await (await self._db.execute("PRAGMA user_version")).fetchone()
+            if version[0] < DATABASE_SCHEMA_VERSION:
+                return []
         rows = await (
             await self._db.execute(
                 "SELECT * FROM deciding_answers ORDER BY timestamp, id"

@@ -274,6 +274,7 @@ def test_read_only_pre_decision_database_exports_without_migration(tmp_path: Pat
         await db.close()
         with sqlite3.connect(path) as connection:
             connection.execute("DROP TABLE deciding_answers")
+            connection.execute("PRAGMA user_version = 2")
         before = path.read_bytes()
         await db.connect(read_only=True)
         try:
@@ -285,5 +286,20 @@ def test_read_only_pre_decision_database_exports_without_migration(tmp_path: Pat
         finally:
             await db.close()
         assert path.read_bytes() == before
+
+    asyncio.run(run())
+
+
+def test_missing_decisions_table_in_current_schema_is_not_silently_ignored(tmp_path: Path) -> None:
+    async def run() -> None:
+        db = FeedbackDB(tmp_path / "feedback.db")
+        await db.connect()
+        try:
+            assert db._db is not None
+            await db._db.execute("DROP TABLE deciding_answers")
+            with pytest.raises(sqlite3.OperationalError, match="no such table"):
+                await db.get_deciding_answers()
+        finally:
+            await db.close()
 
     asyncio.run(run())
