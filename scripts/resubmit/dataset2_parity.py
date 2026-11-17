@@ -363,6 +363,9 @@ def add_subcommands(sub):
             parser.add_argument("--seed", type=int, default=289)
     parser = sub.add_parser("render")
     parser.add_argument("--out_dir", default=sd.DEFAULTS["out_dir"])
+    parser.add_argument("--paper_dir", default=None,
+                        help="write tables/ and figures/ here (e.g. overleaf_drafts) "
+                             "instead of <out_dir>/paper")
 
     def render(args):
         from dataset2_render import cmd_render

@@ -778,17 +778,95 @@ def test_render_is_csv_driven_and_does_not_touch_legacy_outputs(parity_scoring, 
     monkeypatch.setattr(dp, "context", lambda *a: pytest.fail("render read raw data"))
     dr.cmd_render(args)
     paper = args.out_dir / "paper"
-    table = (paper / "headline_main.tex").read_text()
-    assert r"\begin{table*}" in table and "mT5-base & SIF" in table
-    assert r"Char.\ n-grams" in table and "train DirAcc@1" in table
+    table = (paper / "dataset2_headline_main.tex").read_text()
+    # Dataset 1's layout: Base, ABTT, then the train-best method (SIF here, tag s).
+    assert r"\begin{table}[t]" in table and r"Model & Base & ABTT & Train-best \\" in table
+    assert r"Char.\ n-grams" in table and "training DirAcc@1" in table and "s: SIF" in table
+    row = next(line for line in table.splitlines() if line.startswith("mT5-base"))
+    assert row.startswith(r"mT5-base$^{\dagger}$") and "label source" in table
+    # This fixture has no ABTT cache: the ABTT cell is a gap, the others are printed.
+    assert row.split(" & ")[2] == "--"
     accuracy = pd.read_csv(args.out_dir / "results/accuracy_long.csv")
     cell = accuracy[(accuracy["label_set"] == "agreed") & (accuracy["seen_group"] == "all")
                     & (accuracy["method"] == "baseline") & (accuracy["metric"] == "acc@1")].iloc[0]
-    assert f"{100 * cell['value']:.1f}" in table
+    assert row.split(" & ")[1] == f"{100 * cell['value']:.1f}"
     assert f"{100 * cell['ci_lo']:.1f},{100 * cell['ci_hi']:.1f}" in table
-    assert (paper / "fig_depth.pdf").read_bytes().startswith(b"%PDF")
-    assert (paper / "fig_depth.png").read_bytes().startswith(b"\x89PNG")
-    assert "gaps, not zeros" in (paper / "fig_depth.tex").read_text()
-    assert "Best $-$ n-grams" in (paper / "headline_ci_diffs.tex").read_text()
+    assert r"\label{tab:dataset2_mrr}" in (paper / "dataset2_headline_mrr.tex").read_text()
+    assert (paper / "fig_dataset2_depth.pdf").read_bytes().startswith(b"%PDF")
+    assert (paper / "fig_dataset2_depth.png").read_bytes().startswith(b"\x89PNG")
+
+    # Dataset 1's sign convention: n-grams minus the model, interval negated and swapped.
+    diffs = pd.read_csv(args.out_dir / "results/paired_differences.csv")
+    raw = diffs[(diffs["contrast"] == "model_minus_reference") & (diffs["method"] == "sif_only")
+                & (diffs["label_set"] == "agreed") & (diffs["seen_group"] == "all")
+                & (diffs["metric"] == "acc@1")].iloc[0]
+    text = (paper / "dataset2_headline_ci_diffs.tex").read_text()
+    flipped = next(line for line in text.splitlines()
+                   if line.startswith(r"Char.\ n-grams $-$ train-best"))
+    want = dr.signed(-100 * raw["estimate"], 1)
+    assert f"{want} [{dr.plain(-100 * raw['ci_hi'], 1)}, {dr.plain(-100 * raw['ci_lo'], 1)}]" \
+        in flipped
+    assert r"Train-best $-$ Base" in text and r"Char.\ n-grams $-$ ABTT" in text
     for path, content in before.items():
         assert (args.out_dir / path).read_bytes() == content, path
+
+
+def test_render_marks_a_selected_model_without_cells_missing(parity_scoring, tmp_path):
+    """Round-1 advisory on #299: a train-selected model whose cache is absent has no
+    accuracy rows; render prints it as missing instead of stopping."""
+    import dataset2_render as dr
+
+    args = parity_scoring
+    dp.cmd_compare(args)
+    results = args.out_dir / "results"
+    best = pd.read_csv(results / "best_methods_train.csv")
+    extra = best.iloc[[0]].assign(model=sd.QWEN8B, display="Qwen3-8B",
+                                  method="lasttok_abtt_optimal")
+    pd.concat([best, extra]).to_csv(results / "best_methods_train.csv", index=False)
+    pd.DataFrame([{"model": sd.MT5, "display": "mT5-base", "method": "baseline",
+                   "layer": 1, "acc@1": .5, "mrr": .6, "status": sd.SCORED}]).to_csv(
+        results / "per_layer.csv", index=False)
+    args.paper_dir = tmp_path / "overleaf"
+    dr.cmd_render(args)
+    table = (args.paper_dir / "tables/dataset2_headline_main.tex").read_text()
+    assert r"Qwen3-8B & \multicolumn{3}{c}{\emph{missing}} \\" in table
+    # Rows follow the paper order: dataset 1's panel first, Qwen3-8B last.
+    assert table.index("mT5-base") < table.index("Qwen3-8B")
+    diff_rows = [line for line in (args.paper_dir / "tables/dataset2_headline_ci_diffs.tex")
+                 .read_text().splitlines() if "Qwen3-8B" in line]
+    assert diff_rows and all(line.endswith(r"-- & -- \\") for line in diff_rows)
+    assert (args.paper_dir / "figures/fig_dataset2_depth.pdf").exists()
+
+
+def _headline_frames(estimate, lo, hi):
+    accuracy = pd.DataFrame([
+        {"label_set": "agreed", "seen_group": "all", "model": model, "method": method,
+         "metric": "acc@1", "n": 10, "value": .9, "ci_lo": .8, "ci_hi": .95,
+         "status": sd.SCORED}
+        for model, method in (("LaTa", "baseline"), ("LaTa", "abtt_optimal"),
+                              ("Char. n-grams", "tfidf_char35"))
+    ])
+    diffs = pd.DataFrame([{"label_set": "agreed", "seen_group": "all", "model": "LaTa",
+                           "method": "abtt_optimal", "contrast": "model_minus_reference",
+                           "metric": "acc@1", "estimate": estimate, "ci_lo": lo, "ci_hi": hi,
+                           "status": sd.SCORED}])
+    best = pd.DataFrame([{"display": "LaTa", "method": "abtt_optimal"}])
+    return accuracy, diffs, best, {"n_boot": 2000}
+
+
+@pytest.mark.parametrize("estimate, lo, hi, marker", [
+    (-.03, -.05, -.01, r"\downarrow"),     # model below: n-grams minus model excludes zero
+    (-.02, -.04, -.0004, ""),             # touches zero at printed precision (0.0): no mark
+    (.03, .01, .05, r"\uparrow"),          # model above the reference
+    (.0, -.01, .01, ""),
+])
+def test_headline_marks_cells_against_the_reference_at_printed_precision(
+        estimate, lo, hi, marker):
+    import dataset2_render as dr
+
+    table = dr.headline(*_headline_frames(estimate, lo, hi)[:3], {"n_boot": 2000}, "acc@1")
+    row = next(line for line in table.splitlines() if line.startswith("LaTa"))
+    abtt = row.split(" & ")[2]
+    assert (marker in abtt) if marker else ("downarrow" not in abtt and "uparrow" not in abtt)
+    # LaBSE-style: train-best is ABTT itself, tagged a, and carries the same marker.
+    assert row.split(" & ")[3].startswith("90.0$^{\\mathrm{a}" + marker)

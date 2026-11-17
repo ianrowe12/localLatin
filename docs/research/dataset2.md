@@ -53,13 +53,34 @@ rewrites any original `score` artifact.
 | `results/paired_differences.csv` | Every model/method minus n-grams, and each train-best method minus its model's baseline, acc@1/5/10 and MRR, all label sets and seen-model groups |
 | `results/comparison_info.json` | Seed, replicate count, bootstrap unit, selection rule and final/reviewer status counts, including conflicts |
 | `results/per_layer.csv` | Agreed acc@1 and MRR, D and its train provenance, exclusions and status for every method and unlabelled cache layer |
-| `paper/headline_main.tex` | Agreed main table: baseline and train-best method, acc@1 with CI, MRR and sample sizes, plus n-grams |
-| `paper/headline_ci_diffs.tex` | Agreed paired differences for the train-best methods |
-| `paper/fig_depth.pdf`, `paper/fig_depth.png`, `paper/fig_depth.tex` | All-method depth plot, both metrics, and a LaTeX figure wrapper |
+| `paper/dataset2_headline_main.tex` | Agreed acc@1 in dataset 1's layout: Base, ABTT and the train-best method per model, with CIs, plus n-grams; arrows mark cells whose paired n-gram interval excludes zero |
+| `paper/dataset2_headline_mrr.tex` | The same table for MRR |
+| `paper/dataset2_headline_ci_diffs.tex` | Agreed paired differences: train-best minus Base, n-grams minus ABTT, n-grams minus train-best (dataset 1's sign) |
+| `paper/fig_dataset2_depth.pdf`, `paper/fig_dataset2_depth.png` | Agreed acc@1 by layer, Base and ABTT, n-gram reference, in dataset 1's depth-figure layout |
 
 `compare` and `layers` accept the original cache, split, selection and output
 path overrides plus `--data_root` (default `data`). `render` reads result CSVs
-and aggregate metadata only, not embeddings or the snapshot.
+and aggregate metadata only, not embeddings or the snapshot. A train-selected
+model with no result rows renders as missing rather than stopping the run.
+
+## Updating the paper
+
+The paper's dataset-2 tables and figure are these render outputs, committed
+under `overleaf_drafts/` (aggregate numbers only). After rescoring a new
+snapshot, copy the five result files (`accuracy_long.csv`,
+`reference_accuracy_long.csv`, `paired_differences.csv`,
+`best_methods_train.csv`, `comparison_info.json`) and `per_layer.csv` into
+`<dir>/results/` on a machine with this checkout, then:
+
+```bash
+python scripts/resubmit/score_dataset2.py render --out_dir <dir> --paper_dir overleaf_drafts
+git add -f overleaf_drafts/figures/fig_dataset2_depth.pdf
+```
+
+`--paper_dir` writes tables to `overleaf_drafts/tables/` and the figure to
+`overleaf_drafts/figures/`. Never commit the CSVs. The prose quotes only a few
+dataset-2 numbers, each next to a `% dataset-2 snapshot` comment in
+`acl_latex.tex`; recheck those sentences against the regenerated tables.
 
 ## Protocol
 
