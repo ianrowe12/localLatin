@@ -34,6 +34,12 @@ Subcommands
 ``manifest``
     sha256, shape and row-order check of every file in the given run dirs.
 
+``compare``, ``layers``, ``render``
+    Dataset-2 paper parity (issue #298): character n-gram reference and paired
+    differences, all cached layers on agreed queries, and CSV-driven paper
+    outputs. See ``docs/research/dataset2.md``. These never rewrite ``score``
+    outputs or select configurations using dataset 2.
+
 Layer selection (never on dataset 2)
 ------------------------------------
 The paper's routing layers are the argmax of ``train_dir_acc_at_1`` per
@@ -930,8 +936,13 @@ def main() -> None:
     m.add_argument("--expected_meta", nargs="*", default=[])
     m.add_argument("--out_json", required=True)
 
+    from dataset2_parity import add_subcommands
+
+    commands = {"select_qwen8b": cmd_select_qwen8b, "score": cmd_score,
+                "manifest": cmd_manifest}
+    commands.update(add_subcommands(sub))
     args = p.parse_args()
-    {"select_qwen8b": cmd_select_qwen8b, "score": cmd_score, "manifest": cmd_manifest}[args.cmd](args)
+    commands[args.cmd](args)
 
 
 if __name__ == "__main__":
