@@ -56,6 +56,16 @@ def test_coordinate_sd_floor_counts_constant_and_near_constant_columns():
     assert n == 2
 
 
+def test_canon_loader_rejects_unverified_row_order(tmp_path, monkeypatch):
+    resolver = ef.asw.AlignmentResolver(pd.DataFrame({"filename": ["a.txt", "b.txt"]}))
+    monkeypatch.setattr(ef, "_resolver", resolver, raising=False)
+    directory = ef.cache_dir(tmp_path, "m")
+    directory.mkdir(parents=True)
+    np.save(directory / "hidden_layer1_embeddings.npy", np.eye(2))
+    with pytest.raises(ValueError, match="row-order manifest is required"):
+        ef.load_canon(tmp_path, "m", 1)
+
+
 def test_settings_use_only_decretal_auroc_and_break_ties_by_layer_then_rank():
     rows = []
     for layer in (2, 1):

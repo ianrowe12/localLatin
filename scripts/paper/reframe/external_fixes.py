@@ -155,7 +155,10 @@ def init_worker(split: pd.DataFrame, ext_root: Path) -> None:
 
 
 def load_canon(root: Path, model: str, layer: int) -> np.ndarray:
-    return _resolver.load(cache_dir(root, model) / f"hidden_layer{layer}_embeddings.npy")
+    path = cache_dir(root, model) / f"hidden_layer{layer}_embeddings.npy"
+    if _resolver.aligner_for(path).manifest_path is None:
+        raise ValueError(f"canon row-order manifest is required for {model} layer {layer}")
+    return _resolver.load(path)
 
 
 def gate_task(task: tuple[Path, str, int]) -> tuple[str, int, float]:
