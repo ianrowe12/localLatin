@@ -11,6 +11,7 @@
 #SBATCH --error=slurm/logs/external_fixes_%j.err
 
 # Submit from the checkout with slurm/logs present. --partition=cpu-interactive starts faster.
+# Linux reference runtime: about 5 minutes with eight workers.
 # BASES_ROOT and EXT_ROOT, if set, must contain phase9_bases/.
 set -euo pipefail
 cd "${CODE_ROOT:-${SLURM_SUBMIT_DIR:-$PWD}}"
