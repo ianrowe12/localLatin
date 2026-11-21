@@ -687,7 +687,7 @@ The selection grid stops at $D=10$; extending it to $D=50$ changes test AUROC by
 \paragraph{Components from other CCL text.}
 \label{app:external_abtt}
 ABTT uses no labels, so its mean and components need not come from the training split.
-We fit them instead on another CCL collection: 439 labeled witnesses in 104 directories, from files provided with the CCL materials and organized as decretal excerpts, embedded with the same model settings and pooling filter as the testbed.
+We fit them instead on another set of CCL files, separate from the testbed and dataset~2: 439 labeled witnesses in 104 directories, from files provided with the CCL materials and organized as decretal excerpts, embedded with the same model settings and pooling filter as the testbed.
 None of these files repeats a testbed witness exactly, and 2 of the 439 reach a character 5-gram Jaccard similarity of 0.5 or more with one.
 We compare two top-$D$ subspaces by the mean squared cosine of their principal angles, which is 1 for the same subspace and about $D/d$ for random ones in $d$ dimensions.
 At all 26 collapsed layers, the first component fit on the decretal excerpts matches the training one (0.886 or more, median 0.998); at 8 of the other 10 raw T5 layers it does not (below 0.5), and for the embedding-trained encoders the median over layers is 0.433 to 0.703.
