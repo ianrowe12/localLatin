@@ -431,6 +431,7 @@ The task is lexically solvable by design, and a character n-gram reference ties 
 The fine-tuning test is small (499 pairs, at most eight epochs), and its references are flattered by directory overlap with the training pairs (Section~\ref{sec:routing}).
 Our intervals resample test directories with the layer, threshold and ABTT fit held fixed; they cover test sampling and not the choice of split.
 ABTT needs enough text to estimate principal components, so smaller archives need separate study.
+Components fit on other CCL text restore every collapsed layer but lower routing accuracy (Appendix~\ref{app:external_abtt}).
 
 The labels are expert-assigned, but by one project.
 Its director or supervised graduate students assigned the keys, and verification is by collation in the project's parallel display, not by independent double annotation.
@@ -682,6 +683,19 @@ At every collapsed layer the first component fit on training passages and the on
 The selection grid stops at $D=10$; extending it to $D=50$ changes test AUROC by at most 0.023.
 
 \input{tables/d_ablation}
+
+% TODO(provenance): confirm source of the decretal-excerpt files
+\paragraph{Components from other CCL text.}
+\label{app:external_abtt}
+ABTT uses no labels, so its mean and components need not come from the training split.
+We fit them instead on another set of CCL files, separate from the testbed and dataset~2: 439 labeled witnesses in 104 directories, from files provided with the CCL materials and organized as decretal excerpts, embedded with the same model settings and pooling filter as the testbed.
+None of these files repeats a testbed witness exactly, and 2 of the 439 reach a character 5-gram Jaccard similarity of 0.5 or more with one.
+We compare two top-$D$ subspaces by the mean squared cosine of their principal angles, which is 1 for the same subspace and about $D/d$ for random ones in $d$ dimensions.
+At all 26 collapsed layers, the first component fit on the decretal excerpts matches the training one (0.886 or more, median 0.998); at 8 of the other 10 raw T5 layers it does not (below 0.5), and for the embedding-trained encoders the median over layers is 0.433 to 0.703.
+The top 3 and top 10 subspaces are only partly shared (0.469 to 0.929), against 0.848 to 0.995 between the training and test splits of the testbed.
+With the decretal fit and $D$ selected on training DirAcc@1, ABTT still restores all 26 collapsed layers (median test AUROC 0.965, against 0.977 with the training fit), but DirAcc@1 falls at 95 of the 100 panel layers (median change over all layers $-3.7$ points, largest fall 12.8).
+Fitting on all 1,705 testbed witnesses without labels matches the training fit (median differences: AUROC $-0.001$, DirAcc@1 $+0.6$ points), but that fit sees the test text.
+Components from other text therefore repair the collapse at some cost to routing, and in every variant the layer, $D$ and threshold are still selected on training labels.
 
 \paragraph{Removed and retained subspaces.}
 Table~\ref{tab:e3_subspace_split} ranks passages within the removed and within the retained subspace.
