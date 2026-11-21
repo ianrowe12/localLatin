@@ -1,0 +1,8 @@
+{
+  "n_decr_files": 439,
+  "n_canon_files": 1705,
+  "exact_duplicates": 0,
+  "jaccard5_ge_0.5": 2,
+  "jaccard5_ge_0.3": 3,
+  "jaccard5_median": 0.0755082284607938
+}
