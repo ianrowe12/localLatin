@@ -132,12 +132,15 @@ We localize and repair the collapse but do not explain why it tracks the T5 v1.1
 \section{Experimental Setup}
 \label{sec:testbed}
 
-\paragraph{Corpus and labels.}
+\paragraph{Two datasets.}
 \label{sec:dataset}
-The testbed comes from CCL \citep{firey2009ccl}, an open-access edition of early medieval, mostly ninth-century, canon-law manuscripts.
+Both datasets come from CCL \citep{firey2009ccl}, an open-access edition of early medieval, mostly ninth-century, canon-law manuscripts.
 A \emph{witness} is one manuscript's copy of a source text, kept as one file.
-Witnesses that copy the same source share a \emph{directory}; the testbed holds 1,705 witnesses in 840 directories.
-The labels are expert-assigned by the project and checked by collation in its parallel display (Appendix~\ref{app:corpus_provenance}).
+Witnesses that copy the same source share a \emph{directory}.
+The \emph{testbed} holds 1,705 witnesses in 840 directories.
+Its labels are expert-assigned by the project and checked by collation in its parallel display (Appendix~\ref{app:corpus_provenance}).
+\emph{Dataset~2} holds 2,238 further witnesses with no source key in our files, which reviewers checked against the testbed directories (Section~\ref{sec:dataset2}).
+It is held out: it is never pooled with the testbed and selects nothing.
 
 \paragraph{Split and train-only rule.}
 \label{sec:setup}
@@ -179,9 +182,7 @@ We compare SIF frequency weighting \citep{arora2017sif} and reduced-rank whiteni
 \paragraph{Held-out dataset 2.}
 \label{sec:dataset2}
 % TODO(reviewers): description and credit pending
-Dataset~2 tests routing on witnesses outside the testbed and is never pooled with it.
-Its 2,238 witnesses come from the same project but have no source key in our files.
-For each witness, reviewers working with the CCL project saw the ten testbed directories an encoder ranked highest, for most witnesses mT5-base (the \emph{label source}), and picked the one that shares its source or answered that none did, optionally typing the source's key.
+For each dataset-2 witness, reviewers working with the CCL project saw the ten testbed directories an encoder ranked highest, for most witnesses mT5-base (the \emph{label source}), and picked the one that shares its source or answered that none did, optionally typing the source's key.
 We score the witnesses with one agreed key.
 ``None of the ten'' does not mean that the testbed lacks the source, so it is not scored as new.
 Each witness is ranked against all 840 directories, with no \texttt{NEW} option or threshold, and we report acc@1 of the agreed directory and its mean reciprocal rank (MRR).
