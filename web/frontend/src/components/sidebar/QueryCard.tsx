@@ -5,9 +5,11 @@ interface QueryCardProps {
   item: QueryListItem
   isActive: boolean
   onClick: () => void
+  /** Name the model on a key chip: set when the suggestions span several models. */
+  modelNames?: Record<string, string>
 }
 
-function QueryCardInner({ item, isActive, onClick }: QueryCardProps) {
+function QueryCardInner({ item, isActive, onClick, modelNames }: QueryCardProps) {
   const isReviewed = item.review_status === 'reviewed'
   const isSkipped = item.review_status === 'skipped'
   const statusLabel = isReviewed ? 'Reviewed' : isSkipped ? 'Skipped' : 'Pending'
@@ -23,8 +25,12 @@ function QueryCardInner({ item, isActive, onClick }: QueryCardProps) {
 
   const matchChip = item.key_matches?.[0]
   const extraMatches = (item.key_matches?.length ?? 0) - 1
+  const modelLabel = (model: string) => modelNames && (modelNames[model] ?? model)
   const chipTitle = item.key_matches
-    ?.map((m) => `${m.dir_name} · rank ${m.rank}`)
+    ?.map((m) => {
+      const name = modelLabel(m.model)
+      return `${m.dir_name} · rank ${m.rank}${name ? ` · ${name}` : ''}`
+    })
     .join('\n')
 
   return (
@@ -65,6 +71,11 @@ function QueryCardInner({ item, isActive, onClick }: QueryCardProps) {
         >
           <span className="truncate whitespace-pre">{matchChip.dir_name}</span>
           <span className="flex-shrink-0">· #{matchChip.rank}</span>
+          {modelNames && (
+            <span data-testid="key-match-model" className="flex-shrink-0">
+              · {modelLabel(matchChip.model)}
+            </span>
+          )}
           {extraMatches > 0 && (
             <span className="flex-shrink-0 text-stone-500 dark:text-stone-400">
               +{extraMatches}
@@ -86,7 +97,8 @@ const QueryCard = memo(QueryCardInner, (prev, next) => {
   return (
     prev.item.file_id === next.item.file_id &&
     prev.isActive === next.isActive &&
-    prev.item.key_matches === next.item.key_matches
+    prev.item.key_matches === next.item.key_matches &&
+    prev.modelNames === next.modelNames
   )
 })
 

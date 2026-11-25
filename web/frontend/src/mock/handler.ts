@@ -18,7 +18,12 @@ import { MOCK_QUERIES, MOCK_QUERY_DETAILS } from './queries'
 import { MOCK_PREDICTIONS } from './predictions'
 import { MOCK_TOKEN_MAPS } from './tokenMaps'
 import { handleAdminReview } from './adminReview'
-import { filterQueriesByKey, handleCandidateDirFiles, handleLabelledKeys } from './keys'
+import {
+  filterQueriesByKey,
+  handleCandidateDirFiles,
+  handleLabelledKeys,
+  isMockKeyError,
+} from './keys'
 
 // ---------------------------------------------------------------------------
 // Synthetic query generation (expand 3 real queries to 2238 items)
@@ -540,18 +545,19 @@ function handleLatestFeedback(url: string): unknown {
 
 function handleModels(): ModelInfo[] {
   return [
-    {
-      slug: 'bowphs_LaTa',
-      display_name: 'LaTa (T5)',
-      layer: 4,
-      pooling: 'mean',
-      prediction_count: 2238,
-      available_variants: PREDICTION_VARIANTS,
-      default_variant: DEFAULT_VARIANT,
-      confidence_bands: FALLBACK_BANDS,
-      supports_reviewer_dirs: true,
-    },
-  ]
+    ['bowphs_LaTa', 'LaTa'],
+    ['bowphs_PhilTa', 'PhilTa'],
+  ].map(([slug, display_name]) => ({
+    slug,
+    display_name,
+    layer: 4,
+    pooling: 'mean',
+    prediction_count: 2238,
+    available_variants: PREDICTION_VARIANTS,
+    default_variant: DEFAULT_VARIANT,
+    confidence_bands: FALLBACK_BANDS,
+    supports_reviewer_dirs: true,
+  }))
 }
 
 // ---------------------------------------------------------------------------
@@ -799,6 +805,9 @@ export function installMockHandler(): void {
 
     // Query list
     if (url.match(/\/api\/queries\?/) || url.match(/\/api\/queries$/)) {
+      if (isMockKeyError(url)) {
+        return mockResponse({ error: { message: 'Key search failed' } }, 500)
+      }
       return mockResponse(handleQueryList(url))
     }
 

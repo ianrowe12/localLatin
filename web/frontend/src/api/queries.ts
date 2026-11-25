@@ -194,26 +194,56 @@ interface HookState<T> {
 // useQueryList
 // ---------------------------------------------------------------------------
 
+interface QueryListState {
+  data: QueryListResponse | null
+  loading: boolean
+  /** The list (filters, not page) `data` was fetched for. */
+  dataList: string | null
+  error: string | null
+  /** The list (filters, not page) `error` belongs to. */
+  errorList: string | null
+}
+
+export interface QueryListHook extends HookState<QueryListResponse> {
+  retry: () => void
+}
+
 export function useQueryList(
   status: string,
   search: string,
   page: number,
   pageSize = 50,
   keyFilter: QueryKeyFilter | null = null,
-): HookState<QueryListResponse> {
-  const [state, setState] = useState<HookState<QueryListResponse>>({
+): QueryListHook {
+  const [state, setState] = useState<QueryListState>({
     data: null,
     loading: false,
+    dataList: null,
     error: null,
+    errorList: null,
   })
   const cache = useRef(new Map<string, QueryListResponse>())
-  const listKeyRef = useRef<string | null>(null)
   const [refreshVersion, setRefreshVersion] = useState(0)
   const keyText = keyFilter?.key ?? ''
   const keyMatch = keyFilter?.match ?? 'prefix'
   const keyModel = keyFilter?.model ?? ''
   const keyVariant = keyFilter?.variant ?? ''
   const keyTop1 = keyFilter?.top1 ?? false
+
+  const params = new URLSearchParams()
+  if (status) params.set('status', status)
+  if (search) params.set('search', search)
+  if (keyText) {
+    params.set('key', keyText)
+    params.set('key_match', keyMatch)
+    if (keyModel) params.set('key_model', keyModel)
+    if (keyVariant) params.set('variant', keyVariant)
+    if (keyTop1) params.set('key_top1', 'true')
+  }
+  const list = `${params.toString()}|${pageSize}`
+  params.set('page', String(page))
+  params.set('page_size', String(pageSize))
+  const requestKey = params.toString()
 
   useEffect(() => {
     const refresh = () => {
@@ -225,27 +255,9 @@ export function useQueryList(
   }, [])
 
   useEffect(() => {
-    const params = new URLSearchParams()
-    if (status) params.set('status', status)
-    if (search) params.set('search', search)
-    if (keyText) {
-      params.set('key', keyText)
-      params.set('key_match', keyMatch)
-      if (keyModel) params.set('key_model', keyModel)
-      if (keyVariant) params.set('variant', keyVariant)
-      if (keyTop1) params.set('key_top1', 'true')
-    }
-    const listKeyParams = params.toString()
-    params.set('page', String(page))
-    params.set('page_size', String(pageSize))
-    const key = params.toString()
-    const listKey = `${listKeyParams}|${pageSize}`
-    const sameList = listKeyRef.current === listKey
-    listKeyRef.current = listKey
-
     const applyPage = (data: QueryListResponse) => {
       setState((prev) => {
-        if (page > 1 && sameList && prev.data) {
+        if (page > 1 && prev.dataList === list && prev.data) {
           const seen = new Set(prev.data.items.map((item) => item.file_id))
           const mergedItems = [
             ...prev.data.items,
@@ -254,31 +266,41 @@ export function useQueryList(
           return {
             data: { ...data, items: mergedItems },
             loading: false,
+            dataList: list,
             error: null,
+            errorList: null,
           }
         }
-        return { data, loading: false, error: null }
+        return { data, loading: false, dataList: list, error: null, errorList: null }
       })
     }
 
-    const cached = cache.current.get(key)
+    const cached = cache.current.get(requestKey)
     if (cached) {
       applyPage(cached)
       return
     }
 
+    // Each effect run owns one request. A response that arrives after the list
+    // has moved on (a later keystroke, another filter) is dropped, so a slow
+    // answer cannot overwrite a newer one.
     let cancelled = false
-    setState((prev) => ({ ...prev, loading: true, error: null }))
+    setState((prev) => ({ ...prev, loading: true, error: null, errorList: null }))
 
-    apiFetch<QueryListResponse>(`/api/queries?${key}`)
+    apiFetch<QueryListResponse>(`/api/queries?${requestKey}`)
       .then((data) => {
         if (cancelled) return
-        cache.current.set(key, data)
+        cache.current.set(requestKey, data)
         applyPage(data)
       })
       .catch((err: Error) => {
         if (cancelled) return
-        setState((prev) => ({ ...prev, loading: false, error: err.message }))
+        setState((prev) => ({
+          ...prev,
+          loading: false,
+          error: err.message,
+          errorList: list,
+        }))
       })
 
     return () => {
@@ -286,7 +308,20 @@ export function useQueryList(
     }
   }, [status, search, page, pageSize, keyText, keyMatch, keyModel, keyVariant, keyTop1, refreshVersion])
 
-  return state
+  const retry = useCallback(() => setRefreshVersion((version) => version + 1), [])
+
+  // Rows fetched for another filter are not this filter's rows. Plain lists keep
+  // the previous rows while the next one loads, but a key search never shows
+  // another filter's rows or count, whichever side is the key search.
+  const belongsToOtherList = state.dataList !== list
+  const otherListIsKeyed = (state.dataList ?? '').includes('key=')
+  const hideData = belongsToOtherList && (keyText !== '' || otherListIsKeyed)
+  return {
+    data: hideData ? null : state.data,
+    loading: state.loading,
+    error: state.errorList === list ? state.error : null,
+    retry,
+  }
 }
 
 export async function fetchNextQuery(after?: number): Promise<NextQueryResponse> {
