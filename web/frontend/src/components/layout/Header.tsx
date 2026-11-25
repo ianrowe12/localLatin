@@ -135,6 +135,32 @@ export default function Header() {
             <rect x="14" y="14" width="7" height="7" />
           </svg>
         </button>
+        <button
+          type="button"
+          onClick={() => setCurrentView('keys')}
+          className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors text-stone-600 dark:text-stone-300 ${
+            currentView === 'keys'
+              ? 'bg-stone-200 dark:bg-stone-700'
+              : 'hover:bg-stone-200 dark:hover:bg-stone-700'
+          }`}
+          aria-label="Browse labelled keys"
+          title="Browse labelled keys"
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" />
+            <line x1="7" y1="7" x2="7.01" y2="7" />
+          </svg>
+        </button>
         <ThemeToggle />
 
         {/* Reviewer badge + account menu */}

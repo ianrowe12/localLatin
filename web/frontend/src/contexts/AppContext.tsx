@@ -11,7 +11,7 @@ import { DEFAULT_VARIANT, type PredictionVariant } from '../api/variants'
 
 export type Theme = 'light' | 'dark'
 
-export type View = 'dashboard' | 'review' | 'files'
+export type View = 'dashboard' | 'review' | 'files' | 'keys'
 
 export interface AppContextValue {
   theme: Theme

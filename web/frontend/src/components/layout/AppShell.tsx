@@ -6,6 +6,7 @@ import CenterArea from './CenterArea'
 import RightSidebar from './RightSidebar'
 import DashboardView from '../dashboard/DashboardView'
 import FileBrowser from '../files/FileBrowser'
+import LabelledKeysPanel from '../keys/LabelledKeysPanel'
 import { useReviewer } from '../../contexts/ReviewerContext'
 import AdminDecisionPanel from '../feedback/AdminDecisionPanel'
 
@@ -22,6 +23,8 @@ export default function AppShell() {
         <DashboardView />
       ) : currentView === 'files' ? (
         <FileBrowser />
+      ) : currentView === 'keys' ? (
+        <LabelledKeysPanel />
       ) : (
         <div className="flex-1 flex overflow-hidden">
           <LeftSidebar
