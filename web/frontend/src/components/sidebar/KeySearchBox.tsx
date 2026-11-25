@@ -27,6 +27,7 @@ export default function KeySearchBox({ value, exact, onSearch, onPick }: KeySear
     <div
       className="relative"
       onFocus={() => setOpen(true)}
+      onInput={() => setOpen(true)}
       onBlur={handleBlur}
       onKeyDown={handleKeyDown}
     >
@@ -40,7 +41,7 @@ export default function KeySearchBox({ value, exact, onSearch, onPick }: KeySear
         <ul
           role="listbox"
           aria-label="Matching keys"
-          className="absolute left-0 right-0 top-full z-20 mt-1 max-h-64 overflow-y-auto
+          className="absolute left-0 right-0 top-full z-20 mt-1 max-h-72 overflow-y-auto
                      rounded-lg border border-stone-200 dark:border-stone-600
                      bg-white dark:bg-surface-800 py-1 shadow-glass dark:shadow-glass-dark"
         >

@@ -94,7 +94,7 @@ function mockRanking(fileId: number): QueryKeyMatch[] {
   return Array.from({ length: 10 }, (_, i) => ({
     model: MOCK_MODEL,
     rank: i + 1,
-    dir_name: names[(fileId * 7 + i * 5) % names.length],
+    dir_name: names[(fileId * 13 + i * 5) % names.length],
   })).filter(
     (hit, i, all) => all.findIndex((other) => other.dir_name === hit.dir_name) === i,
   )

@@ -327,7 +327,7 @@ function handleQueryList(url: string): QueryListResponse {
   const pageSize = parseInt(params.get('page_size') || '20', 10)
 
   let filtered = filterQueriesByKey(ALL_QUERIES, url) ?? ALL_QUERIES
-  if (status) {
+  if (status && status !== 'all') {
     filtered = filtered.filter((q) => q.review_status === status)
   }
   if (search) {
