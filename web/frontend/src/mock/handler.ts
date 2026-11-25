@@ -18,6 +18,7 @@ import { MOCK_QUERIES, MOCK_QUERY_DETAILS } from './queries'
 import { MOCK_PREDICTIONS } from './predictions'
 import { MOCK_TOKEN_MAPS } from './tokenMaps'
 import { handleAdminReview } from './adminReview'
+import { filterQueriesByKey, handleCandidateDirFiles, handleLabelledKeys } from './keys'
 
 // ---------------------------------------------------------------------------
 // Synthetic query generation (expand 3 real queries to 2238 items)
@@ -325,8 +326,8 @@ function handleQueryList(url: string): QueryListResponse {
   const page = parseInt(params.get('page') || '1', 10)
   const pageSize = parseInt(params.get('page_size') || '20', 10)
 
-  let filtered = ALL_QUERIES
-  if (status) {
+  let filtered = filterQueriesByKey(ALL_QUERIES, url) ?? ALL_QUERIES
+  if (status && status !== 'all') {
     filtered = filtered.filter((q) => q.review_status === status)
   }
   if (search) {
@@ -782,6 +783,18 @@ export function installMockHandler(): void {
     // Next actionable query
     if (url.match(/\/api\/queries\/next/)) {
       return mockResponse(handleNextQuery(url))
+    }
+
+    // Labelled keys and the units filed under one
+    if (url.match(/\/api\/labelled_keys/)) {
+      return mockResponse(handleLabelledKeys(url))
+    }
+    const unitsMatch = url.match(/\/api\/candidate_dir\/([^/?]+)\/files/)
+    if (unitsMatch) {
+      const files = handleCandidateDirFiles(decodeURIComponent(unitsMatch[1]))
+      return files
+        ? mockResponse(files)
+        : mockResponse({ error: { message: 'Directory not found' } }, 404)
     }
 
     // Query list

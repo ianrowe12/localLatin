@@ -8,12 +8,32 @@ import { DEFAULT_VARIANT, type PredictionVariant } from './variants'
 // Types matching backend models.py
 // ---------------------------------------------------------------------------
 
+/** `QueryKeyMatch` in web/models.py: where a searched key sits in one model's ranking. */
+export interface QueryKeyMatch {
+  model: string
+  rank: number
+  dir_name: string
+}
+
 export interface QueryListItem {
   file_id: number
   filename: string
   text_preview: string
   review_status: 'unreviewed' | 'reviewed' | 'skipped'
   review_count: number
+  /** Empty unless the list was filtered by a suggested key. In rank, then model, order. */
+  key_matches?: QueryKeyMatch[]
+}
+
+/** Filter the list to texts whose ranked suggestions include a key (`GET /api/queries?key=`). */
+export interface QueryKeyFilter {
+  key: string
+  match: 'prefix' | 'exact'
+  /** Limit to one model's suggestions; absent means any served model. */
+  model?: string
+  variant?: PredictionVariant
+  /** Only count a key the model ranks first. */
+  top1?: boolean
 }
 
 export interface QueryListResponse {
@@ -179,6 +199,7 @@ export function useQueryList(
   search: string,
   page: number,
   pageSize = 50,
+  keyFilter: QueryKeyFilter | null = null,
 ): HookState<QueryListResponse> {
   const [state, setState] = useState<HookState<QueryListResponse>>({
     data: null,
@@ -188,6 +209,11 @@ export function useQueryList(
   const cache = useRef(new Map<string, QueryListResponse>())
   const listKeyRef = useRef<string | null>(null)
   const [refreshVersion, setRefreshVersion] = useState(0)
+  const keyText = keyFilter?.key ?? ''
+  const keyMatch = keyFilter?.match ?? 'prefix'
+  const keyModel = keyFilter?.model ?? ''
+  const keyVariant = keyFilter?.variant ?? ''
+  const keyTop1 = keyFilter?.top1 ?? false
 
   useEffect(() => {
     const refresh = () => {
@@ -202,10 +228,18 @@ export function useQueryList(
     const params = new URLSearchParams()
     if (status) params.set('status', status)
     if (search) params.set('search', search)
+    if (keyText) {
+      params.set('key', keyText)
+      params.set('key_match', keyMatch)
+      if (keyModel) params.set('key_model', keyModel)
+      if (keyVariant) params.set('variant', keyVariant)
+      if (keyTop1) params.set('key_top1', 'true')
+    }
+    const listKeyParams = params.toString()
     params.set('page', String(page))
     params.set('page_size', String(pageSize))
     const key = params.toString()
-    const listKey = `${status}|${search}|${pageSize}`
+    const listKey = `${listKeyParams}|${pageSize}`
     const sameList = listKeyRef.current === listKey
     listKeyRef.current = listKey
 
@@ -250,7 +284,7 @@ export function useQueryList(
     return () => {
       cancelled = true
     }
-  }, [status, search, page, pageSize, refreshVersion])
+  }, [status, search, page, pageSize, keyText, keyMatch, keyModel, keyVariant, keyTop1, refreshVersion])
 
   return state
 }

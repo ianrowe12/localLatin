@@ -22,16 +22,36 @@ from web.variants import DEFAULT_VARIANT, PredictionVariant
 
 # --- Queries ---
 
+class QueryKeyMatch(BaseModel):
+    model: str
+    rank: int
+    dir_name: str
+
+
 class QueryListItem(BaseModel):
     file_id: int
     filename: str
     text_preview: str
     review_status: str  # "unreviewed" | "reviewed" | "skipped"
     review_count: int
+    key_matches: list[QueryKeyMatch] = Field(default_factory=list)
 
 
 class QueryListResponse(BaseModel):
     items: List[QueryListItem]
+    total: int
+    page: int
+    page_size: int
+    has_more: bool
+
+
+class LabelledKeyItem(BaseModel):
+    key: str
+    unit_count: int
+
+
+class LabelledKeyListResponse(BaseModel):
+    items: list[LabelledKeyItem]
     total: int
     page: int
     page_size: int

@@ -3,9 +3,16 @@ import { useEffect, useRef, useState } from 'react'
 interface SearchBarProps {
   value: string
   onChange: (value: string) => void
+  placeholder?: string
+  label?: string
 }
 
-export default function SearchBar({ value, onChange }: SearchBarProps) {
+export default function SearchBar({
+  value,
+  onChange,
+  placeholder = 'Search files...',
+  label = 'Search files',
+}: SearchBarProps) {
   const [internal, setInternal] = useState(value)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -46,7 +53,7 @@ export default function SearchBar({ value, onChange }: SearchBarProps) {
         type="text"
         value={internal}
         onChange={(e) => setInternal(e.target.value)}
-        placeholder="Search files..."
+        placeholder={placeholder}
         className="w-full rounded-lg border border-stone-200 dark:border-stone-600
                    bg-white dark:bg-stone-800
                    px-3 py-2 pl-8 pr-8
@@ -54,7 +61,7 @@ export default function SearchBar({ value, onChange }: SearchBarProps) {
                    placeholder:text-stone-400 dark:placeholder:text-stone-500
                    focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent
                    transition-colors"
-        aria-label="Search files"
+        aria-label={label}
       />
 
       {/* Clear button */}

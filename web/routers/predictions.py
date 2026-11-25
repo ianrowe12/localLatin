@@ -33,12 +33,16 @@ def resolve_variant(store: DataStore, variant: PredictionVariant | None) -> str:
     return variant.value if variant is not None else store.default_variant
 
 
+async def require_prediction_variant(store: DataStore, variant: str) -> None:
+    if not await store.ensure_variant_async(variant):
+        raise VariantUnavailableError(variant, store.variants)
+
+
 async def resolve_variant_rows(
     store: DataStore, slug: str, variant: str, file_id: int
 ) -> list[dict]:
     """Prediction rows for (slug, variant), raising the right API error."""
-    if not await store.ensure_variant_async(variant):
-        raise VariantUnavailableError(variant, store.variants)
+    await require_prediction_variant(store, variant)
     rows = store.predictions.get((slug, variant))
     if rows is None:
         raise InvalidModelError(slug, store.model_slugs)

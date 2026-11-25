@@ -1,12 +1,14 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { Virtuoso } from 'react-virtuoso'
 import { useApp } from '../../contexts/AppContext'
 import { useReviewer } from '../../contexts/ReviewerContext'
-import { useQueryList } from '../../api/queries'
+import { useQueryList, type QueryKeyFilter } from '../../api/queries'
 import { useStats } from '../../api/models'
 import ProgressRing from '../sidebar/ProgressRing'
 import SearchBar from '../sidebar/SearchBar'
+import SearchModeToggle, { type SearchMode } from '../sidebar/SearchModeToggle'
+import KeySearchBox from '../sidebar/KeySearchBox'
 import FilterChips from '../sidebar/FilterChips'
 import QueryCard from '../sidebar/QueryCard'
 import ViewModeToggle from '../common/ViewModeToggle'
@@ -25,31 +27,77 @@ const FILTER_TO_STATUS: Record<string, string> = {
 }
 
 export default function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
-  const { activeQueryId, setActiveQueryId } = useApp()
+  const { activeQueryId, setActiveQueryId, setCurrentView, activeModel, activeVariant } =
+    useApp()
   const { isPiAdmin } = useReviewer()
+  const [mode, setMode] = useState<SearchMode>('file')
   const [search, setSearch] = useState('')
+  const [keyQuery, setKeyQuery] = useState({ text: '', exact: false })
+  const [top1, setTop1] = useState(false)
   const [filter, setFilter] = useState('all')
-  const [page, setPage] = useState(1)
+  const [pageState, setPageState] = useState({ list: '', page: 1 })
+
+  const keyFilter = useMemo<QueryKeyFilter | null>(() => {
+    const key = keyQuery.text.trim()
+    if (mode !== 'key' || !key) return null
+    return {
+      key,
+      match: keyQuery.exact ? 'exact' : 'prefix',
+      model: activeModel || undefined,
+      variant: activeVariant,
+      top1,
+    }
+  }, [mode, keyQuery, activeModel, activeVariant, top1])
+
+  // The page belongs to the list it was reached in: a new status, search, key or
+  // model starts again at page 1 instead of requesting page N of a different list.
+  const listId = JSON.stringify([filter, mode === 'file' ? search : '', keyFilter])
+  const page = pageState.list === listId ? pageState.page : 1
+  const setPage = useCallback(
+    (next: (current: number) => number) =>
+      setPageState({ list: listId, page: next(page) }),
+    [listId, page],
+  )
 
   const apiStatus = FILTER_TO_STATUS[filter] ?? 'all'
-  const { data, loading } = useQueryList(apiStatus, search, page)
+  const { data, loading } = useQueryList(
+    apiStatus,
+    mode === 'file' ? search : '',
+    page,
+    undefined,
+    keyFilter,
+  )
   const { data: stats } = useStats(isPiAdmin)
 
   const handleSearch = useCallback((value: string) => {
     setSearch(value)
-    setPage(1)
+  }, [])
+
+  const handleKeySearch = useCallback((text: string) => {
+    setKeyQuery((prev) => (prev.text === text ? prev : { text, exact: false }))
+  }, [])
+
+  const handleKeyPick = useCallback((key: string) => {
+    setKeyQuery({ text: key, exact: true })
+  }, [])
+
+  const handleMode = useCallback((next: SearchMode) => {
+    setMode(next)
+    setSearch('')
+    setKeyQuery({ text: '', exact: false })
   }, [])
 
   const handleFilter = useCallback((f: string) => {
     setFilter(f)
-    setPage(1)
   }, [])
 
   const handleEndReached = useCallback(() => {
     if (data?.has_more && !loading) {
       setPage((p) => p + 1)
     }
-  }, [data?.has_more, loading])
+  }, [data?.has_more, loading, setPage])
+
+  const keyMode = mode === 'key'
 
   return (
     <motion.aside
@@ -100,9 +148,41 @@ export default function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
             )}
 
             {/* Search */}
-            <div className="px-3 py-2 flex-shrink-0">
-              <SearchBar value={search} onChange={handleSearch} />
+            <div className="px-3 pt-2 flex-shrink-0">
+              <SearchModeToggle mode={mode} onChange={handleMode} />
             </div>
+            <div className="px-3 py-2 flex-shrink-0">
+              {keyMode ? (
+                <KeySearchBox
+                  value={keyQuery.text}
+                  exact={keyQuery.exact}
+                  onSearch={handleKeySearch}
+                  onPick={handleKeyPick}
+                />
+              ) : (
+                <SearchBar value={search} onChange={handleSearch} />
+              )}
+            </div>
+            {keyMode && (
+              <div className="px-3 pb-1 flex-shrink-0 space-y-1">
+                <label className="flex items-center gap-2 px-1 font-ui text-xs text-stone-600 dark:text-stone-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={top1}
+                    onChange={(e) => setTop1(e.target.checked)}
+                    className="rounded border-stone-300 dark:border-stone-600 text-accent focus:ring-accent/50"
+                  />
+                  Top suggestion only
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setCurrentView('keys')}
+                  className="px-1 font-ui text-xs text-accent dark:text-accent-light hover:underline"
+                >
+                  Browse all labelled keys
+                </button>
+              </div>
+            )}
 
             {/* Filter chips */}
             <div className="px-3 py-1 flex-shrink-0">
@@ -135,6 +215,14 @@ export default function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
               <p className="font-ui text-xs text-stone-400 dark:text-stone-500 px-2 mt-0.5">
                 Select a manuscript to review predictions
               </p>
+              {keyFilter && data && (
+                <p
+                  data-testid="key-match-count"
+                  className="font-ui text-xs font-medium text-stone-600 dark:text-stone-300 px-2 mt-1"
+                >
+                  {data.total === 1 ? '1 text' : `${data.total} texts`}
+                </p>
+              )}
             </div>
 
             {/* Query list */}
@@ -145,8 +233,12 @@ export default function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
                 </div>
               )}
               {data && data.items.length === 0 && (
-                <div className="flex items-center justify-center h-20">
-                  <span className="text-xs text-stone-400 font-ui">No files found</span>
+                <div className="flex items-center justify-center h-20 px-4 text-center">
+                  <span className="text-xs text-stone-400 font-ui">
+                    {keyFilter
+                      ? `No texts have a suggested key matching \u201c${keyFilter.key}\u201d`
+                      : 'No files found'}
+                  </span>
                 </div>
               )}
               {data && data.items.length > 0 && (
