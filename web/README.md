@@ -100,7 +100,9 @@ artifacts generated before those arrays existed. `query_sif_weights` /
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/queries` | List queries with pagination, search, filtering |
+| GET | `/api/queries` | List queries with pagination, filename search, status and predicted-key filters |
+| GET | `/api/labelled_keys` | Search and list labelled corpus directories and their unit counts |
+| GET | `/api/candidate_dir/{candidate_dir}/files` | Read files in a candidate directory |
 | GET | `/api/query/{file_id}` | Query detail with tokenized text |
 | GET | `/api/query/{file_id}/predictions` | Top-10 predictions per model |
 | GET | `/api/query/{file_id}/predictions/{rank}/candidates` | Full candidate directory text |
@@ -114,6 +116,30 @@ artifacts generated before those arrays existed. `query_sif_weights` /
 | GET | `/api/feedback/review_queue/{query_id}` | PI/admin only: the document's counted answers and newest final answer |
 | POST | `/api/feedback/decisions/{query_id}` | PI/admin only: append a deciding answer |
 | GET | `/api/feedback/export/ccl_keys` | PI/admin only: resolved CCL key assignments CSV |
+
+### Searching labelled and predicted keys (issue #307)
+
+Both searches require sign-in and compare keys case-insensitively after trimming
+and collapsing whitespace. Responses preserve the original directory names.
+
+- `GET /api/labelled_keys` takes optional `search`, `page` (1-based, default 1),
+  and `page_size` (1–1000, default 50). It returns
+  `{items: [{key, unit_count}], total, page, page_size, has_more}`. All labelled
+  directories are eligible, including nonstandard names. Search puts prefix
+  matches before other substring matches, naturally sorted within each group
+  (e.g. `.2` before `.10`). An empty search lists all directories. To read a
+  key's units, URL-encode its exact `key` as the `candidate_dir` path segment
+  in `/api/candidate_dir/{candidate_dir}/files`.
+- `GET /api/queries?key=...` finds queries whose top-10 model suggestions contain a
+  matching directory. `key_match` is `prefix` (default) or `exact`; `key_model`
+  selects a model slug (default: any model served for that variant); `variant`
+  uses the same values and configured default as the predictions endpoint;
+  `key_top1=true` restricts matches to rank 1 (default: false). Prediction rows with
+  status `excluded_*` never match. The key filter is ANDed with filename `search`
+  and review `status`, before the existing sort and pagination. Each returned
+  item includes `key_matches: [{model, rank, dir_name}]` sorted by rank then
+  model. Without `key` this list is empty. A model or variant not served for the
+  search returns 400, just as on the predictions endpoint.
 
 ### Admin review queue and final answers (issue #294)
 

@@ -4,14 +4,17 @@ import logging
 import re
 import threading
 import zipfile
+from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import NamedTuple
 
 import numpy as np
 import pandas as pd
 from starlette.concurrency import run_in_threadpool
 
 from web.config import Settings
+from web.services.ccl_keys import match_form
 from web.services.qq_matrix import QQMatrix, load_qq_matrix
 from web.variants import DEFAULT_VARIANT
 
@@ -61,6 +64,13 @@ class ModelMeta:
     variant: str = DEFAULT_VARIANT
 
 
+class PredictionKeyHit(NamedTuple):
+    file_id: int
+    model: str
+    rank: int
+    dir_name: str
+
+
 @dataclass
 class DataStore:
     # Query metadata: file_id -> (filename, file_path)
@@ -78,6 +88,10 @@ class DataStore:
     # request. This defers the cost (~35 MB and ~2s per variant) rather than
     # capping it -- once a worker has served all four, all four stay resident.
     predictions: dict[tuple[str, str], list[dict]] = field(default_factory=dict)
+    # Variant -> normalized directory name -> hits in model rankings.
+    prediction_key_index: dict[str, dict[str, list[PredictionKeyHit]]] = field(
+        default_factory=dict, repr=False
+    )
 
     # Model metadata, also keyed by (slug, variant)
     model_meta: dict[tuple[str, str], ModelMeta] = field(default_factory=dict)
@@ -189,6 +203,7 @@ class DataStore:
             del self.predictions[key]
         for key in [key for key in self.model_meta if key[1] == variant]:
             del self.model_meta[key]
+        self.prediction_key_index.pop(variant, None)
         self.loaded_variants.discard(variant)
 
 
@@ -443,6 +458,20 @@ def _load_variant(store: DataStore, variant: str) -> None:
             variant=variant,
         )
 
+    key_index: dict[str, list[PredictionKeyHit]] = defaultdict(list)
+    for (slug, loaded_variant), rows in store.predictions.items():
+        if loaded_variant != variant:
+            continue
+        for row in rows:
+            if (row["status"] or "").startswith("excluded_"):
+                continue
+            for prediction in row["predictions"]:
+                name = prediction["dir_name"]
+                key_index[match_form(name)].append(
+                    PredictionKeyHit(row["file_id"], slug, prediction["rank"], name)
+                )
+
+    store.prediction_key_index[variant] = key_index
     store.loaded_variants.add(variant)
 
 
