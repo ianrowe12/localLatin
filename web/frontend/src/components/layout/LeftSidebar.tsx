@@ -4,11 +4,12 @@ import { Virtuoso } from 'react-virtuoso'
 import { useApp } from '../../contexts/AppContext'
 import { useReviewer } from '../../contexts/ReviewerContext'
 import { useQueryList, type QueryKeyFilter } from '../../api/queries'
-import { useStats } from '../../api/models'
+import { useModels, useStats } from '../../api/models'
 import ProgressRing from '../sidebar/ProgressRing'
 import SearchBar from '../sidebar/SearchBar'
 import SearchModeToggle, { type SearchMode } from '../sidebar/SearchModeToggle'
 import KeySearchBox from '../sidebar/KeySearchBox'
+import KeyModelScopeToggle, { type KeyModelScope } from '../sidebar/KeyModelScopeToggle'
 import FilterChips from '../sidebar/FilterChips'
 import QueryCard from '../sidebar/QueryCard'
 import ViewModeToggle from '../common/ViewModeToggle'
@@ -34,6 +35,7 @@ export default function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
   const [search, setSearch] = useState('')
   const [keyQuery, setKeyQuery] = useState({ text: '', exact: false })
   const [top1, setTop1] = useState(false)
+  const [modelScope, setModelScope] = useState<KeyModelScope>('this')
   const [filter, setFilter] = useState('all')
   const [pageState, setPageState] = useState({ list: '', page: 1 })
 
@@ -43,11 +45,11 @@ export default function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
     return {
       key,
       match: keyQuery.exact ? 'exact' : 'prefix',
-      model: activeModel || undefined,
+      model: modelScope === 'this' ? activeModel || undefined : undefined,
       variant: activeVariant,
       top1,
     }
-  }, [mode, keyQuery, activeModel, activeVariant, top1])
+  }, [mode, keyQuery, activeModel, activeVariant, top1, modelScope])
 
   // The page belongs to the list it was reached in: a new status, search, key or
   // model starts again at page 1 instead of requesting page N of a different list.
@@ -60,7 +62,7 @@ export default function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
   )
 
   const apiStatus = FILTER_TO_STATUS[filter] ?? 'all'
-  const { data, loading } = useQueryList(
+  const { data, loading, error, retry } = useQueryList(
     apiStatus,
     mode === 'file' ? search : '',
     page,
@@ -68,6 +70,15 @@ export default function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
     keyFilter,
   )
   const { data: stats } = useStats(isPiAdmin)
+  const { data: models } = useModels()
+
+  // The short names the model selector shows, for chips that span models.
+  const modelNames = useMemo(
+    () => Object.fromEntries((models ?? []).map((m) => [m.slug, m.display_name])),
+    [models],
+  )
+  const chipModelNames = keyFilter && !keyFilter.model ? modelNames : undefined
+  const keyError = keyFilter ? error : null
 
   const handleSearch = useCallback((value: string) => {
     setSearch(value)
@@ -174,6 +185,7 @@ export default function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
                   />
                   Top suggestion only
                 </label>
+                <KeyModelScopeToggle scope={modelScope} onChange={setModelScope} />
                 <button
                   type="button"
                   onClick={() => setCurrentView('keys')}
@@ -215,7 +227,7 @@ export default function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
               <p className="font-ui text-xs text-stone-400 dark:text-stone-500 px-2 mt-0.5">
                 Select a manuscript to review predictions
               </p>
-              {keyFilter && data && (
+              {keyFilter && data && !keyError && (
                 <p
                   data-testid="key-match-count"
                   className="font-ui text-xs font-medium text-stone-600 dark:text-stone-300 px-2 mt-1"
@@ -227,12 +239,30 @@ export default function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
 
             {/* Query list */}
             <div className="flex-1 overflow-hidden mt-1">
-              {loading && !data && (
+              {keyError && (
+                <div
+                  role="alert"
+                  data-testid="key-search-error"
+                  className="flex flex-col items-center justify-center gap-2 px-4 py-6 text-center"
+                >
+                  <span className="text-xs text-red-600 dark:text-red-400 font-ui">
+                    Couldn&rsquo;t load texts for this key. Try again.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={retry}
+                    className="h-7 px-3 rounded-lg bg-stone-100 dark:bg-stone-700 text-xs font-ui font-medium text-stone-600 dark:text-stone-300 hover:bg-stone-200 dark:hover:bg-stone-600 transition-colors"
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
+              {!keyError && loading && !data && (
                 <div className="flex items-center justify-center h-20">
                   <span className="text-xs text-stone-400 font-ui">Loading...</span>
                 </div>
               )}
-              {data && data.items.length === 0 && (
+              {!keyError && data && data.items.length === 0 && (
                 <div className="flex items-center justify-center h-20 px-4 text-center">
                   <span className="text-xs text-stone-400 font-ui">
                     {keyFilter
@@ -241,7 +271,7 @@ export default function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
                   </span>
                 </div>
               )}
-              {data && data.items.length > 0 && (
+              {!keyError && data && data.items.length > 0 && (
                 <Virtuoso
                   style={{ height: '100%' }}
                   totalCount={data.items.length}
@@ -253,6 +283,7 @@ export default function LeftSidebar({ isOpen, onToggle }: LeftSidebarProps) {
                         item={item}
                         isActive={item.file_id === activeQueryId}
                         onClick={() => setActiveQueryId(item.file_id)}
+                        modelNames={chipModelNames}
                       />
                     )
                   }}

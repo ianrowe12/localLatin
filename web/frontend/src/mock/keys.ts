@@ -85,19 +85,33 @@ export function handleCandidateDirFiles(dir: string): CandidateFile[] | null {
   }))
 }
 
-const MOCK_MODEL = 'bowphs_LaTa'
+// Each mock model ranks the fixtures differently, so "all models" has more than
+// one model to name on a chip.
+const MOCK_MODELS: { slug: string; shift: number }[] = [
+  { slug: 'bowphs_LaTa', shift: 0 },
+  { slug: 'bowphs_PhilTa', shift: 3 },
+]
 
-// Deterministic stand-in for the model's ranked top ten: ten distinct keys per
+// A key that makes the list request fail, to exercise the error state.
+export const MOCK_KEY_ERROR = '__error__'
+
+// Deterministic stand-in for each model's ranked top ten: ten distinct keys per
 // text, drawn from the fixtures by file id.
 function mockRanking(fileId: number): QueryKeyMatch[] {
   const names = KEY_UNITS.map(([name]) => name)
-  return Array.from({ length: 10 }, (_, i) => ({
-    model: MOCK_MODEL,
-    rank: i + 1,
-    dir_name: names[(fileId * 13 + i * 5) % names.length],
-  })).filter(
-    (hit, i, all) => all.findIndex((other) => other.dir_name === hit.dir_name) === i,
-  )
+  return MOCK_MODELS.flatMap(({ slug, shift }) =>
+    Array.from({ length: 10 }, (_, i) => ({
+      model: slug,
+      rank: i + 1,
+      dir_name: names[(fileId * 13 + i * 5 + shift) % names.length],
+    })).filter(
+      (hit, i, all) => all.findIndex((other) => other.dir_name === hit.dir_name) === i,
+    ),
+  ).sort((a, b) => a.rank - b.rank)
+}
+
+export function isMockKeyError(url: string): boolean {
+  return new URL(url, 'http://localhost').searchParams.get('key') === MOCK_KEY_ERROR
 }
 
 export function filterQueriesByKey(
